@@ -27,8 +27,13 @@ declare module 'react' {
     interface Component<P = {}, S = {}> {}
     interface FunctionComponent<P = {}> {
       (props: P, context?: any): any;
+      displayName?: string;
     }
     interface FC<P = {}> extends FunctionComponent<P> {}
+    type CSSProperties = Record<string, any>;
+    type MouseEvent<T = Element> = any;
+    type ChangeEvent<T = Element> = any;
+    type DragEvent<T = Element> = any;
     function createContext<T>(defaultValue: T): Context<T>;
     function useContext<T>(context: Context<T>): T;
     function useState<T>(initialState: T | (() => T)): [T, (newState: T | ((prevState: T) => T)) => void];
@@ -36,6 +41,7 @@ declare module 'react' {
     function useMemo<T>(factory: () => T, deps: readonly any[] | undefined): T;
     function useCallback<T extends (...args: any[]) => any>(callback: T, deps: readonly any[]): T;
     function useRef<T>(initialValue: T): { current: T };
+    function memo<T extends React.ComponentType<any>>(Component: T): T;
     const StrictMode: FC<{ children?: any }>;
     namespace JSX {
       interface Element {

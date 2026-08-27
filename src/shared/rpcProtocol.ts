@@ -12,6 +12,7 @@ import {
   LanguageTarget,
   ToolDefinition,
 } from './types';
+import { GeneratedFile } from './codegen/types';
 
 // Webview -> Extension Host Commands
 export type WebviewToExtensionMessage =
@@ -24,12 +25,27 @@ export type WebviewToExtensionMessage =
       };
     }
   | {
+      type: 'GENERATE_CODE';
+      payload: {
+        document: AgentWorkflowDocument;
+        targetFramework?: FrameworkTarget;
+        targetLanguage?: LanguageTarget;
+      };
+    }
+  | {
       type: 'EXPORT_CODE';
       payload: {
         document: AgentWorkflowDocument;
         targetFramework: FrameworkTarget;
         targetLanguage: LanguageTarget;
         outputDirectory?: string;
+      };
+    }
+  | {
+      type: 'WRITE_FILES_TO_WORKSPACE';
+      payload: {
+        files: GeneratedFile[];
+        targetDirectory?: string;
       };
     }
   | {
@@ -56,6 +72,36 @@ export type WebviewToExtensionMessage =
         args?: string[];
         url?: string;
       };
+    }
+  | {
+      type: 'BOOTSTRAP_LOADED';
+      payload?: { timestamp: string };
+    }
+  | {
+      type: 'WEBVIEW_LOG';
+      payload: {
+        level: 'info' | 'warn' | 'error' | 'debug';
+        message: string;
+        source?: string;
+        stack?: string;
+      };
+    }
+  | {
+      type: 'WEBVIEW_STATUS';
+      payload: {
+        status: string;
+        details?: any;
+      };
+    }
+  | {
+      type: 'DIAGNOSTIC_ERROR';
+      payload: {
+        message: string;
+        url?: string;
+        line?: number;
+        col?: number;
+        stack?: string;
+      };
     };
 
 // Extension Host -> Webview Events
@@ -79,6 +125,23 @@ export type ExtensionToWebviewMessage =
       type: 'THEME_CHANGED';
       payload: {
         theme: 'dark' | 'light';
+      };
+    }
+  | {
+      type: 'CODE_GENERATED';
+      payload: {
+        success: boolean;
+        files: GeneratedFile[];
+        modelUsed?: string;
+        error?: string;
+      };
+    }
+  | {
+      type: 'FILES_WRITTEN';
+      payload: {
+        success: boolean;
+        paths: string[];
+        error?: string;
       };
     }
   | {

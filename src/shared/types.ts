@@ -7,45 +7,48 @@
  */
 
 export type AgentKind = 'standard' | 'router' | 'a2a';
-export type TriggerKind = 'test' | 'chat' | 'pubsub' | 'scheduled' | 'eventarc';
+export type TriggerKind = 'test' | 'chat' | 'pubsub' | 'scheduled' | 'eventarc' | 'manual' | 'webhook' | 'cron';
 export type FrameworkTarget = 'google-adk' | 'langgraph';
 export type LanguageTarget = 'python' | 'typescript';
-export type MemoryType = 'none' | 'buffer' | 'firestore';
+export type MemoryType = 'none' | 'buffer' | 'firestore' | 'redis' | 'postgres' | 'sqlite' | 'vector_rag';
 
 export interface ToolDefinition {
   id: string;
   name: string;
   description: string;
-  type: 'builtin' | 'rest' | 'mcp' | 'code';
+  type: 'builtin' | 'rest' | 'mcp' | 'code' | 'custom' | 'database';
   config?: Record<string, unknown>;
 }
 
+export type AgentToolConfig = ToolDefinition;
+
 export interface SchemaField {
-  id: string;
+  id?: string;
   name: string;
   type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'enum';
-  description: string;
-  required: boolean;
+  description?: string;
+  required?: boolean;
   enumValues?: string[];
   itemType?: string;
 }
 
 export interface StructuredOutputSchema {
   enabled: boolean;
-  name: string;
-  description: string;
-  strict: boolean;
+  name?: string;
+  description?: string;
+  strict?: boolean;
   fields: SchemaField[];
 }
 
 export interface StandardAgentConfig {
   model: string;
   systemInstruction: string;
-  temperature: number;
-  topP: number;
-  maxOutputTokens: number;
+  temperature?: number;
+  topP?: number;
+  maxOutputTokens?: number;
   tools: ToolDefinition[];
-  memory: MemoryType;
+  memory?: MemoryType;
+  structuredOutput?: StructuredOutputSchema;
   outputSchema?: StructuredOutputSchema;
   firestoreConfig?: {
     collectionName: string;
@@ -79,20 +82,32 @@ export interface A2AAgentConfig {
 export interface AgentNodeData {
   label: string;
   description?: string;
-  agentKind: AgentKind;
+  agentKind?: AgentKind;
+  model?: string;
+  systemPrompt?: string;
+  temperature?: number;
+  memoryType?: MemoryType;
+  tools?: ToolDefinition[];
+  structuredOutputSchema?: StructuredOutputSchema;
   standardConfig?: StandardAgentConfig;
   routerConfig?: RouterAgentConfig;
   a2aConfig?: A2AAgentConfig;
   status?: 'idle' | 'running' | 'success' | 'error';
+  onEdit?: (id: string) => void;
+  onDelete?: (id: string) => void;
+  onAddTool?: (agentId: string) => void;
+  onRemoveTool?: (agentId: string, toolId: string) => void;
+}
+
+export interface TestSuiteScenario {
+  id: string;
+  name: string;
+  inputQuery: string;
+  expectedOutputPattern?: string;
 }
 
 export interface TestSuiteTriggerConfig {
-  testScenarios: {
-    id: string;
-    name: string;
-    inputQuery: string;
-    expectedOutputPattern?: string;
-  }[];
+  testScenarios: TestSuiteScenario[];
 }
 
 export interface ChatTriggerConfig {
@@ -121,11 +136,14 @@ export interface TriggerNodeData {
   label: string;
   description?: string;
   triggerKind: TriggerKind;
+  config?: Record<string, any>;
   testConfig?: TestSuiteTriggerConfig;
   chatConfig?: ChatTriggerConfig;
   pubsubConfig?: PubSubTriggerConfig;
   scheduledConfig?: ScheduledTriggerConfig;
   eventarcConfig?: EventarcTriggerConfig;
+  onEdit?: (id: string) => void;
+  onDelete?: (id: string) => void;
 }
 
 export interface WorkflowNode {
@@ -136,7 +154,10 @@ export interface WorkflowNode {
     y: number;
   };
   data: AgentNodeData | TriggerNodeData;
+  selected?: boolean;
 }
+
+export type AgentWorkflowNode = WorkflowNode;
 
 export interface WorkflowEdge {
   id: string;
@@ -145,16 +166,25 @@ export interface WorkflowEdge {
   sourceHandle?: string | null;
   targetHandle?: string | null;
   label?: string;
+  animated?: boolean;
   data?: {
     branchId?: string;
     conditionExpression?: string;
   };
 }
 
+export type AgentWorkflowEdge = WorkflowEdge;
+
 export interface ViewportState {
   x: number;
   y: number;
   zoom: number;
+}
+
+export interface WorkflowMetadata {
+  createdAt?: string;
+  updatedAt?: string;
+  author?: string;
 }
 
 export interface AgentWorkflowDocument {
@@ -166,9 +196,5 @@ export interface AgentWorkflowDocument {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   viewport?: ViewportState;
-  metadata?: {
-    createdAt: string;
-    updatedAt: string;
-    author?: string;
-  };
+  metadata?: WorkflowMetadata;
 }

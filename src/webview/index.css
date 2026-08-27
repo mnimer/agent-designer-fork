@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "@xyflow/react/dist/style.css";
+@import "../../node_modules/@xyflow/react/dist/style.css";
 
 /* ==========================================================================
    VS Code Designer Multi-Theme System
@@ -136,6 +136,17 @@ body.vscode-high-contrast-light {
   --vscode-handle-border: #ffffff;
   --vscode-scrollbar-thumb: #0f4a85;
   --vscode-scrollbar-hover: #000000;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 @layer base {

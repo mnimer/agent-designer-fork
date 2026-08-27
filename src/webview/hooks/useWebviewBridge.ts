@@ -51,27 +51,41 @@ export interface UseWebviewBridgeReturn {
   isMockMode: boolean;
 }
 
-export function useWebviewBridge(): UseWebviewBridgeReturn {
-  const listenersRef = useRef<Map<string, Set<(payload: any) => void>>>(new Map());
-  const vscodeApiRef = useRef<WebviewApi | null>(null);
-  const isMockModeRef = useRef<boolean>(false);
+let globalVsCodeApi: WebviewApi | null = null;
+let globalIsMockMode: boolean = false;
 
-  // Initialize VS Code Webview API or Mock Fallback
-  if (!vscodeApiRef.current) {
-    if (typeof window !== 'undefined' && 'acquireVsCodeApi' in window) {
+function getVsCodeApi(): { api: WebviewApi; isMock: boolean } {
+  if (!globalVsCodeApi) {
+    if (typeof window !== 'undefined' && (window as any).vscode) {
+      globalVsCodeApi = (window as any).vscode;
+      globalIsMockMode = false;
+    } else if (typeof window !== 'undefined' && (window as any).vscodeApiInstance) {
+      globalVsCodeApi = (window as any).vscodeApiInstance;
+      globalIsMockMode = false;
+    } else if (typeof window !== 'undefined' && typeof (window as any).acquireVsCodeApi === 'function') {
       try {
-        // @ts-expect-error acquireVsCodeApi is injected by VS Code
-        vscodeApiRef.current = window.acquireVsCodeApi();
-        isMockModeRef.current = false;
-      } catch {
-        isMockModeRef.current = true;
+        globalVsCodeApi = (window as any).acquireVsCodeApi();
+        (window as any).vscode = globalVsCodeApi;
+        (window as any).vscodeApiInstance = globalVsCodeApi;
+        globalIsMockMode = false;
+      } catch (e) {
+        if ((window as any).vscode) {
+          globalVsCodeApi = (window as any).vscode;
+          globalIsMockMode = false;
+        } else if ((window as any).vscodeApiInstance) {
+          globalVsCodeApi = (window as any).vscodeApiInstance;
+          globalIsMockMode = false;
+        } else {
+          console.warn('[WebviewBridge] acquireVsCodeApi invocation warning:', e);
+          globalIsMockMode = true;
+        }
       }
     } else {
-      isMockModeRef.current = true;
+      globalIsMockMode = true;
     }
 
-    if (!vscodeApiRef.current) {
-      vscodeApiRef.current = {
+    if (!globalVsCodeApi) {
+      globalVsCodeApi = {
         postMessage: (msg: unknown) => {
           console.log('[WebviewBridge:MockPostMessage]', msg);
         },
@@ -80,6 +94,14 @@ export function useWebviewBridge(): UseWebviewBridgeReturn {
       };
     }
   }
+
+  return { api: globalVsCodeApi, isMock: globalIsMockMode };
+}
+
+export function useWebviewBridge(): UseWebviewBridgeReturn {
+  const listenersRef = useRef<Map<string, Set<(payload: any) => void>>>(new Map());
+  const { api: vscodeApi, isMock: isMockMode } = getVsCodeApi();
+
 
   useEffect(() => {
     // Global message listener for messages sent from VS Code Extension Host
@@ -114,11 +136,14 @@ export function useWebviewBridge(): UseWebviewBridgeReturn {
   /**
    * Posts a type-safe command message to the Extension Host.
    */
-  const postMessage = useCallback((message: WebviewToExtensionMessage) => {
-    if (vscodeApiRef.current) {
-      vscodeApiRef.current.postMessage(message);
-    }
-  }, []);
+  const postMessage = useCallback(
+    (message: WebviewToExtensionMessage) => {
+      if (vscodeApi) {
+        vscodeApi.postMessage(message);
+      }
+    },
+    [vscodeApi]
+  );
 
   /**
    * Subscribes to typed messages emitted from the Extension Host.
@@ -197,6 +222,6 @@ export function useWebviewBridge(): UseWebviewBridgeReturn {
     postMessage,
     subscribe,
     sendRequestWithReply,
-    isMockMode: isMockModeRef.current,
+    isMockMode,
   };
 }

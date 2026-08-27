@@ -26,18 +26,25 @@ export class WebviewBridge implements vscode.Disposable {
   private readonly panel: vscode.WebviewPanel;
   private readonly handlers: Map<string, Set<MessageHandler>> = new Map();
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly outputChannel?: vscode.OutputChannel;
+
+  private isDisposed: boolean = false;
 
   /**
    * Initializes the WebviewBridge wrapping an active VS Code WebviewPanel.
    *
    * @param panel Active vscode.WebviewPanel instance
+   * @param outputChannel Optional OutputChannel for telemetry
    */
-  constructor(panel: vscode.WebviewPanel) {
+  constructor(panel: vscode.WebviewPanel, outputChannel?: vscode.OutputChannel) {
     this.panel = panel;
+    this.outputChannel = outputChannel;
 
     // Listen to messages emitted by the webview
     const messageListener = this.panel.webview.onDidReceiveMessage(
       async (message: WebviewToExtensionMessage) => {
+        this.outputChannel?.appendLine(`[WebviewBridge:RECV] Received from webview: ${JSON.stringify(message)}`);
+        console.log('[WebviewBridge:RECV]', message);
         await this.dispatch(message);
       }
     );
@@ -45,6 +52,7 @@ export class WebviewBridge implements vscode.Disposable {
 
     // Clean up all handlers when the panel is disposed
     const disposeListener = this.panel.onDidDispose(() => {
+      this.isDisposed = true;
       this.dispose();
     });
     this.disposables.push(disposeListener);
@@ -57,7 +65,16 @@ export class WebviewBridge implements vscode.Disposable {
    * @returns Promise resolving to true if message was posted successfully
    */
   public async postMessage(message: ExtensionToWebviewMessage): Promise<boolean> {
-    return this.panel.webview.postMessage(message);
+    if (this.isDisposed) {
+      return false;
+    }
+    try {
+      this.outputChannel?.appendLine(`[WebviewBridge:SEND] Sending to webview: ${JSON.stringify(message.type)}`);
+      return await this.panel.webview.postMessage(message);
+    } catch {
+      // Panel was disposed or unavailable during async post
+      return false;
+    }
   }
 
   /**

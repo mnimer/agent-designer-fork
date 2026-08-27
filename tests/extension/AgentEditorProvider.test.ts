@@ -47,8 +47,12 @@ describe('AgentEditorProvider', () => {
     assert.equal(workflow.edges.length, 1);
   });
 
-  it('should generate CSP compliant HTML for webview', () => {
-    const mockContext: any = { extensionPath: '/mock/extension', subscriptions: [] };
+  it('should generate valid HTML for webview with CSP, nonce, and bootstrap script', () => {
+    const mockContext: any = {
+      extensionPath: '/mock/extension',
+      extensionUri: vscode.Uri.file('/mock/extension'),
+      subscriptions: [],
+    };
     const provider = new AgentEditorProvider(mockContext);
     const mockWebview: any = {
       cspSource: 'vscode-webview:',
@@ -59,11 +63,15 @@ describe('AgentEditorProvider', () => {
     assert.equal(html.includes('<!DOCTYPE html>'), true);
     assert.equal(html.includes('Content-Security-Policy'), true);
     assert.equal(html.includes('nonce-'), true);
-    assert.equal(html.includes('<div id="root"'), true);
+    assert.equal(html.includes('acquireVsCodeApi'), true);
   });
 
   it('should resolve custom text editor, set html, and handle READY message', async () => {
-    const mockContext: any = { extensionPath: '/mock/extension', subscriptions: [] };
+    const mockContext: any = {
+      extensionPath: '/mock/extension',
+      extensionUri: vscode.Uri.file('/mock/extension'),
+      subscriptions: [],
+    };
     const provider = new AgentEditorProvider(mockContext);
 
     const initialDoc: AgentWorkflowDocument = {
@@ -125,7 +133,11 @@ describe('AgentEditorProvider', () => {
   });
 
   it('should handle DOCUMENT_UPDATED message and apply workspace edit', async () => {
-    const mockContext: any = { extensionPath: '/mock/extension', subscriptions: [] };
+    const mockContext: any = {
+      extensionPath: '/mock/extension',
+      extensionUri: vscode.Uri.file('/mock/extension'),
+      subscriptions: [],
+    };
     const provider = new AgentEditorProvider(mockContext);
 
     const updatedDoc: AgentWorkflowDocument = {
@@ -183,7 +195,11 @@ describe('AgentEditorProvider', () => {
   });
 
   it('should delegate custom messages to registered message handlers', async () => {
-    const mockContext: any = { extensionPath: '/mock/extension', subscriptions: [] };
+    const mockContext: any = {
+      extensionPath: '/mock/extension',
+      extensionUri: vscode.Uri.file('/mock/extension'),
+      subscriptions: [],
+    };
     const provider = new AgentEditorProvider(mockContext);
 
     const mockDoc: any = {

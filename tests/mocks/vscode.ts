@@ -23,6 +23,24 @@ export function createSpy(implementation?: Function) {
   return fn;
 }
 
+export function resetAllMocks() {
+  window.onDidChangeActiveColorTheme.calls = [];
+  window.registerCustomEditorProvider.calls = [];
+  window.createOutputChannel.calls = [];
+  window.showInformationMessage.calls = [];
+  window.showErrorMessage.calls = [];
+  workspace.applyEdit.calls = [];
+  workspace.openTextDocument.calls = [];
+  workspace.onDidChangeTextDocument.calls = [];
+  workspace.getConfiguration.calls = [];
+  workspace.fs.stat.calls = [];
+  workspace.fs.createDirectory.calls = [];
+  workspace.fs.writeFile.calls = [];
+  workspace.fs.readFile.calls = [];
+  commands.registerCommand.calls = [];
+  commands.executeCommand.calls = [];
+}
+
 export enum ColorThemeKind {
   Dark = 1,
   Light = 2,
@@ -38,7 +56,16 @@ export const window = {
   registerCustomEditorProvider: createSpy((viewType: string, provider: any, options: any) => ({
     dispose: createSpy(),
   })),
+  createOutputChannel: createSpy((name: string) => ({
+    appendLine: createSpy(),
+    append: createSpy(),
+    show: createSpy(),
+    hide: createSpy(),
+    clear: createSpy(),
+    dispose: createSpy(),
+  })),
   showInformationMessage: createSpy(),
+  showErrorMessage: createSpy(),
 };
 
 export const workspace = {
@@ -52,9 +79,26 @@ export const workspace = {
     },
   ],
   applyEdit: createSpy(async () => true),
+  openTextDocument: createSpy(async (uriOrOptions: any) => ({
+    uri: uriOrOptions?.uri || (typeof uriOrOptions === 'object' && uriOrOptions?.fsPath ? uriOrOptions : { fsPath: '/mock/doc.agent' }),
+    getText: () => '{}',
+    isDirty: false,
+    version: 1,
+  })),
   onDidChangeTextDocument: createSpy((callback: Function) => ({
     dispose: createSpy(),
   })),
+  getConfiguration: createSpy((section?: string) => ({
+    get: createSpy((key: string, defaultValue?: any) => defaultValue || ''),
+  })),
+  fs: {
+    stat: createSpy(async () => {
+      throw new Error('File not found');
+    }),
+    createDirectory: createSpy(async () => undefined),
+    writeFile: createSpy(async () => undefined),
+    readFile: createSpy(async () => Buffer.from('')),
+  },
 };
 
 export const commands = {

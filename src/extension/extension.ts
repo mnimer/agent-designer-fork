@@ -12,8 +12,11 @@
  * @author Mike Nimer <mikenimer@google.com>
  */
 
+ 
 import * as vscode from 'vscode';
 import { AgentEditorProvider } from './AgentEditorProvider';
+
+export let outputChannel: vscode.OutputChannel;
 
 /**
  * Activates the Agent Flow Builder extension.
@@ -21,9 +24,19 @@ import { AgentEditorProvider } from './AgentEditorProvider';
  * @param context VS Code Extension Context
  */
 export function activate(context: vscode.ExtensionContext): void {
+  console.log('[Agent Flow Builder] Extension activate() triggered.');
+  if (typeof vscode.window.createOutputChannel === 'function') {
+    outputChannel = vscode.window.createOutputChannel('Agent Flow Builder');
+    outputChannel.appendLine('[Agent Flow Builder] Extension activating...');
+    outputChannel.show(true);
+    context.subscriptions.push(outputChannel);
+  }
+
   // 1. Register Custom Text Editor Provider for *.agent files
-  const customEditorDisposable = AgentEditorProvider.register(context);
+  const customEditorDisposable = AgentEditorProvider.register(context, outputChannel);
   context.subscriptions.push(customEditorDisposable);
+  console.log('[Agent Flow Builder] Custom editor registered for *.agent files.');
+  outputChannel?.appendLine('[Agent Flow Builder] Custom editor registered for *.agent files.');
 
   // 2. Command: Create New Workflow File
   const createWorkflowCmd = vscode.commands.registerCommand(
@@ -33,10 +46,37 @@ export function activate(context: vscode.ExtensionContext): void {
       let targetUri: vscode.Uri;
 
       if (workspaceFolders && workspaceFolders.length > 0) {
-        targetUri = vscode.Uri.joinPath(workspaceFolders[0].uri, 'new_agent_workflow.agent');
+        let fileName = 'new_agent_workflow.agent';
+        let counter = 1;
+        targetUri = vscode.Uri.joinPath(workspaceFolders[0].uri, fileName);
+
+        // Ensure we do not overwrite an existing file
+        while (true) {
+          try {
+            await vscode.workspace.fs.stat(targetUri);
+            fileName = `new_agent_workflow_${counter++}.agent`;
+            targetUri = vscode.Uri.joinPath(workspaceFolders[0].uri, fileName);
+          } catch {
+            // File does not exist yet, proceed
+            break;
+          }
+        }
+
+        const baseName = fileName.replace(/\.agent$/, '');
+        const defaultDoc = AgentEditorProvider.createDefaultWorkflowDocument(baseName);
+        const content = Buffer.from(JSON.stringify(defaultDoc, null, 2), 'utf8');
+        await vscode.workspace.fs.writeFile(targetUri, content);
       } else {
-        targetUri = vscode.Uri.parse('untitled:new_agent_workflow.agent');
+        const defaultDoc = AgentEditorProvider.createDefaultWorkflowDocument('new_agent_workflow');
+        const doc = await vscode.workspace.openTextDocument({
+          language: 'json',
+          content: JSON.stringify(defaultDoc, null, 2),
+        });
+        targetUri = doc.uri;
       }
+
+      // Pre-load the text document model into VS Code's internal registry
+      await vscode.workspace.openTextDocument(targetUri);
 
       // Open with custom editor
       await vscode.commands.executeCommand(
