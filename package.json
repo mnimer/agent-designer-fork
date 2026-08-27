@@ -1,0 +1,126 @@
+{
+  "name": "agent-flow-builder",
+  "displayName": "Visual Studio Code Agent Flow Builder",
+  "description": "Visual multi-agent IDE canvas orchestrator for designing, testing, and generating production-ready compound AI systems.",
+  "version": "1.0.0",
+  "publisher": "mikenimer",
+  "author": "Mike Nimer <mikenimer@google.com>",
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Visualization",
+    "Other"
+  ],
+  "main": "./dist/extension/extension.js",
+  "activationEvents": [
+    "onCustomEditor:agentFlow.editor"
+  ],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "agentFlow.editor",
+        "displayName": "Agent Flow Builder",
+        "selector": [
+          {
+            "filenamePattern": "*.agent"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "agentFlow.createWorkflow",
+        "title": "Agent Flow: Create New Workflow (.agent)",
+        "category": "Agent Flow"
+      },
+      {
+        "command": "agentFlow.generateCode",
+        "title": "Agent Flow: Generate Production Code",
+        "category": "Agent Flow"
+      },
+      {
+        "command": "agentFlow.runTests",
+        "title": "Agent Flow: Execute Agent Test Suite",
+        "category": "Agent Flow"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "agentFlow.createWorkflow"
+        },
+        {
+          "command": "agentFlow.generateCode"
+        },
+        {
+          "command": "agentFlow.runTests"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Agent Flow Builder",
+      "properties": {
+        "agentFlow.geminiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Gemini API Key for LLM code generation and agent workflow assistance."
+        },
+        "agentFlow.targetFramework": {
+          "type": "string",
+          "enum": [
+            "google-adk",
+            "langgraph"
+          ],
+          "default": "google-adk",
+          "description": "Default code generation target framework."
+        },
+        "agentFlow.targetLanguage": {
+          "type": "string",
+          "enum": [
+            "python",
+            "typescript"
+          ],
+          "default": "python",
+          "description": "Default programming language for generated code."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile:extension": "esbuild ./src/extension/extension.ts --bundle --outfile=dist/extension/extension.js --external:vscode --format=cjs --platform=node --sourcemap",
+    "compile:webview": "vite build",
+    "compile": "npm run compile:extension && npm run compile:webview",
+    "watch:extension": "esbuild ./src/extension/extension.ts --bundle --outfile=dist/extension/extension.js --external:vscode --format=cjs --platform=node --sourcemap --watch",
+    "watch:webview": "vite build --watch",
+    "clean": "rm -rf dist",
+    "test": "npx tsx --test 'tests/**/*.test.ts'"
+  },
+  "dependencies": {
+    "@google/genai": "^2.4.0",
+    "@tailwindcss/vite": "^4.1.14",
+    "@xyflow/react": "^12.11.3",
+    "dagre": "^0.8.5",
+    "lucide-react": "^0.546.0",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1"
+  },
+  "devDependencies": {
+    "@types/dagre": "^0.7.54",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@types/vscode": "^1.85.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "esbuild": "^0.25.0",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3"
+  }
+}
