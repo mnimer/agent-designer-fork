@@ -96,4 +96,15 @@ describe('Workflow Canvas Topologies & Layouts', () => {
     assert.equal(agentNode.data.standardConfig?.tools?.[0].id, 'tool-search');
     assert.equal(agentNode.data.standardConfig?.tools?.[1].type, 'custom');
   });
+
+  it('should compute target folder correctly for relative agent file paths', async () => {
+    const { computeTargetFolder } = await import('../../src/webview/App');
+
+    assert.equal(computeTargetFolder('test/agents/myagent.agent'), 'test/agents/myagent/');
+    assert.equal(computeTargetFolder('myagent.agent'), 'myagent/');
+    assert.equal(computeTargetFolder('./myagent.agent'), './myagent/');
+    assert.equal(computeTargetFolder('src/workflows/customer_service.agent'), 'src/workflows/customer_service/');
+    assert.equal(computeTargetFolder('prod\\agents\\myagent.agent'), 'prod/agents/myagent/');
+    assert.equal(computeTargetFolder(''), 'workflow/');
+  });
 });

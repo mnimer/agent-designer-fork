@@ -190,45 +190,51 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       });
 
       bridge.onMessage('READY', async () => {
-        console.log(`[AgentEditorProvider] Webview sent READY signal for: ${document.uri.fsPath}`);
-        this.outputChannel?.appendLine(
-          `[AgentEditorProvider:Step 4] Webview sent READY signal for: ${document.uri.fsPath}`
-        );
-        const docText = document.getText();
-        let parsedDoc: AgentWorkflowDocument;
         try {
-          parsedDoc =
-            docText.trim().length > 0
-              ? JSON.parse(docText)
-              : this.createEmptyWorkflow(document.uri);
-        } catch {
-          parsedDoc = this.createEmptyWorkflow(document.uri);
+          console.log(`[AgentEditorProvider] Webview sent READY signal for: ${document.uri.fsPath}`);
+          this.outputChannel?.appendLine(
+            `[AgentEditorProvider:Step 4] Webview sent READY signal for: ${document.uri.fsPath}`
+          );
+          const docText = document.getText();
+          let parsedDoc: AgentWorkflowDocument;
+          try {
+            parsedDoc =
+              docText.trim().length > 0
+                ? JSON.parse(docText)
+                : this.createEmptyWorkflow(document.uri);
+          } catch {
+            parsedDoc = this.createEmptyWorkflow(document.uri);
+          }
+
+          console.log(`[AgentEditorProvider] Posting LOAD_DOCUMENT (nodes: ${parsedDoc.nodes?.length || 0}, edges: ${parsedDoc.edges?.length || 0})`);
+          this.outputChannel?.appendLine(
+            `[AgentEditorProvider:Step 5] Posting LOAD_DOCUMENT (nodes: ${parsedDoc.nodes?.length || 0}, edges: ${parsedDoc.edges?.length || 0})`
+          );
+
+          const relativeFilePath = vscode.workspace.asRelativePath(document.uri);
+          await bridge.postMessage({
+            type: 'LOAD_DOCUMENT',
+            payload: {
+              document: parsedDoc,
+              docVersion: docVersion,
+              filePath: relativeFilePath,
+              readOnly: !vscode.workspace.isTrusted,
+            },
+          });
+
+          const apiKey = vscode.workspace.getConfiguration('agentFlow').get<string>('geminiApiKey') || '';
+          await bridge.postMessage({
+            type: 'SETTINGS_SYNC',
+            payload: {
+              geminiApiKeySet: Boolean(apiKey || process.env.GEMINI_API_KEY),
+              targetFramework: parsedDoc.framework || 'google-adk',
+              targetLanguage: parsedDoc.language || 'python',
+            },
+          });
+        } catch (err) {
+          console.error('[AgentEditorProvider] Error in READY handler:', err);
         }
-
-        console.log(`[AgentEditorProvider] Posting LOAD_DOCUMENT (nodes: ${parsedDoc.nodes?.length || 0}, edges: ${parsedDoc.edges?.length || 0})`);
-        this.outputChannel?.appendLine(
-          `[AgentEditorProvider:Step 5] Posting LOAD_DOCUMENT (nodes: ${parsedDoc.nodes?.length || 0}, edges: ${parsedDoc.edges?.length || 0})`
-        );
-
-      await bridge.postMessage({
-        type: 'LOAD_DOCUMENT',
-        payload: {
-          document: parsedDoc,
-          docVersion: docVersion,
-          readOnly: !vscode.workspace.isTrusted,
-        },
       });
-
-      const apiKey = vscode.workspace.getConfiguration('agentFlow').get<string>('geminiApiKey') || '';
-      await bridge.postMessage({
-        type: 'SETTINGS_SYNC',
-        payload: {
-          geminiApiKeySet: Boolean(apiKey || process.env.GEMINI_API_KEY),
-          targetFramework: parsedDoc.framework || 'google-adk',
-          targetLanguage: parsedDoc.language || 'python',
-        },
-      });
-    });
 
     let isUpdatingFromWebview = false;
 
@@ -432,11 +438,13 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           try {
             const externalDoc = JSON.parse(document.getText()) as AgentWorkflowDocument;
             docVersion++;
+            const relativeFilePath = vscode.workspace.asRelativePath(document.uri);
             bridge.postMessage({
               type: 'LOAD_DOCUMENT',
               payload: {
                 document: externalDoc,
                 docVersion: docVersion,
+                filePath: relativeFilePath,
               },
             });
           } catch {
@@ -461,11 +469,40 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         })
       : { dispose: () => {} };
 
+    // Notify webview when file is renamed or moved on disk
+    const fileRenameSub = typeof vscode.workspace.onDidRenameFiles === 'function'
+      ? vscode.workspace.onDidRenameFiles((e) => {
+          for (const file of e.files) {
+            if (
+              file.oldUri.toString() === document.uri.toString() ||
+              file.newUri.toString() === document.uri.toString()
+            ) {
+              const relativeFilePath = vscode.workspace.asRelativePath(document.uri);
+              let parsedDoc: AgentWorkflowDocument;
+              try {
+                parsedDoc = JSON.parse(document.getText());
+              } catch {
+                parsedDoc = this.createEmptyWorkflow(document.uri);
+              }
+              bridge.postMessage({
+                type: 'LOAD_DOCUMENT',
+                payload: {
+                  document: parsedDoc,
+                  docVersion: docVersion,
+                  filePath: relativeFilePath,
+                },
+              });
+            }
+          }
+        })
+      : { dispose: () => {} };
+
     // Clean up event listeners on panel disposal
     webviewPanel.onDidDispose(() => {
       themeChangeSub.dispose();
       docChangeSub.dispose();
       docSaveSub.dispose();
+      fileRenameSub.dispose();
       bridge.dispose();
     });
     } catch (err: any) {

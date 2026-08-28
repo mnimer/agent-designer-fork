@@ -141,10 +141,10 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
         `[0.2s] Connecting to Google Cloud project: ${deployConfig.agentEngineProject}...`,
         `[0.6s] Packaging ${generatedFiles.length} agent definitions & tools into reasoning engine bundle...`,
         `[1.0s] Binding Secret Manager references (${runtimeSecrets.map((s) => s.name).join(', ')})...`,
-        `[1.5s] Registering workflow topology in Vertex AI region ${deployConfig.agentEngineRegion}...`,
+        `[1.5s] Registering workflow topology in Google Agent Engine region ${deployConfig.agentEngineRegion}...`,
         '[2.0s] Provisioning ADK serverless worker cluster...',
         '[2.5s] Binding A2A protocols & Gemini LLM endpoints...',
-        `[3.0s] ✨ Vertex AI Agent Engine deployed successfully!`,
+        `[3.0s] ✨ Google Agent Engine deployed successfully!`,
       ];
       steps.forEach((msg, idx) => {
         setTimeout(() => {
@@ -215,7 +215,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
               <option value="local">🖥️ Local Runner (CLI / FastMCP / Docker)</option>
               <option value={cloudTarget}>
                 {cloudTarget === 'agent_engine'
-                  ? '🧠 Vertex AI Agent Engine (Selected in Code Gen)'
+                  ? '🧠 Google Agent Engine (Selected in Code Gen)'
                   : '☁️ Google Cloud Run (Selected in Code Gen)'}
               </option>
             </select>

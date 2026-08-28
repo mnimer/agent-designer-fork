@@ -35,7 +35,7 @@ interface CodeGenerationPanelProps {
   onGenerateCode: () => void;
   generatedFiles: GeneratedFile[];
   isGenerating: boolean;
-  onOpenMissingAdvisor: () => void;
+  onOpenMissingAdvisor?: () => void;
   hasTestSuite?: boolean;
   hasGeneratedCode?: boolean;
   testPrompts?: TestPrompt[];
@@ -44,6 +44,20 @@ interface CodeGenerationPanelProps {
   onToggleMaximize?: () => void;
 }
 
+/**
+ * CodeGenerationPanel
+ *
+ * Provides the user interface for generator settings, deployment target selection,
+ * target folder configuration, and code preview tabs.
+ *
+ * Architectural Decisions:
+ * - Google Agent Engine is set as the default deployment target.
+ * - LangGraph and TypeScript options are currently disabled in this version.
+ * - Generate Code button is disabled.
+ * - Mocked file tabs are hidden when no generated files are present.
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
 export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   config,
   onChangeConfig,
@@ -73,6 +87,9 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
 
   const currentFile = generatedFiles[activeFileIndex] || generatedFiles[0];
 
+  /**
+   * Copies current generated file content to the system clipboard.
+   */
   const handleCopyCode = () => {
     if (!currentFile) return;
     navigator.clipboard.writeText(currentFile.content);
@@ -80,9 +97,11 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  /**
+   * Downloads current generated file as a text file.
+   */
   const handleDownloadAll = () => {
-    if (!generatedFiles.length) return;
-    // Create text file bundle or download current
+    if (!generatedFiles.length || !currentFile) return;
     const element = document.createElement('a');
     const file = new Blob([currentFile.content], { type: 'text/plain' });
     element.href = URL.createObjectURL(file);
@@ -123,7 +142,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
             <Server className="w-3.5 h-3.5 text-emerald-400" />
             <span>Deployment</span>
             <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-              {config.deploymentTarget === 'agent_engine' ? 'Agent Engine' : 'Cloud Run'}
+              {config.deploymentTarget === 'cloud_run' ? 'Cloud Run' : 'Google Agent Engine'}
             </span>
           </button>
 
@@ -168,7 +187,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
               {/* Tooltip on hover if disabled */}
               {!hasGeneratedCode && (
                 <div className="absolute top-full left-0 mt-1 hidden group-hover/tab:flex flex-col z-50 px-2.5 py-1.5 rounded-md bg-[#21262d] border border-[#30363d] text-[10px] text-amber-300 shadow-xl whitespace-nowrap">
-                  <span>⚠️ Click <strong>Generate Code</strong> first to unlock unit test runner</span>
+                  <span>⚠️ Code generation is required to unlock unit test runner</span>
                 </div>
               )}
             </div>
@@ -176,14 +195,6 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={onOpenMissingAdvisor}
-            className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 transition-colors cursor-pointer px-2.5 py-1 rounded-lg bg-[#21262d] border border-[#30363d]"
-          >
-            <Sparkles className="w-3 h-3 text-amber-400" />
-            <span>Missing Features Advisor</span>
-          </button>
-
           {onToggleMaximize && (
             <button
               type="button"
@@ -253,30 +264,27 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                     </div>
                   </label>
 
-                  {/* LangGraph Option */}
+                  {/* LangGraph Option (Disabled) */}
                   <label
-                    className={`flex items-start gap-2.5 p-2 rounded-lg border transition-all cursor-pointer group ${
-                      config.framework === 'langgraph'
-                        ? 'bg-[#21262d] border-purple-500 shadow-sm'
-                        : 'bg-[#0d1117] border-[#30363d] hover:bg-[#21262d]'
-                    }`}
+                    title="LangGraph option is currently disabled"
+                    className="flex items-start gap-2.5 p-2 rounded-lg border transition-all opacity-50 cursor-not-allowed bg-[#0d1117] border-[#30363d]"
                   >
                     <input
                       type="radio"
                       name="framework"
                       value="langgraph"
-                      checked={config.framework === 'langgraph'}
-                      onChange={() => onChangeConfig({ framework: 'langgraph' })}
-                      className="mt-0.5 accent-purple-500"
+                      disabled={true}
+                      checked={false}
+                      className="mt-0.5 accent-purple-500 cursor-not-allowed"
                     />
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-gray-200 group-hover:text-white">LangGraph</span>
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono border border-purple-500/30">
-                          StateGraph
+                        <span className="text-xs font-semibold text-gray-400">LangGraph</span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-400 font-mono border border-purple-500/20">
+                          Disabled
                         </span>
                       </div>
-                      <p className="text-[10px] text-gray-400 mt-0.5">
+                      <p className="text-[10px] text-gray-500 mt-0.5">
                         Cyclic StateGraph orchestration with shared memory.
                       </p>
                     </div>
@@ -304,12 +312,9 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => onChangeConfig({ language: 'typescript' })}
-                    className={`py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
-                      config.language === 'typescript'
-                        ? 'bg-[#21262d] text-white border border-[#30363d] shadow'
-                        : 'text-gray-400 hover:text-gray-200'
-                    }`}
+                    disabled={true}
+                    title="TypeScript option is currently disabled"
+                    className="py-1 text-xs font-medium rounded transition-colors opacity-50 cursor-not-allowed text-gray-500 bg-[#0d1117]"
                   >
                     🔷 TypeScript
                   </button>
@@ -389,12 +394,12 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                   </span>
                 </label>
                 <select
-                  value={config.deploymentTarget || 'cloud_run'}
+                  value={config.deploymentTarget || 'agent_engine'}
                   onChange={(e) => onChangeConfig({ deploymentTarget: e.target.value as 'cloud_run' | 'agent_engine' })}
                   className="w-full bg-[#0d1117] border border-[#30363d] text-xs text-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 cursor-pointer font-medium"
                 >
+                  <option value="agent_engine">🧠 Google Agent Engine (Managed ADK)</option>
                   <option value="cloud_run">☁️ Google Cloud Run (Containerized Microservice)</option>
-                  <option value="agent_engine">🧠 Vertex AI Agent Engine (Managed ADK)</option>
                 </select>
                 <p className="text-[10px] text-gray-400 leading-tight">
                   Tells the generator how to construct the <code className="text-gray-300 font-mono">main.tf</code> terraform script and deployment spec.
@@ -402,85 +407,78 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
               </div>
             </div>
 
-            {/* Generate Code Button */}
+            {/* Generate Code Button (Disabled) */}
             <div className="pt-3 border-t border-[#30363d] space-y-1.5 shrink-0 mt-2">
               <button
                 type="button"
-                onClick={onGenerateCode}
-                disabled={isGenerating}
-                className="w-full bg-[#238636] hover:bg-[#2ea043] text-white py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                disabled={true}
+                title="Code generation is currently disabled"
+                className="w-full bg-[#21262d] text-gray-500 py-2.5 rounded-lg text-sm font-bold border border-[#30363d] cursor-not-allowed opacity-60 flex items-center justify-center gap-2"
               >
-                {isGenerating ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Generating Code...</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    <span>Generate Code</span>
-                  </>
-                )}
+                <Play className="w-3.5 h-3.5 fill-current opacity-40" />
+                <span>Generate Code</span>
               </button>
             </div>
           </div>
 
           {/* RIGHT 2/3: Code Preview Editor */}
           <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117] border border-[#30363d] rounded-xl overflow-hidden shadow-xl">
-            {/* File Tabs */}
-            <div className="flex items-center justify-between px-3 bg-[#161b22] border-b border-[#30363d] overflow-x-auto shrink-0 h-9">
-              <div className="flex items-center gap-1">
-                {generatedFiles.map((file, idx) => (
-                  <button
-                    key={file.name}
-                    onClick={() => setActiveFileIndex(idx)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono rounded-t transition-colors cursor-pointer ${
-                      activeFileIndex === idx
-                        ? 'bg-[#0d1117] text-white border-t-2 border-blue-400 font-semibold'
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-[#21262d]'
-                    }`}
-                  >
-                    <FileCode className="w-3 h-3 text-blue-400" />
-                    <span>{file.name}</span>
-                  </button>
-                ))}
-              </div>
+            {/* File Tabs (Only shown if generatedFiles exists) */}
+            {generatedFiles.length > 0 && (
+              <div className="flex items-center justify-between px-3 bg-[#161b22] border-b border-[#30363d] overflow-x-auto shrink-0 h-9">
+                <div className="flex items-center gap-1">
+                  {generatedFiles.map((file, idx) => (
+                    <button
+                      key={file.name}
+                      onClick={() => setActiveFileIndex(idx)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono rounded-t transition-colors cursor-pointer ${
+                        activeFileIndex === idx
+                          ? 'bg-[#0d1117] text-white border-t-2 border-blue-400 font-semibold'
+                          : 'text-gray-400 hover:text-gray-200 hover:bg-[#21262d]'
+                      }`}
+                    >
+                      <FileCode className="w-3 h-3 text-blue-400" />
+                      <span>{file.name}</span>
+                    </button>
+                  ))}
+                </div>
 
-              {/* Code actions */}
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={handleCopyCode}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs rounded bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-gray-200 transition-colors cursor-pointer font-medium"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="w-3 h-3 text-emerald-400" />
-                      <span className="text-emerald-400">Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3" />
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={handleDownloadAll}
-                  title="Download file"
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs rounded bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-gray-200 transition-colors cursor-pointer font-medium"
-                >
-                  <Download className="w-3 h-3" />
-                  <span>Download</span>
-                </button>
+                {/* Code actions */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={handleCopyCode}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs rounded bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-gray-200 transition-colors cursor-pointer font-medium"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-400">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={handleDownloadAll}
+                    title="Download file"
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs rounded bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-gray-200 transition-colors cursor-pointer font-medium"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>Download</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Code Content View */}
             <div className="flex-1 p-4 overflow-auto bg-[#0d1117] font-mono text-xs text-[#c9d1d9] select-text leading-relaxed relative">
               <div className="absolute top-2 right-3 text-[10px] text-gray-400 uppercase font-bold tracking-wider pointer-events-none">
                 Preview
               </div>
-              {currentFile ? (
+              {generatedFiles.length > 0 && currentFile ? (
                 <div className="relative">
                   <div className="text-[10px] text-gray-400 mb-2 pb-1 border-b border-[#21262d] flex items-center justify-between font-sans">
                     <span>{currentFile.description}</span>
@@ -491,8 +489,9 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                   </pre>
                 </div>
               ) : (
-                <div className="h-full flex items-center justify-center text-gray-400">
-                  Click "Generate Code" to generate output
+                <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-2">
+                  <Code2 className="w-8 h-8 text-gray-600" />
+                  <span className="text-sm font-medium">No generated files in target folder</span>
                 </div>
               )}
             </div>
@@ -516,3 +515,4 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
     </div>
   );
 };
+

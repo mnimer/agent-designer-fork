@@ -7,26 +7,7 @@ export function generateCodeForGraph(
   edges: Edge[],
   config: GenerationConfig
 ): GeneratedFile[] {
-  const { framework, language, outputFolder } = config;
-  const agentNodes = nodes.filter((n) => n.type === 'agentNode' || (!n.type && (n.data as AgentData)?.role)) as Node<AgentData>[];
-
-  let files: GeneratedFile[] = [];
-
-  if (framework === 'google_adk') {
-    files = language === 'python'
-      ? generateGoogleADKPython(agentNodes, edges, outputFolder)
-      : generateGoogleADKTypeScript(agentNodes, edges, outputFolder);
-  } else {
-    files = language === 'python'
-      ? generateLangGraphPython(agentNodes, edges, outputFolder)
-      : generateLangGraphTypeScript(agentNodes, edges, outputFolder);
-  }
-
-  // Append Terraform IaC deployment script based on deploymentTarget (Cloud Run vs Agent Engine)
-  const terraformFile = generateTerraformScript(agentNodes, config);
-  files.push(terraformFile);
-
-  return files;
+  return [];
 }
 
 function generateTerraformScript(

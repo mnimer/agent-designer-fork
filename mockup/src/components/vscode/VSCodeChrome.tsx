@@ -44,7 +44,7 @@ interface VSCodeChromeProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFitView: () => void;
-  onOpenAdvisor: () => void;
+  onOpenAdvisor?: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
   canUndo?: boolean;
@@ -178,15 +178,6 @@ export const VSCodeChrome: React.FC<VSCodeChromeProps> = ({
               </div>
             )}
           </div>
-
-          {/* Missing Features Advisor Button */}
-          <button
-            onClick={onOpenAdvisor}
-            className="flex items-center gap-1.5 text-amber-500 dark:text-amber-400 hover:opacity-90 cursor-pointer font-medium px-2.5 py-1 rounded-md bg-[var(--vscode-workbench-bg)] border border-[var(--vscode-border)] shadow-xs transition-colors"
-          >
-            <HelpCircle className="w-3 h-3 text-amber-500 dark:text-amber-400" />
-            <span className="hidden sm:inline">Missing Advisor</span>
-          </button>
         </div>
       </div>
 
@@ -226,9 +217,6 @@ export const VSCodeChrome: React.FC<VSCodeChromeProps> = ({
           </div>
 
           <div className="flex flex-col items-center gap-3 text-[var(--vscode-text-muted)]">
-            <button onClick={onOpenAdvisor} className="p-2 rounded hover:text-amber-500 transition-colors cursor-pointer" title="Help & Architectural Advisor">
-              <HelpCircle className="w-5 h-5" />
-            </button>
             {/* Settings Button in Activity Bar */}
             <button
               onClick={() => {

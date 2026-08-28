@@ -64,6 +64,25 @@ const nodeTypes = {
 
 const STORAGE_TOOLS_KEY = 'ais_agent_studio_tools_v1';
 
+/**
+ * Mike Nimer <mikenimer@google.com>
+ * Computes the target output folder from the .agent file path or filename.
+ * It produces a subfolder with the same root name as the .agent file.
+ * e.g., 'test/agents/myagent.agent' -> 'test/agents/myagent/'
+ *
+ * @param filePathOrName - File path or filename (e.g. test/agents/myagent.agent)
+ * @returns Derived target directory path ending with a trailing slash
+ */
+export const computeTargetFolder = (filePathOrName: string): string => {
+  if (!filePathOrName) return 'workflow/';
+  let cleaned = filePathOrName.replace(/\\/g, '/');
+  cleaned = cleaned.replace(/\.agent$/i, '');
+  if (!cleaned.endsWith('/')) {
+    cleaned += '/';
+  }
+  return cleaned;
+};
+
 function FlowCanvas() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition, zoomIn, zoomOut, fitView } = useReactFlow();
@@ -83,7 +102,8 @@ function FlowCanvas() {
       config: {
         framework: 'google_adk',
         language: 'python',
-        outputFolder: './src/agents/',
+        outputFolder: computeTargetFolder('workflow.agent'),
+        deploymentTarget: 'agent_engine',
         includeTests: true,
         includeDocker: false,
         useStreaming: true,
@@ -203,22 +223,14 @@ function FlowCanvas() {
   const [config, setConfig] = useState<GenerationConfig>({
     framework: 'google_adk',
     language: 'python',
-    outputFolder: './src/agents/',
+    outputFolder: computeTargetFolder('workflow.agent'),
+    deploymentTarget: 'agent_engine',
     includeTests: true,
     includeDocker: false,
     useStreaming: true,
   });
 
-  const [generatedFiles, setGeneratedFiles] = useState(() => 
-    generateCodeForGraph(INITIAL_NODES, INITIAL_EDGES, {
-      framework: 'google_adk',
-      language: 'python',
-      outputFolder: './src/agents/',
-      includeTests: true,
-      includeDocker: false,
-      useStreaming: true,
-    })
-  );
+  const [generatedFiles, setGeneratedFiles] = useState<GeneratedFile[]>([]);
 
   // Synchronize active tab in fileTabs state whenever nodes, edges, or config change
   useEffect(() => {

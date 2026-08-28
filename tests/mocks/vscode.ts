@@ -30,6 +30,7 @@ export function resetAllMocks() {
   window.showInformationMessage.calls = [];
   window.showErrorMessage.calls = [];
   workspace.applyEdit.calls = [];
+  workspace.asRelativePath.calls = [];
   workspace.openTextDocument.calls = [];
   workspace.onDidChangeTextDocument.calls = [];
   workspace.getConfiguration.calls = [];
@@ -78,6 +79,10 @@ export const workspace = {
       },
     },
   ],
+  asRelativePath: createSpy((pathOrUri: any) => {
+    const p = typeof pathOrUri === 'string' ? pathOrUri : (pathOrUri?.fsPath || pathOrUri?.path || String(pathOrUri));
+    return p.replace(/^\/mock\/workspace\/?/, '').replace(/^\//, '');
+  }),
   applyEdit: createSpy(async () => true),
   openTextDocument: createSpy(async (uriOrOptions: any) => ({
     uri: uriOrOptions?.uri || (typeof uriOrOptions === 'object' && uriOrOptions?.fsPath ? uriOrOptions : { fsPath: '/mock/doc.agent' }),

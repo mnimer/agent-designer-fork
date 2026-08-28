@@ -126,9 +126,11 @@ describe('AgentEditorProvider', () => {
     assert.ok(messageCallback);
     if (messageCallback) {
       await (messageCallback as any)({ type: 'READY' });
+      await new Promise((resolve) => setTimeout(resolve, 10));
       const loadDocMsg = postedMessages.find((m) => m.type === 'LOAD_DOCUMENT');
       assert.ok(loadDocMsg);
       assert.equal(loadDocMsg.payload.document.name, 'sample');
+      assert.ok(loadDocMsg.payload.filePath);
     }
   });
 

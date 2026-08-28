@@ -111,6 +111,7 @@ export type ExtensionToWebviewMessage =
       payload: {
         document: AgentWorkflowDocument;
         docVersion: number;
+        filePath?: string;
         readOnly?: boolean;
       };
     }

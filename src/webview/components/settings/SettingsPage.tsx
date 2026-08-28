@@ -629,7 +629,7 @@ export const SettingsPage: React.FC = () => {
                         className="w-full px-3 py-1.5 bg-[var(--vscode-canvas-bg)] border border-[var(--vscode-border)] rounded-lg text-xs text-[var(--vscode-text-primary)] focus:outline-none cursor-pointer"
                       >
                         <option value="cloud_run">Google Cloud Run (Serverless Container)</option>
-                        <option value="agent_engine">Vertex AI Agent Engine (Managed)</option>
+                        <option value="agent_engine">Google Agent Engine (Managed)</option>
                         <option value="local">Local FastMCP / Docker CLI</option>
                       </select>
                     </div>
