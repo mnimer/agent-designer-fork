@@ -103,14 +103,10 @@ export const SettingsPage: React.FC = () => {
     <div className="flex-1 flex flex-col h-full bg-[var(--vscode-workbench-bg)] text-[var(--vscode-text-primary)] select-text overflow-hidden">
       {/* VS Code Settings Header */}
       <div className="border-b border-[var(--vscode-border)] bg-[var(--vscode-workbench-bg)] px-6 py-4 shrink-0 transition-colors">
-        {/* Breadcrumb & Scope */}
+        {/* Scope & Actions */}
         <div className="flex items-center justify-between mb-3 text-xs">
           <div className="flex items-center gap-1.5 text-[var(--vscode-text-muted)] font-mono text-[11px]">
-            <span>Settings</span>
-            <span>›</span>
-            <span>Extensions</span>
-            <span>›</span>
-            <span className="text-blue-500 font-semibold">Visual Studio Code Agent Flow</span>
+            <span className="text-blue-500 font-semibold">Visual Studio Code Agent Flow Settings</span>
           </div>
 
           <div className="flex items-center gap-2">

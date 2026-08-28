@@ -200,9 +200,9 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           parsedDoc =
             docText.trim().length > 0
               ? JSON.parse(docText)
-              : this.createDefaultWorkflow(document.uri);
+              : this.createEmptyWorkflow(document.uri);
         } catch {
-          parsedDoc = this.createDefaultWorkflow(document.uri);
+          parsedDoc = this.createEmptyWorkflow(document.uri);
         }
 
         console.log(`[AgentEditorProvider] Posting LOAD_DOCUMENT (nodes: ${parsedDoc.nodes?.length || 0}, edges: ${parsedDoc.edges?.length || 0})`);
@@ -230,11 +230,23 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       });
     });
 
+    let isUpdatingFromWebview = false;
+
     bridge.onMessage('DOCUMENT_UPDATED', async (payload) => {
       if (!payload) return;
       docVersion = payload.docVersion;
       const updatedJson = JSON.stringify(payload.document, null, 2);
-      await this.updateTextDocument(document, updatedJson);
+
+      if (document.getText() === updatedJson) {
+        return;
+      }
+
+      isUpdatingFromWebview = true;
+      try {
+        await this.updateTextDocument(document, updatedJson);
+      } finally {
+        isUpdatingFromWebview = false;
+      }
 
       await bridge.postMessage({
         type: 'DOCUMENT_SAVED',
@@ -413,6 +425,9 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     // 6. Synchronize external document edits from outside webview
     const docChangeSub = vscode.workspace.onDidChangeTextDocument((e: vscode.TextDocumentChangeEvent) => {
       if (e.document.uri.toString() === document.uri.toString()) {
+        // Skip updates initiated by webview sync
+        if (isUpdatingFromWebview) return;
+
         if (e.contentChanges.length > 0 && e.reason === undefined) {
           try {
             const externalDoc = JSON.parse(document.getText()) as AgentWorkflowDocument;
@@ -431,10 +446,26 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       }
     });
 
+    // Notify webview when file is saved to disk by user (Cmd+S / File > Save)
+    const docSaveSub = typeof vscode.workspace.onDidSaveTextDocument === 'function'
+      ? vscode.workspace.onDidSaveTextDocument((savedDoc) => {
+          if (savedDoc.uri.toString() === document.uri.toString()) {
+            bridge.postMessage({
+              type: 'DOCUMENT_SAVED',
+              payload: {
+                docVersion: docVersion,
+                timestamp: new Date().toISOString(),
+              },
+            });
+          }
+        })
+      : { dispose: () => {} };
+
     // Clean up event listeners on panel disposal
     webviewPanel.onDidDispose(() => {
       themeChangeSub.dispose();
       docChangeSub.dispose();
+      docSaveSub.dispose();
       bridge.dispose();
     });
     } catch (err: any) {
@@ -474,6 +505,27 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   public createDefaultWorkflow(uri: vscode.Uri): AgentWorkflowDocument {
     const baseName = path.basename(uri.fsPath, '.agent') || 'default_workflow';
     return AgentEditorProvider.createDefaultWorkflowDocument(baseName);
+  }
+
+  public createEmptyWorkflow(uri: vscode.Uri): AgentWorkflowDocument {
+    const baseName = path.basename(uri.fsPath, '.agent') || 'empty_workflow';
+    return AgentEditorProvider.createEmptyWorkflowDocument(baseName);
+  }
+
+  public static createEmptyWorkflowDocument(workflowName: string = 'new_workflow'): AgentWorkflowDocument {
+    return {
+      version: '1.0.0',
+      name: workflowName,
+      description: 'Agent Workflow Document',
+      framework: 'google-adk',
+      language: 'python',
+      nodes: [],
+      edges: [],
+      metadata: {
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    };
   }
 
   /**
@@ -610,9 +662,9 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     if (document) {
       const docText = document.getText();
       try {
-        initialDoc = docText.trim().length > 0 ? JSON.parse(docText) : this.createDefaultWorkflow(document.uri);
+        initialDoc = docText.trim().length > 0 ? JSON.parse(docText) : this.createEmptyWorkflow(document.uri);
       } catch {
-        initialDoc = this.createDefaultWorkflow(document.uri);
+        initialDoc = this.createEmptyWorkflow(document.uri);
       }
     }
 

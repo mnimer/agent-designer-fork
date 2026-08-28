@@ -1,78 +1,70 @@
-/**
- * StructuredOutputBuilder Component
- *
- * Visual GUI and JSON Schema editor for defining structured LLM outputs.
- * Converts user field definitions into Gemini-compliant OpenAPI / JSON Schemas
- * with type constraints (string, number, boolean, array, enum, object) and required flags.
- *
- * Architectural Decisions:
- * 1. Supports dual modes: Visual Interactive Field Builder and Raw JSON Schema view.
- * 2. Real-time synchronization between visual fields and JSON Schema format.
- * 3. 8pt grid compliant spacing with TailwindCSS.
- *
- * @author Mike Nimer <mikenimer@google.com>
- */
-
 import React, { useState } from 'react';
-import {
-  Braces,
-  Plus,
-  Trash2,
-  Copy,
-  Check,
-  FileJson,
-  ChevronDown,
-  ChevronUp,
-  ListTree,
+import { 
+  Braces, 
+  Plus, 
+  Trash2, 
+  Copy, 
+  Check, 
+  FileJson, 
+  ChevronDown, 
+  ChevronUp, 
+  ListTree
 } from 'lucide-react';
-import { StructuredOutputSchema, SchemaField } from '../../../shared/types';
+import { 
+  StructuredOutputSchema, 
+  StructuredOutputField, 
+  SchemaFieldType 
+} from '../../types';
 
-export interface StructuredOutputBuilderProps {
+interface StructuredOutputBuilderProps {
   schema?: StructuredOutputSchema;
   agentLabel: string;
   onChange: (schema: StructuredOutputSchema) => void;
 }
 
-const DEFAULT_SCHEMA: StructuredOutputSchema = {
-  enabled: false,
-  name: 'ResponseSchema',
-  description: 'Structured output schema for LLM reasoning responses.',
-  strict: true,
-  fields: [
-    {
-      id: 'f1',
-      name: 'summary',
-      type: 'string',
-      required: true,
-      description: 'Comprehensive summary of the reasoning or task result.',
-    },
-    {
-      id: 'f2',
-      name: 'confidenceScore',
-      type: 'number',
-      required: true,
-      description: 'Confidence score between 0.0 and 1.0.',
-    },
-    {
-      id: 'f3',
-      name: 'actionItems',
-      type: 'array',
-      itemType: 'string',
-      required: false,
-      description: 'List of recommended next steps or execution items.',
-    },
-  ],
+const DEFAULT_SCHEMA = (agentLabel: string): StructuredOutputSchema => {
+  return {
+    enabled: false,
+    formatType: 'json_schema',
+    name: 'ResponseSchema',
+    fields: [
+      {
+        id: 'f1',
+        name: 'summary',
+        type: 'string',
+        required: true,
+        description: 'Comprehensive summary of the reasoning or task result.',
+      },
+      {
+        id: 'f2',
+        name: 'confidenceScore',
+        type: 'number',
+        required: true,
+        description: 'Confidence score between 0.0 and 1.0.',
+      },
+      {
+        id: 'f3',
+        name: 'actionItems',
+        type: 'array',
+        arrayItemType: 'string',
+        required: false,
+        description: 'List of recommended next steps or execution items.',
+      },
+    ],
+  };
 };
 
 export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = ({
   schema: initialSchema,
+  agentLabel,
   onChange,
 }) => {
   const [activeTab, setActiveTab] = useState<'builder' | 'json'>('builder');
   const [copied, setCopied] = useState(false);
   const [jsonError, setJsonError] = useState<string | null>(null);
 
-  const currentSchema: StructuredOutputSchema = initialSchema || DEFAULT_SCHEMA;
+  // Initialize or fallback
+  const currentSchema: StructuredOutputSchema = initialSchema || DEFAULT_SCHEMA(agentLabel);
 
   const handleToggleEnable = () => {
     onChange({
@@ -90,8 +82,8 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
 
   const handleAddField = () => {
     const fieldIndex = currentSchema.fields.length + 1;
-    const newField: SchemaField = {
-      id: `field_${Date.now()}`,
+    const newField: StructuredOutputField = {
+      id: `field_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 3)}`,
       name: `field${fieldIndex}`,
       type: 'string',
       required: true,
@@ -102,7 +94,7 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
     });
   };
 
-  const handleUpdateField = (fieldId: string, updates: Partial<SchemaField>) => {
+  const handleUpdateField = (fieldId: string, updates: Partial<StructuredOutputField>) => {
     const updated = currentSchema.fields.map((f) => (f.id === fieldId ? { ...f, ...updates } : f));
     handleUpdate({ fields: updated });
   };
@@ -122,6 +114,7 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
     handleUpdate({ fields: newFields });
   };
 
+  // Helper generator for Gemini-compliant JSON Schema
   const buildJsonSchemaObject = () => {
     const properties: Record<string, any> = {};
     const required: string[] = [];
@@ -142,12 +135,14 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
         case 'array':
           fieldSchema = {
             type: 'ARRAY',
-            items: {
-              type: f.itemType === 'number'
-                ? 'NUMBER'
-                : f.itemType === 'boolean'
-                ? 'BOOLEAN'
-                : 'STRING',
+            items: { 
+              type: f.arrayItemType === 'number' 
+                ? 'NUMBER' 
+                : f.arrayItemType === 'boolean' 
+                ? 'BOOLEAN' 
+                : f.arrayItemType === 'object' 
+                ? 'OBJECT' 
+                : 'STRING' 
             },
           };
           break;
@@ -194,12 +189,12 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
     try {
       const parsed = JSON.parse(rawJson);
       if (parsed && typeof parsed === 'object' && parsed.properties) {
-        const newFields: SchemaField[] = [];
+        const newFields: StructuredOutputField[] = [];
         const requiredList: string[] = Array.isArray(parsed.required) ? parsed.required : [];
 
         Object.entries(parsed.properties).forEach(([name, prop]: [string, any]) => {
-          let fieldType: SchemaField['type'] = 'string';
-          let itemType: string | undefined = undefined;
+          let fieldType: SchemaFieldType = 'string';
+          let itemType: SchemaFieldType | undefined = undefined;
           let enumValues: string[] | undefined = undefined;
 
           const rawType = (prop.type || 'string').toString().toLowerCase();
@@ -207,7 +202,8 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
           else if (rawType === 'boolean') fieldType = 'boolean';
           else if (rawType === 'array') {
             fieldType = 'array';
-            itemType = (prop.items?.type || 'string').toString().toLowerCase();
+            const rawItemType = (prop.items?.type || 'string').toString().toLowerCase();
+            itemType = rawItemType === 'number' ? 'number' : rawItemType === 'boolean' ? 'boolean' : 'string';
           } else if (rawType === 'object') {
             fieldType = 'object';
           } else if (Array.isArray(prop.enum)) {
@@ -216,12 +212,12 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
           }
 
           newFields.push({
-            id: `f_${Math.random().toString(36).substring(2, 8)}`,
+            id: `f_${Math.random().toString(36).substr(2, 6)}`,
             name,
             type: fieldType,
             required: requiredList.includes(name),
             description: prop.description || '',
-            itemType,
+            arrayItemType: itemType,
             enumValues,
           });
         });
@@ -232,7 +228,7 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
       }
       setJsonError(null);
     } catch {
-      setJsonError('Invalid JSON schema format');
+      setJsonError('Invalid JSON format');
     }
   };
 
@@ -240,23 +236,23 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
     <div className="space-y-3 pt-3 border-t border-[#30363d]">
       {/* Section Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <div className={`p-1 rounded-md ${currentSchema.enabled ? 'bg-purple-500/20 text-purple-300' : 'bg-[#161b22] text-gray-400'}`}>
             <Braces className="w-3.5 h-3.5" />
           </div>
-          <div className="flex items-center gap-2">
-            <label className="text-[11px] font-bold uppercase tracking-tight text-purple-300">
-              Structured Output
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-tight text-purple-300 flex items-center gap-1.5">
+              <span>Structured Output</span>
+              {currentSchema.enabled && (
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 font-mono font-bold border border-purple-500/40">
+                  {currentSchema.fields.length} {currentSchema.fields.length === 1 ? 'field' : 'fields'}
+                </span>
+              )}
             </label>
-            {currentSchema.enabled && (
-              <span className="text-[9px] px-2 py-0.5 rounded bg-purple-500/30 text-purple-200 font-mono font-bold border border-purple-500/40">
-                {currentSchema.fields.length} {currentSchema.fields.length === 1 ? 'field' : 'fields'}
-              </span>
-            )}
           </div>
         </div>
 
-        {/* Toggle Switch */}
+        {/* Enable / Disable Toggle Switch */}
         <button
           type="button"
           onClick={handleToggleEnable}
@@ -266,7 +262,7 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
               : 'bg-[#161b22] text-gray-400 border-[#30363d] hover:text-gray-200 hover:border-gray-500'
           }`}
         >
-          <div className={`w-2 h-2 rounded-full ${currentSchema.enabled ? 'bg-purple-400' : 'bg-gray-500'}`} />
+          <div className={`w-2 h-2 rounded-full ${currentSchema.enabled ? 'bg-purple-400 shadow-xs shadow-purple-400' : 'bg-gray-500'}`} />
           <span>{currentSchema.enabled ? 'Enabled' : 'Freeform Text'}</span>
         </button>
       </div>
@@ -274,7 +270,7 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
       {/* Main Container when Enabled */}
       {currentSchema.enabled ? (
         <div className="bg-[#0d1117] rounded-lg border border-purple-500/40 p-3 space-y-3 shadow-inner">
-          {/* Tab Navigation */}
+          {/* Tab Navigation: Field Builder vs JSON Schema */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1 bg-[#161b22] p-0.5 rounded-md border border-[#30363d]">
               <button
@@ -320,132 +316,143 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
           {activeTab === 'builder' && (
             <div className="space-y-2.5">
               <div className="space-y-2">
-                {currentSchema.fields.map((field, index) => (
-                  <div
-                    key={field.id || index}
-                    className="p-2.5 bg-[#161b22] rounded-md border border-[#30363d] hover:border-purple-500/50 transition-colors space-y-2"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-mono font-bold text-gray-500 w-4 shrink-0">
-                        #{index + 1}
-                      </span>
+                {currentSchema.fields.map((field, index) => {
+                  return (
+                    <div
+                      key={field.id}
+                      className="p-2.5 bg-[#161b22] rounded-md border border-[#30363d] hover:border-purple-500/50 transition-colors space-y-2 group"
+                    >
+                      {/* Top Row: Name, Type, Required, Reorder & Delete */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-mono font-bold text-gray-500 w-4 shrink-0">
+                          #{index + 1}
+                        </span>
 
-                      <input
-                        type="text"
-                        value={field.name}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleUpdateField(field.id || '', { name: e.target.value.replace(/[^a-zA-Z0-9_]/g, '') })}
-                        placeholder="fieldName"
-                        className="flex-1 px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-purple-500 rounded text-xs text-white font-mono font-bold focus:outline-none min-w-[80px]"
-                      />
-
-                      <select
-                        value={field.type}
-                        onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleUpdateField(field.id || '', { type: e.target.value as SchemaField['type'] })}
-                        className="px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-purple-500 rounded text-[11px] text-purple-300 font-mono focus:outline-none cursor-pointer"
-                      >
-                        <option value="string">string</option>
-                        <option value="number">number</option>
-                        <option value="boolean">boolean</option>
-                        <option value="array">array[]</option>
-                        <option value="enum">enum</option>
-                        <option value="object">object</option>
-                      </select>
-
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateField(field.id || '', { required: !field.required })}
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-colors cursor-pointer border ${
-                          field.required
-                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                            : 'bg-[#0d1117] text-gray-500 border-[#30363d] hover:text-gray-300'
-                        }`}
-                        title={field.required ? 'Required field in schema' : 'Optional field'}
-                      >
-                        {field.required ? 'Req' : 'Opt'}
-                      </button>
-
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        <button
-                          type="button"
-                          disabled={index === 0}
-                          onClick={() => handleMoveField(index, 'up')}
-                          className="p-0.5 rounded text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed"
-                          title="Move field up"
-                        >
-                          <ChevronUp className="w-3 h-3" />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={index === currentSchema.fields.length - 1}
-                          onClick={() => handleMoveField(index, 'down')}
-                          className="p-0.5 rounded text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed"
-                          title="Move field down"
-                        >
-                          <ChevronDown className="w-3 h-3" />
-                        </button>
-                      </div>
-
-                      {currentSchema.fields.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteField(field.id || '')}
-                          className="p-1 rounded text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0"
-                          title="Delete Field"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        value={field.description || ''}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleUpdateField(field.id || '', { description: e.target.value })}
-                        placeholder="Field description directive for LLM..."
-                        className="w-full px-2 py-0.5 bg-[#0d1117] border border-[#30363d] focus:border-purple-500 rounded text-[11px] text-gray-300 focus:outline-none"
-                      />
-                    </div>
-
-                    {field.type === 'enum' && (
-                      <div className="p-1.5 rounded bg-[#0d1117] border border-purple-500/30 space-y-1">
-                        <label className="text-[9px] font-mono text-purple-300">Allowed Enum Values (comma-separated):</label>
+                        {/* Field Name */}
                         <input
                           type="text"
-                          value={(field.enumValues || []).join(', ')}
-                          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                            handleUpdateField(field.id || '', {
-                              enumValues: e.target.value
-                                .split(',')
-                                .map((s: string) => s.trim())
-                                .filter(Boolean),
-                            })
-                          }
-                          placeholder="e.g. low, medium, high, critical"
-                          className="w-full px-2 py-0.5 bg-[#161b22] border border-[#30363d] focus:border-purple-500 rounded text-[10px] text-purple-200 font-mono focus:outline-none"
+                          value={field.name}
+                          onChange={(e) => handleUpdateField(field.id, { name: e.target.value.replace(/[^a-zA-Z0-9_]/g, '') })}
+                          placeholder="fieldName"
+                          className="flex-1 px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-purple-500 rounded text-xs text-white font-mono font-bold focus:outline-none min-w-[80px]"
                         />
-                      </div>
-                    )}
 
-                    {field.type === 'array' && (
-                      <div className="flex items-center gap-2 p-1.5 rounded bg-[#0d1117] border border-purple-500/30">
-                        <span className="text-[9px] font-mono text-purple-300">Array Item Type:</span>
+                        {/* Field Type */}
                         <select
-                          value={field.itemType || 'string'}
-                          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleUpdateField(field.id || '', { itemType: e.target.value })}
-                          className="px-2 py-0.5 bg-[#161b22] border border-[#30363d] focus:border-purple-500 rounded text-[10px] text-purple-200 font-mono focus:outline-none cursor-pointer"
+                          value={field.type}
+                          onChange={(e) => handleUpdateField(field.id, { type: e.target.value as SchemaFieldType })}
+                          className="px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-purple-500 rounded text-[11px] text-purple-300 font-mono focus:outline-none cursor-pointer"
                         >
                           <option value="string">string</option>
                           <option value="number">number</option>
                           <option value="boolean">boolean</option>
+                          <option value="array">array[]</option>
+                          <option value="enum">enum</option>
                           <option value="object">object</option>
                         </select>
+
+                        {/* Required Toggle */}
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateField(field.id, { required: !field.required })}
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-colors cursor-pointer border ${
+                            field.required
+                              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                              : 'bg-[#0d1117] text-gray-500 border-[#30363d] hover:text-gray-300'
+                          }`}
+                          title={field.required ? 'Required field in schema' : 'Optional field'}
+                        >
+                          {field.required ? 'Req' : 'Opt'}
+                        </button>
+
+                        {/* Reorder Up/Down */}
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button
+                            type="button"
+                            disabled={index === 0}
+                            onClick={() => handleMoveField(index, 'up')}
+                            className="p-0.5 rounded text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed"
+                            title="Move field up"
+                          >
+                            <ChevronUp className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={index === currentSchema.fields.length - 1}
+                            onClick={() => handleMoveField(index, 'down')}
+                            className="p-0.5 rounded text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed"
+                            title="Move field down"
+                          >
+                            <ChevronDown className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        {/* Delete Field */}
+                        {currentSchema.fields.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteField(field.id)}
+                            className="p-1 rounded text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0"
+                            title="Delete Field"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
-                    )}
-                  </div>
-                ))}
+
+                      {/* Field Description */}
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={field.description || ''}
+                          onChange={(e) => handleUpdateField(field.id, { description: e.target.value })}
+                          placeholder="Field description directive for LLM..."
+                          className="w-full px-2 py-0.5 bg-[#0d1117] border border-[#30363d] focus:border-purple-500 rounded text-[11px] text-gray-300 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* Extra config for Enum & Array */}
+                      {field.type === 'enum' && (
+                        <div className="p-1.5 rounded bg-[#0d1117] border border-purple-500/30 space-y-1">
+                          <label className="text-[9px] font-mono text-purple-300">Allowed Enum Values (comma-separated):</label>
+                          <input
+                            type="text"
+                            value={(field.enumValues || []).join(', ')}
+                            onChange={(e) =>
+                              handleUpdateField(field.id, {
+                                enumValues: e.target.value
+                                  .split(',')
+                                  .map((s) => s.trim())
+                                  .filter(Boolean),
+                              })
+                            }
+                            placeholder="e.g. low, medium, high, critical"
+                            className="w-full px-2 py-0.5 bg-[#161b22] border border-[#30363d] focus:border-purple-500 rounded text-[10px] text-purple-200 font-mono focus:outline-none"
+                          />
+                        </div>
+                      )}
+
+                      {field.type === 'array' && (
+                        <div className="flex items-center gap-2 p-1.5 rounded bg-[#0d1117] border border-purple-500/30">
+                          <span className="text-[9px] font-mono text-purple-300">Array Item Type:</span>
+                          <select
+                            value={field.arrayItemType || 'string'}
+                            onChange={(e) => handleUpdateField(field.id, { arrayItemType: e.target.value as SchemaFieldType })}
+                            className="px-2 py-0.5 bg-[#161b22] border border-[#30363d] focus:border-purple-500 rounded text-[10px] text-purple-200 font-mono focus:outline-none cursor-pointer"
+                          >
+                            <option value="string">string</option>
+                            <option value="number">number</option>
+                            <option value="boolean">boolean</option>
+                            <option value="object">object</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
+              {/* Add Field Button */}
               <button
                 type="button"
                 onClick={handleAddField}
@@ -457,18 +464,18 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
             </div>
           )}
 
-          {/* TAB 2: JSON SCHEMA VIEW */}
+          {/* TAB 2: JSON SCHEMA VIEW / EDITOR */}
           {activeTab === 'json' && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-[10px] text-gray-400">
                 <span>Gemini responseSchema Specification</span>
-                <span className="text-[9px] font-mono text-purple-300">JSON Schema</span>
+                <span className="text-[9px] font-mono text-purple-300">OpenAPI / JSON Schema</span>
               </div>
               <textarea
                 value={jsonSchemaString}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleRawJsonChange(e.target.value)}
+                onChange={(e) => handleRawJsonChange(e.target.value)}
                 rows={10}
-                className="w-full p-2.5 rounded bg-[#161b22] border border-[#30363d] text-[10px] font-mono text-purple-200 focus:border-purple-500 focus:outline-none leading-relaxed resize-y"
+                className="w-full p-2.5 rounded bg-[#161b22] border border-[#30363d] text-[10px] font-mono text-purple-200 focus:border-purple-500 focus:outline-none leading-relaxed selection:bg-purple-900 resize-y"
               />
               {jsonError && (
                 <div className="text-[10px] text-rose-400 font-mono">
@@ -479,7 +486,8 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
           )}
         </div>
       ) : (
-        <div
+        /* Disabled placeholder callout */
+        <div 
           onClick={handleToggleEnable}
           className="p-3 bg-[#0d1117] rounded-lg border border-dashed border-[#30363d] hover:border-purple-500/50 cursor-pointer transition-colors flex items-center justify-between group"
         >

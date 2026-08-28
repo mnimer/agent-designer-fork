@@ -1,168 +1,241 @@
-/**
- * useDiagramHistory Hook
- *
- * Manages undo/redo snapshot history stacks for workflow canvas state,
- * supporting standard keyboard shortcuts (Cmd+Z, Cmd+Shift+Z, Ctrl+Z, Ctrl+Y).
- *
- * Job in Application:
- * Enables non-destructive workflow editing on the canvas with rapid reversal
- * of node creations, deletions, movements, tool attachments, and edge links.
- *
- * Architectural Decisions:
- * 1. Bounded snapshot history depth (max 50 states) preventing memory ballooning.
- * 2. Deep equality check on snapshot pushing to ignore duplicate successive states.
- * 3. Cross-platform keyboard event listener for macOS (MetaKey) and Windows/Linux (CtrlKey).
- *
- * @author Mike Nimer <mikenimer@google.com>
- */
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { Node, Edge } from '@xyflow/react';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { AgentWorkflowDocument } from '../../shared/types';
-
-export interface UseDiagramHistoryOptions {
-  maxHistory?: number;
-  onRestore?: (document: AgentWorkflowDocument) => void;
+export interface HistorySnapshot {
+  nodes: Node<any>[];
+  edges: Edge[];
+  selectedAgentId?: string | null;
+  selectedTriggerId?: string | null;
+  description?: string;
 }
 
-export interface UseDiagramHistoryReturn {
-  canUndo: boolean;
-  canRedo: boolean;
-  undo: () => AgentWorkflowDocument | null;
-  redo: () => AgentWorkflowDocument | null;
-  pushSnapshot: (document: AgentWorkflowDocument) => void;
-  clearHistory: () => void;
+interface UseDiagramHistoryOptions {
+  maxHistory?: number;
+  activeTabId?: string;
+}
+
+// Deep clone nodes and edges to avoid reference pollution across snapshots
+function cloneSnapshot(snapshot: HistorySnapshot): HistorySnapshot {
+  return {
+    nodes: JSON.parse(JSON.stringify(snapshot.nodes)),
+    edges: JSON.parse(JSON.stringify(snapshot.edges)),
+    selectedAgentId: snapshot.selectedAgentId || null,
+    selectedTriggerId: snapshot.selectedTriggerId || null,
+    description: snapshot.description,
+  };
 }
 
 export function useDiagramHistory(
-  initialDocument: AgentWorkflowDocument,
+  initialNodes: Node<any>[],
+  initialEdges: Edge[],
   options: UseDiagramHistoryOptions = {}
-): UseDiagramHistoryReturn {
-  const { maxHistory = 50, onRestore } = options;
+) {
+  const maxHistory = options.maxHistory || 40;
+  const activeTabId = options.activeTabId || 'default';
 
-  const [past, setPast] = useState<AgentWorkflowDocument[]>([]);
-  const [future, setFuture] = useState<AgentWorkflowDocument[]>([]);
-  const currentDocRef = useRef<AgentWorkflowDocument>(initialDocument);
+  // Per-tab history map to keep separate undo/redo stacks per open .agent tab
+  const tabHistoriesRef = useRef<
+    Record<
+      string,
+      {
+        past: HistorySnapshot[];
+        future: HistorySnapshot[];
+        current: HistorySnapshot;
+      }
+    >
+  >({});
 
-  // Update current document reference
-  currentDocRef.current = initialDocument;
+  // Initialize active tab history if missing
+  if (!tabHistoriesRef.current[activeTabId]) {
+    tabHistoriesRef.current[activeTabId] = {
+      past: [],
+      future: [],
+      current: cloneSnapshot({
+        nodes: initialNodes,
+        edges: initialEdges,
+        description: 'Initial state',
+      }),
+    };
+  }
 
-  /**
-   * Pushes a new document snapshot onto the undo history stack.
-   *
-   * @param document Updated AgentWorkflowDocument
-   */
-  const pushSnapshot = useCallback(
-    (document: AgentWorkflowDocument) => {
-      // Avoid pushing duplicate identical states
-      const currentJson = JSON.stringify(currentDocRef.current);
-      const newJson = JSON.stringify(document);
-      if (currentJson === newJson) return;
+  // Force re-render helper to update canUndo / canRedo state in UI
+  const [, setVersion] = useState(0);
+  const bumpVersion = useCallback(() => setVersion((v) => v + 1), []);
 
-      setPast((prevPast) => {
-        const nextPast = [...prevPast, currentDocRef.current];
-        if (nextPast.length > maxHistory) {
-          return nextPast.slice(nextPast.length - maxHistory);
-        }
-        return nextPast;
-      });
+  // Sync current snapshot if tab changes
+  useEffect(() => {
+    if (!tabHistoriesRef.current[activeTabId]) {
+      tabHistoriesRef.current[activeTabId] = {
+        past: [],
+        future: [],
+        current: cloneSnapshot({
+          nodes: initialNodes,
+          edges: initialEdges,
+          description: 'Tab initialized',
+        }),
+      };
+      bumpVersion();
+    }
+  }, [activeTabId, initialNodes, initialEdges, bumpVersion]);
 
-      // Clear redo stack on new user actions
-      setFuture([]);
+  const getActiveHistory = useCallback(() => {
+    if (!tabHistoriesRef.current[activeTabId]) {
+      tabHistoriesRef.current[activeTabId] = {
+        past: [],
+        future: [],
+        current: cloneSnapshot({
+          nodes: initialNodes,
+          edges: initialEdges,
+          description: 'Tab initialized',
+        }),
+      };
+    }
+    return tabHistoriesRef.current[activeTabId];
+  }, [activeTabId, initialNodes, initialEdges]);
+
+  // Check if current graph differs significantly from last recorded snapshot
+  const isDifferentFromCurrent = useCallback(
+    (newNodes: Node<any>[], newEdges: Edge[]) => {
+      const hist = getActiveHistory();
+      if (!hist.current) return true;
+      if (hist.current.nodes.length !== newNodes.length || hist.current.edges.length !== newEdges.length) {
+        return true;
+      }
+      try {
+        const curNodesJson = JSON.stringify(hist.current.nodes);
+        const nextNodesJson = JSON.stringify(newNodes);
+        if (curNodesJson !== nextNodesJson) return true;
+
+        const curEdgesJson = JSON.stringify(hist.current.edges);
+        const nextEdgesJson = JSON.stringify(newEdges);
+        return curEdgesJson !== nextEdgesJson;
+      } catch {
+        return true;
+      }
     },
-    [maxHistory]
+    [getActiveHistory]
   );
 
   /**
-   * Undoes the last action, restoring previous snapshot.
-   *
-   * @returns Previous AgentWorkflowDocument or null
+   * Records a new state into the past stack.
    */
-  const undo = useCallback((): AgentWorkflowDocument | null => {
-    if (past.length === 0) return null;
-
-    const previous = past[past.length - 1];
-    const newPast = past.slice(0, past.length - 1);
-
-    setPast(newPast);
-    setFuture((prevFuture) => [currentDocRef.current, ...prevFuture]);
-
-    if (onRestore) {
-      onRestore(previous);
-    }
-    return previous;
-  }, [past, onRestore]);
-
-  /**
-   * Redoes the previously undone action.
-   *
-   * @returns Next AgentWorkflowDocument or null
-   */
-  const redo = useCallback((): AgentWorkflowDocument | null => {
-    if (future.length === 0) return null;
-
-    const next = future[0];
-    const newFuture = future.slice(1);
-
-    setFuture(newFuture);
-    setPast((prevPast) => [...prevPast, currentDocRef.current]);
-
-    if (onRestore) {
-      onRestore(next);
-    }
-    return next;
-  }, [future, onRestore]);
-
-  /**
-   * Resets both history stacks.
-   */
-  const clearHistory = useCallback(() => {
-    setPast([]);
-    setFuture([]);
-  }, []);
-
-  // Global keyboard shortcut listener for Cmd+Z / Ctrl+Z and Redo
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Ignore key events when typing inside inputs or textareas
-      const target = event.target as HTMLElement;
-      if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
-      ) {
+  const recordSnapshot = useCallback(
+    (
+      newNodes: Node<any>[],
+      newEdges: Edge[],
+      meta?: {
+        selectedAgentId?: string | null;
+        selectedTriggerId?: string | null;
+        description?: string;
+        force?: boolean;
+      }
+    ) => {
+      const hist = getActiveHistory();
+      if (!meta?.force && !isDifferentFromCurrent(newNodes, newEdges)) {
         return;
       }
 
-      const isMac = navigator.platform.toUpperCase().includes('MAC');
-      const isModifier = isMac ? event.metaKey : event.ctrlKey;
+      const nextSnapshot: HistorySnapshot = cloneSnapshot({
+        nodes: newNodes,
+        edges: newEdges,
+        selectedAgentId: meta?.selectedAgentId,
+        selectedTriggerId: meta?.selectedTriggerId,
+        description: meta?.description || 'Graph updated',
+      });
 
-      if (isModifier && event.key.toLowerCase() === 'z') {
-        if (event.shiftKey) {
-          // Redo: Cmd+Shift+Z or Ctrl+Shift+Z
-          event.preventDefault();
-          redo();
-        } else {
-          // Undo: Cmd+Z or Ctrl+Z
-          event.preventDefault();
-          undo();
-        }
-      } else if (isModifier && event.key.toLowerCase() === 'y' && !isMac) {
-        // Redo: Ctrl+Y (Windows/Linux)
-        event.preventDefault();
-        redo();
+      // Push current into past
+      if (hist.current) {
+        hist.past = [...hist.past.slice(-(maxHistory - 1)), hist.current];
       }
-    };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo]);
+      hist.current = nextSnapshot;
+      // Clear redo branch whenever a new distinct action is taken
+      hist.future = [];
+
+      bumpVersion();
+    },
+    [getActiveHistory, isDifferentFromCurrent, maxHistory, bumpVersion]
+  );
+
+  /**
+   * Reset / initialize history for a specific tab
+   */
+  const initializeTabHistory = useCallback(
+    (tabId: string, nodes: Node<any>[], edges: Edge[]) => {
+      tabHistoriesRef.current[tabId] = {
+        past: [],
+        future: [],
+        current: cloneSnapshot({
+          nodes,
+          edges,
+          description: 'Tab initialized',
+        }),
+      };
+      bumpVersion();
+    },
+    [bumpVersion]
+  );
+
+  /**
+   * Perform Undo
+   */
+  const undo = useCallback((): HistorySnapshot | null => {
+    const hist = getActiveHistory();
+    if (hist.past.length === 0) {
+      return null;
+    }
+
+    const previous = hist.past[hist.past.length - 1];
+    const newPast = hist.past.slice(0, -1);
+
+    if (hist.current) {
+      hist.future = [hist.current, ...hist.future];
+    }
+
+    hist.past = newPast;
+    hist.current = previous;
+
+    bumpVersion();
+    return cloneSnapshot(previous);
+  }, [getActiveHistory, bumpVersion]);
+
+  /**
+   * Perform Redo
+   */
+  const redo = useCallback((): HistorySnapshot | null => {
+    const hist = getActiveHistory();
+    if (hist.future.length === 0) {
+      return null;
+    }
+
+    const next = hist.future[0];
+    const newFuture = hist.future.slice(1);
+
+    if (hist.current) {
+      hist.past = [...hist.past.slice(-(maxHistory - 1)), hist.current];
+    }
+
+    hist.future = newFuture;
+    hist.current = next;
+
+    bumpVersion();
+    return cloneSnapshot(next);
+  }, [getActiveHistory, maxHistory, bumpVersion]);
+
+  const activeHist = getActiveHistory();
+  const canUndo = activeHist.past.length > 0;
+  const canRedo = activeHist.future.length > 0;
+  const pastCount = activeHist.past.length;
+  const futureCount = activeHist.future.length;
 
   return {
-    canUndo: past.length > 0,
-    canRedo: future.length > 0,
+    canUndo,
+    canRedo,
+    pastCount,
+    futureCount,
+    recordSnapshot,
     undo,
     redo,
-    pushSnapshot,
-    clearHistory,
+    initializeTabHistory,
   };
 }

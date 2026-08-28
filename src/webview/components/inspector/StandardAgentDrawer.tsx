@@ -1,395 +1,1031 @@
-/**
- * StandardAgentDrawer Component
- *
- * Inspector sidebar drawer for editing Standard Agent properties:
- * - Agent Label & Subtitle Description
- * - Gemini Foundation Model Selection
- * - System Instructions & Prompt Template
- * - Creativity Temperature Slider
- * - Memory & State Checkpointing Provider Selection
- * - Structured Output Schema Builder Integration
- * - Attached Tools Management & Add Tool Modal
- *
- * Architectural Decisions:
- * 1. Implements bidirectional sync with the canvas state via onUpdateNode callback.
- * 2. Adheres to the 8pt grid system with TailwindCSS classes.
- * 3. Class documentation and method comments per .gemini/GEMINI.md.
- *
- * @author Mike Nimer <mikenimer@google.com>
- */
-
-import React, { useState, useEffect } from 'react';
-import {
-  X,
-  Bot,
-  Sliders,
-  Sparkles,
-  Wrench,
-  Trash2,
-  Plus,
-  Save,
-  Check,
+import React, { useState } from 'react';
+import { 
+  Bot, 
+  X, 
+  Sliders, 
+  Wrench, 
+  Plus, 
+  Cpu, 
+  Sparkles, 
+  Layers,
+  GripVertical,
+  ChevronUp,
+  ChevronDown,
+  Maximize2,
+  Play,
   Brain,
+  Database,
+  Zap,
+  Cloud,
+  HardDrive,
+  History,
   FileText,
+  Search,
+  Ban,
+  Info,
+  GitBranch,
+  Share2,
+  Scale,
+  ShieldAlert,
+  Flame,
+  CheckCircle2
 } from 'lucide-react';
-import {
-  AgentNodeData,
-  MemoryType,
-  StructuredOutputSchema,
-  ToolDefinition,
-} from '../../../shared/types';
+import { AgentData, ToolDefinition, DelegationPattern, SubAgentRef, AgentMemoryConfig, AgentMemoryType, AgentKind, StructuredOutputSchema, DebateConfig, DebateStyle, TieBreakerStrategy } from '../../types';
 import { MEMORY_OPTIONS, getMemoryOption } from '../../data/memoryOptions';
 import { StructuredOutputBuilder } from './StructuredOutputBuilder';
-import { AddToolModal } from './AddToolModal';
 
-export interface StandardAgentDrawerProps {
-  nodeId: string | null;
-  agentData: AgentNodeData | null;
-  isOpen: boolean;
+interface StandardAgentDrawerProps {
+  agent: AgentData;
+  allAgents: AgentData[];
   onClose: () => void;
-  onUpdateAgent: (nodeId: string, updatedData: Partial<AgentNodeData>) => void;
-  onDeleteAgent?: (nodeId: string) => void;
+  onUpdateAgent: (updatedData: Partial<AgentData>) => void;
+  onOpenAddTool: () => void;
+  onRemoveTool: (toolId: string) => void;
 }
 
-const GEMINI_MODELS = [
-  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Complex Reasoning)', badge: 'Reasoning' },
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Fast & Capable)', badge: 'Speed/Cost' },
-  { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (General Purpose)', badge: 'General' },
-  { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Long Context)', badge: '1M Context' },
-  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Lightweight)', badge: 'Fast' },
+const SUPPORTED_MODELS = [
+  { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)', desc: 'Fast, lightweight, sub-second multimodal reasoning' },
+  { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash', desc: 'Hybrid reasoning and high-throughput agent execution' },
+  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', desc: 'High-speed generative tasks and tool orchestration' },
+  { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', desc: 'Deep multimodal reasoning & complex planning' },
+  { id: 'claude-sonnet-latest', name: 'Claude Sonnet (Latest)', desc: 'Advanced coding, nuance understanding & agentic workflows' },
+  { id: 'claude-opus-latest', name: 'Claude Opus (Latest)', desc: 'Top-tier complex analysis, mathematical reasoning & synthesis' },
+  { id: 'openai-latest', name: 'OpenAI (Latest)', desc: 'Flagship multimodal model with omni tool calling' },
+  { id: 'grok-latest', name: 'Grok (Latest)', desc: 'High-context real-time reasoning and agent tool invocation' },
+];
+
+const PATTERN_OPTIONS: { id: DelegationPattern; label: string; desc: string }[] = [
+  { id: 'sequential', label: 'Sequential Pipeline', desc: 'Linear prompt chaining execution (Planner → Executor → Reviewer)' },
+  { id: 'parallel', label: 'Parallel / Fan-Out', desc: 'Concurrent async dispatch and fan-in aggregation' },
+  { id: 'router', label: 'Router', desc: 'Dynamic conditional routing based on intent classification' },
+  { id: 'loop', label: 'Evaluator-Optimizer', desc: 'Cyclic feedback loop between Generator and Evaluator' },
+  { id: 'debate', label: 'Multi-Agent Debate', desc: 'Proponent & Opponent debate to reach consensus through a Judge' },
+  { id: 'hierarchical_decomposition', label: 'Hierarchical Delegation', desc: 'Multi-tier supervisor delegating to domain leads and worker pool' },
+  { id: 'review_critique', label: 'Review & Critique', desc: 'Creator draft submitted to adversarial critic and synthesis editor' },
+  { id: 'coordinator', label: 'Coordinator', desc: 'Stateful supervisor blackboard dispatching domain tasks' },
 ];
 
 export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
-  nodeId,
-  agentData,
-  isOpen,
+  agent,
+  allAgents,
   onClose,
   onUpdateAgent,
-  onDeleteAgent,
+  onOpenAddTool,
+  onRemoveTool,
 }) => {
-  const [formData, setFormData] = useState<AgentNodeData | null>(null);
-  const [isAddToolModalOpen, setIsAddToolModalOpen] = useState(false);
-  const [savedSuccess, setSavedSuccess] = useState(false);
+  const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
-  // Sync formData whenever agentData changes or drawer opens
-  useEffect(() => {
-    if (agentData) {
-      setFormData({
-        ...agentData,
-        model: agentData.model || agentData.standardConfig?.model || 'gemini-2.5-pro',
-        systemPrompt: agentData.systemPrompt || agentData.standardConfig?.systemInstruction || '',
-        temperature: agentData.temperature ?? agentData.standardConfig?.temperature ?? 0.7,
-        memoryType: agentData.memoryType || agentData.standardConfig?.memory || 'none',
-        tools: agentData.tools || agentData.standardConfig?.tools || [],
-      });
-    }
-  }, [agentData]);
+  const subAgents = agent.subAgents || [];
+  const currentPattern: DelegationPattern = agent.subAgentPattern || 'parallel';
+  const promptValue = agent.systemPrompt || agent.role || '';
 
-  if (!isOpen || !formData || !nodeId) return null;
-
-  /**
-   * Handles immediate local state updates for agent configuration fields.
-   */
-  const handleFieldChange = <K extends keyof AgentNodeData>(key: K, value: AgentNodeData[K]) => {
-    setFormData((prev) => (prev ? { ...prev, [key]: value } : null));
+  const handleMoveSubAgent = (fromIdx: number, toIdx: number) => {
+    if (toIdx < 0 || toIdx >= subAgents.length) return;
+    const reordered = [...subAgents];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    onUpdateAgent({ subAgents: reordered });
   };
 
-  /**
-   * Persists agent changes back to workflow state and displays feedback.
-   */
-  const handleSave = () => {
-    if (!formData || !nodeId) return;
-    onUpdateAgent(nodeId, formData);
-    setSavedSuccess(true);
-    setTimeout(() => {
-      setSavedSuccess(false);
-    }, 1500);
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIdx(index);
+    e.dataTransfer.setData('text/plain', index.toString());
+    e.dataTransfer.effectAllowed = 'move';
   };
 
-  /**
-   * Attaches a selected tool from the catalog to this agent.
-   */
-  const handleAddTool = (tool: ToolDefinition) => {
-    const existing = formData.tools || [];
-    if (!existing.some((t) => t.id === tool.id)) {
-      const updated = [...existing, tool];
-      handleFieldChange('tools', updated);
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedIdx !== null && draggedIdx !== index) {
+      setDragOverIdx(index);
     }
   };
 
-  /**
-   * Removes an attached tool from this agent.
-   */
-  const handleRemoveTool = (toolId: string) => {
-    const existing = formData.tools || [];
-    const updated = existing.filter((t) => t.id !== toolId);
-    handleFieldChange('tools', updated);
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedIdx !== null && draggedIdx !== dropIndex) {
+      handleMoveSubAgent(draggedIdx, dropIndex);
+    }
+    setDraggedIdx(null);
+    setDragOverIdx(null);
   };
 
-  /**
-   * Updates the structured output schema for this agent.
-   */
-  const handleSchemaChange = (schema: StructuredOutputSchema) => {
-    handleFieldChange('structuredOutputSchema', schema);
+  const handleRemoveSubAgent = (agentId: string) => {
+    const updated = subAgents.filter((s) => s.agentId !== agentId);
+    onUpdateAgent({ subAgents: updated });
   };
 
-  const currentMemoryOption = getMemoryOption(formData.memoryType);
+  const handlePromptChange = (newPrompt: string) => {
+    // Sync both systemPrompt and role for generator and label display
+    const firstSentence = newPrompt.split('\n')[0].trim();
+    onUpdateAgent({
+      systemPrompt: newPrompt,
+      role: firstSentence || agent.role || 'Autonomous reasoning agent',
+    });
+  };
 
   return (
-    <>
-      <div className="absolute top-0 right-0 bottom-0 z-40 w-96 backdrop-blur-2xl bg-[#161b22]/95 border-l border-[#30363d] shadow-2xl flex flex-col overflow-hidden text-[#c9d1d9] animate-in slide-in-from-right duration-200">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#161b22] border-b border-[#30363d] shrink-0">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="p-1.5 rounded-lg bg-[#0d1117] border border-[#30363d] shrink-0">
-              <Bot className="w-4 h-4 text-blue-400" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-xs font-bold text-white truncate">
-                {formData.label || 'Standard Agent'}
-              </h3>
-              <span className="text-[10px] text-blue-400 font-mono">
-                {formData.model || 'gemini-2.5-pro'}
-              </span>
-            </div>
+    <div className="absolute top-0 right-0 bottom-0 z-30 w-96 backdrop-blur-2xl bg-[#161b22]/95 border-l border-[#30363d] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 text-[#c9d1d9]">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3.5 bg-[#161b22] border-b border-[#30363d] shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="p-1.5 rounded-lg bg-[#0d1117] border border-blue-500/30 text-blue-400 shrink-0 shadow-xs">
+            <Bot className="w-4 h-4" />
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="min-w-0">
+            <h3 className="text-xs font-bold text-white truncate max-w-[200px]">
+              {agent.label}
+            </h3>
+            <span className="text-[10px] text-blue-400 font-mono flex items-center gap-1">
+              Standard Agent Properties
+            </span>
+          </div>
         </div>
+        <button
+          onClick={onClose}
+          className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
 
-        {/* Scrollable Content Body */}
-        <div className="flex-1 p-4 space-y-4 overflow-y-auto text-xs text-gray-300">
-          {/* 1. Basic Agent Metadata */}
-          <div className="space-y-3 bg-[#0d1117] p-3 rounded-lg border border-[#30363d]">
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400">
-                Agent Name
-              </label>
-              <input
-                type="text"
-                value={formData.label || ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('label', e.target.value)}
-                placeholder="e.g., Code Reviewer Agent"
-                className="w-full px-3 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-blue-500 rounded-lg text-xs text-white focus:outline-none"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400">
-                Description & Purpose
-              </label>
-              <input
-                type="text"
-                value={formData.description || ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('description', e.target.value)}
-                placeholder="Brief summary of agent responsibilities"
-                className="w-full px-3 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-blue-500 rounded-lg text-xs text-gray-300 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          {/* 2. Model Selection */}
-          <div className="space-y-2 bg-[#0d1117] p-3 rounded-lg border border-[#30363d]">
-            <div className="flex items-center gap-1.5 text-blue-400 font-bold text-xs">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Foundation Model</span>
-            </div>
-
-            <select
-              value={formData.model || 'gemini-2.5-pro'}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleFieldChange('model', e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-blue-500 rounded-lg text-xs text-white focus:outline-none cursor-pointer"
-            >
-              {GEMINI_MODELS.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 3. System Instructions */}
-          <div className="space-y-2 bg-[#0d1117] p-3 rounded-lg border border-[#30363d]">
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
-                <FileText className="w-3.5 h-3.5 text-blue-400" />
-                <span>System Instructions</span>
-              </label>
-              <span className="text-[10px] text-gray-500 font-mono">
-                {(formData.systemPrompt || '').length} chars
-              </span>
-            </div>
-            <textarea
-              rows={5}
-              value={formData.systemPrompt || ''}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleFieldChange('systemPrompt', e.target.value)}
-              placeholder="You are an expert software engineer specialized in code quality..."
-              className="w-full px-3 py-2 bg-[#161b22] border border-[#30363d] focus:border-blue-500 rounded-lg text-xs font-mono text-gray-200 focus:outline-none leading-relaxed resize-y"
-            />
-          </div>
-
-          {/* 4. Creativity Temperature */}
-          <div className="space-y-2 bg-[#0d1117] p-3 rounded-lg border border-[#30363d]">
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
-                <Sliders className="w-3.5 h-3.5 text-amber-400" />
-                <span>Creativity & Temperature</span>
-              </label>
-              <span className="text-xs font-mono font-bold text-amber-400">
-                {(formData.temperature ?? 0.7).toFixed(2)}
-              </span>
-            </div>
-            <input
-              type="range"
-              min="0.0"
-              max="1.0"
-              step="0.05"
-              value={formData.temperature ?? 0.7}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('temperature', parseFloat(e.target.value))}
-              className="w-full accent-amber-500 cursor-pointer"
-            />
-            <div className="flex justify-between text-[10px] text-gray-500">
-              <span>0.0 (Deterministic)</span>
-              <span>1.0 (Creative)</span>
-            </div>
-          </div>
-
-          {/* 5. Memory & Checkpointing Provider */}
-          <div className="space-y-2.5 bg-[#0d1117] p-3 rounded-lg border border-[#30363d]">
-            <div className="flex items-center gap-1.5 text-indigo-400 font-bold text-xs">
-              <Brain className="w-3.5 h-3.5" />
-              <span>Memory & Checkpointing</span>
-            </div>
-
-            <select
-              value={formData.memoryType || 'none'}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleFieldChange('memoryType', e.target.value as MemoryType)}
-              className="w-full px-3 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-indigo-500 rounded-lg text-xs text-white focus:outline-none cursor-pointer"
-            >
-              {MEMORY_OPTIONS.map((mem) => (
-                <option key={mem.type} value={mem.type}>
-                  {mem.name} ({mem.badge})
-                </option>
-              ))}
-            </select>
-
-            <div className="p-2.5 rounded-lg bg-[#161b22] border border-[#30363d] text-[11px] space-y-1">
-              <p className="text-gray-300 leading-relaxed">
-                {currentMemoryOption.description}
-              </p>
-              <p className="text-indigo-300/80 text-[10px]">
-                <strong className="text-indigo-200">Best for:</strong> {currentMemoryOption.bestFor}
-              </p>
-            </div>
-          </div>
-
-          {/* 6. Attached Tools */}
-          <div className="space-y-2.5 bg-[#0d1117] p-3 rounded-lg border border-[#30363d]">
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
-                <Wrench className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Attached Tools ({formData.tools?.length || 0})</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => setIsAddToolModalOpen(true)}
-                className="flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-bold px-2 py-0.5 rounded bg-emerald-950/40 border border-emerald-500/30 hover:bg-emerald-900/40 transition-colors cursor-pointer"
-              >
-                <Plus className="w-3 h-3" /> Add Tool
-              </button>
-            </div>
-
-            {formData.tools && formData.tools.length > 0 ? (
-              <div className="space-y-1.5">
-                {formData.tools.map((tool: ToolDefinition) => (
-                  <div
-                    key={tool.id}
-                    className="flex items-center justify-between p-2 rounded-lg bg-[#161b22] border border-[#30363d]"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-[#0d1117] text-gray-400 border border-[#30363d]">
-                        {tool.type}
-                      </span>
-                      <span className="text-xs text-white font-medium truncate">{tool.name}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTool(tool.id)}
-                      className="p-1 rounded text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                      title="Remove tool"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-[11px] text-gray-500 italic py-1">
-                No tools attached yet. Equip your agent with Google Search, code sandboxes, or database query tools.
-              </p>
-            )}
-          </div>
-
-          {/* 7. Structured Output Builder */}
-          <StructuredOutputBuilder
-            schema={formData.structuredOutputSchema}
-            agentLabel={formData.label || 'Agent'}
-            onChange={handleSchemaChange}
+      {/* Form Body */}
+      <div className="flex-1 p-4 space-y-4 overflow-y-auto text-xs text-gray-300">
+        {/* Agent Display Name */}
+        <div className="space-y-1">
+          <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400">Agent Display Name</label>
+          <input
+            type="text"
+            value={agent.label}
+            onChange={(e) => onUpdateAgent({ label: e.target.value })}
+            className="w-full px-3 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-blue-500 rounded-lg text-xs text-white focus:outline-none"
           />
         </div>
 
-        {/* Footer Actions */}
-        <div className="px-4 py-3 bg-[#161b22] border-t border-[#30363d] shrink-0 flex items-center justify-between">
-          {onDeleteAgent ? (
+        {/* Agent Prompt (Adjustable TextArea for Large Prompts) */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-bold uppercase tracking-tight text-gray-300 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Agent Prompt</span>
+            </label>
+            <span className="text-[10px] text-gray-400 font-mono">
+              {promptValue.length} chars • {promptValue.split(/\s+/).filter(Boolean).length} words
+            </span>
+          </div>
+          
+          <div className="relative group">
+            <textarea
+              rows={8}
+              value={promptValue}
+              onChange={(e) => handlePromptChange(e.target.value)}
+              placeholder="Enter the complete agent prompt instructions, role, domain context, constraints, and output format..."
+              className="w-full min-h-[160px] max-h-[480px] px-3 py-2 bg-[#0d1117] border border-[#30363d] focus:border-blue-500 rounded-lg text-xs text-gray-200 focus:outline-none resize-y font-mono leading-relaxed selection:bg-blue-900 selection:text-white"
+            />
+            <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
+              <span>Supports large system prompts, persona directives & few-shot instructions</span>
+              <span className="text-[9px] font-mono text-gray-400">↕ Drag corner to expand</span>
+            </div>
+          </div>
+        </div>
+
+        {/* STRUCTURED OUTPUT SCHEMA BUILDER */}
+        <StructuredOutputBuilder
+          schema={agent.structuredOutput}
+          agentLabel={agent.label}
+          onChange={(newSchema: StructuredOutputSchema) => {
+            onUpdateAgent({
+              structuredOutput: newSchema,
+              outputFormat: newSchema.enabled ? 'structured' : 'text',
+            });
+          }}
+        />
+
+        {/* Underlying LLM Engine */}
+        <div className="space-y-1">
+          <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
+            <Cpu className="w-3 h-3 text-blue-400" />
+            Underlying LLM Engine
+          </label>
+          <select
+            value={agent.model || 'gemini-flash-latest'}
+            onChange={(e) => onUpdateAgent({ model: e.target.value })}
+            className="w-full px-3 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-blue-500 rounded-lg text-xs text-white focus:outline-none cursor-pointer"
+          >
+            {SUPPORTED_MODELS.map((m) => (
+              <option key={m.id} value={m.id} className="bg-[#161b22]">
+                {m.name} ({m.id})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Temperature Slider */}
+        <div className="space-y-1.5 bg-[#0d1117] p-3 rounded-lg border border-[#30363d]">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
+              <Sliders className="w-3 h-3 text-emerald-400" />
+              Creativity (Temperature)
+            </span>
+            <span className="font-mono text-xs text-emerald-400 font-bold">{agent.temperature}</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={agent.temperature}
+            onChange={(e) => onUpdateAgent({ temperature: parseFloat(e.target.value) })}
+            className="w-full accent-emerald-500 cursor-pointer"
+          />
+          <div className="flex justify-between text-[9px] text-gray-400 font-mono">
+            <span>Deterministic (0.0)</span>
+            <span>Creative (1.0)</span>
+          </div>
+        </div>
+
+        {/* AGENT MEMORY & CHECKPOINTING SECTION */}
+        <div className="space-y-3 pt-2 border-t border-[#30363d]">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-bold uppercase tracking-tight text-cyan-400 flex items-center gap-1.5">
+              <Brain className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Memory & Checkpointing</span>
+            </label>
+            {agent.isStartNode && (
+              <span className="text-[9px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                Root Thread Checkpointer
+              </span>
+            )}
+          </div>
+
+          <div className="bg-[#0d1117] p-3 rounded-lg border border-cyan-500/30 space-y-3">
+            {/* Memory Provider Selection Dropdown */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase tracking-tight text-gray-300 flex items-center justify-between">
+                <span>State Storage / Memory Provider</span>
+                <span className="text-[9px] font-normal text-cyan-400">
+                  {getMemoryOption(agent.memoryConfig?.type || 'none').badge}
+                </span>
+              </label>
+              <select
+                value={agent.memoryConfig?.type || 'none'}
+                onChange={(e) => {
+                  const newType = e.target.value as AgentMemoryType;
+                  const def = getMemoryOption(newType);
+                  onUpdateAgent({
+                    memoryConfig: {
+                      ...def.defaultConfig,
+                      ...agent.memoryConfig,
+                      type: newType,
+                    },
+                  });
+                }}
+                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-cyan-500/40 focus:border-cyan-400 rounded-lg text-xs text-cyan-200 font-medium focus:outline-none cursor-pointer"
+              >
+                <optgroup label="Stateless" className="bg-[#161b22] text-gray-400 font-bold">
+                  <option value="none" className="text-gray-200">🚫 Stateless (No Memory)</option>
+                </optgroup>
+                <optgroup label="LangGraph Checkpointers" className="bg-[#161b22] text-gray-400 font-bold">
+                  <option value="langgraph_in_memory" className="text-gray-200">🧠 LangGraph In-Memory (MemorySaver)</option>
+                  <option value="sqlite" className="text-gray-200">💾 SQLite File Store (SqliteSaver)</option>
+                </optgroup>
+                <optgroup label="Database & Cache Stores" className="bg-[#161b22] text-gray-400 font-bold">
+                  <option value="postgres" className="text-gray-200">🗄️ PostgreSQL / Cloud SQL (AsyncPostgresSaver)</option>
+                  <option value="redis" className="text-gray-200">⚡ Redis Store (RedisSaver with TTL)</option>
+                  <option value="firestore" className="text-gray-200">☁️ Google Cloud Firestore / Spanner (ADK)</option>
+                </optgroup>
+                <optgroup label="Context Window & Summarization" className="bg-[#161b22] text-gray-400 font-bold">
+                  <option value="window_buffer" className="text-gray-200">⏱️ Sliding Window Buffer (K-Turns)</option>
+                  <option value="summary_buffer" className="text-gray-200">📝 Conversation Summary Memory (LLM)</option>
+                </optgroup>
+                <optgroup label="Long-Term Semantic & Entity Memory" className="bg-[#161b22] text-gray-400 font-bold">
+                  <option value="vector_rag" className="text-gray-200">🔍 Vector Store / Semantic Memory (RAG)</option>
+                  <option value="entity_fact" className="text-gray-200">🧬 Entity & Fact Memory (Mem0 / Zep)</option>
+                </optgroup>
+              </select>
+            </div>
+
+            {/* Provider Description */}
+            <div className="p-2 rounded bg-[#161b22] border border-[#30363d] text-[11px] text-gray-300 leading-relaxed">
+              <div className="text-cyan-300 font-semibold mb-0.5">
+                {getMemoryOption(agent.memoryConfig?.type || 'none').name}
+              </div>
+              <p className="text-gray-400 text-[10px]">
+                {getMemoryOption(agent.memoryConfig?.type || 'none').description}
+              </p>
+              <div className="mt-1 pt-1 border-t border-[#30363d] text-[9px] text-gray-500">
+                <strong className="text-gray-400">Best for:</strong> {getMemoryOption(agent.memoryConfig?.type || 'none').bestFor}
+              </div>
+            </div>
+
+            {/* EDITABLE PARAMETERS FOR EACH MEMORY TYPE */}
+            {/* 1. LangGraph In-Memory */}
+            {agent.memoryConfig?.type === 'langgraph_in_memory' && (
+              <div className="space-y-2 pt-1 border-t border-[#30363d]">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                  LangGraph MemorySaver Settings
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400">Thread ID State Key</label>
+                  <input
+                    type="text"
+                    value={agent.memoryConfig.threadIdKey || 'thread_id'}
+                    onChange={(e) => onUpdateAgent({
+                      memoryConfig: { ...agent.memoryConfig!, threadIdKey: e.target.value }
+                    })}
+                    placeholder="thread_id"
+                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                  />
+                  <span className="text-[9px] text-gray-500">Key used in configurable thread invocation dictionary</span>
+                </div>
+              </div>
+            )}
+
+            {/* 2. PostgreSQL / Cloud SQL */}
+            {agent.memoryConfig?.type === 'postgres' && (
+              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                  PostgreSQL Checkpointer Settings
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400">Connection String Env Variable</label>
+                  <input
+                    type="text"
+                    value={agent.memoryConfig.connectionEnvVar || 'DATABASE_URL'}
+                    onChange={(e) => onUpdateAgent({
+                      memoryConfig: { ...agent.memoryConfig!, connectionEnvVar: e.target.value }
+                    })}
+                    placeholder="DATABASE_URL"
+                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Table Name</label>
+                    <input
+                      type="text"
+                      value={agent.memoryConfig.tableName || 'checkpoints'}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, tableName: e.target.value }
+                      })}
+                      placeholder="checkpoints"
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Thread Key</label>
+                    <input
+                      type="text"
+                      value={agent.memoryConfig.threadIdKey || 'thread_id'}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, threadIdKey: e.target.value }
+                      })}
+                      placeholder="thread_id"
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 3. Redis Store */}
+            {agent.memoryConfig?.type === 'redis' && (
+              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                  Redis Key-Value Settings
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400">Redis Connection Env Variable</label>
+                  <input
+                    type="text"
+                    value={agent.memoryConfig.connectionEnvVar || 'REDIS_URL'}
+                    onChange={(e) => onUpdateAgent({
+                      memoryConfig: { ...agent.memoryConfig!, connectionEnvVar: e.target.value }
+                    })}
+                    placeholder="REDIS_URL"
+                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">TTL (seconds)</label>
+                    <input
+                      type="number"
+                      value={agent.memoryConfig.ttlSeconds ?? 86400}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, ttlSeconds: parseInt(e.target.value) || 3600 }
+                      })}
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Session Key</label>
+                    <input
+                      type="text"
+                      value={agent.memoryConfig.threadIdKey || 'session_id'}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, threadIdKey: e.target.value }
+                      })}
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 4. Google Firestore / Spanner */}
+            {agent.memoryConfig?.type === 'firestore' && (
+              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                  Google Cloud Firestore Settings
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400">Firestore Collection Name</label>
+                  <input
+                    type="text"
+                    value={agent.memoryConfig.collectionName || 'agent_sessions'}
+                    onChange={(e) => onUpdateAgent({
+                      memoryConfig: { ...agent.memoryConfig!, collectionName: e.target.value }
+                    })}
+                    placeholder="agent_sessions"
+                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400">Google Cloud Project Env</label>
+                  <input
+                    type="text"
+                    value={agent.memoryConfig.connectionEnvVar || 'GOOGLE_CLOUD_PROJECT'}
+                    onChange={(e) => onUpdateAgent({
+                      memoryConfig: { ...agent.memoryConfig!, connectionEnvVar: e.target.value }
+                    })}
+                    placeholder="GOOGLE_CLOUD_PROJECT"
+                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* 5. SQLite File Store */}
+            {agent.memoryConfig?.type === 'sqlite' && (
+              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                  SQLite Local File Settings
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400">Database File Path</label>
+                  <input
+                    type="text"
+                    value={agent.memoryConfig.sqlitePath || './agent_memory.sqlite'}
+                    onChange={(e) => onUpdateAgent({
+                      memoryConfig: { ...agent.memoryConfig!, sqlitePath: e.target.value }
+                    })}
+                    placeholder="./agent_memory.sqlite"
+                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400">Table Name</label>
+                  <input
+                    type="text"
+                    value={agent.memoryConfig.tableName || 'checkpoints'}
+                    onChange={(e) => onUpdateAgent({
+                      memoryConfig: { ...agent.memoryConfig!, tableName: e.target.value }
+                    })}
+                    placeholder="checkpoints"
+                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* 6. Sliding Window Buffer */}
+            {agent.memoryConfig?.type === 'window_buffer' && (
+              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                  Sliding Window Context Settings
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Window Turns (K)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={agent.memoryConfig.windowTurns ?? 10}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, windowTurns: parseInt(e.target.value) || 10 }
+                      })}
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Max Token Budget</label>
+                    <input
+                      type="number"
+                      step="500"
+                      value={agent.memoryConfig.maxTokens ?? 4000}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, maxTokens: parseInt(e.target.value) || 4000 }
+                      })}
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 7. Summary Buffer */}
+            {agent.memoryConfig?.type === 'summary_buffer' && (
+              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                  Conversation Summary Settings
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400">Summary LLM Model</label>
+                  <input
+                    type="text"
+                    value={agent.memoryConfig.summaryModel || 'gemini-flash-latest'}
+                    onChange={(e) => onUpdateAgent({
+                      memoryConfig: { ...agent.memoryConfig!, summaryModel: e.target.value }
+                    })}
+                    placeholder="gemini-flash-latest"
+                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400">Summary Token Threshold</label>
+                  <input
+                    type="number"
+                    step="500"
+                    value={agent.memoryConfig.maxTokens ?? 2000}
+                    onChange={(e) => onUpdateAgent({
+                      memoryConfig: { ...agent.memoryConfig!, maxTokens: parseInt(e.target.value) || 2000 }
+                    })}
+                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* 8. Vector Store / RAG */}
+            {agent.memoryConfig?.type === 'vector_rag' && (
+              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                  Vector Store / Semantic Memory Settings
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Vector Provider</label>
+                    <select
+                      value={agent.memoryConfig.vectorProvider || 'pgvector'}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, vectorProvider: e.target.value as any }
+                      })}
+                      className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white cursor-pointer"
+                    >
+                      <option value="pgvector">pgvector (Postgres)</option>
+                      <option value="chroma">Chroma DB</option>
+                      <option value="pinecone">Pinecone</option>
+                      <option value="qdrant">Qdrant</option>
+                      <option value="weaviate">Weaviate</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Embedding Model</label>
+                    <input
+                      type="text"
+                      value={agent.memoryConfig.embeddingModel || 'text-embedding-004'}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, embeddingModel: e.target.value }
+                      })}
+                      placeholder="text-embedding-004"
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Top-K Retrieval</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={agent.memoryConfig.topK ?? 4}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, topK: parseInt(e.target.value) || 4 }
+                      })}
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Similarity Threshold</label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      max="1"
+                      value={agent.memoryConfig.similarityThreshold ?? 0.75}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, similarityThreshold: parseFloat(e.target.value) || 0.75 }
+                      })}
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 9. Entity & Fact Memory */}
+            {agent.memoryConfig?.type === 'entity_fact' && (
+              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                  Entity & Fact Memory Settings (Mem0 / Zep)
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400">User ID Parameter Key</label>
+                  <input
+                    type="text"
+                    value={agent.memoryConfig.userIdKey || 'user_id'}
+                    onChange={(e) => onUpdateAgent({
+                      memoryConfig: { ...agent.memoryConfig!, userIdKey: e.target.value }
+                    })}
+                    placeholder="user_id"
+                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400">Entity Collection Name</label>
+                  <input
+                    type="text"
+                    value={agent.memoryConfig.collectionName || 'user_entities'}
+                    onChange={(e) => onUpdateAgent({
+                      memoryConfig: { ...agent.memoryConfig!, collectionName: e.target.value }
+                    })}
+                    placeholder="user_entities"
+                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                  />
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="extractUserFactsToggle"
+                    checked={agent.memoryConfig.extractUserFacts !== false}
+                    onChange={(e) => onUpdateAgent({
+                      memoryConfig: { ...agent.memoryConfig!, extractUserFacts: e.target.checked }
+                    })}
+                    className="w-3.5 h-3.5 accent-cyan-500 rounded cursor-pointer"
+                  />
+                  <label htmlFor="extractUserFactsToggle" className="text-[10px] text-gray-300 cursor-pointer">
+                    Automatically extract and update user preferences & facts
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Attached Tools Section */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
+              <Wrench className="w-3 h-3 text-green-400" />
+              Attached Tools ({agent.tools?.length || 0})
+            </label>
             <button
-              type="button"
-              onClick={() => {
-                if (confirm(`Are you sure you want to delete agent "${formData.label}"?`)) {
-                  onDeleteAgent(nodeId);
-                  onClose();
-                }
-              }}
-              className="p-2 text-gray-400 hover:text-rose-400 rounded-lg hover:bg-rose-950/40 transition-colors cursor-pointer"
-              title="Delete Agent"
+              onClick={onOpenAddTool}
+              className="flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 font-medium cursor-pointer"
             >
-              <Trash2 className="w-4 h-4" />
+              <Plus className="w-3 h-3" />
+              Add Tool
             </button>
-          ) : (
-            <div />
+          </div>
+
+          <div className="space-y-1.5">
+            {agent.tools && agent.tools.length > 0 ? (
+              agent.tools.map((tool: ToolDefinition) => (
+                <div
+                  key={tool.id}
+                  className="flex items-center justify-between p-2 rounded-lg bg-[#0d1117] border border-[#30363d]"
+                >
+                  <div>
+                    <div className="font-semibold text-gray-200 text-xs">{tool.name}</div>
+                    <div className="text-[10px] text-gray-400 truncate max-w-[200px]">{tool.description}</div>
+                  </div>
+                  <button
+                    onClick={() => onRemoveTool(tool.id)}
+                    className="p-1 text-gray-400 hover:text-rose-400 transition-colors cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="text-[11px] text-gray-400 italic p-2 bg-[#0d1117] rounded-lg border border-dashed border-[#30363d]">
+                No tools attached yet. Click "Add Tool" to attach web search, code interpreter, or custom APIs.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Sub-Agent Delegation Section: Pattern Dropdown ABOVE orderable list */}
+        <div className="space-y-2.5 pt-2 border-t border-[#30363d]">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
+              <Layers className="w-3 h-3 text-purple-400" />
+              Sub-Agent Delegation ({subAgents.length})
+            </label>
+            <span className="text-[10px] text-gray-500 font-normal">drag handle to reorder</span>
+          </div>
+
+          {/* Pattern Dropdown placed directly above the list */}
+          <div className="space-y-1 bg-[#0d1117] p-2.5 rounded-lg border border-purple-500/30">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-bold uppercase tracking-tight text-purple-300">
+                Orchestration Pattern
+              </label>
+            </div>
+            <select
+              value={currentPattern}
+              onChange={(e) => {
+                const newPattern = e.target.value as DelegationPattern;
+                const updates: Partial<AgentData> = { subAgentPattern: newPattern };
+                if (newPattern === 'debate' && !agent.debateConfig) {
+                  updates.debateConfig = {
+                    maxRounds: 2,
+                    consensusThreshold: 0.85,
+                    earlyStoppingEnabled: true,
+                    debateStyle: 'structured_rebuttal',
+                    tieBreakerStrategy: 'conditional_approval',
+                    minWordLimitPerBrief: 250,
+                    requireEvidenceCitations: true,
+                  };
+                }
+                onUpdateAgent(updates);
+              }}
+              className="w-full px-2.5 py-1.5 bg-[#161b22] border border-purple-500/40 focus:border-purple-400 rounded text-xs text-purple-200 font-medium focus:outline-none cursor-pointer"
+            >
+              {PATTERN_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id} className="bg-[#161b22] text-gray-200">
+                  {opt.label} — {opt.desc}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Debate & Consensus Pattern Configuration Panel */}
+          {(currentPattern === 'debate' || agent.debateConfig) && (
+            <div className="space-y-3 bg-[#0d1117] p-3 rounded-lg border border-pink-500/40 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-pink-300">
+                  <Scale className="w-3.5 h-3.5 text-pink-400" />
+                  Debate & Consensus Settings
+                </div>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-300 border border-pink-500/30 font-mono">
+                  Convergence Loop
+                </span>
+              </div>
+
+              {/* Max Rounds / Turn Bound */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <label className="text-[11px] text-gray-300 font-medium">Max Debate Rounds</label>
+                  <span className="font-mono text-xs text-pink-400 font-bold">
+                    {agent.debateConfig?.maxRounds ?? 2} {agent.debateConfig?.maxRounds === 1 ? 'Round' : 'Rounds'}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="6"
+                  step="1"
+                  value={agent.debateConfig?.maxRounds ?? 2}
+                  onChange={(e) => onUpdateAgent({
+                    debateConfig: {
+                      maxRounds: parseInt(e.target.value) || 2,
+                      consensusThreshold: agent.debateConfig?.consensusThreshold ?? 0.85,
+                      earlyStoppingEnabled: agent.debateConfig?.earlyStoppingEnabled ?? true,
+                      debateStyle: agent.debateConfig?.debateStyle ?? 'structured_rebuttal',
+                      tieBreakerStrategy: agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval',
+                      requireEvidenceCitations: agent.debateConfig?.requireEvidenceCitations ?? true,
+                      minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
+                    }
+                  })}
+                  className="w-full h-1.5 bg-[#21262d] rounded-lg appearance-none cursor-pointer accent-pink-500"
+                />
+                <div className="flex justify-between text-[9px] text-gray-500 font-mono">
+                  <span>1 (Opening Only)</span>
+                  <span>2 (1 Rebuttal)</span>
+                  <span>3 (2 Rebuttals)</span>
+                  <span>6 (Deep Panel)</span>
+                </div>
+              </div>
+
+              {/* Consensus Confidence Threshold */}
+              <div className="space-y-1.5 pt-2 border-t border-[#21262d]">
+                <div className="flex items-center justify-between text-xs">
+                  <label className="text-[11px] text-gray-300 font-medium">Consensus Threshold</label>
+                  <span className="font-mono text-xs text-emerald-400 font-bold">
+                    {Math.round((agent.debateConfig?.consensusThreshold ?? 0.85) * 100)}% Agreement
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="50"
+                  max="99"
+                  step="1"
+                  value={Math.round((agent.debateConfig?.consensusThreshold ?? 0.85) * 100)}
+                  onChange={(e) => onUpdateAgent({
+                    debateConfig: {
+                      maxRounds: agent.debateConfig?.maxRounds ?? 2,
+                      consensusThreshold: (parseInt(e.target.value) || 85) / 100,
+                      earlyStoppingEnabled: agent.debateConfig?.earlyStoppingEnabled ?? true,
+                      debateStyle: agent.debateConfig?.debateStyle ?? 'structured_rebuttal',
+                      tieBreakerStrategy: agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval',
+                      requireEvidenceCitations: agent.debateConfig?.requireEvidenceCitations ?? true,
+                      minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
+                    }
+                  })}
+                  className="w-full h-1.5 bg-[#21262d] rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+                <p className="text-[10px] text-gray-400">
+                  Minimum semantic agreement score required for the Judge to approve consensus.
+                </p>
+              </div>
+
+              {/* Early Stopping Toggle */}
+              <div className="flex items-start gap-2 pt-2 border-t border-[#21262d]">
+                <input
+                  type="checkbox"
+                  id="earlyStoppingCheckbox"
+                  checked={agent.debateConfig?.earlyStoppingEnabled !== false}
+                  onChange={(e) => onUpdateAgent({
+                    debateConfig: {
+                      maxRounds: agent.debateConfig?.maxRounds ?? 2,
+                      consensusThreshold: agent.debateConfig?.consensusThreshold ?? 0.85,
+                      earlyStoppingEnabled: e.target.checked,
+                      debateStyle: agent.debateConfig?.debateStyle ?? 'structured_rebuttal',
+                      tieBreakerStrategy: agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval',
+                      requireEvidenceCitations: agent.debateConfig?.requireEvidenceCitations ?? true,
+                      minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
+                    }
+                  })}
+                  className="w-3.5 h-3.5 mt-0.5 accent-pink-500 rounded cursor-pointer shrink-0"
+                />
+                <label htmlFor="earlyStoppingCheckbox" className="text-[11px] text-gray-300 cursor-pointer">
+                  <span className="font-semibold text-pink-300">Early Termination:</span> Exit debate early if consensus threshold is reached before max rounds.
+                </label>
+              </div>
+
+              {/* Debate Style & Tie-Breaker Strategy */}
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#21262d]">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-gray-400">Debate Style</label>
+                  <select
+                    value={agent.debateConfig?.debateStyle ?? 'structured_rebuttal'}
+                    onChange={(e) => onUpdateAgent({
+                      debateConfig: {
+                        maxRounds: agent.debateConfig?.maxRounds ?? 2,
+                        consensusThreshold: agent.debateConfig?.consensusThreshold ?? 0.85,
+                        earlyStoppingEnabled: agent.debateConfig?.earlyStoppingEnabled ?? true,
+                        debateStyle: e.target.value as DebateStyle,
+                        tieBreakerStrategy: agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval',
+                        requireEvidenceCitations: agent.debateConfig?.requireEvidenceCitations ?? true,
+                        minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
+                      }
+                    })}
+                    className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-pink-500 rounded text-xs text-white cursor-pointer"
+                  >
+                    <option value="structured_rebuttal">Structured Rebuttal</option>
+                    <option value="socratic">Socratic Dialectic</option>
+                    <option value="free_form">Free-Form Exchange</option>
+                    <option value="panel_scoring">Panel Scoring</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-gray-400">Stalemate Policy</label>
+                  <select
+                    value={agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval'}
+                    onChange={(e) => onUpdateAgent({
+                      debateConfig: {
+                        maxRounds: agent.debateConfig?.maxRounds ?? 2,
+                        consensusThreshold: agent.debateConfig?.consensusThreshold ?? 0.85,
+                        earlyStoppingEnabled: agent.debateConfig?.earlyStoppingEnabled ?? true,
+                        debateStyle: agent.debateConfig?.debateStyle ?? 'structured_rebuttal',
+                        tieBreakerStrategy: e.target.value as TieBreakerStrategy,
+                        requireEvidenceCitations: agent.debateConfig?.requireEvidenceCitations ?? true,
+                        minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
+                      }
+                    })}
+                    className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-pink-500 rounded text-xs text-white cursor-pointer"
+                  >
+                    <option value="conditional_approval">Conditional Approval</option>
+                    <option value="conservative_veto">Conservative Veto</option>
+                    <option value="moderator_vote">Moderator Decides</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Evidence Citations Enforcement */}
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="evidenceCitationsCheckbox"
+                  checked={agent.debateConfig?.requireEvidenceCitations !== false}
+                  onChange={(e) => onUpdateAgent({
+                    debateConfig: {
+                      maxRounds: agent.debateConfig?.maxRounds ?? 2,
+                      consensusThreshold: agent.debateConfig?.consensusThreshold ?? 0.85,
+                      earlyStoppingEnabled: agent.debateConfig?.earlyStoppingEnabled ?? true,
+                      debateStyle: agent.debateConfig?.debateStyle ?? 'structured_rebuttal',
+                      tieBreakerStrategy: agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval',
+                      requireEvidenceCitations: e.target.checked,
+                      minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
+                    }
+                  })}
+                  className="w-3.5 h-3.5 accent-pink-500 rounded cursor-pointer"
+                />
+                <label htmlFor="evidenceCitationsCheckbox" className="text-[10px] text-gray-300 cursor-pointer">
+                  Require empirical evidence citations & source links in each brief
+                </label>
+              </div>
+            </div>
           )}
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3 py-1.5 text-xs rounded-lg bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-gray-300 hover:text-white cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              className="px-4 py-1.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
-            >
-              {savedSuccess ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-              <span>{savedSuccess ? 'Saved!' : 'Save Agent'}</span>
-            </button>
+          {/* Orderable Sub-Agents List */}
+          <div className="space-y-1.5">
+            {subAgents.length > 0 ? (
+              subAgents.map((sub: SubAgentRef, idx: number) => (
+                <div
+                  key={sub.agentId || idx}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, idx)}
+                  onDragOver={(e) => handleDragOver(e, idx)}
+                  onDrop={(e) => handleDrop(e, idx)}
+                  onDragEnd={() => {
+                    setDraggedIdx(null);
+                    setDragOverIdx(null);
+                  }}
+                  className={`flex items-center justify-between p-2 rounded-lg bg-[#0d1117] border transition-all ${
+                    dragOverIdx === idx
+                      ? 'border-purple-400 bg-purple-950/40'
+                      : draggedIdx === idx
+                      ? 'opacity-40 border-dashed border-gray-500'
+                      : 'border-[#30363d] hover:border-purple-500/40'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="cursor-grab active:cursor-grabbing p-0.5 text-gray-500 hover:text-purple-400">
+                      <GripVertical className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-[10px] font-mono text-purple-400 font-bold bg-purple-950/60 px-1.5 py-0.5 rounded border border-purple-500/20">
+                      #{idx + 1}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-gray-200 text-xs truncate max-w-[150px]">
+                        {sub.name}
+                      </div>
+                      <div className="text-[10px] text-gray-400 truncate max-w-[150px]">
+                        {sub.role || 'Sub-agent worker'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleMoveSubAgent(idx, idx - 1)}
+                      disabled={idx === 0}
+                      title="Move Up"
+                      className="p-1 text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer disabled:cursor-default"
+                    >
+                      <ChevronUp className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={() => handleMoveSubAgent(idx, idx + 1)}
+                      disabled={idx === subAgents.length - 1}
+                      title="Move Down"
+                      className="p-1 text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer disabled:cursor-default"
+                    >
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={() => handleRemoveSubAgent(sub.agentId)}
+                      title="Remove Sub-Agent Link"
+                      className="p-1 text-gray-400 hover:text-rose-400 transition-colors cursor-pointer ml-1"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-[11px] text-gray-400 italic p-2 bg-[#0d1117] rounded-lg border border-dashed border-[#30363d]">
+                No sub-agents attached. Connect this node to other agents by dragging from its bottom purple handle.
+              </div>
+            )}
           </div>
         </div>
       </div>
-
-      {/* Add Tool Modal */}
-      <AddToolModal
-        isOpen={isAddToolModalOpen}
-        onClose={() => setIsAddToolModalOpen(false)}
-        onSelectTool={handleAddTool}
-        existingToolIds={(formData.tools || []).map((t: ToolDefinition) => t.id)}
-      />
-    </>
+    </div>
   );
 };
