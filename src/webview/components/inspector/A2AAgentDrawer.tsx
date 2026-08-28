@@ -40,23 +40,11 @@ interface A2AAgentDrawerProps {
 
 const SUPPORTED_MODELS = [
   { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)', desc: 'Fast, lightweight, sub-second multimodal reasoning' },
-  { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash', desc: 'Hybrid reasoning and high-throughput agent execution' },
-  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', desc: 'High-speed generative tasks and tool orchestration' },
-  { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', desc: 'Deep multimodal reasoning & complex planning' },
-  { id: 'claude-sonnet-latest', name: 'Claude Sonnet (Latest)', desc: 'Advanced coding, nuance understanding & agentic workflows' },
-  { id: 'claude-opus-latest', name: 'Claude Opus (Latest)', desc: 'Top-tier complex analysis, mathematical reasoning & synthesis' },
-  { id: 'openai-latest', name: 'OpenAI (Latest)', desc: 'Flagship multimodal model with omni tool calling' },
-  { id: 'grok-latest', name: 'Grok (Latest)', desc: 'High-context real-time reasoning and agent tool invocation' },
 ];
 
 const PATTERN_OPTIONS: { id: DelegationPattern; label: string; desc: string }[] = [
   { id: 'sequential', label: 'Sequential Pipeline', desc: 'Linear remote peer handoff execution' },
   { id: 'parallel', label: 'Parallel / Fan-Out', desc: 'Concurrent async broadcast across peer network' },
-  { id: 'router', label: 'Router', desc: 'Route task based on semantic capability match' },
-  { id: 'loop', label: 'Evaluator-Optimizer', desc: 'Iterative bidirectional exchange and refinement' },
-  { id: 'debate', label: 'Multi-Agent Debate', desc: 'Distributed multi-agent peer debate & consensus panel' },
-  { id: 'coordinator', label: 'Coordinator', desc: 'Central orchestrator governing peer worker nodes' },
-  { id: 'hierarchical_decomposition', label: 'Hierarchical Delegation', desc: 'Multi-tiered decentralized agent federation' },
 ];
 
 const PRESET_CAPABILITIES = [
@@ -148,7 +136,7 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
     capabilities: agent.a2aConfig?.capabilities || ['schema_negotiation', 'task_handoff', 'streaming_artifacts'],
   };
 
-  const descriptionValue = agent.systemPrompt || agent.role || '';
+  const descriptionValue = agent.systemPrompt ?? '';
 
   const handleUpdateConfig = (partial: Partial<A2AConfig>) => {
     onUpdateAgent({
@@ -356,7 +344,7 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
               rows={5}
               value={descriptionValue}
               onChange={(e) => handleDescriptionChange(e.target.value)}
-              placeholder="Describe what this A2A agent does, its core capabilities, input expectations, and purpose so the parent agent knows when and how to invoke it..."
+              placeholder="Add agent instructions"
               className="w-full min-h-[120px] max-h-[380px] px-3 py-2 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded-lg text-xs text-gray-200 focus:outline-none resize-y font-mono leading-relaxed selection:bg-cyan-900 selection:text-white"
             />
             <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">

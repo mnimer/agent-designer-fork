@@ -367,10 +367,11 @@ export const VSCodeChrome: React.FC<VSCodeChromeProps> = ({
                   </button>
                   <button
                     onClick={onFitView}
-                    title="Fit View"
-                    className="p-1.5 hover:bg-[var(--vscode-hover)] text-[var(--vscode-text-secondary)] hover:text-[var(--vscode-text-primary)] cursor-pointer"
+                    title="Zoom to Fit"
+                    className="flex items-center gap-1.5 px-2 py-1.5 hover:bg-[var(--vscode-hover)] text-[var(--vscode-text-secondary)] hover:text-[var(--vscode-text-primary)] cursor-pointer text-xs font-medium"
                   >
-                    <Maximize className="w-3.5 h-3.5" />
+                    <Maximize className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Zoom to Fit</span>
                   </button>
                 </div>
               </div>

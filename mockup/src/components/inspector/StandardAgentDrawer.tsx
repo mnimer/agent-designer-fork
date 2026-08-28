@@ -45,24 +45,11 @@ interface StandardAgentDrawerProps {
 
 const SUPPORTED_MODELS = [
   { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)', desc: 'Fast, lightweight, sub-second multimodal reasoning' },
-  { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash', desc: 'Hybrid reasoning and high-throughput agent execution' },
-  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', desc: 'High-speed generative tasks and tool orchestration' },
-  { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', desc: 'Deep multimodal reasoning & complex planning' },
-  { id: 'claude-sonnet-latest', name: 'Claude Sonnet (Latest)', desc: 'Advanced coding, nuance understanding & agentic workflows' },
-  { id: 'claude-opus-latest', name: 'Claude Opus (Latest)', desc: 'Top-tier complex analysis, mathematical reasoning & synthesis' },
-  { id: 'openai-latest', name: 'OpenAI (Latest)', desc: 'Flagship multimodal model with omni tool calling' },
-  { id: 'grok-latest', name: 'Grok (Latest)', desc: 'High-context real-time reasoning and agent tool invocation' },
 ];
 
 const PATTERN_OPTIONS: { id: DelegationPattern; label: string; desc: string }[] = [
   { id: 'sequential', label: 'Sequential Pipeline', desc: 'Linear prompt chaining execution (Planner → Executor → Reviewer)' },
   { id: 'parallel', label: 'Parallel / Fan-Out', desc: 'Concurrent async dispatch and fan-in aggregation' },
-  { id: 'router', label: 'Router', desc: 'Dynamic conditional routing based on intent classification' },
-  { id: 'loop', label: 'Evaluator-Optimizer', desc: 'Cyclic feedback loop between Generator and Evaluator' },
-  { id: 'debate', label: 'Multi-Agent Debate', desc: 'Proponent & Opponent debate to reach consensus through a Judge' },
-  { id: 'hierarchical_decomposition', label: 'Hierarchical Delegation', desc: 'Multi-tier supervisor delegating to domain leads and worker pool' },
-  { id: 'review_critique', label: 'Review & Critique', desc: 'Creator draft submitted to adversarial critic and synthesis editor' },
-  { id: 'coordinator', label: 'Coordinator', desc: 'Stateful supervisor blackboard dispatching domain tasks' },
 ];
 
 export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
@@ -78,7 +65,7 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
 
   const subAgents = agent.subAgents || [];
   const currentPattern: DelegationPattern = agent.subAgentPattern || 'parallel';
-  const promptValue = agent.systemPrompt || agent.role || '';
+  const promptValue = agent.systemPrompt ?? '';
 
   const handleMoveSubAgent = (fromIdx: number, toIdx: number) => {
     if (toIdx < 0 || toIdx >= subAgents.length) return;
@@ -116,11 +103,8 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
   };
 
   const handlePromptChange = (newPrompt: string) => {
-    // Sync both systemPrompt and role for generator and label display
-    const firstSentence = newPrompt.split('\n')[0].trim();
     onUpdateAgent({
       systemPrompt: newPrompt,
-      role: firstSentence || agent.role || 'Autonomous reasoning agent',
     });
   };
 
@@ -179,7 +163,7 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
               rows={8}
               value={promptValue}
               onChange={(e) => handlePromptChange(e.target.value)}
-              placeholder="Enter the complete agent prompt instructions, role, domain context, constraints, and output format..."
+              placeholder="Add agent instructions"
               className="w-full min-h-[160px] max-h-[480px] px-3 py-2 bg-[#0d1117] border border-[#30363d] focus:border-blue-500 rounded-lg text-xs text-gray-200 focus:outline-none resize-y font-mono leading-relaxed selection:bg-blue-900 selection:text-white"
             />
             <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
@@ -244,19 +228,18 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
           </div>
         </div>
 
-        {/* AGENT MEMORY & CHECKPOINTING SECTION */}
-        <div className="space-y-3 pt-2 border-t border-[#30363d]">
-          <div className="flex items-center justify-between">
-            <label className="text-[11px] font-bold uppercase tracking-tight text-cyan-400 flex items-center gap-1.5">
-              <Brain className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Memory & Checkpointing</span>
-            </label>
-            {agent.isStartNode && (
+        {/* AGENT MEMORY & CHECKPOINTING SECTION (Root node only) */}
+        {agent.isStartNode && (
+          <div className="space-y-3 pt-2 border-t border-[#30363d]">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-bold uppercase tracking-tight text-cyan-400 flex items-center gap-1.5">
+                <Brain className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Memory & Checkpointing</span>
+              </label>
               <span className="text-[9px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
                 Root Thread Checkpointer
               </span>
-            )}
-          </div>
+            </div>
 
           <div className="bg-[#0d1117] p-3 rounded-lg border border-cyan-500/30 space-y-3">
             {/* Memory Provider Selection Dropdown */}
@@ -282,26 +265,7 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
                 }}
                 className="w-full px-2.5 py-1.5 bg-[#161b22] border border-cyan-500/40 focus:border-cyan-400 rounded-lg text-xs text-cyan-200 font-medium focus:outline-none cursor-pointer"
               >
-                <optgroup label="Stateless" className="bg-[#161b22] text-gray-400 font-bold">
-                  <option value="none" className="text-gray-200">🚫 Stateless (No Memory)</option>
-                </optgroup>
-                <optgroup label="LangGraph Checkpointers" className="bg-[#161b22] text-gray-400 font-bold">
-                  <option value="langgraph_in_memory" className="text-gray-200">🧠 LangGraph In-Memory (MemorySaver)</option>
-                  <option value="sqlite" className="text-gray-200">💾 SQLite File Store (SqliteSaver)</option>
-                </optgroup>
-                <optgroup label="Database & Cache Stores" className="bg-[#161b22] text-gray-400 font-bold">
-                  <option value="postgres" className="text-gray-200">🗄️ PostgreSQL / Cloud SQL (AsyncPostgresSaver)</option>
-                  <option value="redis" className="text-gray-200">⚡ Redis Store (RedisSaver with TTL)</option>
-                  <option value="firestore" className="text-gray-200">☁️ Google Cloud Firestore / Spanner (ADK)</option>
-                </optgroup>
-                <optgroup label="Context Window & Summarization" className="bg-[#161b22] text-gray-400 font-bold">
-                  <option value="window_buffer" className="text-gray-200">⏱️ Sliding Window Buffer (K-Turns)</option>
-                  <option value="summary_buffer" className="text-gray-200">📝 Conversation Summary Memory (LLM)</option>
-                </optgroup>
-                <optgroup label="Long-Term Semantic & Entity Memory" className="bg-[#161b22] text-gray-400 font-bold">
-                  <option value="vector_rag" className="text-gray-200">🔍 Vector Store / Semantic Memory (RAG)</option>
-                  <option value="entity_fact" className="text-gray-200">🧬 Entity & Fact Memory (Mem0 / Zep)</option>
-                </optgroup>
+                <option value="none" className="text-gray-200">🚫 Stateless (No Memory)</option>
               </select>
             </div>
 
@@ -684,6 +648,7 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
             )}
           </div>
         </div>
+        )}
 
         {/* Attached Tools Section */}
         <div className="space-y-2">

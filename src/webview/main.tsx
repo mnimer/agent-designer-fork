@@ -18,40 +18,7 @@ if (typeof window !== 'undefined') {
   }
 }
 
-function sendLog(level: 'info' | 'warn' | 'error', message: string, stack?: string) {
-  if (vscode && typeof vscode.postMessage === 'function') {
-    try {
-      vscode.postMessage({
-        type: 'WEBVIEW_LOG',
-        payload: { level, message: String(message), stack: stack || '' },
-      });
-    } catch {
-      // ignore
-    }
-  }
-}
 
-sendLog('info', `[Webview:Boot] React main.tsx bundle evaluated. acquireVsCodeApi: ${Boolean(vscode)}`);
-
-// Override console to stream logs to extension output channel
-const origLog = console.log;
-const origWarn = console.warn;
-const origError = console.error;
-
-console.log = (...args: any[]) => {
-  origLog.apply(console, args);
-  sendLog('info', args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '));
-};
-
-console.warn = (...args: any[]) => {
-  origWarn.apply(console, args);
-  sendLog('warn', args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '));
-};
-
-console.error = (...args: any[]) => {
-  origError.apply(console, args);
-  sendLog('error', args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '));
-};
 
 /**
  * Webview React Entry Point & Top-Level Error Boundary
@@ -99,10 +66,8 @@ class ErrorBoundary extends React.Component<
 }
 
 const rootElement = document.getElementById('root');
-sendLog('info', `[Webview:Boot] Finding rootElement #root: ${Boolean(rootElement)}`);
 
 if (rootElement) {
-  sendLog('info', '[Webview:Boot] Mounting React Root component...');
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
       <ErrorBoundary>
@@ -110,7 +75,4 @@ if (rootElement) {
       </ErrorBoundary>
     </React.StrictMode>
   );
-  sendLog('info', '[Webview:Boot] React Root render initiated.');
-} else {
-  sendLog('error', '[Webview:Boot] Root element #root not found in document!');
 }

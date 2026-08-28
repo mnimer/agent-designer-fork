@@ -231,18 +231,16 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
         </div>
       </div>
 
-      {/* Source Connection Handle (Right) - Specifically for Test Suite connecting to Root Agent Left */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="trigger_out_right"
-        className={`!w-3.5 !h-3.5 !-right-1.5 border-2 border-[#0d1117] transition-transform hover:scale-125 ${
-          isTester 
-            ? '!bg-pink-500 ring-2 ring-pink-400/60' 
-            : '!bg-amber-400 ring-2 ring-amber-400/40'
-        }`}
-        title={isTester ? "Test Suite QA Inbound (Connects to Root Agent Left Handle)" : "Trigger Output (Right)"}
-      />
+      {/* Source Connection Handle (Right) - ONLY for Test Suite Triggers connecting to Root Agent Left */}
+      {isTester && (
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="trigger_out_right"
+          className="!w-3.5 !h-3.5 !-right-1.5 border-2 border-[#0d1117] transition-transform hover:scale-125 !bg-pink-500 ring-2 ring-pink-400/60"
+          title="Test Suite QA Inbound (Connects to Root Agent Left Handle)"
+        />
+      )}
 
       {/* Source Connection Handle (Bottom) - Connects to Root Agent Top Handle */}
       <Handle

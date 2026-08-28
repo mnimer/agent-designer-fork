@@ -24,18 +24,13 @@ export let outputChannel: vscode.OutputChannel;
  * @param context VS Code Extension Context
  */
 export function activate(context: vscode.ExtensionContext): void {
-  console.log('[Agent Flow Builder] Extension activate() triggered.');
-  if (typeof vscode.window.createOutputChannel === 'function') {
-    outputChannel = vscode.window.createOutputChannel('Agent Flow Builder');
-    outputChannel.appendLine('[Agent Flow Builder] Extension activating...');
-    outputChannel.show(true);
-    context.subscriptions.push(outputChannel);
-  }
+  // Create shared OutputChannel for extension logging & diagnostics
+  outputChannel = vscode.window.createOutputChannel('Agent Flow Builder');
+  context.subscriptions.push(outputChannel);
 
-  // 1. Register Custom Text Editor Provider for *.agent files
-  const customEditorDisposable = AgentEditorProvider.register(context, outputChannel);
-  context.subscriptions.push(customEditorDisposable);
-  console.log('[Agent Flow Builder] Custom editor registered for *.agent files.');
+  // Register Custom Editor Provider for *.agent visual topology files
+  const providerRegistration = AgentEditorProvider.register(context, outputChannel);
+  context.subscriptions.push(providerRegistration);
   outputChannel?.appendLine('[Agent Flow Builder] Custom editor registered for *.agent files.');
 
   // 2. Command: Create New Workflow File

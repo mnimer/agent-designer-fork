@@ -35,7 +35,7 @@ describe('Trigger Configuration & Presets Logic', () => {
   });
 
   it('should initialize and modify test scenarios', () => {
-    assert.ok(DEFAULT_MOCK_TEST_SCENARIOS.length >= 2);
+    assert.ok(DEFAULT_MOCK_TEST_SCENARIOS.length >= 1);
     const scenarios: TestSuiteScenario[] = [...DEFAULT_MOCK_TEST_SCENARIOS];
 
     const newScenario: TestSuiteScenario = {

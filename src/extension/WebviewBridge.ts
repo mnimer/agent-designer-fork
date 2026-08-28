@@ -44,7 +44,6 @@ export class WebviewBridge implements vscode.Disposable {
     const messageListener = this.panel.webview.onDidReceiveMessage(
       async (message: WebviewToExtensionMessage) => {
         this.outputChannel?.appendLine(`[WebviewBridge:RECV] Received from webview: ${JSON.stringify(message)}`);
-        console.log('[WebviewBridge:RECV]', message);
         await this.dispatch(message);
       }
     );

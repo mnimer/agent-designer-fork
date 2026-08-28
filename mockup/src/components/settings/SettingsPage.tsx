@@ -31,36 +31,15 @@ import { FrameworkType, LanguageType, DelegationPattern, AgentMemoryType } from 
 
 const SUPPORTED_MODELS = [
   { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)', provider: 'Google' },
-  { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash', provider: 'Google' },
-  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', provider: 'Google' },
-  { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', provider: 'Google' },
-  { id: 'claude-sonnet-latest', name: 'Claude Sonnet (Latest)', provider: 'Anthropic' },
-  { id: 'claude-opus-latest', name: 'Claude Opus (Latest)', provider: 'Anthropic' },
-  { id: 'openai-latest', name: 'OpenAI (Latest)', provider: 'OpenAI' },
-  { id: 'grok-latest', name: 'Grok (Latest)', provider: 'xAI' },
 ];
 
 const MEMORY_CHOICES: { id: AgentMemoryType; label: string; desc: string }[] = [
   { id: 'none', label: 'None (Stateless)', desc: 'Pure execution without thread persistence' },
-  { id: 'langgraph_in_memory', label: 'In-Memory Checkpointer', desc: 'Ephemeral memory within process lifecycle' },
-  { id: 'firestore', label: 'Google Cloud Firestore', desc: 'NoSQL document persistence across sessions' },
-  { id: 'redis', label: 'Redis Checkpointer', desc: 'High-throughput key-value memory with TTL' },
-  { id: 'sqlite', label: 'SQLite File Checkpointer', desc: 'Local file-based persistent checkpointer' },
-  { id: 'window_buffer', label: 'Sliding Window Buffer', desc: 'Retains the last N conversation turns' },
-  { id: 'summary_buffer', label: 'Running Summary Buffer', desc: 'Continuously synthesizes prior context' },
-  { id: 'vector_rag', label: 'Semantic Vector Memory (RAG)', desc: 'Retrieval augmented generation over vector DB' },
-  { id: 'entity_fact', label: 'Entity & Knowledge Graph', desc: 'Extracts user facts into entity store' },
 ];
 
 const PATTERN_CHOICES: { id: DelegationPattern; label: string; desc: string }[] = [
   { id: 'parallel', label: 'Parallel Fan-Out', desc: 'Concurrent async sub-agent execution' },
   { id: 'sequential', label: 'Sequential Pipeline', desc: 'Step-by-step handoff between sub-agents' },
-  { id: 'router', label: 'Dynamic Intent Router', desc: 'Routes task dynamically based on query classification' },
-  { id: 'loop', label: 'Feedback Loop', desc: 'Cyclic iteration and refinement loop' },
-  { id: 'review_critique', label: 'Review & Critique Triad', desc: 'Creator, Critic, and Synthesizer collaboration' },
-  { id: 'iterative_refinement', label: 'Iterative Refinement', desc: 'Threshold-based scoring loop' },
-  { id: 'coordinator', label: 'Central Coordinator', desc: 'Supervisor blackboard dispatching domain tasks' },
-  { id: 'hierarchical_decomposition', label: 'Hierarchical Tree', desc: 'Multi-tiered architect and specialized leads' },
 ];
 
 type SettingsSection = 'all' | 'api_keys' | 'framework_defaults' | 'agent_defaults' | 'cloud_defaults' | 'editor_defaults' | 'json_view';

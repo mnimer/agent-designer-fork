@@ -178,12 +178,12 @@ export function createSingleAgentNode(
       label: customLabel || `Agent ${++idCounter}`,
       role: customRole || 'Specialized AI Assistant',
       model: defaults?.model || 'gemini-flash-latest',
-      systemPrompt: 'You are an autonomous AI agent capable of problem solving, tool invocation, and clear communication.',
+      systemPrompt: defaults?.systemPrompt || '',
       temperature: defaults?.temperature !== undefined ? defaults.temperature : 0.7,
       maxIterations: 10,
       agentKind: 'standard',
-      tools: [AVAILABLE_TOOLS[0]], // default with Google Search
-      subAgents: [],
+      tools: defaults?.tools || [],
+      subAgents: defaults?.subAgents || [],
       subAgentPattern: defaults?.subAgentPattern || 'parallel',
       memoryType: defaults?.memoryType || 'none',
       memoryConfig: defaults?.memoryConfig || {

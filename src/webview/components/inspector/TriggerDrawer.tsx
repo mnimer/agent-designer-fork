@@ -114,13 +114,15 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
   const handleConfigChange = (partial: Record<string, any>) => {
     setFormData((prev) => {
       if (!prev) return null;
-      return {
+      const next = {
         ...prev,
         config: {
           ...prev.config,
           ...partial,
         },
       };
+      onUpdateTrigger(next);
+      return next;
     });
   };
 
@@ -142,26 +144,26 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
   ) || EVENTARC_CATEGORIES[0];
 
   return (
-    <div className="absolute top-0 right-0 bottom-0 z-40 w-96 backdrop-blur-2xl bg-[#161b22]/95 border-l border-[#30363d] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 text-[#c9d1d9]">
+    <div className="fixed inset-y-0 right-0 w-[420px] bg-[#161b22] border-l border-[#30363d] shadow-2xl z-50 flex flex-col font-sans animate-in slide-in-from-right duration-200">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3.5 bg-[#161b22] border-b border-[#30363d] shrink-0">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="p-1.5 rounded-lg bg-[#0d1117] border border-[#30363d] shrink-0 shadow-xs">
+      <div className="px-5 py-4 bg-[#0d1117] border-b border-[#30363d] flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 bg-[#161b22] border border-[#30363d] rounded-lg">
             {getTriggerIcon(formData.triggerType)}
           </div>
-          <div className="min-w-0">
-            <h3 className="text-xs font-bold text-white truncate max-w-[200px]">
-              {formData.label}
+          <div>
+            <h3 className="font-bold text-sm text-white flex items-center gap-2">
+              <span>{formData.label || 'Trigger Config'}</span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#21262d] text-gray-300 border border-[#30363d]">
+                {formData.triggerType.toUpperCase()}
+              </span>
             </h3>
-            <span className="text-[10px] text-amber-400 font-mono flex items-center gap-1">
-              Workflow Entrypoint Trigger
-            </span>
+            <p className="text-[11px] text-gray-400">Configure entrypoint invocation rules and payload handlers</p>
           </div>
         </div>
         <button
-          type="button"
           onClick={onClose}
-          className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"
+          className="p-1.5 text-gray-400 hover:text-white hover:bg-[#21262d] rounded-lg transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
@@ -178,7 +180,11 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
             <input
               type="text"
               value={formData.label}
-              onChange={(e) => setFormData({ ...formData, label: e.target.value })}
+              onChange={(e) => {
+                const next = { ...formData, label: e.target.value };
+                setFormData(next);
+                onUpdateTrigger(next);
+              }}
               className="w-full px-3 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-amber-500 rounded-lg text-xs text-white focus:outline-none"
             />
           </div>
@@ -199,8 +205,12 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
             </label>
             <input
               type="text"
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              value={formData.description || ''}
+              onChange={(e) => {
+                const next = { ...formData, description: e.target.value };
+                setFormData(next);
+                onUpdateTrigger(next);
+              }}
               className="w-full px-3 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-amber-500 rounded-lg text-xs text-gray-300 focus:outline-none"
             />
           </div>

@@ -33,11 +33,6 @@ interface RouterAgentDrawerProps {
 
 const SUPPORTED_MODELS = [
   { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)', desc: 'Ultra-fast intent classifier and JSON branch decision engine' },
-  { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash', desc: 'Hybrid reasoning and high-throughput routing' },
-  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', desc: 'High-speed generative tasks & condition checks' },
-  { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', desc: 'Complex multi-variable condition logic & deep classification' },
-  { id: 'claude-sonnet-latest', name: 'Claude Sonnet (Latest)', desc: 'Nuanced semantic reasoning & routing' },
-  { id: 'openai-latest', name: 'OpenAI (Latest)', desc: 'High-accuracy function calling & structured routing' },
 ];
 
 const EVALUATION_MODES: { id: RouterEvaluationMode; label: string; icon: React.ReactNode; desc: string; badge: string }[] = [
@@ -285,7 +280,7 @@ export const RouterAgentDrawer: React.FC<RouterAgentDrawerProps> = ({
                 rows={3}
                 value={routerConfig.routingPrompt || ''}
                 onChange={(e) => handleUpdateRouterConfig({ routingPrompt: e.target.value })}
-                placeholder="Analyze the incoming request or code review output and select the most appropriate destination branch key..."
+                placeholder="Add agent instructions"
                 className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-purple-500 rounded text-xs text-gray-200 font-mono focus:outline-none resize-y"
               />
             </div>

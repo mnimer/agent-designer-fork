@@ -114,13 +114,15 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
   const handleConfigChange = (partial: Record<string, any>) => {
     setFormData((prev) => {
       if (!prev) return null;
-      return {
+      const next = {
         ...prev,
         config: {
           ...prev.config,
           ...partial,
         },
       };
+      onUpdateTrigger(next);
+      return next;
     });
   };
 
@@ -178,7 +180,11 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
             <input
               type="text"
               value={formData.label}
-              onChange={(e) => setFormData({ ...formData, label: e.target.value })}
+              onChange={(e) => {
+                const next = { ...formData, label: e.target.value };
+                setFormData(next);
+                onUpdateTrigger(next);
+              }}
               className="w-full px-3 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-amber-500 rounded-lg text-xs text-white focus:outline-none"
             />
           </div>
@@ -199,8 +205,12 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
             </label>
             <input
               type="text"
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              value={formData.description || ''}
+              onChange={(e) => {
+                const next = { ...formData, description: e.target.value };
+                setFormData(next);
+                onUpdateTrigger(next);
+              }}
               className="w-full px-3 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-amber-500 rounded-lg text-xs text-gray-300 focus:outline-none"
             />
           </div>

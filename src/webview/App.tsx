@@ -670,7 +670,6 @@ function FlowCanvas() {
   useEffect(() => {
     const unsub = bridge.subscribe('LOAD_DOCUMENT', (payload) => {
       if (!payload?.document) return;
-      console.log('[FlowCanvas] Received LOAD_DOCUMENT:', payload.document);
 
       const doc = payload.document;
       if (payload.docVersion) {
@@ -857,11 +856,18 @@ function FlowCanvas() {
       let hasChanges = false;
       const targetId = triggerTargetAgentId;
 
+      const agentNodes = nds.filter((n) => n.type === 'agentNode');
+      const hasAnyStart = agentNodes.some((n) => (n.data as AgentData).isStartNode);
+      const defaultStartId = targetId || (hasAnyStart ? null : agentNodes[0]?.id);
+
       const updated = nds.map((n) => {
         if (n.type === 'agentNode') {
           // If triggers are attached, only the targeted agent is start node
           // If no triggers are attached to any agent, preserve current or default first agent as start
-          const shouldBeStart = targetId ? n.id === targetId : n.data.isStartNode;
+          const shouldBeStart = targetId
+            ? n.id === targetId
+            : (hasAnyStart ? n.data.isStartNode : n.id === defaultStartId);
+
           if (n.data.isStartNode !== shouldBeStart) {
             hasChanges = true;
             return {
@@ -888,10 +894,30 @@ function FlowCanvas() {
       const sourceNode = nodes.find((n) => n.id === connection.source);
       const targetNode = nodes.find((n) => n.id === connection.target);
 
+      // Agent-to-Agent connectors should ONLY connect bottom to top (target handle must be 'input')
+      if (sourceNode?.type === 'agentNode' && targetNode?.type === 'agentNode') {
+        if (connection.targetHandle === 'input_left') {
+          return false;
+        }
+      }
+
       // If source is a trigger node
       if (sourceNode?.type === 'triggerNode') {
         // Triggers can only connect to Agent nodes
         if (targetNode?.type !== 'agentNode') return false;
+
+        const triggerKind = (sourceNode.data as any)?.kind || (sourceNode.data as any)?.triggerType;
+        const isTester = triggerKind === 'test_suite' || triggerKind === 'test' || triggerKind === 'qa' || triggerKind === 'tester';
+
+        // Test Suite triggers can ONLY connect to the Root node (isStartNode === true)
+        if (isTester && !(targetNode.data as AgentData)?.isStartNode) {
+          return false;
+        }
+
+        // Non-test suite triggers can ONLY connect bottom to top (target handle must be 'input')
+        if (!isTester && connection.targetHandle === 'input_left') {
+          return false;
+        }
 
         // Check if triggers are ALREADY attached to a DIFFERENT agent node
         const triggerNodes = nodes.filter((n) => n.type === 'triggerNode');
@@ -1357,6 +1383,7 @@ function FlowCanvas() {
         setEdges(nextEdges);
         recordSnapshot(nextNodes, nextEdges, { description: `Add pattern ${type}` });
       } else {
+        const hasStartNode = nodes.some((n) => n.type === 'agentNode' && (n.data as AgentData).isStartNode);
         const newNode = createSingleAgentNode(
           position.x, 
           position.y, 
@@ -1370,6 +1397,9 @@ function FlowCanvas() {
             subAgentPattern: settings.defaultSubAgentPattern,
           }
         );
+        if (!hasStartNode) {
+          newNode.data.isStartNode = true;
+        }
         const nextNodes = [...nodes, newNode];
         setNodes(nextNodes);
         recordSnapshot(nextNodes, edges, { description: `Add agent` });
@@ -1421,6 +1451,7 @@ function FlowCanvas() {
 
   // Add agent directly from palette click
   const handleAddAgentDirect = useCallback((kind: AgentKind = 'standard') => {
+    const hasStartNode = nodes.some((n) => n.type === 'agentNode' && (n.data as AgentData).isStartNode);
     const newNode = createSingleAgentNode(
       150 + Math.random() * 200, 
       150 + Math.random() * 150, 
@@ -1434,6 +1465,9 @@ function FlowCanvas() {
         subAgentPattern: settings.defaultSubAgentPattern,
       }
     );
+    if (!hasStartNode) {
+      newNode.data.isStartNode = true;
+    }
     const nextNodes = [...nodes, newNode];
     setNodes(nextNodes);
     recordSnapshot(nextNodes, edges, { description: `Add agent` });
@@ -1766,14 +1800,15 @@ function FlowCanvas() {
                 <ZoomOut className="w-3.5 h-3.5" />
               </button>
 
-              {/* Fit View */}
+              {/* Zoom to Fit */}
               <button
                 type="button"
                 onClick={() => fitView({ padding: 0.2 })}
-                title="Fit View to Screen"
-                className="p-1.5 rounded hover:bg-[#21262d] text-gray-300 hover:text-white transition-colors cursor-pointer"
+                title="Zoom to Fit"
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-[#21262d] text-gray-300 hover:text-white font-medium text-[11px] transition-colors cursor-pointer"
               >
-                <Maximize2 className="w-3.5 h-3.5" />
+                <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Zoom to Fit</span>
               </button>
             </div>
 

@@ -118,7 +118,6 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     try {
-      console.log(`[AgentEditorProvider] Resolving custom editor for document: ${document.uri.fsPath}`);
       this.outputChannel?.appendLine(
         `[AgentEditorProvider] Resolving custom editor for document: ${document.uri.fsPath}`
       );
@@ -164,7 +163,6 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
 
       // 3. Register diagnostic and core RPC handlers on the bridge
       bridge.onMessage('BOOTSTRAP_LOADED', (payload) => {
-        console.log('[AgentEditorProvider] Webview bootstrap script active');
         this.outputChannel?.appendLine(`[AgentEditorProvider:Step 3a] Webview HTML container bootstrap loaded at ${payload?.timestamp}`);
       });
 
@@ -182,7 +180,6 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       });
 
       bridge.onMessage('DIAGNOSTIC_ERROR', (payload) => {
-        console.error('[AgentEditorProvider:WEBVIEW_EXCEPTION]', payload);
         this.outputChannel?.appendLine(
           `[AgentEditorProvider:WEBVIEW_EXCEPTION] Error in webview: ${payload.message} (${payload.url}:${payload.line}:${payload.col})\nStack: ${payload.stack || 'none'}`
         );
@@ -191,7 +188,6 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
 
       bridge.onMessage('READY', async () => {
         try {
-          console.log(`[AgentEditorProvider] Webview sent READY signal for: ${document.uri.fsPath}`);
           this.outputChannel?.appendLine(
             `[AgentEditorProvider:Step 4] Webview sent READY signal for: ${document.uri.fsPath}`
           );
@@ -206,7 +202,6 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
             parsedDoc = this.createEmptyWorkflow(document.uri);
           }
 
-          console.log(`[AgentEditorProvider] Posting LOAD_DOCUMENT (nodes: ${parsedDoc.nodes?.length || 0}, edges: ${parsedDoc.edges?.length || 0})`);
           this.outputChannel?.appendLine(
             `[AgentEditorProvider:Step 5] Posting LOAD_DOCUMENT (nodes: ${parsedDoc.nodes?.length || 0}, edges: ${parsedDoc.edges?.length || 0})`
           );

@@ -30,25 +30,10 @@ const DEFAULT_SCHEMA = (agentLabel: string): StructuredOutputSchema => {
     fields: [
       {
         id: 'f1',
-        name: 'summary',
+        name: '',
         type: 'string',
         required: true,
-        description: 'Comprehensive summary of the reasoning or task result.',
-      },
-      {
-        id: 'f2',
-        name: 'confidenceScore',
-        type: 'number',
-        required: true,
-        description: 'Confidence score between 0.0 and 1.0.',
-      },
-      {
-        id: 'f3',
-        name: 'actionItems',
-        type: 'array',
-        arrayItemType: 'string',
-        required: false,
-        description: 'List of recommended next steps or execution items.',
+        description: '',
       },
     ],
   };
@@ -81,13 +66,12 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
   };
 
   const handleAddField = () => {
-    const fieldIndex = currentSchema.fields.length + 1;
     const newField: StructuredOutputField = {
       id: `field_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 3)}`,
-      name: `field${fieldIndex}`,
+      name: '',
       type: 'string',
       required: true,
-      description: `Description of field ${fieldIndex}`,
+      description: '',
     };
     handleUpdate({
       fields: [...currentSchema.fields, newField],

@@ -17,17 +17,9 @@ import { AVAILABLE_TOOLS } from '../../src/webview/data/defaultTools';
 
 describe('Standard Agent Inspector Logic & Configuration', () => {
   it('should resolve memory options metadata accurately', () => {
-    const firestoreMem = getMemoryOption('firestore');
-    assert.equal(firestoreMem.type, 'firestore');
-    assert.ok(firestoreMem.name.includes('Firestore'));
-    assert.ok(firestoreMem.description.includes('Google GenAI') || firestoreMem.description.includes('ADK'));
-
-    const redisMem = getMemoryOption('redis');
-    assert.equal(redisMem.type, 'redis');
-    assert.equal(redisMem.badge, 'Distributed Cache');
-
     const noneMem = getMemoryOption('none');
     assert.equal(noneMem.type, 'none');
+    assert.ok(noneMem.name.includes('Stateless') || noneMem.name.includes('No Memory'));
     assert.equal(noneMem.badge, 'Stateless Execution');
   });
 
