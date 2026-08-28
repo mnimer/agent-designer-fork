@@ -211,24 +211,16 @@ All inspector drawers slide out from the right canvas boundary (Width: 420px), f
    - Toggle: `Enable Strict JSON Output Schema`.
    - Interactive field table allowing developers to define typed keys (`string`, `number`, `boolean`, `array`, `object`).
    - Preview switcher: **JSON Schema Preview** vs **Pydantic Model Preview**.
-5. **Memory & State Persistence** (`memoryOptions.ts`):
-   - Dropdown selection across 9 checkpointer backends:
-     - `None (Stateless)`
-     - `In-Memory Checkpointer (MemorySaver)`
-     - `Google Cloud Firestore` (Configurable `collectionName`)
-     - `Redis Checkpointer` (Configurable `ttlSeconds`, `redisUrl`)
-     - `PostgreSQL Checkpointer` (Configurable `tableName`)
-     - `SQLite Checkpointer` (Configurable `sqlitePath`)
-     - `Sliding Window Buffer` (Configurable `windowTurns`)
-     - `Running Summary Buffer` (Configurable `summaryModel`)
-     - `Vector RAG Memory` (Configurable `vectorProvider`, `topK`)
-     - `Entity Knowledge Graph` (Configurable `userIdKey`)
+5. **Memory & State Persistence (Root Node Scoped)** (`memoryOptions.ts`):
+   - Memory and state checkpointer configuration is restricted strictly to the **Root Agent Node** (all child sub-agents execute statelessly; state persistence is coordinated at the root).
+   - Checkpointer backend options include `None (Stateless)`, `In-Memory Checkpointer (MemorySaver)`, and `Google Cloud Firestore` (Configurable `collectionName`).
 6. **Attached Tools Registry**:
    - List of tools currently bound to this agent with remove buttons.
    - `+ Attach Tool` button opening `AddToolModal`.
 7. **Sub-Agent Delegation Sockets**:
-   - Sub-agent list editor: Add/remove child agents.
-   - Delegation Strategy selector: `parallel`, `sequential`, `router`, `loop`, `review_critique`, `coordinator`, `hierarchical_decomposition`.
+   - Live auto-populated child sub-agent list editor on connection.
+   - Delegation Strategy selector: `sequential` and `parallel` patterns.
+   - Connectors enforce bottom-to-top layout; triggers connect top/left or bottom-to-top.
 
 ### 4.2 Router Agent Inspector (`RouterAgentDrawer.tsx`)
 1. **Routing Evaluation Mode**:

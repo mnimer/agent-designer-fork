@@ -126,6 +126,7 @@ graph TD
   - Resolves webview panels with secure Content Security Policies (CSP) and local resource roots.
   - Ingests initial document content into the webview.
   - Subscribes to webview document mutations and invokes `vscode.workspace.applyEdit` to track dirty states and integrate with native VS Code undo/redo.
+  - Dynamically computes relative target output folders based on `.agent` file location (`computeTargetFolder`).
 - **`WebviewBridge.ts`**:
   Central RPC message dispatcher handling type-safe request/response pairs between webview and extension host.
 - **`GeminiCodeGenEngine.ts`**:
@@ -134,33 +135,34 @@ graph TD
   - Injects the serialized `.agent` JSON payload into `{{WORKFLOW_JSON}}`.
   - Invokes the `@google/genai` SDK using the developer's configured Gemini API key or Google Cloud Vertex AI credentials.
   - Parses the structured JSON response containing file objects (`agent_workflow.py`, `tools.py`, `main.py`, `test_pipeline.py`, `requirements.txt`, `main.tf`, `cloudbuild.yaml`, `Dockerfile`, `README.md`).
+  - Provides a deterministic offline template generator fallback when API key is unconfigured.
 - **`AgentRunnerManager.ts`**:
   Manages local test execution:
   - Dispatches test execution requests to `PythonEnvResolver`.
-  - Launches the Python agent runner process in an isolated subprocess.
-  - Passes each test case from the Test Suite trigger as an independent session turn.
-  - Captures real-time stdout, stderr, and trace timings, evaluates assertion expressions (`contains_text`, `exact`, `regex`), and streams progress events back to the webview.
+  - Passes each test scenario from the Test Suite trigger to the evaluation runner.
+  - Evaluates assertion expressions (`contains_text`, `exact`, `regex`), calculates step latencies in milliseconds, and streams progress and logs (`EXECUTION_LOG`, `TEST_RESULT_UPDATE`, `EXECUTION_COMPLETE`) back to the webview.
 - **`PythonEnvResolver.ts`**:
-  Inspects the active workspace for a Python interpreter (via `ms-python.python` extension or system path). If a virtualenv does not exist or required dependencies (`google-genai`, `pytest`, `pydantic`) are missing, automatically provisions `.venv` in the background and runs `pip install -r requirements.txt`.
+  Inspects the active workspace for a Python interpreter (via VS Code configuration `python.defaultInterpreterPath`, `VIRTUAL_ENV`, local `.venv`/`venv`/`env` candidate folders, or system `python3`/`python.exe`).
 
 #### 2. Webview React Application (`src/webview/`)
 - **`VSCodeChrome.tsx`**:
-  Emulates native VS Code desktop window styling: title bar, tab buffer switcher for multiple open `.agent` files, theme toggle, and collapsible, resizable bottom workbench panel adhering strictly to the **8pt grid system**.
+  Emulates native VS Code desktop window styling: title bar with window dots, breadcrumbs, tab buffer switcher for open `.agent` files, theme toggle, and collapsible, resizable bottom workbench panel adhering strictly to the **8pt grid system**.
 - **`ThemeContext.tsx`**:
   Syncs UI themes dynamically with VS Code body classes (`vscode-dark`, `vscode-light`, `vscode-high-contrast`).
 - **`App.tsx` & React Flow Canvas**:
   Hosts the interactive graph canvas (`@xyflow/react`):
   - Renders custom `AgentNode` and `TriggerNode` cards.
+  - Enforces topology constraints: bottom-to-top layout for Agent-to-Agent connections; Test Suite trigger connects to Root node top/left; other triggers connect bottom-to-top.
   - Handles drag-and-drop from the left floating `PaletteCard`.
-  - Manages node selection, deletion, duplication, and Dagre auto-layout (`LR` / `TB`).
+  - Manages node selection, deletion, duplication, undo/redo history, and Dagre auto-layout (`LR` / `TB`).
 - **`StandardAgentDrawer.tsx`**:
-  Slide-out inspector drawer (420px width) with accordion sections: Agent Identity, Model Selection (`gemini-flash-latest`, `gemini-3.7-flash`), Generation Parameters (temperature, max iterations), System Instructions editor, and Attached Tools manager.
+  Slide-out inspector drawer (420px width) with accordion sections: Agent Identity, Model Selection (`gemini-flash-latest`, `gemini-3.5-flash`), Generation Parameters (temperature, max iterations), System Instructions editor with empty prompt placeholder, Attached Tools manager, and Root-only Memory & State persistence.
 - **`TriggerDrawer.tsx`**:
   Inspector drawer for the Test Suite trigger: manages test cases list, prompt text inputs, expected output strings, and assertion types (`contains_text`, `exact`, `json_schema`, `regex`).
 - **`CodeGenerationPanel.tsx`**:
-  Multi-file code viewer embedded in the bottom workbench panel. Displays file hierarchy tree, syntax-highlighted code editor, one-click copy, and "Export Code to Workspace" action.
+  Multi-file code viewer embedded in the bottom workbench panel. Displays file hierarchy tree, syntax-highlighted code editor, one-click copy, and "Export Code to Workspace" action with relative folder computation.
 - **`TestRunnerTab.tsx`**:
-  Interactive test harness. Provides "Run All Unit Tests" and individual test execution, real-time animated execution traces across nodes, step latency breakdowns in milliseconds, assertion results (PASS / FAIL), and raw JSON payload inspectors.
+  Interactive test harness. Provides "Run All Unit Tests" and individual scenario execution, step latency breakdowns in milliseconds, assertion results (PASS / FAIL), and live execution logs.
 
 ---
 
@@ -170,51 +172,74 @@ graph TD
 
 ```typescript
 // Messages from Webview to Extension Host
-export type WebviewToHostMessage =
-  | { type: 'WEBVIEW_READY' }
-  | { type: 'DOCUMENT_UPDATED'; payload: { documentJson: string } }
-  | { type: 'GENERATE_CODE'; payload: { workflow: AgentWorkflowDocument; framework: 'google_adk'; language: 'python' } }
-  | { type: 'EXPORT_CODE'; payload: { files: GeneratedFile[]; outputDir?: string } }
-  | { type: 'RUN_TESTS'; payload: { workflow: AgentWorkflowDocument } }
-  | { type: 'CANCEL_TESTS' }
-  | { type: 'OPEN_SETTINGS' };
+export type WebviewToExtensionMessage =
+  | { type: 'READY' }
+  | { type: 'DOCUMENT_UPDATED'; payload: { document: AgentWorkflowDocument; docVersion: number } }
+  | { type: 'GENERATE_CODE'; payload: { document: AgentWorkflowDocument; targetFramework?: FrameworkTarget; targetLanguage?: LanguageTarget } }
+  | { type: 'EXPORT_CODE'; payload: { document: AgentWorkflowDocument; targetFramework: FrameworkTarget; targetLanguage: LanguageTarget; outputDirectory?: string } }
+  | { type: 'WRITE_FILES_TO_WORKSPACE'; payload: { files: GeneratedFile[]; targetDirectory?: string } }
+  | { type: 'RUN_TESTS'; payload: { document: AgentWorkflowDocument; testScenarioIds?: string[] } }
+  | { type: 'CANCEL_TESTS'; payload: { runId: string } }
+  | { type: 'OPEN_SETTINGS' }
+  | { type: 'DISCOVER_MCP_TOOLS'; payload: { transport: 'stdio' | 'sse' | 'http'; command?: string; args?: string[]; url?: string } };
 
 // Messages from Extension Host to Webview
-export type HostToWebviewMessage =
-  | { type: 'LOAD_DOCUMENT'; payload: { document: AgentWorkflowDocument; isReadonly: boolean } }
-  | { type: 'THEME_CHANGED'; payload: { theme: 'dark' | 'light' | 'high-contrast' } }
-  | { type: 'CODE_GENERATION_STARTED' }
-  | { type: 'CODE_GENERATION_COMPLETED'; payload: { files: GeneratedFile[] } }
-  | { type: 'CODE_GENERATION_FAILED'; payload: { error: string } }
-  | { type: 'TEST_RUN_STARTED'; payload: { totalTests: number } }
-  | { type: 'TEST_PROGRESS_UPDATE'; payload: { testIndex: number; testCase: TestCase; status: 'running' | 'passed' | 'failed'; latencyMs: number; error?: string; traceHops?: TraceHop[] } }
-  | { type: 'TEST_RUN_COMPLETED'; payload: { passed: number; failed: number; totalDurationMs: number } };
+export type ExtensionToWebviewMessage =
+  | { type: 'LOAD_DOCUMENT'; payload: { document: AgentWorkflowDocument; docVersion: number; filePath?: string; readOnly?: boolean } }
+  | { type: 'DOCUMENT_SAVED'; payload: { docVersion: number; timestamp: string } }
+  | { type: 'THEME_CHANGED'; payload: { theme: 'dark' | 'light' } }
+  | { type: 'CODE_GENERATED'; payload: { success: boolean; files: GeneratedFile[]; modelUsed?: string; error?: string } }
+  | { type: 'FILES_WRITTEN'; payload: { success: boolean; paths: string[]; error?: string } }
+  | { type: 'EXECUTION_LOG'; payload: { runId: string; timestamp: string; level: 'info' | 'warn' | 'error'; message: string; stepId?: string; agentId?: string } }
+  | { type: 'TEST_RESULT_UPDATE'; payload: { runId: string; scenarioId: string; status: 'running' | 'passed' | 'failed'; durationMs: number; output?: string; error?: string } }
+  | { type: 'EXECUTION_COMPLETE'; payload: { runId: string; success: boolean; durationMs: number; summary: string } }
+  | { type: 'SETTINGS_SYNC'; payload: { geminiApiKeySet: boolean; targetFramework: FrameworkTarget; targetLanguage: LanguageTarget } };
 ```
 
 #### 2. Workflow Document Data Model (`src/shared/types.ts`)
 
 ```typescript
-export interface AgentWorkflowDocument {
+export type AgentKind = 'standard' | 'router' | 'a2a';
+export type TriggerKind = 'test' | 'chat' | 'pubsub' | 'scheduled' | 'eventarc' | 'manual' | 'webhook' | 'cron';
+export type FrameworkTarget = 'google-adk' | 'langgraph';
+export type LanguageTarget = 'python' | 'typescript';
+
+export interface WorkflowNode {
   id: string;
-  name: string;
+  type: 'agent' | 'trigger';
+  position: { x: number; y: number };
+  data: AgentNodeData | TriggerNodeData;
+  selected?: boolean;
+}
+
+export interface WorkflowEdge {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+  label?: string;
+  animated?: boolean;
+  data?: Record<string, unknown>;
+}
+
+export interface AgentWorkflowDocument {
   version: string;
-  framework: 'google_adk' | 'langgraph';
-  language: 'python' | 'typescript';
-  deploymentTarget: 'cloud_run' | 'agent_engine';
-  nodes: (AgentNodeData | TriggerNodeData)[];
+  name: string;
+  description: string;
+  framework: FrameworkTarget;
+  language: LanguageTarget;
+  nodes: WorkflowNode[];
   edges: WorkflowEdge[];
-  metadata: {
-    createdAt: string;
-    updatedAt: string;
-    author?: string;
-  };
+  viewport?: { x: number; y: number; zoom: number };
+  metadata?: { createdAt?: string; updatedAt?: string; author?: string };
 }
 
 export interface GeneratedFile {
-  name: string;
-  language: 'python' | 'text' | 'terraform' | 'yaml' | 'dockerfile' | 'markdown';
-  description: string;
+  path: string;
+  description?: string;
   content: string;
+  language?: string;
 }
 ```
 
@@ -318,42 +343,38 @@ The table below enumerates every file created or modified for Release 1.0.0:
 | `tsconfig.extension.json` | [NEW] | TypeScript build configuration for Extension Host (Node.js). |
 | `tsconfig.webview.json` | [NEW] | TypeScript build configuration for Webview React SPA. |
 | `vite.config.ts` | [NEW] | Vite bundler configuration for compiling Webview SPA to `dist/webview`. |
-| `esbuild.js` | [NEW] | Fast build script for bundling Extension Host backend to `dist/extension.js`. |
-| `.vscodeignore` | [NEW] | Packaging filter excluding mockups, tests, and raw sources from VSIX. |
 | `prompts/python-adk.prompt.txt` | [NEW] | Master prompt template for converting `.agent` JSON to Google ADK Python projects. |
 | `src/shared/rpcProtocol.ts` | [NEW] | Type-safe RPC message definitions over `postMessage`. |
 | `src/shared/types.ts` | [NEW] | Core domain interfaces for `.agent` documents, nodes, triggers, and generated files. |
 | `src/extension/extension.ts` | [NEW] | Extension activation entry point registering editor and commands. |
-| `src/extension/AgentEditorProvider.ts` | [NEW] | Custom editor provider binding to `*.agent` files and managing document sync. |
+| `src/extension/AgentEditorProvider.ts` | [NEW] | Custom editor provider binding to `*.agent` files, relative path computation, and managing document sync. |
 | `src/extension/WebviewBridge.ts` | [NEW] | Central message dispatcher for webview RPC calls. |
-| `src/extension/GeminiCodeGenEngine.ts` | [NEW] | Ingests prompt templates, calls `@google/genai`, and parses structured JSON files. |
-| `src/extension/AgentRunnerManager.ts` | [NEW] | Manages isolated Python subprocess test execution and assertion evaluation. |
-| `src/extension/PythonEnvResolver.ts` | [NEW] | Resolves workspace Python environment and auto-provisions `.venv`. |
+| `src/extension/GeminiCodeGenEngine.ts` | [NEW] | Ingests prompt templates, calls `@google/genai`, and parses structured JSON files with offline fallback. |
+| `src/extension/AgentRunnerManager.ts` | [NEW] | Manages test scenario execution, latency tracking, and assertion evaluation. |
+| `src/extension/PythonEnvResolver.ts` | [NEW] | Resolves workspace Python environment and interpreter binaries. |
 | `src/extension/types.ts` | [NEW] | Backend-specific process and runner types. |
 | `src/webview/index.html` | [NEW] | Webview entry HTML with CSP security meta tags. |
 | `src/webview/main.tsx` | [NEW] | React 19 root mounting `App.tsx`. |
 | `src/webview/index.css` | [NEW] | Tailwind CSS v4 styling rules adhering to the 8pt grid system. |
 | `src/webview/App.tsx` | [NEW] | Main webview component orchestrating React Flow canvas, drawers, and workbench. |
 | `src/webview/context/ThemeContext.tsx` | [NEW] | Theme context synchronizing dark, light, and high-contrast themes. |
-| `src/webview/hooks/useExtensionBridge.ts` | [NEW] | Custom React hook for posting typed RPC messages and listening to events. |
+| `src/webview/hooks/useWebviewBridge.ts` | [NEW] | Custom React hook for posting typed RPC messages and listening to events. |
 | `src/webview/hooks/useDiagramHistory.ts` | [NEW] | Undo/redo snapshot history manager (`Cmd+Z` / `Cmd+Y`). |
 | `src/webview/components/vscode/VSCodeChrome.tsx` | [NEW] | VS Code desktop chrome shell (title bar, tabs, status bar, panel resizer). |
-| `src/webview/components/canvas/PaletteCard.tsx` | [NEW] | Left floating palette card for dragging agents, tools, and triggers. |
-| `src/webview/components/canvas/AutoLayout.ts` | [NEW] | Dagre auto-layout positioning algorithm (`LR` / `TB`). |
-| `src/webview/components/nodes/AgentNode.tsx` | [NEW] | Standard Agent custom React Flow node card with status and tool pills. |
-| `src/webview/components/nodes/TriggerNode.tsx` | [NEW] | Test Suite Trigger custom React Flow node card. |
-| `src/webview/components/inspector/StandardAgentDrawer.tsx` | [NEW] | Slide-out inspector drawer for agent parameters, instructions, and tools. |
+| `src/webview/components/Canvas/PaletteCard.tsx` | [NEW] | Left floating palette card for dragging agents, tools, and triggers. |
+| `src/webview/components/Canvas/AutoLayout.ts` | [NEW] | Dagre auto-layout positioning algorithm (`LR` / `TB`). |
+| `src/webview/components/Canvas/nodes/AgentNode.tsx` | [NEW] | Standard Agent custom React Flow node card with status and tool pills. |
+| `src/webview/components/Canvas/nodes/TriggerNode.tsx` | [NEW] | Test Suite Trigger custom React Flow node card. |
+| `src/webview/components/inspector/StandardAgentDrawer.tsx` | [NEW] | Slide-out inspector drawer for agent parameters, instructions, tools, and root memory. |
 | `src/webview/components/inspector/TriggerDrawer.tsx` | [NEW] | Inspector drawer for test cases and assertion rules. |
-| `src/webview/components/codegen/CodeGenerationPanel.tsx` | [NEW] | Bottom panel tab displaying generated file tree, syntax viewer, and export button. |
+| `src/webview/components/codegen/CodeGenerationPanel.tsx` | [NEW] | Bottom panel tab displaying generated file tree, syntax viewer, and relative export path. |
 | `src/webview/components/testing/TestRunnerTab.tsx` | [NEW] | Bottom panel tab for running test suites and visualizing step trace latencies. |
 | `src/webview/data/defaultTools.ts` | [NEW] | Built-in Google Search grounding tool definition. |
-| `test/unit/extension/AgentEditorProvider.test.ts` | [NEW] | Unit tests for custom editor lifecycle and document sync. |
-| `test/unit/extension/GeminiCodeGenEngine.test.ts` | [NEW] | Unit tests for prompt loading, template injection, and JSON parsing. |
-| `test/unit/extension/AgentRunnerManager.test.ts` | [NEW] | Unit tests for subprocess session execution and assertion evaluation. |
-| `test/unit/extension/PythonEnvResolver.test.ts` | [NEW] | Unit tests for Python environment discovery and venv creation. |
-| `test/unit/webview/useDiagramHistory.test.ts` | [NEW] | Unit tests for undo/redo state stacks. |
-| `test/integration/codegen.integration.test.ts` | [NEW] | Integration test verifying Gemini prompt codegen, `py_compile`, and pytest. |
-| `test/e2e/extension.e2e.test.ts` | [NEW] | `@vscode/test-electron` E2E test verifying `.agent` custom editor in VS Code. |
+| `tests/extension/AgentEditorProvider.test.ts` | [NEW] | Unit tests for custom editor lifecycle and document sync. |
+| `tests/extension/GeminiCodeGenEngine.test.ts` | [NEW] | Unit tests for prompt loading, template injection, and JSON parsing. |
+| `tests/extension/AgentRunnerManager.test.ts` | [NEW] | Unit tests for test scenario execution and assertion evaluation. |
+| `tests/extension/PythonEnvResolver.test.ts` | [NEW] | Unit tests for Python environment discovery and venv resolution. |
+| `tests/webview/useDiagramHistory.test.ts` | [NEW] | Unit tests for undo/redo state stacks. |
 
 ---
 

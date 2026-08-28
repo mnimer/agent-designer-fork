@@ -72,18 +72,18 @@
 * **Target Package/Files**:
   - `src/shared/rpcProtocol.ts`
   - `src/extension/WebviewBridge.ts`
-  - `src/webview/hooks/useExtensionBridge.ts`
+  - `src/webview/hooks/useWebviewBridge.ts`
 * **Context**:
   Create a bi-directional, type-safe RPC messaging bridge between the Extension Host and the Webview React application using `vscode.postMessage` and `window.addEventListener('message')`.
 * **RPC Messages**:
-  - Webview ➔ Extension: `READY`, `DOCUMENT_UPDATED`, `EXPORT_CODE`, `RUN_TESTS`, `RUN_LOCAL_AGENT`, `OPEN_SETTINGS`, `DISCOVER_MCP_TOOLS`.
-  - Extension ➔ Webview: `LOAD_DOCUMENT`, `THEME_CHANGED`, `EXECUTION_LOG`, `TEST_RESULT_UPDATE`, `EXECUTION_COMPLETE`, `SETTINGS_SYNC`.
+  - Webview ➔ Extension: `READY`, `DOCUMENT_UPDATED`, `GENERATE_CODE`, `EXPORT_CODE`, `WRITE_FILES_TO_WORKSPACE`, `RUN_TESTS`, `CANCEL_TESTS`, `OPEN_SETTINGS`, `DISCOVER_MCP_TOOLS`.
+  - Extension ➔ Webview: `LOAD_DOCUMENT`, `DOCUMENT_SAVED`, `THEME_CHANGED`, `CODE_GENERATED`, `FILES_WRITTEN`, `EXECUTION_LOG`, `TEST_RESULT_UPDATE`, `EXECUTION_COMPLETE`, `SETTINGS_SYNC`.
 * **Sub-Agent Prompt**:
   ```
   Implement the typed RPC communication bridge between VS Code Extension Host and Webview React SPA.
   1. Define all RPC message types and payloads in src/shared/rpcProtocol.ts.
   2. Create WebviewBridge in extension host handling incoming webview messages with error handling and logging.
-  3. Create useExtensionBridge custom React hook in webview providing clean methods to post messages and subscribe to typed events.
+  3. Create useWebviewBridge custom React hook in webview providing clean methods to post messages and subscribe to typed events.
   4. Include unit tests validating message serialization and dispatch.
   ```
 * **Verification**:
@@ -260,22 +260,26 @@
 ### [TASK-109] End-to-End Test Suite & 100% Coverage Suite
 * **Release**: `v1.0.0`
 * **Target Package/Files**:
-  - `test/unit/extension/AgentEditorProvider.test.ts`
-  - `test/unit/codegen/pythonAdkGenerator.test.ts`
-  - `test/unit/runner/AgentRunnerManager.test.ts`
-  - `test/unit/webview/useDiagramHistory.test.ts`
+  - `tests/extension/AgentEditorProvider.test.ts`
+  - `tests/extension/GeminiCodeGenEngine.test.ts`
+  - `tests/extension/AgentRunnerManager.test.ts`
+  - `tests/extension/PythonEnvResolver.test.ts`
+  - `tests/webview/useDiagramHistory.test.ts`
+  - `tests/webview/useWebviewBridge.test.ts`
+  - `tests/webview/StandardAgentDrawer.test.ts`
+  - `tests/webview/TriggerDrawer.test.ts`
 * **Context**:
-  Enforce 100% unit test coverage for all Release 1.0.0 backend classes, parsers, and code generators.
+  Enforce comprehensive unit test coverage for all Release 1.0.0 backend classes, RPC handlers, canvas hooks, and code generators.
 * **Sub-Agent Prompt**:
   ```
   Write comprehensive unit tests for all Release 1.0.0 modules.
-  1. Test AgentEditorProvider lifecycle (open, edit, save).
-  2. Test pythonAdkGenerator output across single agent variations.
-  3. Test AgentRunnerManager session execution, timeout handling, and failure modes.
-  4. Ensure 100% code coverage across new modules.
+  1. Test AgentEditorProvider lifecycle (open, edit, save, relative target directory computation).
+  2. Test GeminiCodeGenEngine prompt loading, template injection, and fallback synthesis.
+  3. Test AgentRunnerManager test scenario execution, latency tracking, and assertions.
+  4. Test useDiagramHistory undo/redo stacks and WebviewBridge RPC message dispatching.
   ```
 * **Verification**:
-  - `npm test -- --coverage` achieves 100% coverage on new backend code.
+  - `npm test` runs all 52 tests across 14 test suites and passes with zero failures.
 
 ---
 
