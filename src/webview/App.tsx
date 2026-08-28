@@ -43,7 +43,6 @@ import { TriggerNode } from './components/Canvas/nodes/TriggerNode';
 import { PaletteCard } from './components/Canvas/PaletteCard';
 import { getLayoutedElements, layoutPatternAtDropPosition } from './utils/layout';
 import { CodeGenerationPanel } from './components/codegen/CodeGenerationPanel';
-import { generateCodeForGraph } from './components/codegen/codeGenerators';
 import { AgentDrawer } from './components/inspector/AgentDrawer';
 import { TriggerDrawer } from './components/inspector/TriggerDrawer';
 import { AddToolModal } from './components/inspector/AddToolModal';
@@ -712,7 +711,18 @@ function FlowCanvas() {
       }, 100);
     });
 
-    return () => unsub();
+    const unsubCodeGenerated = bridge.subscribe('CODE_GENERATED', (payload) => {
+      setIsGenerating(false);
+      if (payload.success && payload.files && payload.files.length > 0) {
+        setGeneratedFiles(payload.files);
+        setHasGeneratedCode(true);
+      }
+    });
+
+    return () => {
+      unsub();
+      unsubCodeGenerated();
+    };
   }, [bridge, setNodes, setEdges, recordSnapshot]);
 
   // Real-time synchronization of nodes/edges/config back to VS Code text buffer via DOCUMENT_UPDATED
@@ -1554,26 +1564,65 @@ function FlowCanvas() {
     [nodes, edges, setNodes, setEdges, fitView, recordSnapshot]
   );
 
-  // Trigger Code Generation
+  // Trigger Code Generation via LLM in Extension Host
   const handleTriggerGenerate = useCallback(() => {
-    setIsGenerating(true);
-    setTimeout(() => {
-      const files = generateCodeForGraph(nodes, edges, config);
-      setGeneratedFiles(files);
-      setIsGenerating(false);
-      setHasGeneratedCode(true);
-    }, 350);
-  }, [nodes, edges, config]);
+    // Auto-resize bottom tabs panel to 50% unless already expanded (>= 50%) or maximized
+    if (!isPanelMaximized && panelContainerRef.current) {
+      const containerHeight = panelContainerRef.current.getBoundingClientRect().height;
+      if (containerHeight > 0) {
+        const currentHeight = bottomPanelHeight !== null ? bottomPanelHeight : containerHeight * (1 / 3);
+        const targetHalfHeight = containerHeight * 0.5;
+        if (currentHeight < targetHalfHeight) {
+          setBottomPanelHeight(targetHalfHeight);
+        }
+      }
+    }
 
-  // Keep code in sync if framework or language changes
-  const handleUpdateConfig = useCallback((newConf: Partial<GenerationConfig>) => {
-    setConfig((prev) => {
-      const updated = { ...prev, ...newConf };
-      const files = generateCodeForGraph(nodes, edges, updated);
-      setGeneratedFiles(files);
-      return updated;
+    setIsGenerating(true);
+
+    const currentActiveFile = fileTabs.find((t) => t.id === activeTabId) || fileTabs[0];
+    const workflowDoc: AgentWorkflowDocument = {
+      version: '1.0.0',
+      name: currentActiveFile?.filename ? currentActiveFile.filename.replace(/\.agent$/, '') : 'agent_workflow',
+      description: 'Agent Workflow Document',
+      framework: config.framework === 'google_adk' ? 'google-adk' : (config.framework as any) || 'google-adk',
+      language: config.language || 'python',
+      nodes: nodes.map((n) => ({
+        id: n.id,
+        type: n.type as any,
+        position: { x: Math.round(n.position.x), y: Math.round(n.position.y) },
+        data: { ...n.data },
+      })),
+      edges: edges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle || undefined,
+        targetHandle: e.targetHandle || undefined,
+        type: e.type,
+        animated: e.animated,
+        data: e.data ? { ...e.data } : undefined,
+      })),
+      metadata: {
+        updatedAt: new Date().toISOString(),
+      },
+    };
+
+    bridge.postMessage({
+      type: 'GENERATE_CODE',
+      payload: {
+        document: workflowDoc,
+        targetFramework: workflowDoc.framework,
+        targetLanguage: workflowDoc.language,
+        outputFolder: config.outputFolder,
+      },
     });
-  }, [nodes, edges]);
+  }, [nodes, edges, config, bridge, fileTabs, activeTabId, isPanelMaximized, bottomPanelHeight]);
+
+  // Update generation configuration
+  const handleUpdateConfig = useCallback((newConf: Partial<GenerationConfig>) => {
+    setConfig((prev) => ({ ...prev, ...newConf }));
+  }, []);
 
   // Selected agent update with root agent auto-reconnect & router branch lines sync
   const selectedAgentNode = nodes.find((n) => n.id === selectedAgentId && n.type === 'agentNode');

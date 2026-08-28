@@ -227,23 +227,97 @@ describe('AgentEditorProvider', () => {
     };
 
     let receivedMsg: any = null;
-    provider.registerMessageHandler('EXPORT_CODE', (msg) => {
+    provider.registerMessageHandler('CUSTOM_TEST_ACTION', (msg) => {
       receivedMsg = msg;
     });
 
     await provider.resolveCustomTextEditor(mockDoc, mockPanel, {} as any);
 
     if (messageCallback) {
-      const exportMsg = {
-        type: 'EXPORT_CODE',
+      const customMsg = {
+        type: 'CUSTOM_TEST_ACTION',
         payload: {
-          document: {} as any,
-          targetFramework: 'google-adk' as const,
-          targetLanguage: 'python' as const,
+          foo: 'bar',
         },
       };
-      await (messageCallback as any)(exportMsg);
-      assert.deepEqual(receivedMsg, exportMsg);
+      await (messageCallback as any)(customMsg);
+      assert.deepEqual(receivedMsg, customMsg);
+    }
+  });
+
+  it('should handle GENERATE_CODE message, write files to disk and post CODE_GENERATED', async () => {
+    const mockContext: any = {
+      extensionPath: '/mock/extension',
+      extensionUri: vscode.Uri.file('/mock/extension'),
+      subscriptions: [],
+    };
+    const provider = new AgentEditorProvider(mockContext);
+
+    // Mock CodeGenEngine response
+    (provider as any).codeGenEngine = {
+      generateCode: async () => ({
+        success: true,
+        files: [
+          { path: 'agent_workflow.py', name: 'agent_workflow.py', description: 'Agent code', content: '# generated' },
+          { path: 'main.py', name: 'main.py', description: 'Main CLI', content: '# cli' },
+        ],
+        modelUsed: 'gemini-flash-latest',
+      }),
+    };
+
+    const mockDoc: any = {
+      uri: vscode.Uri.file('/mock/workspace/sample.agent'),
+      getText: () => '{}',
+      positionAt: () => new vscode.Position(0, 0),
+    };
+
+    let messageCallback: ((msg: any) => Promise<void>) | null = null;
+    const postedMessages: any[] = [];
+    const mockPanel: any = {
+      webview: {
+        options: {},
+        html: '',
+        postMessage: async (msg: any) => {
+          postedMessages.push(msg);
+          return true;
+        },
+        onDidReceiveMessage: (cb: any) => {
+          messageCallback = cb;
+          return { dispose: () => {} };
+        },
+        cspSource: 'vscode-webview:',
+        asWebviewUri: (uri: any) => uri.toString(),
+      },
+      onDidDispose: () => {},
+    };
+
+    await provider.resolveCustomTextEditor(mockDoc, mockPanel, {} as any);
+
+    if (messageCallback) {
+      await (messageCallback as any)({
+        type: 'GENERATE_CODE',
+        payload: {
+          document: {
+            version: '1.0.0',
+            name: 'sample',
+            framework: 'google-adk',
+            language: 'python',
+            nodes: [],
+            edges: [],
+          },
+          targetFramework: 'google-adk',
+          targetLanguage: 'python',
+          outputFolder: '/mock/workspace/output',
+        },
+      });
+
+      const codeGenMsg = postedMessages.find((m) => m.type === 'CODE_GENERATED');
+      assert.ok(codeGenMsg);
+      assert.equal(codeGenMsg.payload.success, true);
+      assert.equal(codeGenMsg.payload.files.length, 2);
+      assert.equal(codeGenMsg.payload.modelUsed, 'gemini-flash-latest');
+      assert.ok(codeGenMsg.payload.targetDirectory);
     }
   });
 });
+

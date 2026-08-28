@@ -30,6 +30,7 @@ export type WebviewToExtensionMessage =
         document: AgentWorkflowDocument;
         targetFramework?: FrameworkTarget;
         targetLanguage?: LanguageTarget;
+        outputFolder?: string;
       };
     }
   | {
@@ -58,7 +59,19 @@ export type WebviewToExtensionMessage =
   | {
       type: 'CANCEL_TESTS';
       payload: {
-        runId: string;
+        runId?: string;
+      };
+    }
+  | {
+      type: 'REQUEST_SETTINGS';
+      payload?: Record<string, never>;
+    }
+  | {
+      type: 'UPDATE_SETTINGS';
+      payload: {
+        geminiApiKey?: string;
+        targetFramework?: FrameworkTarget;
+        targetLanguage?: LanguageTarget;
       };
     }
   | {
@@ -133,6 +146,7 @@ export type ExtensionToWebviewMessage =
       payload: {
         success: boolean;
         files: GeneratedFile[];
+        targetDirectory?: string;
         modelUsed?: string;
         error?: string;
       };

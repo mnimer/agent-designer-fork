@@ -2,11 +2,11 @@
  * Unit Tests for GeminiCodeGenEngine
  *
  * Validates:
- * 1. Prompt template discovery and {{WORKFLOW_JSON}} interpolation.
+ * 1. Prompt template discovery from `resource/prompts/` and {{WORKFLOW_JSON}} interpolation.
  * 2. Multi-file JSON response parsing and markdown fence stripping.
- * 3. High-fidelity deterministic Python ADK repository synthesis.
- * 4. Pydantic BaseModel emission for agents with structured output schemas.
- * 5. Pytest suite code generation conforming to trigger test cases.
+ * 3. Default model configuration to `gemini-flash-latest`.
+ * 4. Error reporting on missing credentials without template fallback.
+ * 5. Successful file parsing from Gemini LLM response.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -17,7 +17,7 @@ import * as path from 'path';
 import { GeminiCodeGenEngine } from '../../src/extension/GeminiCodeGenEngine';
 import { AgentWorkflowDocument } from '../../src/shared/types';
 
-describe('GeminiCodeGenEngine Prompt-Driven Generation', () => {
+describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
   const extensionPath = path.resolve(__dirname, '../..');
   const engine = new GeminiCodeGenEngine(extensionPath);
 
@@ -53,7 +53,7 @@ describe('GeminiCodeGenEngine Prompt-Driven Generation', () => {
         position: { x: 300, y: 0 },
         data: {
           label: 'TriageSpecialist',
-          model: 'gemini-2.5-pro',
+          model: 'gemini-flash-latest',
           systemPrompt: 'You are a customer support specialist.',
           temperature: 0.3,
           tools: [
@@ -63,14 +63,6 @@ describe('GeminiCodeGenEngine Prompt-Driven Generation', () => {
               type: 'builtin',
             },
           ],
-          structuredOutputSchema: {
-            enabled: true,
-            name: 'TriageDecision',
-            fields: [
-              { id: '1', name: 'category', type: 'string', required: true },
-              { id: '2', name: 'confidenceScore', type: 'number', required: true },
-            ],
-          },
         },
       },
     ],
@@ -85,10 +77,11 @@ describe('GeminiCodeGenEngine Prompt-Driven Generation', () => {
     },
   };
 
-  it('should load prompt template for python-adk successfully', () => {
+  it('should load prompt template from resource/prompts for python-adk successfully', () => {
     const prompt = engine.loadPromptTemplate('google-adk', 'python');
     assert.ok(prompt.length > 0);
-    assert.ok(prompt.includes('{{WORKFLOW_JSON}}') || prompt.includes('Google GenAI SDK'));
+    assert.ok(prompt.includes('{{WORKFLOW_JSON}}'));
+    assert.ok(prompt.includes('google-genai'));
   });
 
   it('should parse raw Gemini JSON response with markdown fences', () => {
@@ -96,52 +89,40 @@ describe('GeminiCodeGenEngine Prompt-Driven Generation', () => {
     const files = engine.parseGeminiResponse(rawFencedResponse);
     assert.equal(files.length, 1);
     assert.equal(files[0].path, 'test.py');
-    assert.equal(files[0].language, 'python');
     assert.equal(files[0].content, 'print(123)');
   });
 
   it('should parse raw un-fenced Gemini JSON response', () => {
     const rawResponse = JSON.stringify([
       { path: 'main.tf', description: 'Terraform file', content: 'provider "google" {}' },
+      { path: 'agent_workflow.py', description: 'Agent Class', content: 'class Workflow: pass' },
     ]);
     const files = engine.parseGeminiResponse(rawResponse);
-    assert.equal(files.length, 1);
+    assert.equal(files.length, 2);
     assert.equal(files[0].path, 'main.tf');
-    assert.equal(files[0].language, 'terraform');
+    assert.equal(files[1].path, 'agent_workflow.py');
   });
 
-  it('should generate complete deterministic repository when offline', async () => {
-    const result = await engine.generateCode({
+  it('should report failure with informative error when both API key and ADC credentials fail', async () => {
+    // Engine without valid key and mock ADC returning null
+    const testEngine = new GeminiCodeGenEngine(extensionPath);
+    (testEngine as any).getGCloudAccessToken = () => null;
+    (testEngine as any).getGCloudProjectId = () => null;
+
+    const result = await testEngine.generateCode({
       document: sampleDoc,
       framework: 'google-adk',
       language: 'python',
+      apiKey: 'INVALID_TEST_KEY_FORCING_FAILURE',
+      model: 'gemini-flash-latest',
     });
 
-    assert.equal(result.success, true);
-    assert.ok(result.files.length >= 7);
-
-    // Verify critical generated files
-    const workflowFile = result.files.find((f) => f.path === 'agent_workflow.py');
-    assert.ok(workflowFile);
-    assert.ok(workflowFile?.content.includes('from google import genai'));
-    assert.ok(workflowFile?.content.includes('from google.genai import types'));
-    assert.ok(workflowFile?.content.includes('class TriageSpecialistWorkflow:'));
-    assert.ok(workflowFile?.content.includes('class ResponseSchema(BaseModel):'));
-    assert.ok(workflowFile?.content.includes('category: str'));
-    assert.ok(workflowFile?.content.includes('confidenceScore: float'));
-
-    const testFile = result.files.find((f) => f.path === 'test_pipeline.py');
-    assert.ok(testFile);
-    assert.ok(testFile?.content.includes('def test_refund_request():'));
-    assert.ok(testFile?.content.includes('assert "refund" in result.lower()'));
-
-    const reqFile = result.files.find((f) => f.path === 'requirements.txt');
-    assert.ok(reqFile);
-    assert.ok(reqFile?.content.includes('google-genai'));
-    assert.ok(reqFile?.content.includes('pytest'));
-
-    const tfFile = result.files.find((f) => f.path === 'main.tf');
-    assert.ok(tfFile);
-    assert.ok(tfFile?.content.includes('google_cloud_run_v2_service'));
+    assert.equal(result.success, false);
+    assert.equal(result.files.length, 0);
+    assert.ok(result.error);
+    assert.ok(result.error.includes('API Key error') || result.error.includes('Application Default Credentials'));
+    assert.equal(result.modelUsed, 'gemini-flash-latest');
   });
 });
+
+

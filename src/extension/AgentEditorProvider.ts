@@ -268,17 +268,93 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         framework: payload.targetFramework,
         language: payload.targetLanguage,
         apiKey: apiKey,
+        model: 'gemini-flash-latest',
       });
 
-      await bridge.postMessage({
-        type: 'CODE_GENERATED',
-        payload: {
-          success: result.success,
-          files: result.files,
-          modelUsed: result.modelUsed,
-          error: result.error,
-        },
-      });
+      if (result.success && result.files.length > 0) {
+        try {
+          // Resolve target directory
+          const workspaceFolders = vscode.workspace.workspaceFolders;
+          let targetDir: vscode.Uri;
+
+          if (payload.outputFolder) {
+            if (path.isAbsolute(payload.outputFolder)) {
+              targetDir = vscode.Uri.file(payload.outputFolder);
+            } else if (workspaceFolders && workspaceFolders.length > 0) {
+              targetDir = vscode.Uri.joinPath(workspaceFolders[0].uri, payload.outputFolder);
+            } else {
+              targetDir = vscode.Uri.file(path.join(path.dirname(document.uri.fsPath), payload.outputFolder));
+            }
+          } else if (workspaceFolders && workspaceFolders.length > 0) {
+            targetDir = vscode.Uri.joinPath(workspaceFolders[0].uri, 'src', 'agents');
+          } else {
+            targetDir = vscode.Uri.file(path.dirname(document.uri.fsPath));
+          }
+
+          // Ensure directory exists
+          await vscode.workspace.fs.createDirectory(targetDir);
+
+          // Clean existing files in target directory, PRESERVING the active .agent file
+          try {
+            const existingEntries = await vscode.workspace.fs.readDirectory(targetDir);
+            for (const [entryName] of existingEntries) {
+              const entryUri = vscode.Uri.joinPath(targetDir, entryName);
+              // Protect active document file
+              if (entryUri.fsPath === document.uri.fsPath) {
+                continue;
+              }
+              await vscode.workspace.fs.delete(entryUri, { recursive: true, useTrash: false });
+            }
+          } catch (cleanErr) {
+            this.outputChannel?.appendLine(`[AgentEditorProvider] Warning during target directory cleanup: ${cleanErr}`);
+          }
+
+          // Write all generated files to disk
+          for (const file of result.files) {
+            const fileUri = vscode.Uri.joinPath(targetDir, file.path);
+            const parentDir = vscode.Uri.file(path.dirname(fileUri.fsPath));
+            await vscode.workspace.fs.createDirectory(parentDir);
+            const buffer = Buffer.from(file.content, 'utf-8');
+            await vscode.workspace.fs.writeFile(fileUri, buffer);
+          }
+
+          vscode.window.showInformationMessage(
+            `Agent Flow: Generated and saved ${result.files.length} files in ${path.basename(targetDir.fsPath)}`
+          );
+
+          await bridge.postMessage({
+            type: 'CODE_GENERATED',
+            payload: {
+              success: true,
+              files: result.files,
+              targetDirectory: targetDir.fsPath,
+              modelUsed: result.modelUsed,
+            },
+          });
+        } catch (writeErr: any) {
+          vscode.window.showErrorMessage(`Agent Flow: Failed to save generated files: ${writeErr.message}`);
+          await bridge.postMessage({
+            type: 'CODE_GENERATED',
+            payload: {
+              success: false,
+              files: [],
+              error: `Failed to write generated files to disk: ${writeErr.message}`,
+              modelUsed: result.modelUsed,
+            },
+          });
+        }
+      } else {
+        vscode.window.showErrorMessage(`Agent Flow Code Generation Failed: ${result.error || 'Unknown error'}`);
+        await bridge.postMessage({
+          type: 'CODE_GENERATED',
+          payload: {
+            success: false,
+            files: [],
+            error: result.error,
+            modelUsed: result.modelUsed,
+          },
+        });
+      }
     });
 
     bridge.onMessage('WRITE_FILES_TO_WORKSPACE', async (payload) => {

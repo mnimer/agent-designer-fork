@@ -8,33 +8,35 @@
 
 ## Task Summary Matrix
 
-| Task ID | Release | Component | Task Title | Dependencies |
-| :--- | :--- | :--- | :--- | :--- |
-| **TASK-100** | v1.0.0 | Extension Host | VS Code Extension Scaffolding & Custom Editor Provider | None |
-| **TASK-101** | v1.0.0 | Webview Bridge | Webview RPC Message Bus & Typed Protocol | TASK-100 |
-| **TASK-102** | v1.0.0 | Webview UI | VS Code Chrome Shell, Themes & Resizable Panels | TASK-100 |
-| **TASK-103** | v1.0.0 | Canvas & Node | Single Agent Node, Handles & Inspector Drawer | TASK-102 |
-| **TASK-104** | v1.0.0 | Tools | Google Search Grounding Built-in Tool | TASK-103 |
-| **TASK-105** | v1.0.0 | Triggers | Test Suite Trigger Node & Test Prompts Editor | TASK-103 |
-| **TASK-106** | v1.0.0 | Codegen | Gemini Prompt-Driven Python ADK Repository Generator | TASK-103, TASK-104, TASK-105 |
-| **TASK-107** | v1.0.0 | Runner | Managed Agent Subprocess Runner & Test Execution Engine | TASK-101, TASK-106 |
-| **TASK-108** | v1.0.0 | History & Sync | Undo/Redo Engine, Auto-Layout & Document Disk Sync | TASK-101, TASK-103 |
-| **TASK-109** | v1.0.0 | Quality | End-to-End Test Suite & 100% Coverage Suite | TASK-100 to TASK-108 |
-| **TASK-110** | v1.0.1 | Triggers | Chat Trigger Node & Interactive Chat Runner Panel | TASK-107 |
-| **TASK-111** | v1.0.1 | Deployment | Cloud Deployment & IaC Panel (Cloud Run & Agent Engine) | TASK-106 |
-| **TASK-112** | v1.0.2 | Canvas | Multi-Agent Wiring, Sockets & Connection Validation | TASK-103 |
-| **TASK-113** | v1.0.2 | Patterns | Sequential Pipeline & Parallel Fan-Out Patterns | TASK-112 |
-| **TASK-114** | v1.0.2 | Codegen | Multi-Agent DAG Python ADK Code Generation & Tracing | TASK-113 |
-| **TASK-115** | v1.0.3 | Memory | In-Memory & Cloud Firestore Checkpointer Configuration | TASK-103, TASK-111 |
-| **TASK-116** | v1.0.4 | A2A | Agent-to-Agent (A2A) Protocol Node & JSON-RPC Client | TASK-112, TASK-115 |
-| **TASK-117** | v1.0.5 | Router | Router Node & Dynamic Branching Logic | TASK-112 |
-| **TASK-118** | v1.0.6 | Tools | Custom REST API Tool Builder & Python Code Sandbox | TASK-104 |
-| **TASK-119** | v1.0.7 | Schema | Structured Output Schema Builder & Pydantic Validation | TASK-103, TASK-106 |
-| **TASK-120** | v1.0.8 | MCP | Model Context Protocol (MCP) Client & Handshake Test | TASK-104, TASK-107 |
-| **TASK-121** | v1.0.9 | Triggers & IAM | Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise IAM OIDC Auth | TASK-105, TASK-111, TASK-116 |
-| **TASK-122** | v1.1.0 | Framework | LangGraph Framework Support (Python StateGraph Target) | TASK-106, TASK-114 |
-| **TASK-123** | v1.1.1 | Runtime | TypeScript Runtime Support (@google/genai SDK & Vitest) | TASK-106, TASK-122 |
-| **TASK-124** | v1.1.2 | Patterns | Advanced Patterns (Debate, Loop) & Blueprints Catalog | TASK-113, TASK-117 |
+## Task Summary Matrix
+
+| Task ID | Release | Component | Task Title | Status | Dependencies |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **TASK-100** | v1.0.0 | Extension Host | VS Code Extension Scaffolding & Custom Editor Provider | **Complete** | None |
+| **TASK-101** | v1.0.0 | Webview Bridge | Webview RPC Message Bus & Typed Protocol | **Complete** | TASK-100 |
+| **TASK-102** | v1.0.0 | Webview UI | VS Code Chrome Shell, Themes & Resizable Panels | **Complete** | TASK-100 |
+| **TASK-103** | v1.0.0 | Canvas & Node | Single Agent Node, Handles & Inspector Drawer | **Complete** | TASK-102 |
+| **TASK-104** | v1.0.0 | Tools | Google Search Grounding Built-in Tool | **Complete** | TASK-103 |
+| **TASK-105** | v1.0.0 | Triggers | Test Suite Trigger Node & Test Prompts Editor | **Complete** | TASK-103 |
+| **TASK-106** | v1.0.0 | Codegen | Gemini Prompt-Driven Python ADK Repository Generator | **Complete** | TASK-103, TASK-104, TASK-105 |
+| **TASK-107** | v1.0.0 | Runner | Managed Agent Subprocess Runner & Test Execution Engine | **Not Completed (Not started)** | TASK-101, TASK-106 |
+| **TASK-108** | v1.0.0 | History & Sync | Undo/Redo Engine, Auto-Layout & Document Disk Sync | **Complete** | TASK-101, TASK-103 |
+| **TASK-109** | v1.0.0 | Quality | End-to-End Test Suite & 100% Coverage Suite | **In Progress** | TASK-100 to TASK-108 |
+| **TASK-110** | v1.0.1 | Triggers | Chat Trigger Node & Interactive Chat Runner Panel | **Not Started** | TASK-107 |
+| **TASK-111** | v1.0.1 | Deployment | Cloud Deployment & IaC Panel (Cloud Run & Agent Engine) | **Not Started** | TASK-106 |
+| **TASK-112** | v1.0.2 | Canvas | Multi-Agent Wiring, Sockets & Connection Validation | **Not Started** | TASK-103 |
+| **TASK-113** | v1.0.2 | Patterns | Sequential Pipeline & Parallel Fan-Out Patterns | **Not Started** | TASK-112 |
+| **TASK-114** | v1.0.2 | Codegen | Multi-Agent DAG Python ADK Code Generation & Tracing | **Not Started** | TASK-113 |
+| **TASK-115** | v1.0.3 | Memory | In-Memory & Cloud Firestore Checkpointer Configuration | **Not Started** | TASK-103, TASK-111 |
+| **TASK-116** | v1.0.4 | A2A | Agent-to-Agent (A2A) Protocol Node & JSON-RPC Client | **Not Started** | TASK-112, TASK-115 |
+| **TASK-117** | v1.0.5 | Router | Router Node & Dynamic Branching Logic | **Not Started** | TASK-112 |
+| **TASK-118** | v1.0.6 | Tools | Custom REST API Tool Builder & Python Code Sandbox | **Not Started** | TASK-104 |
+| **TASK-119** | v1.0.7 | Schema | Structured Output Schema Builder & Pydantic Validation | **Not Started** | TASK-103, TASK-106 |
+| **TASK-120** | v1.0.8 | MCP | Model Context Protocol (MCP) Client & Handshake Test | **Not Started** | TASK-104, TASK-107 |
+| **TASK-121** | v1.0.9 | Triggers & IAM | Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise IAM OIDC Auth | **Not Started** | TASK-105, TASK-111, TASK-116 |
+| **TASK-122** | v1.1.0 | Framework | LangGraph Framework Support (Python StateGraph Target) | **Not Started** | TASK-106, TASK-114 |
+| **TASK-123** | v1.1.1 | Runtime | TypeScript Runtime Support (@google/genai SDK & Vitest) | **Not Started** | TASK-106, TASK-122 |
+| **TASK-124** | v1.1.2 | Patterns | Advanced Patterns (Debate, Loop) & Blueprints Catalog | **Not Started** | TASK-113, TASK-117 |
 
 ---
 

@@ -407,16 +407,30 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
               </div>
             </div>
 
-            {/* Generate Code Button (Disabled) */}
+            {/* Generate Code Button */}
             <div className="pt-3 border-t border-[#30363d] space-y-1.5 shrink-0 mt-2">
               <button
                 type="button"
-                disabled={true}
-                title="Code generation is currently disabled"
-                className="w-full bg-[#21262d] text-gray-500 py-2.5 rounded-lg text-sm font-bold border border-[#30363d] cursor-not-allowed opacity-60 flex items-center justify-center gap-2"
+                onClick={onGenerateCode}
+                disabled={isGenerating}
+                title="Synthesize production repository using Gemini LLM"
+                className={`w-full py-2.5 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg ${
+                  isGenerating
+                    ? 'bg-blue-600/40 text-blue-200 border-blue-500/50 cursor-wait'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400 hover:shadow-emerald-500/20 active:scale-[0.98]'
+                }`}
               >
-                <Play className="w-3.5 h-3.5 fill-current opacity-40" />
-                <span>Generate Code</span>
+                {isGenerating ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-blue-200" />
+                    <span>Generating Code...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 fill-current text-white" />
+                    <span>Generate Code</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
