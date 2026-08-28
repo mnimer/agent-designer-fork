@@ -30,6 +30,7 @@ import { WebviewBridge } from './WebviewBridge';
 import {
   WebviewToExtensionMessage,
 } from '../shared/rpcProtocol';
+import { GeneratedFile } from '../shared/codegen/types';
 import { GeminiCodeGenEngine } from './GeminiCodeGenEngine';
 import { AgentRunnerManager } from './AgentRunnerManager';
 
@@ -207,6 +208,11 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           );
 
           const relativeFilePath = vscode.workspace.asRelativePath(document.uri);
+          
+          // Resolve target directory to check for pre-existing generated files
+          const targetDir = document.uri.fsPath.replace(/\.agent$/i, '');
+          const existingGeneratedFiles = this.loadGeneratedFilesFromDisk(targetDir);
+
           await bridge.postMessage({
             type: 'LOAD_DOCUMENT',
             payload: {
@@ -214,6 +220,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
               docVersion: docVersion,
               filePath: relativeFilePath,
               readOnly: !vscode.workspace.isTrusted,
+              generatedFiles: existingGeneratedFiles,
             },
           });
 
@@ -461,10 +468,90 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
 
     bridge.onMessage('RUN_TESTS', async (payload) => {
       if (!payload?.document) return;
+
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      let targetDir: string | undefined = payload.targetDirectory;
+      if (!targetDir) {
+        targetDir = workspaceFolders && workspaceFolders.length > 0
+          ? vscode.Uri.joinPath(workspaceFolders[0].uri, 'src', 'agents').fsPath
+          : path.dirname(document.uri.fsPath);
+      } else if (!path.isAbsolute(targetDir)) {
+        targetDir = workspaceFolders && workspaceFolders.length > 0
+          ? vscode.Uri.joinPath(workspaceFolders[0].uri, targetDir).fsPath
+          : path.join(path.dirname(document.uri.fsPath), targetDir);
+      }
+
       await this.runnerManager.runTests({
         document: payload.document,
         scenarioIds: payload.testScenarioIds,
+        targetDirectory: targetDir,
         bridge,
+      });
+    });
+
+    bridge.onMessage('START_LOCAL_RUNNER', async (payload) => {
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      let targetDir: string | undefined = payload?.targetDirectory;
+      if (!targetDir) {
+        targetDir = workspaceFolders && workspaceFolders.length > 0
+          ? vscode.Uri.joinPath(workspaceFolders[0].uri, 'src', 'agents').fsPath
+          : path.dirname(document.uri.fsPath);
+      } else if (!path.isAbsolute(targetDir)) {
+        targetDir = workspaceFolders && workspaceFolders.length > 0
+          ? vscode.Uri.joinPath(workspaceFolders[0].uri, targetDir).fsPath
+          : path.join(path.dirname(document.uri.fsPath), targetDir);
+      }
+
+      await this.runnerManager.startLocalRunner({
+        document: payload?.document,
+        targetDirectory: targetDir,
+        port: payload?.port || 8000,
+        envVars: payload?.envVars,
+        bridge,
+      });
+    });
+
+    bridge.onMessage('STOP_LOCAL_RUNNER', (payload) => {
+      this.runnerManager.stopLocalRunner(payload?.runnerId);
+    });
+
+    bridge.onMessage('GET_LOCAL_RUNNER_STATUS', async () => {
+      await this.runnerManager.sendStatus(bridge);
+    });
+
+    bridge.onMessage('CHECK_FILES_EXIST', async (payload) => {
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      let targetDir: string | undefined = payload?.targetDirectory;
+      if (!targetDir) {
+        targetDir = workspaceFolders && workspaceFolders.length > 0
+          ? vscode.Uri.joinPath(workspaceFolders[0].uri, 'src', 'agents').fsPath
+          : path.dirname(document.uri.fsPath);
+      } else if (!path.isAbsolute(targetDir)) {
+        targetDir = workspaceFolders && workspaceFolders.length > 0
+          ? vscode.Uri.joinPath(workspaceFolders[0].uri, targetDir).fsPath
+          : path.join(path.dirname(document.uri.fsPath), targetDir);
+      }
+
+      const existingGeneratedFiles = this.loadGeneratedFilesFromDisk(targetDir);
+      const serverPy = path.join(targetDir, 'server.py');
+      const mainPy = path.join(targetDir, 'main.py');
+      const exists = fs.existsSync(serverPy) || fs.existsSync(mainPy) || existingGeneratedFiles.length > 0;
+
+      let foundFiles: string[] = [];
+      if (fs.existsSync(targetDir)) {
+        try {
+          foundFiles = fs.readdirSync(targetDir);
+        } catch {}
+      }
+
+      await bridge.postMessage({
+        type: 'FILES_EXIST_RESPONSE',
+        payload: {
+          targetDirectory: targetDir,
+          exists,
+          files: foundFiles,
+          generatedFiles: existingGeneratedFiles,
+        },
       });
     });
 
@@ -856,5 +943,89 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   ${inlineJs ? `<script nonce="${nonce}">\n${inlineJs}\n</script>` : `<script nonce="${nonce}" src="${jsUri.toString()}"></script>`}
 </body>
 </html>`;
+  }
+
+  /**
+   * Scans a target directory on disk and loads any pre-existing generated code files.
+   *
+   * Logic Flow:
+   * 1. Validates directory existence.
+   * 2. Reads all directory entries, ignoring virtual environments and build cache directories.
+   * 3. Maps file extensions to syntax languages (python, typescript, json, markdown).
+   * 4. Extracts file text and assigns human-readable file descriptions.
+   * 5. Sorts files with entrypoints and dependency manifests first.
+   *
+   * @param targetDir Target directory path on filesystem
+   * @returns Array of GeneratedFile objects
+   */
+  public loadGeneratedFilesFromDisk(targetDir: string): GeneratedFile[] {
+    if (!fs.existsSync(targetDir)) return [];
+    const files: GeneratedFile[] = [];
+    const ignoredNames = new Set([
+      '.venv',
+      'venv',
+      'env',
+      '__pycache__',
+      '.git',
+      '.DS_Store',
+      'node_modules',
+      '.pytest_cache',
+    ]);
+
+    try {
+      const entries = fs.readdirSync(targetDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isFile() && !ignoredNames.has(entry.name)) {
+          const ext = path.extname(entry.name).toLowerCase();
+          let language: 'python' | 'typescript' | 'markdown' | 'json' = 'markdown';
+          if (ext === '.py') language = 'python';
+          else if (ext === '.ts' || ext === '.js') language = 'typescript';
+          else if (ext === '.json') language = 'json';
+          else if (
+            ext === '.md' ||
+            ext === '.txt' ||
+            ext === '.yaml' ||
+            ext === '.yml' ||
+            ext === '.sh' ||
+            entry.name === 'Dockerfile'
+          )
+            language = 'markdown';
+
+          let description = `${entry.name} file`;
+          if (entry.name === 'server.py') description = 'FastAPI agent execution server';
+          else if (entry.name === 'agent.py' || entry.name === 'main.py')
+            description = 'Main agent workflow implementation';
+          else if (entry.name === 'requirements.txt') description = 'Python runtime dependencies';
+          else if (entry.name === 'README.md') description = 'Agent documentation & deployment guide';
+          else if (entry.name === 'Dockerfile') description = 'Container build specification';
+
+          try {
+            const content = fs.readFileSync(path.join(targetDir, entry.name), 'utf-8');
+            files.push({
+              name: entry.name,
+              language,
+              content,
+              description,
+            });
+          } catch {}
+        }
+      }
+    } catch {}
+
+    files.sort((a, b) => {
+      const priorityOrder: Record<string, number> = {
+        'server.py': 1,
+        'agent.py': 2,
+        'main.py': 3,
+        'requirements.txt': 4,
+        'README.md': 5,
+        'Dockerfile': 6,
+      };
+      const pA = priorityOrder[a.name] || 10;
+      const pB = priorityOrder[b.name] || 10;
+      return pA - pB;
+    });
+
+    return files;
   }
 }

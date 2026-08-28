@@ -705,6 +705,11 @@ function FlowCanvas() {
         deploymentTarget: 'agent_engine',
       }));
 
+      if (payload.generatedFiles && payload.generatedFiles.length > 0) {
+        setGeneratedFiles(payload.generatedFiles);
+        setHasGeneratedCode(true);
+      }
+
       // Enable real-time document synchronization to VS Code text buffer after initial load
       setTimeout(() => {
         isLoadedRef.current = true;
@@ -719,11 +724,31 @@ function FlowCanvas() {
       }
     });
 
+    const unsubFilesExist = bridge.subscribe('FILES_EXIST_RESPONSE', (payload) => {
+      if (payload?.generatedFiles && payload.generatedFiles.length > 0) {
+        setGeneratedFiles(payload.generatedFiles);
+        setHasGeneratedCode(true);
+      }
+    });
+
     return () => {
       unsub();
       unsubCodeGenerated();
+      unsubFilesExist();
     };
   }, [bridge, setNodes, setEdges, recordSnapshot]);
+
+  // Check filesystem for generated code when target folder changes
+  useEffect(() => {
+    if (config.outputFolder) {
+      bridge.postMessage({
+        type: 'CHECK_FILES_EXIST',
+        payload: {
+          targetDirectory: config.outputFolder,
+        },
+      });
+    }
+  }, [config.outputFolder, bridge]);
 
   // Real-time synchronization of nodes/edges/config back to VS Code text buffer via DOCUMENT_UPDATED
   useEffect(() => {
@@ -1564,24 +1589,9 @@ function FlowCanvas() {
     [nodes, edges, setNodes, setEdges, fitView, recordSnapshot]
   );
 
-  // Trigger Code Generation via LLM in Extension Host
-  const handleTriggerGenerate = useCallback(() => {
-    // Auto-resize bottom tabs panel to 50% unless already expanded (>= 50%) or maximized
-    if (!isPanelMaximized && panelContainerRef.current) {
-      const containerHeight = panelContainerRef.current.getBoundingClientRect().height;
-      if (containerHeight > 0) {
-        const currentHeight = bottomPanelHeight !== null ? bottomPanelHeight : containerHeight * (1 / 3);
-        const targetHalfHeight = containerHeight * 0.5;
-        if (currentHeight < targetHalfHeight) {
-          setBottomPanelHeight(targetHalfHeight);
-        }
-      }
-    }
-
-    setIsGenerating(true);
-
+  const currentWorkflowDocument = useMemo((): AgentWorkflowDocument => {
     const currentActiveFile = fileTabs.find((t) => t.id === activeTabId) || fileTabs[0];
-    const workflowDoc: AgentWorkflowDocument = {
+    return {
       version: '1.0.0',
       name: currentActiveFile?.filename ? currentActiveFile.filename.replace(/\.agent$/, '') : 'agent_workflow',
       description: 'Agent Workflow Document',
@@ -1607,17 +1617,34 @@ function FlowCanvas() {
         updatedAt: new Date().toISOString(),
       },
     };
+  }, [nodes, edges, config.framework, config.language, fileTabs, activeTabId]);
+
+  // Trigger Code Generation via LLM in Extension Host
+  const handleTriggerGenerate = useCallback(() => {
+    // Auto-resize bottom tabs panel to 50% unless already expanded (>= 50%) or maximized
+    if (!isPanelMaximized && panelContainerRef.current) {
+      const containerHeight = panelContainerRef.current.getBoundingClientRect().height;
+      if (containerHeight > 0) {
+        const currentHeight = bottomPanelHeight !== null ? bottomPanelHeight : containerHeight * (1 / 3);
+        const targetHalfHeight = containerHeight * 0.5;
+        if (currentHeight < targetHalfHeight) {
+          setBottomPanelHeight(targetHalfHeight);
+        }
+      }
+    }
+
+    setIsGenerating(true);
 
     bridge.postMessage({
       type: 'GENERATE_CODE',
       payload: {
-        document: workflowDoc,
-        targetFramework: workflowDoc.framework,
-        targetLanguage: workflowDoc.language,
+        document: currentWorkflowDocument,
+        targetFramework: currentWorkflowDocument.framework,
+        targetLanguage: currentWorkflowDocument.language,
         outputFolder: config.outputFolder,
       },
     });
-  }, [nodes, edges, config, bridge, fileTabs, activeTabId, isPanelMaximized, bottomPanelHeight]);
+  }, [currentWorkflowDocument, config.outputFolder, bridge, isPanelMaximized, bottomPanelHeight]);
 
   // Update generation configuration
   const handleUpdateConfig = useCallback((newConf: Partial<GenerationConfig>) => {
@@ -2041,6 +2068,7 @@ function FlowCanvas() {
             agents={agentNodes}
             isMaximized={isPanelMaximized}
             onToggleMaximize={handleToggleMaximizePanel}
+            document={currentWorkflowDocument}
           />
         </div>
       </div>

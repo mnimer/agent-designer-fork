@@ -98,40 +98,29 @@ function getVsCodeApi(): { api: WebviewApi; isMock: boolean } {
   return { api: globalVsCodeApi, isMock: globalIsMockMode };
 }
 
-export function useWebviewBridge(): UseWebviewBridgeReturn {
-  const listenersRef = useRef<Map<string, Set<(payload: any) => void>>>(new Map());
-  const { api: vscodeApi, isMock: isMockMode } = getVsCodeApi();
+const globalListeners = new Map<string, Set<(payload: any) => void>>();
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
+    const message = event.data;
+    if (!message || !message.type) return;
 
-  useEffect(() => {
-    // Global message listener for messages sent from VS Code Extension Host
-    const handleWindowMessage = (event: MessageEvent<ExtensionToWebviewMessage>) => {
-      const message = event.data;
-      if (!message || !message.type) return;
-
-      const handlers = listenersRef.current.get(message.type);
-      if (handlers) {
-        const payload = 'payload' in message ? message.payload : undefined;
-        handlers.forEach((listener) => {
-          try {
-            listener(payload);
-          } catch (err) {
-            console.error(`[useWebviewBridge] Error in listener for ${message.type}:`, err);
-          }
-        });
-      }
-    };
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('message', handleWindowMessage);
+    const handlers = globalListeners.get(message.type);
+    if (handlers) {
+      const payload = 'payload' in message ? message.payload : undefined;
+      handlers.forEach((listener) => {
+        try {
+          listener(payload);
+        } catch (err) {
+          console.error(`[useWebviewBridge] Error in listener for ${message.type}:`, err);
+        }
+      });
     }
+  });
+}
 
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('message', handleWindowMessage);
-      }
-    };
-  }, []);
+export function useWebviewBridge(): UseWebviewBridgeReturn {
+  const { api: vscodeApi, isMock: isMockMode } = getVsCodeApi();
 
   /**
    * Posts a type-safe command message to the Extension Host.
@@ -157,19 +146,19 @@ export function useWebviewBridge(): UseWebviewBridgeReturn {
           : undefined
       ) => void
     ): (() => void) => {
-      let set = listenersRef.current.get(type);
+      let set = globalListeners.get(type);
       if (!set) {
         set = new Set();
-        listenersRef.current.set(type, set);
+        globalListeners.set(type, set);
       }
       set.add(listener);
 
       return () => {
-        const currentSet = listenersRef.current.get(type);
+        const currentSet = globalListeners.get(type);
         if (currentSet) {
           currentSet.delete(listener);
           if (currentSet.size === 0) {
-            listenersRef.current.delete(type);
+            globalListeners.delete(type);
           }
         }
       };

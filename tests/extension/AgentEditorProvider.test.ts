@@ -319,5 +319,12 @@ describe('AgentEditorProvider', () => {
       assert.ok(codeGenMsg.payload.targetDirectory);
     }
   });
+
+  it('should load pre-existing generated files from disk cleanly', () => {
+    const mockContext: any = { extensionPath: '/mock', subscriptions: [] };
+    const provider = new AgentEditorProvider(mockContext);
+    const files = provider.loadGeneratedFilesFromDisk('/tmp/nonexistent_test_folder');
+    assert.deepEqual(files, []);
+  });
 });
 

@@ -18,12 +18,12 @@ export function extractRuntimeSecrets(nodes: { data: AgentData }[]): RuntimeSecr
   secretsMap.set('GEMINI_API_KEY', {
     id: 'sec_gemini_key',
     name: 'GEMINI_API_KEY',
-    label: 'Google Gemini API Key',
+    label: 'Google Gemini API Key (Optional with ADC)',
     sourceNode: 'Vertex AI / Google GenAI SDK',
     sourceType: 'core',
-    description: 'Required for Gemini 2.5 Pro / Flash reasoning and multi-agent LLM inference',
-    placeholder: 'AIzaSy...',
-    isConfigured: true,
+    description: 'Optional API key. If left blank, the local runner and generated agent automatically use Google Application Default Credentials (ADC) from "gcloud auth application-default login".',
+    placeholder: 'AIzaSy... (leave blank to use ADC)',
+    isConfigured: false,
   });
 
   // 2. Scan every agent node

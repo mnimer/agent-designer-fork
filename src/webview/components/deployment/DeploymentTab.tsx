@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Laptop, 
   Cpu, 
@@ -22,22 +22,29 @@ import {
   Sparkles,
   Lock,
   Rocket,
-  Database
+  Database,
+  Square,
+  AlertTriangle
 } from 'lucide-react';
 import { AgentData, DeploymentConfig, DeploymentTarget, GeneratedFile, GenerationConfig } from '../../types';
+import { AgentWorkflowDocument } from '../../../shared/types';
 import { extractRuntimeSecrets, RuntimeSecret } from '../../utils/runtimeSecrets';
+import { useWebviewBridge } from '../../hooks/useWebviewBridge';
 
 interface DeploymentTabProps {
   generationConfig: GenerationConfig;
   generatedFiles: GeneratedFile[];
   agents?: AgentData[];
+  document?: AgentWorkflowDocument;
 }
 
 export const DeploymentTab: React.FC<DeploymentTabProps> = ({
   generationConfig,
   generatedFiles,
   agents = [],
+  document: workflowDoc,
 }) => {
+  const bridge = useWebviewBridge();
   const cloudTarget: 'cloud_run' | 'agent_engine' = generationConfig.deploymentTarget || 'cloud_run';
   
   // Selected target in the dropdown: either 'local' or the cloud target selected in the Code Generation tab
@@ -46,6 +53,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
   const [deployStatus, setDeployStatus] = useState<'idle' | 'deploying' | 'success' | 'error'>('idle');
   const [deployLogs, setDeployLogs] = useState<string[]>([]);
   const [serviceUrl, setServiceUrl] = useState<string | null>(null);
+  const [diskFilesExist, setDiskFilesExist] = useState<boolean>(false);
 
   // Runtime secret values entered by user in the UI
   const [secretValues, setSecretValues] = useState<Record<string, string>>({});
@@ -72,17 +80,74 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
     cloudRunAllowUnauthenticated: true,
   });
 
+  // Check if generated code already exists on disk in target folder and query runner status
+  useEffect(() => {
+    bridge.postMessage({
+      type: 'CHECK_FILES_EXIST',
+      payload: {
+        targetDirectory: generationConfig.outputFolder || 'src/agents',
+      },
+    });
+    bridge.postMessage({
+      type: 'GET_LOCAL_RUNNER_STATUS',
+    });
+  }, [bridge, generationConfig.outputFolder]);
+
+  // Subscribe to real-time local runner events from the Extension Host
+  useEffect(() => {
+    const unsubLog = bridge.subscribe('LOCAL_RUNNER_LOG', (payload) => {
+      if (payload?.text) {
+        setDeployLogs((prev) => [...prev, payload.text]);
+      }
+    });
+
+    const unsubStatus = bridge.subscribe('LOCAL_RUNNER_STATUS', (payload) => {
+      if (payload.status === 'running') {
+        setDeployStatus('success');
+        if (payload.serviceUrl) {
+          setServiceUrl(payload.serviceUrl);
+        }
+        if (payload.logs && payload.logs.length > 0) {
+          setDeployLogs(payload.logs);
+        }
+      } else if (payload.status === 'starting') {
+        setDeployStatus('deploying');
+      } else if (payload.status === 'stopped') {
+        setDeployStatus('idle');
+        setServiceUrl(null);
+      } else if (payload.status === 'error') {
+        setDeployStatus('error');
+        if (payload.error) {
+          setDeployLogs((prev) => [...prev, `[ERROR] ${payload.error}`]);
+        }
+      }
+    });
+
+    const unsubFilesExist = bridge.subscribe('FILES_EXIST_RESPONSE', (payload) => {
+      if (payload && typeof payload.exists === 'boolean') {
+        setDiskFilesExist(payload.exists);
+      }
+    });
+
+    const unsubCodeGen = bridge.subscribe('CODE_GENERATED', (payload) => {
+      if (payload?.success) {
+        setDiskFilesExist(true);
+      }
+    });
+
+    return () => {
+      unsubLog();
+      unsubStatus();
+      unsubFilesExist();
+      unsubCodeGen();
+    };
+  }, [bridge]);
+
   const getRunCommand = () => {
     if (selectedTarget === 'local') {
-      if (deployConfig.localMode === 'cli') {
-        return generationConfig.language === 'python'
-          ? 'export GEMINI_API_KEY="your_api_key" && python main.py'
-          : 'export GEMINI_API_KEY="your_api_key" && npx tsx workflow.ts';
-      }
-      if (deployConfig.localMode === 'fastmcp') {
-        return `uvicorn server:app --host 0.0.0.0 --port ${deployConfig.localPort} --reload`;
-      }
-      return 'docker-compose up --build -d';
+      const apiKeyVal = secretValues.GEMINI_API_KEY?.trim();
+      const apiKeyPrefix = apiKeyVal ? `export GEMINI_API_KEY="${apiKeyVal}" && ` : '# Using Google Application Default Credentials (ADC)\n';
+      return `${apiKeyPrefix}python server.py --port ${deployConfig.localPort || 8000}`;
     }
 
     if (selectedTarget === 'agent_engine') {
@@ -114,71 +179,40 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
   };
 
   const handleTriggerAction = () => {
-    setDeployStatus('deploying');
-    setDeployLogs([]);
-    setServiceUrl(null);
-
     if (selectedTarget === 'local') {
-      const steps = [
-        '[0.1s] Checking local execution runtime environment...',
-        '[0.3s] Verified @google/genai & Multi-Agent orchestration bindings.',
-        `[0.6s] Initializing local runner on port ${deployConfig.localPort}...`,
-        `[0.9s] Injected ${runtimeSecrets.length} runtime environment secrets into sandbox.`,
-        '[1.2s] Multi-Agent DAG graph loaded with active sub-agents.',
-        `[1.5s] ✅ Local agent runner active and listening on http://localhost:${deployConfig.localPort}`,
-      ];
-      steps.forEach((msg, idx) => {
-        setTimeout(() => {
-          setDeployLogs((prev) => [...prev, msg]);
-          if (idx === steps.length - 1) {
-            setDeployStatus('success');
-            setServiceUrl(`http://localhost:${deployConfig.localPort}/v1/agents/invoke`);
-          }
-        }, (idx + 1) * 320);
-      });
-    } else if (selectedTarget === 'agent_engine') {
-      const steps = [
-        `[0.2s] Connecting to Google Cloud project: ${deployConfig.agentEngineProject}...`,
-        `[0.6s] Packaging ${generatedFiles.length} agent definitions & tools into reasoning engine bundle...`,
-        `[1.0s] Binding Secret Manager references (${runtimeSecrets.map((s) => s.name).join(', ')})...`,
-        `[1.5s] Registering workflow topology in Google Agent Engine region ${deployConfig.agentEngineRegion}...`,
-        '[2.0s] Provisioning ADK serverless worker cluster...',
-        '[2.5s] Binding A2A protocols & Gemini LLM endpoints...',
-        `[3.0s] ✨ Google Agent Engine deployed successfully!`,
-      ];
-      steps.forEach((msg, idx) => {
-        setTimeout(() => {
-          setDeployLogs((prev) => [...prev, msg]);
-          if (idx === steps.length - 1) {
-            setDeployStatus('success');
-            setServiceUrl(`https://agentengine.googleapis.com/v1/projects/${deployConfig.agentEngineProject}/locations/${deployConfig.agentEngineRegion}/agents/flow`);
-          }
-        }, (idx + 1) * 450);
-      });
-    } else {
-      // Cloud Run
-      const steps = [
-        `[0.2s] Generating Cloud Run container spec for service: ${deployConfig.cloudRunService}...`,
-        '[0.7s] Building container image via Google Cloud Build...',
-        `[1.3s] Binding ${runtimeSecrets.length} Secret Manager secrets into Cloud Run container...`,
-        `[1.8s] Pushing image to gcr.io/${deployConfig.cloudRunProject}/${deployConfig.cloudRunService}:latest...`,
-        `[2.4s] Deploying revision to Cloud Run (${deployConfig.cloudRunRegion}, ${deployConfig.cloudRunCpu} vCPU, ${deployConfig.cloudRunMemory})...`,
-        '[2.9s] Routing 100% traffic to revision 00001-abc...',
-        `[3.4s] 🚀 Google Cloud Run service deployed and ready!`,
-      ];
-      steps.forEach((msg, idx) => {
-        setTimeout(() => {
-          setDeployLogs((prev) => [...prev, msg]);
-          if (idx === steps.length - 1) {
-            setDeployStatus('success');
-            setServiceUrl(`https://${deployConfig.cloudRunService}-731465797158.${deployConfig.cloudRunRegion}.run.app`);
-          }
-        }, (idx + 1) * 480);
+      if (deployStatus === 'success') {
+        // Stop currently active local runner
+        bridge.postMessage({
+          type: 'STOP_LOCAL_RUNNER',
+        });
+        setDeployStatus('idle');
+        setDeployLogs((prev) => [...prev, '[Local Runner] Stopping runner process...']);
+        return;
+      }
+
+      setDeployStatus('deploying');
+      setDeployLogs([
+        `[0.0s] Initializing local runner on port ${deployConfig.localPort || 8000}...`,
+        secretValues.GEMINI_API_KEY
+          ? `[0.1s] Using provided GEMINI_API_KEY secret.`
+          : `[0.1s] GEMINI_API_KEY not specified. Defaulting to Google Application Default Credentials (ADC).`,
+      ]);
+      setServiceUrl(null);
+
+      bridge.postMessage({
+        type: 'START_LOCAL_RUNNER',
+        payload: {
+          document: workflowDoc,
+          targetDirectory: generationConfig.outputFolder,
+          port: deployConfig.localPort || 8000,
+          envVars: secretValues,
+        },
       });
     }
   };
 
   const isLocalSelected = selectedTarget === 'local';
+  const hasGeneratedCode = Boolean((generatedFiles && generatedFiles.length > 0) || diskFilesExist);
 
   return (
     <div className="flex-1 p-4 flex gap-4 overflow-hidden bg-[#0d1117]">
@@ -333,7 +367,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
               <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
                 {runtimeSecrets.map((secret) => {
                   const isVisible = showSecretMap[secret.name];
-                  const currentValue = secretValues[secret.name] ?? (secret.name === 'GEMINI_API_KEY' ? '••••••••••••••••' : '');
+                  const currentValue = secretValues[secret.name] ?? '';
 
                   return (
                     <div
@@ -386,17 +420,32 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
           </div>
         </div>
 
-        {/* Action Button: "Run Agent" (if local) or "Deploy Agent" (disabled for cloud targets) */}
+        {/* Action Button: "Run Agent" / "Stop Local Runner" (if local) or "Deploy Agent" (disabled for cloud targets) */}
         <div className="pt-3 border-t border-[#30363d] shrink-0 mt-2">
+          {!hasGeneratedCode && isLocalSelected && deployStatus !== 'success' && (
+            <div className="p-2 mb-2 rounded bg-amber-950/40 border border-amber-600/40 text-[11px] text-amber-300 flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+              <span>Generate code in "Generated Code" tab before running.</span>
+            </div>
+          )}
+
           <button
             onClick={handleTriggerAction}
-            disabled={deployStatus === 'deploying' || !isLocalSelected}
-            title={!isLocalSelected ? 'Cloud deployment is not implemented yet' : undefined}
-            className={`w-full py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2 text-white ${
+            disabled={deployStatus === 'deploying' || !isLocalSelected || (!hasGeneratedCode && deployStatus !== 'success')}
+            title={
               !isLocalSelected
+                ? 'Cloud deployment is not implemented yet'
+                : !hasGeneratedCode && deployStatus !== 'success'
+                ? 'Please generate code in the Generated Code tab before running the local agent'
+                : undefined
+            }
+            className={`w-full py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2 text-white ${
+              !isLocalSelected || (!hasGeneratedCode && deployStatus !== 'success')
                 ? 'bg-gray-800 text-gray-500 border border-[#30363d] cursor-not-allowed opacity-60'
                 : deployStatus === 'deploying'
                 ? 'bg-[#238636] opacity-50 cursor-wait'
+                : deployStatus === 'success' && isLocalSelected
+                ? 'bg-rose-600 hover:bg-rose-700 cursor-pointer'
                 : 'bg-[#238636] hover:bg-[#2ea043] cursor-pointer'
             }`}
           >
@@ -404,6 +453,11 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
               <>
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                 <span>Starting Local Agent...</span>
+              </>
+            ) : isLocalSelected && deployStatus === 'success' ? (
+              <>
+                <Square className="w-3.5 h-3.5 fill-current" />
+                <span>Stop Local Runner</span>
               </>
             ) : isLocalSelected ? (
               <>

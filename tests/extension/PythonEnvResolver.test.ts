@@ -30,9 +30,25 @@ describe('PythonEnvResolver', () => {
     assert.equal(typeof env.isVirtualEnv, 'boolean');
   });
 
-  it('should query python version or return undefined gracefully for invalid binary', async () => {
+  it('should ensure virtual environment creation or resolution in target directory', async () => {
     const resolver = new PythonEnvResolver();
-    const version = await resolver.queryPythonVersion('/nonexistent/binary/path/12345');
-    assert.equal(version, undefined);
+    const env = await resolver.ensureVirtualEnvironment('/tmp/nonexistent_test_dir_isolated');
+    assert.ok(env);
+    assert.ok(env.path);
+    assert.ok(typeof env.isVirtualEnv === 'boolean');
+  });
+
+  it('should check and ensure dependencies installed cleanly without crashing', async () => {
+    const resolver = new PythonEnvResolver();
+    const logs: string[] = [];
+    await assert.doesNotReject(async () => {
+      await resolver.ensureDependenciesInstalled(
+        process.platform === 'win32' ? 'python.exe' : 'python3',
+        '/tmp',
+        (msg) => {
+          logs.push(msg);
+        }
+      );
+    });
   });
 });

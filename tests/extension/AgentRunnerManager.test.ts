@@ -137,6 +137,133 @@ describe('AgentRunnerManager', () => {
     assert.ok(hasComplete);
   });
 
+  it('should handle assertion failure when expected output is not met', async () => {
+    const docWithFailingAssertion: AgentWorkflowDocument = {
+      ...sampleDocument,
+      nodes: [
+        {
+          id: 'trigger-1',
+          type: 'trigger',
+          position: { x: 50, y: 100 },
+          data: {
+            label: 'Customer Inquiry',
+            description: 'Inbound message',
+            triggerKind: 'test',
+            config: {
+              testScenarios: [
+                {
+                  id: 'scenario-fail',
+                  name: 'Failing Scenario',
+                  inputQuery: 'Hello world',
+                  expectedOutput: 'EXACT_IMPOSSIBLE_STRING_XYZ_99999',
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    const manager = new AgentRunnerManager('/mock/extension');
+    const postedMessages: any[] = [];
+    const mockBridge: any = {
+      postMessage: async (msg: any) => {
+        postedMessages.push(msg);
+      },
+    };
+
+    await manager.runTests({
+      document: docWithFailingAssertion,
+      bridge: mockBridge,
+    });
+
+    const failedUpdate = postedMessages.find(
+      (m) => m.type === 'TEST_RESULT_UPDATE' && m.payload.status === 'failed'
+    );
+    assert.ok(failedUpdate);
+    assert.ok(failedUpdate.payload.error.includes('Expected output to contain'));
+  });
+
+  it('should accept targetDirectory and resolve virtual environment', async () => {
+    const manager = new AgentRunnerManager('/mock/extension');
+    const postedMessages: any[] = [];
+    const mockBridge: any = {
+      postMessage: async (msg: any) => {
+        postedMessages.push(msg);
+      },
+    };
+
+    const runId = await manager.runTests({
+      document: sampleDocument,
+      targetDirectory: '/tmp/agent_test_dir',
+      bridge: mockBridge,
+    });
+
+    assert.ok(runId.startsWith('run-'));
+    const logMessages = postedMessages.filter((m) => m.type === 'EXECUTION_LOG');
+    assert.ok(logMessages.length > 0);
+  });
+
+  it('should report error status when agent code is not yet generated', async () => {
+    const manager = new AgentRunnerManager('/mock/extension');
+    const postedMessages: any[] = [];
+    const mockBridge: any = {
+      postMessage: async (msg: any) => {
+        postedMessages.push(msg);
+      },
+    };
+
+    const emptyTargetDir = `/tmp/empty_agent_${Date.now()}`;
+    const runnerId = await manager.startLocalRunner({
+      document: sampleDocument,
+      targetDirectory: emptyTargetDir,
+      port: 8998,
+      bridge: mockBridge,
+    });
+
+    assert.ok(runnerId.startsWith('local-runner-'));
+    assert.ok(postedMessages.some((m) => m.type === 'LOCAL_RUNNER_STATUS' && m.payload.status === 'error'));
+  });
+
+  it('should start and stop local runner subprocess when server.py exists', async () => {
+    const manager = new AgentRunnerManager('/mock/extension');
+    const postedMessages: any[] = [];
+    const mockBridge: any = {
+      postMessage: async (msg: any) => {
+        postedMessages.push(msg);
+      },
+    };
+
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const tmpDir = `/tmp/test_runner_agent_${Date.now()}`;
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, 'server.py'),
+      'import time\nprint("Server active")\ntime.sleep(2)\n',
+      'utf-8'
+    );
+
+    const runnerId = await manager.startLocalRunner({
+      document: sampleDocument,
+      targetDirectory: tmpDir,
+      port: 8999,
+      bridge: mockBridge,
+    });
+
+    assert.ok(runnerId.startsWith('local-runner-'));
+    assert.ok(postedMessages.some((m) => m.type === 'LOCAL_RUNNER_STATUS' && m.payload.status === 'running'));
+    assert.ok(postedMessages.some((m) => m.type === 'LOCAL_RUNNER_LOG'));
+
+    assert.doesNotThrow(() => {
+      manager.stopLocalRunner(runnerId);
+    });
+
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+  });
+
   it('should cancel running processes without error', () => {
     const manager = new AgentRunnerManager('/mock/extension');
     assert.doesNotThrow(() => {

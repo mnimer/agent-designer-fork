@@ -26,6 +26,7 @@ import {
   Key
 } from 'lucide-react';
 import { AgentData, FrameworkType, GeneratedFile, GenerationConfig, LanguageType, TestPrompt } from '../../types';
+import { AgentWorkflowDocument } from '../../../shared/types';
 import { DeploymentTab } from '../deployment/DeploymentTab';
 import { TestRunnerTab } from '../testing/TestRunnerTab';
 
@@ -42,6 +43,7 @@ interface CodeGenerationPanelProps {
   agents?: AgentData[];
   isMaximized?: boolean;
   onToggleMaximize?: () => void;
+  document?: AgentWorkflowDocument;
 }
 
 /**
@@ -71,6 +73,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   agents = [],
   isMaximized = false,
   onToggleMaximize,
+  document: workflowDoc,
 }) => {
   const [activeTab, setActiveTab] = useState<'codegen' | 'deployment' | 'test_runner'>('codegen');
   const [activeFileIndex, setActiveFileIndex] = useState<number>(0);
@@ -213,10 +216,9 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
       </div>
 
       {/* Main Tab Content */}
-      {activeTab === 'codegen' ? (
-        <div className="flex-1 p-4 flex gap-4 overflow-hidden bg-[#0d1117]">
-          {/* LEFT 1/3 CARD: Generation Controls */}
-          <div className="w-1/3 min-w-[280px] max-w-[360px] bg-[#161b22] border border-[#30363d] rounded-xl p-4 shadow-xl flex flex-col min-h-0 overflow-hidden">
+      <div className={activeTab === 'codegen' ? 'flex-1 p-4 flex gap-4 overflow-hidden bg-[#0d1117]' : 'hidden'}>
+        {/* LEFT 1/3 CARD: Generation Controls */}
+        <div className="w-1/3 min-w-[280px] max-w-[360px] bg-[#161b22] border border-[#30363d] rounded-xl p-4 shadow-xl flex flex-col min-h-0 overflow-hidden">
             <div className="flex-1 overflow-y-auto pr-1 space-y-3.5 min-h-0">
               {/* Card Header */}
               <div className="flex items-center justify-between border-b border-[#30363d] pb-2">
@@ -511,21 +513,26 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
             </div>
           </div>
         </div>
-      ) : activeTab === 'deployment' ? (
-        /* Deployment Tab */
+
+      {/* Deployment Tab */}
+      <div className={activeTab === 'deployment' ? 'flex-1 flex flex-col h-full overflow-hidden' : 'hidden'}>
         <DeploymentTab
           generationConfig={config}
           generatedFiles={generatedFiles}
           agents={agents}
+          document={workflowDoc}
         />
-      ) : (
-        /* Test Runner Tab */
+      </div>
+
+      {/* Test Runner Tab */}
+      <div className={activeTab === 'test_runner' ? 'flex-1 flex flex-col h-full overflow-hidden' : 'hidden'}>
         <TestRunnerTab
           testPrompts={testPrompts}
           agents={agents}
           config={config}
+          document={workflowDoc}
         />
-      )}
+      </div>
     </div>
   );
 };

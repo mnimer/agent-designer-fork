@@ -54,12 +54,28 @@ export type WebviewToExtensionMessage =
       payload: {
         document: AgentWorkflowDocument;
         testScenarioIds?: string[];
+        targetDirectory?: string;
       };
     }
   | {
       type: 'CANCEL_TESTS';
       payload: {
         runId?: string;
+      };
+    }
+  | {
+      type: 'START_LOCAL_RUNNER';
+      payload: {
+        document?: AgentWorkflowDocument;
+        targetDirectory?: string;
+        port?: number;
+        envVars?: Record<string, string>;
+      };
+    }
+  | {
+      type: 'STOP_LOCAL_RUNNER';
+      payload?: {
+        runnerId?: string;
       };
     }
   | {
@@ -85,6 +101,15 @@ export type WebviewToExtensionMessage =
         args?: string[];
         url?: string;
       };
+    }
+  | {
+      type: 'CHECK_FILES_EXIST';
+      payload?: {
+        targetDirectory?: string;
+      };
+    }
+  | {
+      type: 'GET_LOCAL_RUNNER_STATUS';
     }
   | {
       type: 'BOOTSTRAP_LOADED';
@@ -126,6 +151,7 @@ export type ExtensionToWebviewMessage =
         docVersion: number;
         filePath?: string;
         readOnly?: boolean;
+        generatedFiles?: GeneratedFile[];
       };
     }
   | {
@@ -213,5 +239,32 @@ export type ExtensionToWebviewMessage =
         success: boolean;
         tools: ToolDefinition[];
         error?: string;
+      };
+    }
+  | {
+      type: 'LOCAL_RUNNER_LOG';
+      payload: {
+        text: string;
+        stream: 'stdout' | 'stderr' | 'system';
+        timestamp: string;
+      };
+    }
+  | {
+      type: 'LOCAL_RUNNER_STATUS';
+      payload: {
+        status: 'idle' | 'starting' | 'running' | 'stopped' | 'error';
+        port?: number;
+        serviceUrl?: string;
+        error?: string;
+        logs?: string[];
+      };
+    }
+  | {
+      type: 'FILES_EXIST_RESPONSE';
+      payload: {
+        targetDirectory: string;
+        exists: boolean;
+        files?: string[];
+        generatedFiles?: GeneratedFile[];
       };
     };

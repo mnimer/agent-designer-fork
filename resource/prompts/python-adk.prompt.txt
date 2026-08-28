@@ -1,4 +1,7 @@
-You are an expert Google Cloud and GenAI software engineer. Your task is to generate a production-ready Python repository utilizing the official Google GenAI SDK (`google-genai`) based on the provided Agent Workflow Specification JSON.
+You are an expert Google Cloud and GenAI software engineer. 
+Your task is to generate a production-ready Python repository utilizing the official Google GenAI SDK (`google-genai`) 
+based on the provided react-flow JSON that describes the Agent Workflow.
+
 
 ### INPUT WORKFLOW SPECIFICATION:
 ```json
@@ -8,16 +11,25 @@ You are an expert Google Cloud and GenAI software engineer. Your task is to gene
 ---
 
 ### REQUIREMENTS:
-1. **Google GenAI SDK**: Use the modern `from google import genai` and `from google.genai import types` package (not deprecated `google-generativeai`).
+1. **Google GenAI SDK & Authentication**:
+   - Use the modern `from google import genai` and `from google.genai import types` package (not deprecated `google-generativeai`).
+   - Authentication: Initialize `client = genai.Client(api_key=os.getenv("GEMINI_API_KEY")) if os.getenv("GEMINI_API_KEY") else genai.Client()`. If `GEMINI_API_KEY` is not present, the client will automatically use Google Application Default Credentials (ADC) without error.
 2. **Architecture**:
-   - `agent_workflow.py`: Contains the `MultiAgentWorkflow` or Agent class orchestrating model configuration, system instructions, tools, memory/session checkpointing, and structured output formatting.
-   - `tools.py`: Contains all tool functions (e.g., Google Search grounding configurations, custom Python functions, REST clients, MCP connections).
+   - `agent.py`: Contains the `MultiAgentWorkflow` or Agent class orchestrating model configuration, system instructions, tools, memory/session checkpointing, and structured output formatting.
+   - `tools/*.py`: Contains all tool functions (e.g., Google Search grounding configurations, custom Python functions, REST clients, MCP connections). Group tools by source in their own file. For instance all of the google drive tools in one file. 
+   - `server.py`: FastAPI server running with Uvicorn.
+      * Dynamic Port: reads `port = int(os.environ.get("PORT", 8000))` and executes `uvicorn.run(app, host="0.0.0.0", port=port)` in `if __name__ == "__main__":`.
+      * Endpoints:
+        - `POST /v1/agents/invoke`: Accepts `{"prompt": "string"}` or `{"input": "string"}` and returns `{"response": "string"}` with agent output.
+        - `GET /v1/agents/invoke`: Returns `{"status": "ready", "message": "Agent is running. Send an HTTP POST request with JSON body: {\"prompt\": \"your text\"} to invoke."}`.
+        - `GET /` and `GET /health`: Returns `{"status": "healthy", "agent": "name", "version": "1.0.0"}`.
+        - `POST /v1/chat/completions`: OpenAI-compatible completions endpoint.
    - `main.py`: Interactive CLI runner and turn execution harness with streaming token outputs.
    - `test_pipeline.py`: Comprehensive `pytest` test suite executing all test scenarios defined in the trigger nodes with assertions against expected patterns or structured schemas.
-   - `requirements.txt`: Pinned production dependencies (`google-genai>=1.0.0`, `pytest>=8.0.0`, `pydantic>=2.0.0`, `python-dotenv>=1.0.0`).
-   - `main.tf`: Complete, production-grade Terraform script deploying to Google Cloud Run (v2) with Secret Manager bindings and IAM roles.
-   - `Dockerfile`: Multi-stage distroless Python container for Cloud Run deployment.
-   - `README.md`: Architecture overview, configuration instructions (`GEMINI_API_KEY`), and local test running commands.
+   - `requirements.txt`: Pinned production dependencies (`google-genai>=1.0.0`, `fastapi>=0.110.0`, `uvicorn>=0.28.0`, `pytest>=8.0.0`, `pydantic>=2.0.0`, `python-dotenv>=1.0.0`).
+   - `main.tf`: Complete, production-grade Terraform script deploying to Google Cloud Run (v2) with Secret Manager bindings and IAM roles.  This TF should deploy into an existing project id. 
+   - `Dockerfile`: Multi-stage distroless Python container for Cloud Run deployment running `uvicorn server:app --host 0.0.0.0 --port 8080`.
+   - `README.md`: Architecture overview, ADC & GEMINI_API_KEY configuration, local runner (`python server.py`), and test running commands.
 
 3. **Structured Outputs**:
    - If any agent specifies a `structuredOutputSchema`, generate a corresponding `pydantic.BaseModel` in `agent_workflow.py` and configure `response_mime_type="application/json"` and `response_schema=YourPydanticModel` in `types.GenerateContentConfig`.
@@ -34,43 +46,14 @@ Respond ONLY with a valid JSON array of file objects conforming to this exact sc
 
 [
   {
-    "path": "agent_workflow.py",
-    "description": "Multi-agent coordinator and reasoning class",
+    "path": "<file name>.py",
+    "description": "<description>",
     "content": "# Python source code here..."
-  },
-  {
-    "path": "tools.py",
-    "description": "Tool definitions and grounding integrations",
-    "content": "# Tool functions here..."
-  },
-  {
-    "path": "main.py",
-    "description": "Entry point and CLI harness",
-    "content": "# CLI execution code here..."
-  },
-  {
-    "path": "test_pipeline.py",
-    "description": "Pytest suite for workflow trigger scenarios",
-    "content": "# Pytest tests here..."
-  },
-  {
-    "path": "requirements.txt",
-    "description": "Python dependencies",
-    "content": "google-genai>=1.0.0\npytest>=8.0.0\npydantic>=2.0.0\npython-dotenv>=1.0.0\n"
-  },
-  {
-    "path": "main.tf",
-    "description": "Terraform Cloud Run infrastructure",
-    "content": "# Terraform configuration..."
-  },
-  {
-    "path": "Dockerfile",
-    "description": "Container definition for Cloud Run",
-    "content": "# Dockerfile..."
-  },
-  {
-    "path": "README.md",
-    "description": "Project documentation and quickstart",
-    "content": "# Agent Workflow Project\n..."
   }
 ]
+
+
+---
+
+# Skills to load
+

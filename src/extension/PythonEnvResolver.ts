@@ -63,8 +63,64 @@ export class PythonEnvResolver {
    *
    * @returns ResolvedPythonEnv object
    */
-  public async resolvePythonEnvironment(): Promise<ResolvedPythonEnv> {
-    // 1. Check VS Code settings
+  /**
+   * Discovers or resolves the best available Python interpreter, prioritizing local virtual environments.
+   *
+   * @param targetDir Optional specific directory to check for a local virtual environment first
+   * @returns ResolvedPythonEnv object
+   */
+  public async resolvePythonEnvironment(targetDir?: string): Promise<ResolvedPythonEnv> {
+    const candidateFolders = ['.venv', 'venv', 'env', '.conda'];
+
+    // 1. Check targetDir for a local virtual environment
+    if (targetDir) {
+      for (const candidate of candidateFolders) {
+        const candidateDir = path.join(targetDir, candidate);
+        const candidateBin = this.getPythonBinPath(candidateDir);
+        if (this.isFileExecutable(candidateBin)) {
+          const version = await this.queryPythonVersion(candidateBin);
+          return {
+            path: candidateBin,
+            isVirtualEnv: true,
+            version,
+            source: 'workspace-folder',
+          };
+        }
+      }
+    }
+
+    // 2. Scan workspace root for standard venv directories
+    if (this.workspaceRoot) {
+      for (const candidate of candidateFolders) {
+        const candidateDir = path.join(this.workspaceRoot, candidate);
+        const candidateBin = this.getPythonBinPath(candidateDir);
+        if (this.isFileExecutable(candidateBin)) {
+          const version = await this.queryPythonVersion(candidateBin);
+          return {
+            path: candidateBin,
+            isVirtualEnv: true,
+            version,
+            source: 'workspace-folder',
+          };
+        }
+      }
+    }
+
+    // 3. Check VIRTUAL_ENV environment variable
+    if (process.env.VIRTUAL_ENV) {
+      const venvBin = this.getPythonBinPath(process.env.VIRTUAL_ENV);
+      if (this.isFileExecutable(venvBin)) {
+        const version = await this.queryPythonVersion(venvBin);
+        return {
+          path: venvBin,
+          isVirtualEnv: true,
+          version,
+          source: 'virtualenv-env',
+        };
+      }
+    }
+
+    // 4. Check VS Code settings
     const configuredPath = vscode.workspace
       .getConfiguration('python')
       .get<string>('defaultInterpreterPath');
@@ -82,39 +138,7 @@ export class PythonEnvResolver {
       }
     }
 
-    // 2. Check VIRTUAL_ENV environment variable
-    if (process.env.VIRTUAL_ENV) {
-      const venvBin = this.getPythonBinPath(process.env.VIRTUAL_ENV);
-      if (this.isFileExecutable(venvBin)) {
-        const version = await this.queryPythonVersion(venvBin);
-        return {
-          path: venvBin,
-          isVirtualEnv: true,
-          version,
-          source: 'virtualenv-env',
-        };
-      }
-    }
-
-    // 3. Scan workspace folders for standard venv directories
-    if (this.workspaceRoot) {
-      const candidates = ['.venv', 'venv', 'env', '.conda'];
-      for (const candidate of candidates) {
-        const candidateDir = path.join(this.workspaceRoot, candidate);
-        const candidateBin = this.getPythonBinPath(candidateDir);
-        if (this.isFileExecutable(candidateBin)) {
-          const version = await this.queryPythonVersion(candidateBin);
-          return {
-            path: candidateBin,
-            isVirtualEnv: true,
-            version,
-            source: 'workspace-folder',
-          };
-        }
-      }
-    }
-
-    // 4. Fallback to system PATH
+    // 5. Fallback to system PATH interpreter
     const systemPython = process.platform === 'win32' ? 'python.exe' : 'python3';
     const systemVersion = await this.queryPythonVersion(systemPython);
 
@@ -124,6 +148,112 @@ export class PythonEnvResolver {
       version: systemVersion,
       source: 'system-path',
     };
+  }
+
+  /**
+   * Ensures an isolated virtual environment (.venv) is present in the target directory
+   * or workspace root, automatically creating one if only a global interpreter was found.
+   *
+   * @param targetDir Target folder path
+   * @returns ResolvedPythonEnv pointing to an isolated virtual environment
+   */
+  public async ensureVirtualEnvironment(targetDir?: string): Promise<ResolvedPythonEnv> {
+    const current = await this.resolvePythonEnvironment(targetDir);
+    if (current.isVirtualEnv) {
+      return current;
+    }
+
+    const hostDir = targetDir || this.workspaceRoot || process.cwd();
+    const venvDir = path.join(hostDir, '.venv');
+    const venvBin = this.getPythonBinPath(venvDir);
+
+    if (this.isFileExecutable(venvBin)) {
+      const version = await this.queryPythonVersion(venvBin);
+      return {
+        path: venvBin,
+        isVirtualEnv: true,
+        version,
+        source: 'workspace-folder',
+      };
+    }
+
+    // Create a new .venv using the system python
+    try {
+      await execFileAsync(current.path, ['-m', 'venv', venvDir]);
+      const version = await this.queryPythonVersion(venvBin);
+      return {
+        path: venvBin,
+        isVirtualEnv: true,
+        version,
+        source: 'workspace-folder',
+      };
+    } catch {
+      // If venv creation fails, return current interpreter
+      return current;
+    }
+  }
+
+  /**
+   * Ensures that required runtime packages (fastapi, uvicorn, google-genai, requirements.txt)
+   * are installed within the target virtual environment.
+   *
+   * Logic Flow:
+   * 1. Tests if core dependencies (fastapi, uvicorn) can be imported by the python binary.
+   * 2. If import succeeds, returns immediately to maintain low latency on startup.
+   * 3. If import fails, checks for 'requirements.txt' in target directory and runs 'pip install -r requirements.txt'.
+   * 4. If requirements.txt is absent, installs core fallback packages (fastapi, uvicorn, google-genai, pydantic).
+   * 5. Streams real-time progress logs via the optional onLog callback.
+   *
+   * @param pythonBin Path to python binary inside virtual environment
+   * @param targetDir Target workspace or agent directory
+   * @param onLog Optional callback for streaming runner log events
+   */
+  public async ensureDependenciesInstalled(
+    pythonBin: string,
+    targetDir: string,
+    onLog?: (msg: string, stream?: 'stdout' | 'stderr' | 'system') => Promise<void> | void
+  ): Promise<void> {
+    try {
+      // Step 1: Quick import check
+      await execFileAsync(pythonBin, ['-c', 'import fastapi, uvicorn'], { cwd: targetDir });
+      return; // All required packages are already installed
+    } catch {
+      // Step 2: Dependencies need to be installed
+      const reqPath = path.join(targetDir, 'requirements.txt');
+      const hasReqs = fs.existsSync(reqPath);
+
+      if (onLog) {
+        await onLog(
+          hasReqs
+            ? `[Local Runner] Installing dependencies from requirements.txt into .venv...`
+            : `[Local Runner] Installing core dependencies (fastapi, uvicorn, google-genai) into .venv...`,
+          'system'
+        );
+      }
+
+      try {
+        if (hasReqs) {
+          await execFileAsync(pythonBin, ['-m', 'pip', 'install', '-r', reqPath], { cwd: targetDir });
+        } else {
+          await execFileAsync(
+            pythonBin,
+            ['-m', 'pip', 'install', 'fastapi', 'uvicorn', 'google-genai', 'pydantic'],
+            { cwd: targetDir }
+          );
+        }
+
+        if (onLog) {
+          await onLog(`[Local Runner] Dependencies installed successfully.`, 'system');
+        }
+      } catch (installErr: any) {
+        if (onLog) {
+          await onLog(
+            `[Local Runner Warning] Failed to install dependencies via pip: ${installErr?.message || installErr}`,
+            'stderr'
+          );
+        }
+      }
+    }
   }
 
   /**

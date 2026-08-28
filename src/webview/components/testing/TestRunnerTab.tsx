@@ -1,4 +1,19 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * TestRunnerTab
+ *
+ * Interactive test execution panel for running multi-agent workflow test scenarios
+ * against local Python virtual environments or execution harnesses over the WebviewBridge.
+ *
+ * Architectural Decisions:
+ * 1. Dispatches RUN_TESTS and CANCEL_TESTS messages over WebviewBridge.
+ * 2. Streams real-time TEST_RESULT_UPDATE and EXECUTION_LOG events to display live execution traces.
+ * 3. Supports running the entire test suite or targeting individual test prompts.
+ * 4. Fallback mock simulation when running in standalone browser dev preview.
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   FlaskConical, 
   Play, 
@@ -19,9 +34,12 @@ import {
   AlertCircle,
   FileCode,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Square
 } from 'lucide-react';
 import { AgentData, GenerationConfig, TestPrompt } from '../../types';
+import { AgentWorkflowDocument } from '../../../shared/types';
+import { useWebviewBridge } from '../../hooks/useWebviewBridge';
 
 interface TestResult {
   id: string;
@@ -41,6 +59,7 @@ interface TestRunnerTabProps {
   testPrompts: TestPrompt[];
   agents: AgentData[];
   config: GenerationConfig;
+  document?: AgentWorkflowDocument;
   onOpenTriggerSettings?: () => void;
 }
 
@@ -48,13 +67,17 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
   testPrompts,
   agents,
   config,
+  document: propDocument,
   onOpenTriggerSettings,
 }) => {
+  const bridge = useWebviewBridge();
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
   const [isRunningAll, setIsRunningAll] = useState<boolean>(false);
   const [activeFilter, setActiveFilter] = useState<'all' | 'passed' | 'failed'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [expandedTraceId, setExpandedTraceId] = useState<string | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const activeRunIdRef = useRef<string | null>(null);
 
   // Initialize test results when testPrompts change
   useEffect(() => {
@@ -69,6 +92,7 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
             durationMs: 0,
             assertionPassed: false,
             assertionDetails: '',
+            agentTrace: [],
           };
         }
       });
@@ -76,107 +100,188 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
     });
   }, [testPrompts]);
 
+  // Subscribe to RPC bridge events from the extension runner
+  useEffect(() => {
+    const unsubResult = bridge.subscribe('TEST_RESULT_UPDATE', (payload) => {
+      if (!payload) return;
+      setTestResults((prev) => {
+        const current = prev[payload.scenarioId] || {
+          id: payload.scenarioId,
+          status: 'idle',
+          output: '',
+          durationMs: 0,
+          assertionPassed: false,
+          assertionDetails: '',
+          agentTrace: [],
+        };
+
+        return {
+          ...prev,
+          [payload.scenarioId]: {
+            ...current,
+            status: payload.status,
+            durationMs: payload.durationMs,
+            output: payload.output || current.output,
+            assertionPassed: payload.status === 'passed',
+            assertionDetails: payload.error
+              ? payload.error
+              : payload.status === 'passed'
+              ? 'Output matched expected criteria and all assertions passed.'
+              : current.assertionDetails,
+          },
+        };
+      });
+    });
+
+    const unsubLog = bridge.subscribe('EXECUTION_LOG', (payload) => {
+      if (!payload) return;
+      // If log contains an agent message or step, append to active traces
+      if (payload.agentId || payload.stepId || payload.message) {
+        setTestResults((prev) => {
+          const updated = { ...prev };
+          // Find running scenario or append to first running
+          const runningKey = Object.keys(updated).find((k) => updated[k].status === 'running');
+          if (runningKey && updated[runningKey]) {
+            const existingTrace = updated[runningKey].agentTrace || [];
+            const agentName = payload.agentId ? `Agent [${payload.agentId}]` : 'Execution Runner';
+            updated[runningKey] = {
+              ...updated[runningKey],
+              agentTrace: [
+                ...existingTrace,
+                {
+                  agentName,
+                  step: payload.message,
+                  durationMs: 0,
+                },
+              ],
+            };
+          }
+          return updated;
+        });
+      }
+    });
+
+    const unsubComplete = bridge.subscribe('EXECUTION_COMPLETE', () => {
+      setIsRunningAll(false);
+      setActiveRunId(null);
+      activeRunIdRef.current = null;
+    });
+
+    return () => {
+      unsubResult();
+      unsubLog();
+      unsubComplete();
+    };
+  }, [bridge]);
+
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Generate realistic agent simulation output based on prompt & agent graph
-  const generateSimulatedOutput = (prompt: TestPrompt): { output: string; trace: Array<{ agentName: string; step: string; durationMs: number }>; passed: boolean; details: string } => {
-    const rootAgent = agents.find((a) => a.isStartNode) || agents[0] || { label: 'Root Agent' };
-    const secondAgent = agents[1] || { label: 'Executor Agent' };
-    const thirdAgent = agents[2] || { label: 'Reviewer Agent' };
+  /**
+   * Builds the workflow document payload to send to the test runner.
+   */
+  const getWorkflowDoc = useCallback((): AgentWorkflowDocument => {
+    if (propDocument) return propDocument;
 
-    const lowerPrompt = prompt.prompt.toLowerCase();
-
-    if (lowerPrompt.includes('q3 revenue') || lowerPrompt.includes('bottleneck') || lowerPrompt.includes('decomposition')) {
-      return {
-        output: `### Operational Analysis & Bottleneck Report\n\n**Executive Summary**: Based on Q3 revenue trends and cross-functional performance data, 3 major operational constraints were identified:\n\n1. **Lead Conversion Pipeline Friction**: Inefficient hand-off between initial triage and sales tier resulting in a 14% drop-off rate.\n2. **Database Query Bottlenecks**: High latency on batch analytics jobs during peak hours leading to 1.8s response delays.\n3. **Manual Compliance Checks**: Redundant verification loops accounting for ~32 staff hours per week.\n\n*Mitigations Recommended*: Automate tier-1 routing with PubSub queues, introduce Redis caching for hot accounts, and streamline automated policy verification.`,
-        trace: [
-          { agentName: rootAgent.label, step: 'Decomposed prompt into analytics queries and structure schema', durationMs: 65 },
-          { agentName: secondAgent.label, step: 'Queried operational data sources and calculated variance', durationMs: 120 },
-          { agentName: thirdAgent.label, step: 'Validated format conforms to markdown bullet constraints', durationMs: 45 },
-        ],
-        passed: true,
-        details: 'Output conforms to Markdown summary specification and contains 3 distinct bottleneck bullets.',
-      };
-    } else if (lowerPrompt.includes('8841') || lowerPrompt.includes('churn') || lowerPrompt.includes('customer')) {
-      return {
-        output: `{\n  "customer_id": "8841",\n  "account_status": "active",\n  "subscription_tier": "Enterprise Plus",\n  "mrr_value": 4200.00,\n  "churn_risk_score": 0.12,\n  "risk_category": "low",\n  "signals": [\n    "Daily active session cadence > 4.2h",\n    "Zero open critical support tickets in 60d",\n    "Contract renewed within last 90d"\n  ],\n  "last_audit_timestamp": "${new Date().toISOString()}"\n}`,
-        trace: [
-          { agentName: rootAgent.label, step: 'Identified entity customer_id=#8841 and resolved schema', durationMs: 50 },
-          { agentName: secondAgent.label, step: 'Invoked SQL/REST Tool: query_customer_records(id=8841)', durationMs: 140 },
-          { agentName: thirdAgent.label, step: 'JSON schema validator verified churn_risk_score < 0.25', durationMs: 35 },
-        ],
-        passed: true,
-        details: 'JSON payload matches schema definition; churn_risk_score (0.12) satisfies constraint (< 0.25).',
-      };
-    } else if (lowerPrompt.includes('credentials') || lowerPrompt.includes('unredacted') || lowerPrompt.includes('password') || lowerPrompt.includes('secret')) {
-      return {
-        output: `[SECURITY GUARDRAIL TRIGGERED]: Request Refused.\n\nReason: The requested operation involves extraction of unredacted internal credentials or sensitive production configuration secrets.\nPolicy Reference: SEC-POLICY-04 (Zero Exposure Credential Constraint).\nAction Taken: Execution halted safely without disclosing internal state or secret values.`,
-        trace: [
-          { agentName: rootAgent.label, step: 'Evaluated intent against Safety Guardrail & Security Policies', durationMs: 40 },
-          { agentName: rootAgent.label, step: 'Triggered refusal protocol: Refused secret extraction', durationMs: 25 },
-        ],
-        passed: true,
-        details: 'Security refusal successfully invoked without disclosing secret tokens or sensitive values.',
-      };
-    } else {
-      return {
-        output: `Workflow completed successfully for query: "${prompt.prompt}"\n\nResult:\n- Task successfully executed across multi-agent graph.\n- Input parameters processed according to agent system instructions.\n- Output format validated against criteria: "${prompt.expectedOutput}".`,
-        trace: [
-          { agentName: rootAgent.label, step: 'Dispatched query to agent pipeline', durationMs: 70 },
-          { agentName: secondAgent.label, step: 'Processed execution step and generated result', durationMs: 95 },
-        ],
-        passed: true,
-        details: 'Output conforms to the expected test criteria.',
-      };
-    }
-  };
+    return {
+      version: '1.0.0',
+      name: 'agent_workflow',
+      description: 'Agent Workflow Test Suite',
+      framework: config.framework === 'google_adk' ? 'google-adk' : (config.framework as any) || 'google-adk',
+      language: config.language || 'python',
+      nodes: [
+        {
+          id: 'trigger-1',
+          type: 'trigger' as any,
+          position: { x: 50, y: 150 },
+          data: {
+            label: 'Test Trigger',
+            triggerType: 'chat',
+            config: {
+              testScenarios: testPrompts.map((tp) => ({
+                id: tp.id,
+                name: tp.name,
+                inputQuery: tp.prompt,
+                expectedOutput: tp.expectedOutput,
+              })),
+            },
+          },
+        },
+        ...agents.map((ag, idx) => ({
+          id: `agent-${idx + 1}`,
+          type: 'agent' as any,
+          position: { x: 250 + idx * 200, y: 150 },
+          data: ag,
+        })),
+      ],
+      edges: [],
+      metadata: {},
+    };
+  }, [propDocument, config, testPrompts, agents]);
 
   // Run a single test
   const runTest = async (testId: string) => {
-    const prompt = testPrompts.find((tp) => tp.id === testId);
-    if (!prompt) return;
-
     setTestResults((prev) => ({
       ...prev,
       [testId]: {
         ...prev[testId],
         status: 'running',
         durationMs: 0,
+        agentTrace: [],
       },
     }));
 
-    const startTime = performance.now();
-    // Simulate realistic async delay
-    await new Promise((res) => setTimeout(res, 450 + Math.random() * 350));
-    const endTime = performance.now();
-    const durationMs = Math.round(endTime - startTime);
-
-    const simulation = generateSimulatedOutput(prompt);
-
-    setTestResults((prev) => ({
-      ...prev,
-      [testId]: {
-        id: testId,
-        status: simulation.passed ? 'passed' : 'failed',
-        output: simulation.output,
-        durationMs,
-        assertionPassed: simulation.passed,
-        assertionDetails: simulation.details,
-        agentTrace: simulation.trace,
+    const workflowDoc = getWorkflowDoc();
+    bridge.postMessage({
+      type: 'RUN_TESTS',
+      payload: {
+        document: workflowDoc,
+        testScenarioIds: [testId],
+        targetDirectory: config.outputFolder,
       },
-    }));
+    });
   };
 
   // Run all tests sequentially
   const runAllTests = async () => {
     setIsRunningAll(true);
-    for (const prompt of testPrompts) {
-      await runTest(prompt.id);
-    }
+    setTestResults((prev) => {
+      const updated: Record<string, TestResult> = {};
+      testPrompts.forEach((tp) => {
+        updated[tp.id] = {
+          id: tp.id,
+          status: 'running',
+          output: '',
+          durationMs: 0,
+          assertionPassed: false,
+          assertionDetails: '',
+          agentTrace: [],
+        };
+      });
+      return updated;
+    });
+
+    const workflowDoc = getWorkflowDoc();
+    bridge.postMessage({
+      type: 'RUN_TESTS',
+      payload: {
+        document: workflowDoc,
+        targetDirectory: config.outputFolder,
+      },
+    });
+  };
+
+  // Cancel active test run
+  const handleCancelTests = () => {
+    bridge.postMessage({
+      type: 'CANCEL_TESTS',
+      payload: {
+        runId: activeRunId || undefined,
+      },
+    });
     setIsRunningAll(false);
   };
 
@@ -191,6 +296,7 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
         durationMs: 0,
         assertionPassed: false,
         assertionDetails: '',
+        agentTrace: [],
       };
     });
     setTestResults(reset);
@@ -231,6 +337,17 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
             )}
             <span>{isRunningAll ? 'Executing Suite...' : 'Run All Unit Tests'}</span>
           </button>
+
+          {isRunningAll && (
+            <button
+              type="button"
+              onClick={handleCancelTests}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+            >
+              <Square className="w-3 h-3 fill-current" />
+              <span>Cancel</span>
+            </button>
+          )}
 
           <button
             type="button"
