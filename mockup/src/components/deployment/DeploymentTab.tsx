@@ -212,7 +212,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
               }}
               className="w-full bg-[#0d1117] border border-[#30363d] text-xs text-white rounded-lg px-2.5 py-2 focus:outline-none focus:border-emerald-500 cursor-pointer font-medium"
             >
-              <option value="local">🖥️ Local Runner (CLI / FastMCP / Docker)</option>
+              <option value="local">🖥️ Local Runner</option>
               <option value={cloudTarget}>
                 {cloudTarget === 'agent_engine'
                   ? '🧠 Google Agent Engine (Selected in Code Gen)'
@@ -222,49 +222,17 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
           </div>
 
           {/* Target Specific Parameters Form */}
-          <div className="p-3 bg-[#0d1117] rounded-lg border border-[#30363d] space-y-2.5">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center justify-between">
-              <span>
-                {selectedTarget === 'local' && 'Local Runner Settings'}
-                {selectedTarget === 'agent_engine' && 'Agent Engine Configuration'}
-                {selectedTarget === 'cloud_run' && 'Cloud Run Configuration'}
-              </span>
-              <span className="text-[9px] font-mono text-gray-400">
-                {selectedTarget === 'local' ? 'Sandbox' : 'GCP IaC'}
-              </span>
-            </div>
-
-            {selectedTarget === 'local' && (
-              <div className="space-y-2">
-                <div>
-                  <label className="text-[11px] text-gray-300 block mb-1">Execution Mode</label>
-                  <select
-                    value={deployConfig.localMode}
-                    onChange={(e) =>
-                      setDeployConfig((prev) => ({ ...prev, localMode: e.target.value as any }))
-                    }
-                    className="w-full bg-[#161b22] border border-[#30363d] text-xs text-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-emerald-500 cursor-pointer"
-                  >
-                    <option value="cli">Direct CLI Script (main.py / workflow.ts)</option>
-                    <option value="fastmcp">FastMCP / REST Microservice (Port 8000)</option>
-                    <option value="docker">Docker Compose Container</option>
-                  </select>
-                </div>
-                {deployConfig.localMode === 'fastmcp' && (
-                  <div>
-                    <label className="text-[11px] text-gray-300 block mb-1">Port</label>
-                    <input
-                      type="number"
-                      value={deployConfig.localPort}
-                      onChange={(e) =>
-                        setDeployConfig((prev) => ({ ...prev, localPort: parseInt(e.target.value) || 8000 }))
-                      }
-                      className="w-full bg-[#161b22] border border-[#30363d] text-xs text-gray-200 rounded px-2 py-1 focus:outline-none focus:border-emerald-500 font-mono"
-                    />
-                  </div>
-                )}
+          {(selectedTarget === 'agent_engine' || selectedTarget === 'cloud_run') && (
+            <div className="p-3 bg-[#0d1117] rounded-lg border border-[#30363d] space-y-2.5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center justify-between">
+                <span>
+                  {selectedTarget === 'agent_engine' && 'Agent Engine Configuration'}
+                  {selectedTarget === 'cloud_run' && 'Cloud Run Configuration'}
+                </span>
+                <span className="text-[9px] font-mono text-gray-400">
+                  GCP IaC
+                </span>
               </div>
-            )}
 
             {selectedTarget === 'agent_engine' && (
               <div className="space-y-2">
@@ -343,6 +311,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
               </div>
             )}
           </div>
+        )}
 
           {/* RUNTIME VALUES & SECRETS SECTION */}
           <div className="space-y-2">
@@ -417,23 +386,24 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
           </div>
         </div>
 
-        {/* Action Button: "Run Agent" (if local) or "Deploy Agent" (if cloud) */}
+        {/* Action Button: "Run Agent" (if local) or "Deploy Agent" (disabled for cloud targets) */}
         <div className="pt-3 border-t border-[#30363d] shrink-0 mt-2">
           <button
             onClick={handleTriggerAction}
-            disabled={deployStatus === 'deploying'}
-            className={`w-full py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 text-white ${
-              isLocalSelected
-                ? 'bg-[#238636] hover:bg-[#2ea043]'
-                : cloudTarget === 'agent_engine'
-                ? 'bg-blue-600 hover:bg-blue-500'
-                : 'bg-purple-600 hover:bg-purple-500'
+            disabled={deployStatus === 'deploying' || !isLocalSelected}
+            title={!isLocalSelected ? 'Cloud deployment is not implemented yet' : undefined}
+            className={`w-full py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2 text-white ${
+              !isLocalSelected
+                ? 'bg-gray-800 text-gray-500 border border-[#30363d] cursor-not-allowed opacity-60'
+                : deployStatus === 'deploying'
+                ? 'bg-[#238636] opacity-50 cursor-wait'
+                : 'bg-[#238636] hover:bg-[#2ea043] cursor-pointer'
             }`}
           >
             {deployStatus === 'deploying' ? (
               <>
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                <span>{isLocalSelected ? 'Starting Local Agent...' : 'Deploying Agent...'}</span>
+                <span>Starting Local Agent...</span>
               </>
             ) : isLocalSelected ? (
               <>
@@ -442,8 +412,8 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
               </>
             ) : (
               <>
-                <Rocket className="w-3.5 h-3.5" />
-                <span>Deploy Agent</span>
+                <Rocket className="w-3.5 h-3.5 opacity-50" />
+                <span>Deploy Agent (Not Implemented)</span>
               </>
             )}
           </button>
