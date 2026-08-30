@@ -1,0 +1,6 @@
+{
+  "name": "VS Code Agent Flow Builder",
+  "description": "A visual VS Code extension builder using React Flow to design multi-agent workflows and generate Google ADK and LangGraph code.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

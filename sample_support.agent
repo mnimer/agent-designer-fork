@@ -1,0 +1,106 @@
+{
+  "version": "1.0.0",
+  "name": "CustomerSupportTriage",
+  "description": "Enterprise customer triage multi-agent workflow with Google Search Grounding",
+  "framework": "google-adk",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "node-trigger-1",
+      "type": "trigger",
+      "position": {
+        "x": 80,
+        "y": 180
+      },
+      "data": {
+        "label": "Support Ticket Inbound",
+        "description": "Processes inbound customer queries",
+        "triggerKind": "test",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "scenario-1",
+              "name": "Refund Policy Query",
+              "inputQuery": "What is the return and refund policy for hardware orders?",
+              "expectedOutputPattern": "refund"
+            },
+            {
+              "id": "scenario-2",
+              "name": "Technical Troubleshooting",
+              "inputQuery": "How do I configure OAuth credentials for the Agent SDK?",
+              "expectedOutputPattern": "OAuth"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-agent-1",
+      "type": "agent",
+      "position": {
+        "x": 460,
+        "y": 180
+      },
+      "data": {
+        "label": "Triage Specialist",
+        "description": "Analyzes inbound support questions and grounds answers with search",
+        "model": "gemini-flash-latest",
+        "systemPrompt": "You are a senior customer support triage specialist. Analyze the user request, ground answers using official documentation, and format output cleanly.",
+        "temperature": 0.4,
+        "tools": [
+          {
+            "id": "tool-search",
+            "name": "Google Search Grounding",
+            "description": "Grounds reasoning in Google Search web results",
+            "type": "builtin"
+          }
+        ],
+        "memoryType": "none",
+        "structuredOutputSchema": {
+          "enabled": true,
+          "name": "TriageResponse",
+          "fields": [
+            {
+              "id": "f-1",
+              "name": "issueCategory",
+              "type": "string",
+              "required": true,
+              "description": "Classified category of support issue"
+            },
+            {
+              "id": "f-2",
+              "name": "resolutionSummary",
+              "type": "string",
+              "required": true,
+              "description": "Concise summary of resolution"
+            },
+            {
+              "id": "f-3",
+              "name": "urgencyLevel",
+              "type": "enum",
+              "required": true,
+              "enumValues": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "source": "node-trigger-1",
+      "target": "node-agent-1"
+    }
+  ],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "metadata": {
+    "createdAt": "2026-08-27T11:00:00Z",
+    "updatedAt": "2026-08-27T11:00:00Z",
+    "author": "Mike Nimer <mikenimer@google.com>"
+  }
+}

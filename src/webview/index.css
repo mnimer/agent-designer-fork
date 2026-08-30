@@ -1,0 +1,289 @@
+@import "tailwindcss";
+@import "../../node_modules/@xyflow/react/dist/style.css";
+
+/* ==========================================================================
+   VS Code Designer Multi-Theme System
+   - VS Code Dark+ (Default)
+   - VS Code Light+ (Modern Crisp Light)
+   - High Contrast Dark (WCAG AAA)
+   - High Contrast Light (WCAG AAA)
+   ========================================================================== */
+
+:root,
+.theme-dark,
+body.vscode-dark {
+  --vscode-canvas-bg: #0d1117;
+  --vscode-workbench-bg: #161b22;
+  --vscode-card-bg: #161b22;
+  --vscode-subcard-bg: #0d1117;
+  --vscode-input-bg: #0d1117;
+  --vscode-border: #30363d;
+  --vscode-border-light: #21262d;
+  --vscode-text-primary: #f0f6fc;
+  --vscode-text-secondary: #c9d1d9;
+  --vscode-text-muted: #8b949e;
+  --vscode-activity-bar: #0d1117;
+  --vscode-title-bar: #0d1117;
+  --vscode-status-bar: #161b22;
+  --vscode-tab-active: #0d1117;
+  --vscode-tab-inactive: #161b22;
+  --vscode-highlight: #58a6ff;
+  --vscode-accent: #238636;
+  --vscode-button-secondary: #21262d;
+  --vscode-hover: #21262d;
+  --vscode-grid-dots: #30363d;
+  --vscode-shadow: rgba(0, 0, 0, 0.6);
+  --vscode-badge-bg: #21262d;
+  --vscode-node-bg: #161b22;
+  --vscode-node-border: #30363d;
+  --vscode-node-selected: #58a6ff;
+  --vscode-handle-border: #0d1117;
+  --vscode-scrollbar-thumb: #30363d;
+  --vscode-scrollbar-hover: #484f58;
+}
+
+.theme-light,
+body.vscode-light {
+  --vscode-canvas-bg: #f6f8fa;
+  --vscode-workbench-bg: #ffffff;
+  --vscode-card-bg: #ffffff;
+  --vscode-subcard-bg: #f6f8fa;
+  --vscode-input-bg: #ffffff;
+  --vscode-border: #d0d7de;
+  --vscode-border-light: #e1e4e8;
+  --vscode-text-primary: #1f2328;
+  --vscode-text-secondary: #24292f;
+  --vscode-text-muted: #57606a;
+  --vscode-activity-bar: #f6f8fa;
+  --vscode-title-bar: #f6f8fa;
+  --vscode-status-bar: #0969da;
+  --vscode-tab-active: #ffffff;
+  --vscode-tab-inactive: #f6f8fa;
+  --vscode-highlight: #0969da;
+  --vscode-accent: #1f883d;
+  --vscode-button-secondary: #f3f4f6;
+  --vscode-hover: #eaeef2;
+  --vscode-grid-dots: #d0d7de;
+  --vscode-shadow: rgba(0, 0, 0, 0.08);
+  --vscode-badge-bg: #eaeef2;
+  --vscode-node-bg: #ffffff;
+  --vscode-node-border: #d0d7de;
+  --vscode-node-selected: #0969da;
+  --vscode-handle-border: #ffffff;
+  --vscode-scrollbar-thumb: #d0d7de;
+  --vscode-scrollbar-hover: #afb8c1;
+}
+
+.theme-hc-dark,
+body.vscode-high-contrast {
+  --vscode-canvas-bg: #000000;
+  --vscode-workbench-bg: #000000;
+  --vscode-card-bg: #000000;
+  --vscode-subcard-bg: #000000;
+  --vscode-input-bg: #000000;
+  --vscode-border: #6fc1ff;
+  --vscode-border-light: #ffffff;
+  --vscode-text-primary: #ffffff;
+  --vscode-text-secondary: #ffffff;
+  --vscode-text-muted: #00ffff;
+  --vscode-activity-bar: #000000;
+  --vscode-title-bar: #000000;
+  --vscode-status-bar: #000000;
+  --vscode-tab-active: #000000;
+  --vscode-tab-inactive: #000000;
+  --vscode-highlight: #00ffff;
+  --vscode-accent: #007acc;
+  --vscode-button-secondary: #000000;
+  --vscode-hover: #1f1f1f;
+  --vscode-grid-dots: #ffffff;
+  --vscode-shadow: rgba(255, 255, 255, 0.3);
+  --vscode-badge-bg: #000000;
+  --vscode-node-bg: #000000;
+  --vscode-node-border: #6fc1ff;
+  --vscode-node-selected: #00ffff;
+  --vscode-handle-border: #000000;
+  --vscode-scrollbar-thumb: #6fc1ff;
+  --vscode-scrollbar-hover: #00ffff;
+}
+
+.theme-hc-light,
+body.vscode-high-contrast-light {
+  --vscode-canvas-bg: #ffffff;
+  --vscode-workbench-bg: #ffffff;
+  --vscode-card-bg: #ffffff;
+  --vscode-subcard-bg: #ffffff;
+  --vscode-input-bg: #ffffff;
+  --vscode-border: #0f4a85;
+  --vscode-border-light: #000000;
+  --vscode-text-primary: #000000;
+  --vscode-text-secondary: #000000;
+  --vscode-text-muted: #0f4a85;
+  --vscode-activity-bar: #ffffff;
+  --vscode-title-bar: #ffffff;
+  --vscode-status-bar: #0f4a85;
+  --vscode-tab-active: #ffffff;
+  --vscode-tab-inactive: #ffffff;
+  --vscode-highlight: #0f4a85;
+  --vscode-accent: #0f4a85;
+  --vscode-button-secondary: #ffffff;
+  --vscode-hover: #e8f0fe;
+  --vscode-grid-dots: #0f4a85;
+  --vscode-shadow: rgba(0, 0, 0, 0.25);
+  --vscode-badge-bg: #ffffff;
+  --vscode-node-bg: #ffffff;
+  --vscode-node-border: #0f4a85;
+  --vscode-node-selected: #0f4a85;
+  --vscode-handle-border: #ffffff;
+  --vscode-scrollbar-thumb: #0f4a85;
+  --vscode-scrollbar-hover: #000000;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+@layer base {
+  body {
+    background-color: var(--vscode-canvas-bg);
+    color: var(--vscode-text-secondary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    user-select: none;
+    overflow: hidden;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--vscode-canvas-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbar-thumb);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbar-hover);
+}
+
+/* React Flow theme integration */
+.react-flow__background {
+  background-color: var(--vscode-canvas-bg) !important;
+  transition: background-color 0.2s ease;
+}
+
+.theme-light .react-flow__background-pattern {
+  stroke: #d0d7de !important;
+}
+
+.theme-hc-dark .react-flow__background-pattern {
+  stroke: #333333 !important;
+}
+
+.theme-hc-light .react-flow__background-pattern {
+  stroke: #0f4a85 !important;
+}
+
+.react-flow__panel {
+  height: auto !important;
+  max-height: fit-content !important;
+  width: auto !important;
+  max-width: fit-content !important;
+  margin: 12px !important;
+}
+
+.react-flow__controls {
+  height: auto !important;
+  max-height: fit-content !important;
+  width: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-shadow: 0 10px 25px -5px var(--vscode-shadow) !important;
+  border: 1px solid var(--vscode-border) !important;
+  border-radius: 10px !important;
+  overflow: hidden;
+  background: var(--vscode-workbench-bg) !important;
+}
+
+.react-flow__controls-button {
+  height: 28px !important;
+  width: 28px !important;
+  min-height: 28px !important;
+  min-width: 28px !important;
+  background: transparent !important;
+  border-bottom: 1px solid var(--vscode-border) !important;
+  color: var(--vscode-text-secondary) !important;
+  fill: var(--vscode-text-secondary) !important;
+  transition: all 0.15s ease;
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: none !important;
+}
+
+.react-flow__controls-button:hover {
+  background: var(--vscode-hover) !important;
+  color: var(--vscode-text-primary) !important;
+}
+
+.react-flow__controls-button svg {
+  fill: var(--vscode-text-secondary) !important;
+}
+
+.react-flow__minimap {
+  height: 120px !important;
+  width: 180px !important;
+  max-height: 140px !important;
+  max-width: 200px !important;
+  background: var(--vscode-workbench-bg) !important;
+  border: 1px solid var(--vscode-border) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 10px 25px -5px var(--vscode-shadow) !important;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2.5;
+}
+
+.theme-light .react-flow__edge-path {
+  stroke: #57606a;
+}
+
+.theme-dark .react-flow__edge-path {
+  stroke: #58a6ff;
+}
+
+.theme-hc-dark .react-flow__edge-path {
+  stroke: #00ffff !important;
+  stroke-width: 3;
+}
+
+.theme-hc-light .react-flow__edge-path {
+  stroke: #0f4a85 !important;
+  stroke-width: 3;
+}
+
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--vscode-handle-border);
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.react-flow__handle:hover {
+  transform: scale(1.35);
+}
