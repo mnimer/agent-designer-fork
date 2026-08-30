@@ -38,6 +38,8 @@ export function resetAllMocks() {
   workspace.fs.createDirectory.calls = [];
   workspace.fs.writeFile.calls = [];
   workspace.fs.readFile.calls = [];
+  workspace.fs.readDirectory.calls = [];
+  workspace.fs.delete.calls = [];
   commands.registerCommand.calls = [];
   commands.executeCommand.calls = [];
 }
@@ -103,6 +105,8 @@ export const workspace = {
     createDirectory: createSpy(async () => undefined),
     writeFile: createSpy(async () => undefined),
     readFile: createSpy(async () => Buffer.from('')),
+    readDirectory: createSpy(async () => []),
+    delete: createSpy(async () => undefined),
   },
 };
 

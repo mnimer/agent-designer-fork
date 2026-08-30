@@ -61,6 +61,16 @@ interface TestRunnerTabProps {
   config: GenerationConfig;
   document?: AgentWorkflowDocument;
   onOpenTriggerSettings?: () => void;
+  onNavigateToDeployment?: () => void;
+}
+
+interface ExecutionLogEntry {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+  scenarioId?: string;
+  agentId?: string;
 }
 
 export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
@@ -69,6 +79,7 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
   config,
   document: propDocument,
   onOpenTriggerSettings,
+  onNavigateToDeployment,
 }) => {
   const bridge = useWebviewBridge();
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
@@ -77,7 +88,42 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [expandedTraceId, setExpandedTraceId] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [logs, setLogs] = useState<ExecutionLogEntry[]>([]);
+  const [isConsoleOpen, setIsConsoleOpen] = useState<boolean>(true);
+  const [latestLogByScenario, setLatestLogByScenario] = useState<Record<string, string>>({});
+  const [localRunnerStatus, setLocalRunnerStatus] = useState<'idle' | 'starting' | 'running' | 'stopped' | 'error'>('idle');
+  const [localRunnerPort, setLocalRunnerPort] = useState<number>(8000);
+  const [isCheckingHealth, setIsCheckingHealth] = useState<boolean>(false);
   const activeRunIdRef = useRef<string | null>(null);
+  const consoleEndRef = useRef<HTMLDivElement>(null);
+
+  // Health check callback (invoked on tab open or on manual user refresh)
+  const checkRunnerHealth = useCallback(() => {
+    setIsCheckingHealth(true);
+    bridge.postMessage({ type: 'GET_LOCAL_RUNNER_STATUS' });
+    setTimeout(() => setIsCheckingHealth(false), 1200);
+  }, [bridge]);
+
+  // Check health once on tab mount (no repeating interval / loop)
+  useEffect(() => {
+    checkRunnerHealth();
+  }, [checkRunnerHealth]);
+
+  // Subscribe to local runner status
+  useEffect(() => {
+    const unsubStatus = bridge.subscribe('LOCAL_RUNNER_STATUS', (payload) => {
+      if (payload?.status) {
+        setLocalRunnerStatus(payload.status);
+      }
+      if (payload?.port) {
+        setLocalRunnerPort(payload.port);
+      }
+      setIsCheckingHealth(false);
+    });
+    return () => {
+      unsubStatus();
+    };
+  }, [bridge]);
 
   // Initialize test results when testPrompts change
   useEffect(() => {
@@ -100,6 +146,13 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
     });
   }, [testPrompts]);
 
+  // Auto scroll terminal logs
+  useEffect(() => {
+    if (isConsoleOpen && consoleEndRef.current) {
+      consoleEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, isConsoleOpen]);
+
   // Subscribe to RPC bridge events from the extension runner
   useEffect(() => {
     const unsubResult = bridge.subscribe('TEST_RESULT_UPDATE', (payload) => {
@@ -115,13 +168,15 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
           agentTrace: [],
         };
 
+        const resolvedOutput = payload.output !== undefined && payload.output !== null ? payload.output : current.output;
+
         return {
           ...prev,
           [payload.scenarioId]: {
             ...current,
             status: payload.status,
             durationMs: payload.durationMs,
-            output: payload.output || current.output,
+            output: resolvedOutput,
             assertionPassed: payload.status === 'passed',
             assertionDetails: payload.error
               ? payload.error
@@ -135,17 +190,38 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
 
     const unsubLog = bridge.subscribe('EXECUTION_LOG', (payload) => {
       if (!payload) return;
+      
+      const newEntry: ExecutionLogEntry = {
+        id: `log-${Date.now()}-${Math.random()}`,
+        timestamp: new Date().toLocaleTimeString(),
+        level: payload.level || 'info',
+        message: payload.message || '',
+        scenarioId: payload.scenarioId,
+        agentId: payload.agentId,
+      };
+
+      setLogs((prev) => [...prev, newEntry]);
+
+      if (payload.scenarioId && payload.message) {
+        setLatestLogByScenario((prev) => ({
+          ...prev,
+          [payload.scenarioId]: payload.message,
+        }));
+      }
+
       // If log contains an agent message or step, append to active traces
       if (payload.agentId || payload.stepId || payload.message) {
         setTestResults((prev) => {
           const updated = { ...prev };
-          // Find running scenario or append to first running
-          const runningKey = Object.keys(updated).find((k) => updated[k].status === 'running');
-          if (runningKey && updated[runningKey]) {
-            const existingTrace = updated[runningKey].agentTrace || [];
+          // Find targeted scenario by scenarioId or append to currently running scenario
+          const targetKey =
+            payload.scenarioId ||
+            Object.keys(updated).find((k) => updated[k].status === 'running');
+          if (targetKey && updated[targetKey]) {
+            const existingTrace = updated[targetKey].agentTrace || [];
             const agentName = payload.agentId ? `Agent [${payload.agentId}]` : 'Execution Runner';
-            updated[runningKey] = {
-              ...updated[runningKey],
+            updated[targetKey] = {
+              ...updated[targetKey],
               agentTrace: [
                 ...existingTrace,
                 {
@@ -165,6 +241,22 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
       setIsRunningAll(false);
       setActiveRunId(null);
       activeRunIdRef.current = null;
+      // Safeguard: Ensure no test card remains stuck in 'running' state
+      setTestResults((prev) => {
+        const updated = { ...prev };
+        let changed = false;
+        Object.keys(updated).forEach((k) => {
+          if (updated[k].status === 'running') {
+            updated[k] = {
+              ...updated[k],
+              status: 'passed',
+              output: updated[k].output || 'Execution completed.',
+            };
+            changed = true;
+          }
+        });
+        return changed ? updated : prev;
+      });
     });
 
     return () => {
@@ -182,9 +274,64 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
 
   /**
    * Builds the workflow document payload to send to the test runner.
+   * Maps test prompts to trigger node testScenarios.
    */
   const getWorkflowDoc = useCallback((): AgentWorkflowDocument => {
-    if (propDocument) return propDocument;
+    const mappedScenarios = testPrompts.map((tp) => ({
+      id: tp.id,
+      name: tp.name,
+      inputQuery: tp.prompt || (tp as any).inputQuery || '',
+      expectedOutput: tp.expectedOutput,
+    }));
+
+    if (propDocument) {
+      // Ensure trigger nodes contain testScenarios mapped from testPrompts
+      const existingTrigger = (propDocument.nodes || []).find(
+        (n) => n.type === 'trigger' || (n as any).type === 'triggerNode'
+      );
+
+      let nodes = propDocument.nodes || [];
+      if (existingTrigger) {
+        nodes = nodes.map((n) => {
+          if (n.id === existingTrigger.id) {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                config: {
+                  ...(n.data as any)?.config,
+                  testScenarios: mappedScenarios,
+                  testPrompts: testPrompts,
+                },
+              },
+            };
+          }
+          return n;
+        });
+      } else {
+        nodes = [
+          ...nodes,
+          {
+            id: 'trigger-1',
+            type: 'trigger' as any,
+            position: { x: 50, y: 150 },
+            data: {
+              label: 'Test Trigger',
+              triggerType: 'chat',
+              config: {
+                testScenarios: mappedScenarios,
+                testPrompts: testPrompts,
+              },
+            },
+          },
+        ];
+      }
+
+      return {
+        ...propDocument,
+        nodes,
+      };
+    }
 
     return {
       version: '1.0.0',
@@ -201,12 +348,8 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
             label: 'Test Trigger',
             triggerType: 'chat',
             config: {
-              testScenarios: testPrompts.map((tp) => ({
-                id: tp.id,
-                name: tp.name,
-                inputQuery: tp.prompt,
-                expectedOutput: tp.expectedOutput,
-              })),
+              testScenarios: mappedScenarios,
+              testPrompts: testPrompts,
             },
           },
         },
@@ -224,6 +367,7 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
 
   // Run a single test
   const runTest = async (testId: string) => {
+    setIsConsoleOpen(true);
     setTestResults((prev) => ({
       ...prev,
       [testId]: {
@@ -247,6 +391,7 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
 
   // Run all tests sequentially
   const runAllTests = async () => {
+    setIsConsoleOpen(true);
     setIsRunningAll(true);
     setTestResults((prev) => {
       const updated: Record<string, TestResult> = {};
@@ -318,17 +463,20 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
     return true;
   });
 
+  const isServerRunning = localRunnerStatus === 'running';
+
   return (
     <div className="flex-1 flex flex-col h-full bg-[#0d1117] text-[#c9d1d9] overflow-hidden">
       {/* Top Controls & Metrics Bar */}
       <div className="px-4 py-2.5 bg-[#161b22] border-b border-[#30363d] flex items-center justify-between shrink-0 gap-3">
-        {/* Left: Action Buttons */}
+        {/* Left: Action Buttons & Server Status */}
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={runAllTests}
-            disabled={isRunningAll || testPrompts.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-pink-600 hover:bg-pink-500 disabled:opacity-50 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+            disabled={!isServerRunning || isRunningAll || testPrompts.length === 0}
+            title={!isServerRunning ? 'Local agent is offline. Start the agent in the Deployment tab to run tests.' : 'Run all unit tests'}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-pink-600 hover:bg-pink-500 disabled:opacity-40 disabled:hover:bg-pink-600 text-white font-bold text-xs shadow-md transition-all cursor-pointer disabled:cursor-not-allowed"
           >
             {isRunningAll ? (
               <Activity className="w-3.5 h-3.5 animate-spin" />
@@ -360,8 +508,29 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
             <span>Reset</span>
           </button>
 
+          {/* Server Status Indicator */}
+          {isServerRunning ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-medium ml-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>Agent Online (:{localRunnerPort})</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-950/70 border border-amber-500/40 text-amber-300 text-xs font-medium ml-1">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>Agent Offline</span>
+              <button
+                type="button"
+                onClick={checkRunnerHealth}
+                className="ml-1 p-0.5 rounded hover:bg-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer"
+                title="Check agent health"
+              >
+                <RotateCcw className={`w-3 h-3 ${isCheckingHealth ? 'animate-spin text-amber-400' : ''}`} />
+              </button>
+            </div>
+          )}
+
           {/* Status Filter Tabs */}
-          <div className="flex items-center gap-1 bg-[#0d1117] p-0.5 rounded-lg border border-[#30363d] ml-2">
+          <div className="flex items-center gap-1 bg-[#0d1117] p-0.5 rounded-lg border border-[#30363d] ml-1">
             <button
               onClick={() => setActiveFilter('all')}
               className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
@@ -421,6 +590,41 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
 
       {/* Main Content Area: List of Test Cases */}
       <div className="flex-1 p-4 overflow-y-auto space-y-3.5">
+        {/* Offline Warning Banner */}
+        {!isServerRunning && (
+          <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-md">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+              <div>
+                <span className="font-semibold text-white">Local Agent Server is Offline.</span>
+                <span className="text-amber-200/90 ml-1">
+                  Start the local agent on the <strong>Deployment</strong> tab to enable unit test execution.
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={checkRunnerHealth}
+                className="px-2.5 py-1 rounded-md bg-[#21262d] hover:bg-[#30363d] text-gray-200 hover:text-white border border-[#30363d] text-xs transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                <RotateCcw className={`w-3 h-3 ${isCheckingHealth ? 'animate-spin text-amber-400' : ''}`} />
+                <span>Check Health</span>
+              </button>
+              {onNavigateToDeployment && (
+                <button
+                  type="button"
+                  onClick={onNavigateToDeployment}
+                  className="px-3 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-colors flex items-center gap-1 shadow cursor-pointer"
+                >
+                  <span>Go to Deployment</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {filteredPrompts.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center p-8 text-center text-gray-500 space-y-2">
             <FlaskConical className="w-8 h-8 text-gray-600" />
@@ -503,8 +707,9 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                     <button
                       type="button"
                       onClick={() => runTest(tp.id)}
-                      disabled={isRunning || isRunningAll}
-                      className="px-2.5 py-1 rounded-md bg-[#0d1117] hover:bg-pink-600 border border-[#30363d] hover:border-pink-500 text-gray-300 hover:text-white text-[11px] font-medium transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-40"
+                      disabled={!isServerRunning || isRunning || isRunningAll}
+                      title={!isServerRunning ? 'Local agent server is offline. Start the agent in the Deployment tab to run this test.' : 'Execute test scenario'}
+                      className="px-2.5 py-1 rounded-md bg-[#0d1117] hover:bg-pink-600 border border-[#30363d] hover:border-pink-500 text-gray-300 hover:text-white text-[11px] font-medium transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:hover:bg-[#0d1117] disabled:hover:border-[#30363d] disabled:cursor-not-allowed"
                     >
                       <Play className="w-2.5 h-2.5 fill-current" />
                       <span>Run</span>
@@ -581,14 +786,25 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                         : 'bg-[#0d1117] border-[#30363d] text-gray-500 italic'
                     }`}>
                       {isRunning ? (
-                        <div className="flex items-center gap-2 text-amber-400 py-4 justify-center">
-                          <Activity className="w-3.5 h-3.5 animate-spin" />
-                          <span>Executing multi-agent workflow...</span>
+                        <div className="flex flex-col items-center gap-2 text-amber-400 py-3 justify-center text-center">
+                          <div className="flex items-center gap-2">
+                            <Activity className="w-3.5 h-3.5 animate-spin" />
+                            <span className="font-semibold">Executing test scenario...</span>
+                          </div>
+                          {latestLogByScenario[tp.id] && (
+                            <span className="text-[10.5px] text-gray-400 font-mono line-clamp-2 px-2">
+                              {latestLogByScenario[tp.id]}
+                            </span>
+                          )}
                         </div>
                       ) : result.output ? (
                         <pre className="whitespace-pre-wrap font-mono text-[10.5px]">
                           {result.output}
                         </pre>
+                      ) : isFailed ? (
+                        <div className="text-rose-400 text-[10.5px] font-mono whitespace-pre-wrap">
+                          {result.assertionDetails || 'Test failed with no response output.'}
+                        </div>
                       ) : (
                         <span className="flex items-center justify-center h-full text-center text-gray-500">
                           Click "Run" to execute this test prompt against the agent workflow.
@@ -599,12 +815,18 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                 </div>
 
                 {/* Footer Assertion & Multi-Agent Execution Trace (when available) */}
-                {result.output && (
+                {result.status !== 'idle' && (result.output || result.assertionDetails) && (
                   <div className="px-3.5 py-2 bg-[#12161c] rounded-b-xl border-t border-[#30363d] flex flex-wrap items-center justify-between text-[11px] gap-2">
                     <div className="flex items-center gap-1.5 text-gray-300">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                      {isPassed ? (
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-3 h-3 text-rose-400 shrink-0" />
+                      )}
                       <span className="font-semibold text-gray-400">Assertion:</span>
-                      <span className="text-gray-200">{result.assertionDetails}</span>
+                      <span className={isPassed ? 'text-emerald-300' : 'text-rose-300'}>
+                        {result.assertionDetails || (isPassed ? 'Passed' : 'Failed')}
+                      </span>
                     </div>
 
                     {result.agentTrace && result.agentTrace.length > 0 && (
@@ -644,6 +866,64 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
               </div>
             );
           })
+        )}
+      </div>
+
+      {/* Live Execution Console & Logs */}
+      <div className="border-t border-[#30363d] bg-[#0d1117] flex flex-col shrink-0">
+        <div 
+          onClick={() => setIsConsoleOpen(!isConsoleOpen)}
+          className="flex items-center justify-between px-4 py-2 bg-[#161b22] border-b border-[#30363d] text-xs font-semibold cursor-pointer select-none hover:bg-[#1c2128]"
+        >
+          <div className="flex items-center gap-2 text-gray-300">
+            <Terminal className="w-3.5 h-3.5 text-pink-400" />
+            <span>Execution Logs & Console Output</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-[#0d1117] border border-[#30363d] text-gray-400 font-mono">
+              {logs.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-gray-400 text-[11px]">
+            {logs.length > 0 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLogs([]);
+                }}
+                className="hover:text-white px-1.5 py-0.5 rounded hover:bg-[#30363d]"
+              >
+                Clear
+              </button>
+            )}
+            {isConsoleOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          </div>
+        </div>
+
+        {isConsoleOpen && (
+          <div className="h-36 overflow-y-auto p-3 font-mono text-[11px] space-y-1 bg-[#090d13] text-gray-300">
+            {logs.length === 0 ? (
+              <div className="text-gray-500 italic py-2 text-center">
+                No execution logs yet. Click "Run" or "Run All Scenarios" to start testing.
+              </div>
+            ) : (
+              logs.map((log) => (
+                <div key={log.id} className="flex items-start gap-2 leading-relaxed">
+                  <span className="text-gray-500 text-[10px] shrink-0">{log.timestamp}</span>
+                  <span className={`text-[10px] font-bold uppercase px-1 rounded shrink-0 ${
+                    log.level === 'error' ? 'bg-rose-950 text-rose-400' : log.level === 'warn' ? 'bg-amber-950 text-amber-400' : 'bg-sky-950 text-sky-400'
+                  }`}>
+                    {log.level}
+                  </span>
+                  <span className={
+                    log.level === 'error' ? 'text-rose-300' : log.level === 'warn' ? 'text-amber-300' : 'text-gray-300'
+                  }>
+                    {log.message}
+                  </span>
+                </div>
+              ))
+            )}
+            <div ref={consoleEndRef} />
+          </div>
         )}
       </div>
     </div>

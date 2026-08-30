@@ -110,5 +110,5 @@ export function activate(context: vscode.ExtensionContext): void {
  * Deactivates the extension and ensures all background subprocesses are cleanly terminated.
  */
 export function deactivate(): void {
-  // Subprocess cleanup will be performed here as runner managers are registered
+  AgentEditorProvider.disposeAll();
 }

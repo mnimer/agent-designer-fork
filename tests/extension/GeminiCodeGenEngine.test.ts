@@ -123,6 +123,52 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
     assert.ok(result.error.includes('API Key error') || result.error.includes('Application Default Credentials'));
     assert.equal(result.modelUsed, 'gemini-flash-latest');
   });
+
+  it('should resiliently parse JSON with trailing commas and unescaped characters', () => {
+    const rawWithTrailingComma = `[
+      {
+        "path": "requirements.txt",
+        "description": "Dependencies",
+        "content": "fastapi>=0.110.0\\ngoogle-genai>=1.0.0",
+      },
+      {
+        "path": "server.py",
+        "description": "FastAPI server",
+        "content": "from fastapi import FastAPI\\napp = FastAPI()",
+      },
+    ]`;
+    const files = engine.parseGeminiResponse(rawWithTrailingComma);
+    assert.equal(files.length, 2);
+    assert.equal(files[0].path, 'requirements.txt');
+    assert.equal(files[1].path, 'server.py');
+  });
+
+  it('should evaluate assertions using heuristic matcher for JSON fields and values', () => {
+    const jsonOutput = JSON.stringify({ isBusiness: true, category: 'corporate_billing', score: 98.5 });
+
+    const matchTrue = engine.heuristicEvaluateAssertion('isBusiness: true', jsonOutput);
+    assert.equal(matchTrue.passed, true);
+    assert.ok(matchTrue.reason.includes('matches expected value'));
+
+    const matchFalse = engine.heuristicEvaluateAssertion('isBusiness: false', jsonOutput);
+    assert.equal(matchFalse.passed, false);
+
+    const matchString = engine.heuristicEvaluateAssertion('corporate_billing', jsonOutput);
+    assert.equal(matchString.passed, true);
+
+    const noMatch = engine.heuristicEvaluateAssertion('refund_processed', jsonOutput);
+    assert.equal(noMatch.passed, false);
+  });
+
+  it('should evaluate assertions using evaluateAssertion with fallback handling', async () => {
+    const jsonOutput = JSON.stringify({ status: 'success', isBusiness: false });
+    const result = await engine.evaluateAssertion({
+      inputQuery: 'Where is my tracking number?',
+      expectedCriteria: 'status: "success"',
+      actualOutput: jsonOutput,
+    });
+
+    assert.equal(result.passed, true);
+    assert.ok(result.reason);
+  });
 });
-
-

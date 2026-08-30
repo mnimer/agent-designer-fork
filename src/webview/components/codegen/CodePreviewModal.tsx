@@ -99,6 +99,7 @@ export const CodePreviewModal: React.FC<CodePreviewModalProps> = ({
    * Dispatches code generation request to Extension Host
    */
   const handleGenerate = () => {
+    setGeneratedFiles([]);
     setIsGenerating(true);
     bridge.postMessage({
       type: 'GENERATE_CODE',

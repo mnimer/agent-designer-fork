@@ -17,6 +17,7 @@
  *    via a single TextEdit replacing full content when docVersion increments.
  * 5. Uses WebviewBridge for typed RPC message dispatching and handler registration.
  * 6. Integrates GeminiCodeGenEngine to synthesize full Python/LangGraph/TypeScript codebases.
+ * 7. Provider and panel lifecycle integration: Shuts down all active runner subprocesses and releases ports on panel disposal or extension deactivation.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -68,6 +69,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
    */
   public static register(context: vscode.ExtensionContext, outputChannel?: vscode.OutputChannel): vscode.Disposable {
     const provider = new AgentEditorProvider(context, outputChannel);
+    AgentEditorProvider.activeProviders.add(provider);
     const providerRegistration = vscode.window.registerCustomEditorProvider(
       AgentEditorProvider.viewType,
       provider,
@@ -80,6 +82,25 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       }
     );
     return providerRegistration;
+  }
+
+  public static activeProviders = new Set<AgentEditorProvider>();
+
+  /**
+   * Disposes all active provider instances and shuts down runner subprocesses.
+   */
+  public static disposeAll(): void {
+    for (const provider of AgentEditorProvider.activeProviders) {
+      provider.dispose();
+    }
+    AgentEditorProvider.activeProviders.clear();
+  }
+
+  /**
+   * Disposes this provider and terminates its runner manager processes.
+   */
+  public dispose(): void {
+    this.runnerManager.dispose();
   }
 
   /**
@@ -210,7 +231,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           const relativeFilePath = vscode.workspace.asRelativePath(document.uri);
           
           // Resolve target directory to check for pre-existing generated files
-          const targetDir = document.uri.fsPath.replace(/\.agent$/i, '');
+          const targetDir = this.resolveTargetDirectory(document, (parsedDoc.metadata as any)?.outputFolder);
           const existingGeneratedFiles = this.loadGeneratedFilesFromDisk(targetDir);
 
           await bridge.postMessage({
@@ -270,6 +291,14 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       const config = vscode.workspace.getConfiguration('agentFlow');
       const apiKey = config.get<string>('geminiApiKey') || process.env.GEMINI_API_KEY || '';
 
+      // 1. Resolve target directory and clean existing files BEFORE generation
+      const targetDirPath = this.resolveTargetDirectory(document, payload.outputFolder);
+      const targetDir = vscode.Uri.file(targetDirPath);
+
+      // Clean old generated source files and venv (preserving active .agent document, .git, and config files)
+      await this.cleanTargetDirectory(targetDirPath, document);
+
+      // 2. Synthesize new codebase with Gemini LLM
       const result = await this.codeGenEngine.generateCode({
         document: payload.document,
         framework: payload.targetFramework,
@@ -280,42 +309,6 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
 
       if (result.success && result.files.length > 0) {
         try {
-          // Resolve target directory
-          const workspaceFolders = vscode.workspace.workspaceFolders;
-          let targetDir: vscode.Uri;
-
-          if (payload.outputFolder) {
-            if (path.isAbsolute(payload.outputFolder)) {
-              targetDir = vscode.Uri.file(payload.outputFolder);
-            } else if (workspaceFolders && workspaceFolders.length > 0) {
-              targetDir = vscode.Uri.joinPath(workspaceFolders[0].uri, payload.outputFolder);
-            } else {
-              targetDir = vscode.Uri.file(path.join(path.dirname(document.uri.fsPath), payload.outputFolder));
-            }
-          } else if (workspaceFolders && workspaceFolders.length > 0) {
-            targetDir = vscode.Uri.joinPath(workspaceFolders[0].uri, 'src', 'agents');
-          } else {
-            targetDir = vscode.Uri.file(path.dirname(document.uri.fsPath));
-          }
-
-          // Ensure directory exists
-          await vscode.workspace.fs.createDirectory(targetDir);
-
-          // Clean existing files in target directory, PRESERVING the active .agent file
-          try {
-            const existingEntries = await vscode.workspace.fs.readDirectory(targetDir);
-            for (const [entryName] of existingEntries) {
-              const entryUri = vscode.Uri.joinPath(targetDir, entryName);
-              // Protect active document file
-              if (entryUri.fsPath === document.uri.fsPath) {
-                continue;
-              }
-              await vscode.workspace.fs.delete(entryUri, { recursive: true, useTrash: false });
-            }
-          } catch (cleanErr) {
-            this.outputChannel?.appendLine(`[AgentEditorProvider] Warning during target directory cleanup: ${cleanErr}`);
-          }
-
           // Write all generated files to disk
           for (const file of result.files) {
             const fileUri = vscode.Uri.joinPath(targetDir, file.path);
@@ -424,17 +417,11 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       });
 
       if (result.success && result.files.length > 0) {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        const targetDir =
-          payload.outputDirectory && workspaceFolders
-            ? vscode.Uri.joinPath(workspaceFolders[0].uri, payload.outputDirectory)
-            : workspaceFolders
-            ? workspaceFolders[0].uri
-            : vscode.Uri.file(path.dirname(document.uri.fsPath));
+        const targetDir = this.resolveTargetDirectory(document, payload.outputDirectory);
 
         const pathsWritten: string[] = [];
         for (const file of result.files) {
-          const fileUri = vscode.Uri.joinPath(targetDir, file.path);
+          const fileUri = vscode.Uri.joinPath(vscode.Uri.file(targetDir), file.path);
           const dirUri = vscode.Uri.file(path.dirname(fileUri.fsPath));
           await vscode.workspace.fs.createDirectory(dirUri);
           const buffer = Buffer.from(file.content, 'utf-8');
@@ -446,7 +433,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           type: 'EXPORT_COMPLETE',
           payload: {
             success: true,
-            outputDirectory: targetDir.fsPath,
+            outputDirectory: targetDir,
             filesWritten: pathsWritten,
           },
         });
@@ -469,38 +456,19 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     bridge.onMessage('RUN_TESTS', async (payload) => {
       if (!payload?.document) return;
 
-      const workspaceFolders = vscode.workspace.workspaceFolders;
-      let targetDir: string | undefined = payload.targetDirectory;
-      if (!targetDir) {
-        targetDir = workspaceFolders && workspaceFolders.length > 0
-          ? vscode.Uri.joinPath(workspaceFolders[0].uri, 'src', 'agents').fsPath
-          : path.dirname(document.uri.fsPath);
-      } else if (!path.isAbsolute(targetDir)) {
-        targetDir = workspaceFolders && workspaceFolders.length > 0
-          ? vscode.Uri.joinPath(workspaceFolders[0].uri, targetDir).fsPath
-          : path.join(path.dirname(document.uri.fsPath), targetDir);
-      }
+      const targetDir = this.resolveTargetDirectory(document, payload.targetDirectory);
 
       await this.runnerManager.runTests({
         document: payload.document,
         scenarioIds: payload.testScenarioIds,
         targetDirectory: targetDir,
+        port: payload.port,
         bridge,
       });
     });
 
     bridge.onMessage('START_LOCAL_RUNNER', async (payload) => {
-      const workspaceFolders = vscode.workspace.workspaceFolders;
-      let targetDir: string | undefined = payload?.targetDirectory;
-      if (!targetDir) {
-        targetDir = workspaceFolders && workspaceFolders.length > 0
-          ? vscode.Uri.joinPath(workspaceFolders[0].uri, 'src', 'agents').fsPath
-          : path.dirname(document.uri.fsPath);
-      } else if (!path.isAbsolute(targetDir)) {
-        targetDir = workspaceFolders && workspaceFolders.length > 0
-          ? vscode.Uri.joinPath(workspaceFolders[0].uri, targetDir).fsPath
-          : path.join(path.dirname(document.uri.fsPath), targetDir);
-      }
+      const targetDir = this.resolveTargetDirectory(document, payload?.targetDirectory);
 
       await this.runnerManager.startLocalRunner({
         document: payload?.document,
@@ -511,8 +479,8 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       });
     });
 
-    bridge.onMessage('STOP_LOCAL_RUNNER', (payload) => {
-      this.runnerManager.stopLocalRunner(payload?.runnerId);
+    bridge.onMessage('STOP_LOCAL_RUNNER', async (payload) => {
+      await this.runnerManager.stopLocalRunner(payload?.runnerId, payload?.port, bridge);
     });
 
     bridge.onMessage('GET_LOCAL_RUNNER_STATUS', async () => {
@@ -520,17 +488,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     });
 
     bridge.onMessage('CHECK_FILES_EXIST', async (payload) => {
-      const workspaceFolders = vscode.workspace.workspaceFolders;
-      let targetDir: string | undefined = payload?.targetDirectory;
-      if (!targetDir) {
-        targetDir = workspaceFolders && workspaceFolders.length > 0
-          ? vscode.Uri.joinPath(workspaceFolders[0].uri, 'src', 'agents').fsPath
-          : path.dirname(document.uri.fsPath);
-      } else if (!path.isAbsolute(targetDir)) {
-        targetDir = workspaceFolders && workspaceFolders.length > 0
-          ? vscode.Uri.joinPath(workspaceFolders[0].uri, targetDir).fsPath
-          : path.join(path.dirname(document.uri.fsPath), targetDir);
-      }
+      const targetDir = this.resolveTargetDirectory(document, payload?.targetDirectory);
 
       const existingGeneratedFiles = this.loadGeneratedFilesFromDisk(targetDir);
       const serverPy = path.join(targetDir, 'server.py');
@@ -655,8 +613,10 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         })
       : { dispose: () => {} };
 
-    // Clean up event listeners on panel disposal
-    webviewPanel.onDidDispose(() => {
+    // Clean up event listeners and background runners on panel disposal
+    webviewPanel.onDidDispose(async () => {
+      await this.runnerManager.stopLocalRunner(undefined, undefined, bridge);
+      this.runnerManager.cancelAll();
       themeChangeSub.dispose();
       docChangeSub.dispose();
       docSaveSub.dispose();
@@ -766,7 +726,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
             description: 'Core LLM agent with Google Search Grounding',
             agentKind: 'standard',
             standardConfig: {
-              model: 'gemini-2.5-flash',
+              model: 'gemini-flash-latest',
               systemInstruction:
                 'You are a helpful, expert AI engineering assistant. Provide direct, grounded, and concise answers.',
               temperature: 0.7,
@@ -946,6 +906,38 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   }
 
   /**
+   * Resolves the target directory path on disk for code generation, testing, and file verification.
+   * By default, resolves a relative folder to the active .agent file where the folder name matches the file name.
+   *
+   * Logic Flow:
+   * 1. If explicit configuredFolder is absolute, return it.
+   * 2. If configuredFolder is provided (e.g., './scratch-agent/' or 'scratch-agent'):
+   *    - Resolve relative to the file's parent directory: path.resolve(path.dirname(document.uri.fsPath), configuredFolder).
+   * 3. If no configuredFolder is provided:
+   *    - Derive folder name from document basename without .agent (e.g., 'scratch-agent').
+   *    - Resolve into path.join(path.dirname(document.uri.fsPath), folderName).
+   *
+   * @param document VS Code text document for the active .agent file
+   * @param configuredFolder Optional explicit outputFolder from payload or metadata
+   * @returns Absolute filesystem path string
+   */
+  public resolveTargetDirectory(document: vscode.TextDocument, configuredFolder?: string): string {
+    const docDir = path.dirname(document.uri.fsPath);
+    let folder = configuredFolder?.trim();
+
+    if (!folder) {
+      const baseName = path.basename(document.uri.fsPath, '.agent');
+      return path.join(docDir, baseName || 'workflow');
+    }
+
+    if (path.isAbsolute(folder)) {
+      return folder;
+    }
+
+    return path.resolve(docDir, folder);
+  }
+
+  /**
    * Scans a target directory on disk and loads any pre-existing generated code files.
    *
    * Logic Flow:
@@ -1027,5 +1019,115 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     });
 
     return files;
+  }
+
+  /**
+   * Resiliently cleans target directory before writing new generated code files.
+   * Deletes all old generated source files, subdirectories, and virtual environments
+   * (.venv, venv, node_modules) to prevent cross-framework or cross-language dependency conflicts,
+   * while preserving the active .agent workflow document, git metadata (.git),
+   * and IDE configuration files.
+   *
+   * Logic Flow:
+   * 1. Resolves target directory and ensures folder exists.
+   * 2. Iterates over directory entries using both VS Code fs and Node fs.
+   * 3. Protects preserved paths (.agent, .git, .vscode, .idea, .DS_Store).
+   * 4. Deletes each target file/subdirectory/venv with isolated try/catch and Node fs fallback.
+   *
+   * @param targetDirPath Target folder path on disk
+   * @param document Active VS Code TextDocument to preserve
+   * @returns Object detailing deleted files and preserved entries
+   */
+  public async cleanTargetDirectory(
+    targetDirPath: string,
+    document?: vscode.TextDocument
+  ): Promise<{ cleaned: string[]; preserved: string[]; errors: string[] }> {
+    const cleaned: string[] = [];
+    const preserved: string[] = [];
+    const errors: string[] = [];
+
+    const preservedNames = new Set([
+      '.git',
+      '.vscode',
+      '.idea',
+      '.DS_Store',
+    ]);
+
+    const targetDirUri = vscode.Uri.file(targetDirPath);
+
+    try {
+      // Ensure target directory exists
+      try {
+        await vscode.workspace.fs.createDirectory(targetDirUri);
+      } catch {}
+
+      // Discover entries via VS Code filesystem API or Node fs
+      let entryNames: string[] = [];
+      try {
+        const vsEntries = await vscode.workspace.fs.readDirectory(targetDirUri);
+        entryNames = vsEntries.map(([name]) => name);
+      } catch {
+        if (fs.existsSync(targetDirPath)) {
+          entryNames = fs.readdirSync(targetDirPath);
+        }
+      }
+
+      if (entryNames.length === 0 && fs.existsSync(targetDirPath)) {
+        entryNames = fs.readdirSync(targetDirPath);
+      }
+
+      for (const entryName of entryNames) {
+        const fullEntryPath = path.join(targetDirPath, entryName);
+        const entryUri = vscode.Uri.joinPath(targetDirUri, entryName);
+
+        // 1. Preserve active workflow document (.agent)
+        if (
+          document &&
+          document.uri &&
+          (entryUri.fsPath === document.uri.fsPath || fullEntryPath === document.uri.fsPath)
+        ) {
+          preserved.push(entryName);
+          continue;
+        }
+
+        // 2. Preserve virtual environments, git repository and system files
+        if (preservedNames.has(entryName) || entryName.endsWith('.agent')) {
+          preserved.push(entryName);
+          continue;
+        }
+
+        // 3. Delete stale file or directory
+        let deleted = false;
+        try {
+          await vscode.workspace.fs.delete(entryUri, { recursive: true, useTrash: false });
+          deleted = true;
+        } catch (vscodeFsErr) {
+          // VS Code fs provider error, fallback to node fs
+        }
+
+        try {
+          if (fs.existsSync(fullEntryPath)) {
+            fs.rmSync(fullEntryPath, { recursive: true, force: true });
+            deleted = true;
+          }
+        } catch (nodeFsErr: any) {
+          errors.push(`Failed to delete ${entryName}: ${nodeFsErr?.message || nodeFsErr}`);
+          this.outputChannel?.appendLine(
+            `[AgentEditorProvider] Failed to delete entry ${entryName}: ${nodeFsErr?.message || nodeFsErr}`
+          );
+        }
+
+        if (deleted || !fs.existsSync(fullEntryPath)) {
+          cleaned.push(entryName);
+        }
+      }
+    } catch (err: any) {
+      errors.push(`Directory cleanup error: ${err?.message || err}`);
+      this.outputChannel?.appendLine(
+        `[AgentEditorProvider] Directory cleanup error: ${err?.message || err}`
+      );
+    }
+
+    return { cleaned, preserved, errors };
   }
 }

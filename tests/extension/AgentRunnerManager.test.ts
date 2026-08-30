@@ -50,7 +50,7 @@ describe('AgentRunnerManager', () => {
         data: {
           label: 'Support Triage Agent',
           description: 'Handles support requests',
-          model: 'gemini-2.5-flash',
+          model: 'gemini-flash-latest',
           systemPrompt: 'You are a helpful customer support agent.',
           temperature: 0.5,
           tools: [
@@ -137,7 +137,7 @@ describe('AgentRunnerManager', () => {
     assert.ok(hasComplete);
   });
 
-  it('should handle assertion failure when expected output is not met', async () => {
+  it('should handle offline server gracefully with explicit error message', async () => {
     const docWithFailingAssertion: AgentWorkflowDocument = {
       ...sampleDocument,
       nodes: [
@@ -174,6 +174,8 @@ describe('AgentRunnerManager', () => {
 
     await manager.runTests({
       document: docWithFailingAssertion,
+      port: 9999, // Unused port to guarantee offline detection
+      targetDirectory: '/mock/nonexistent',
       bridge: mockBridge,
     });
 
@@ -181,7 +183,7 @@ describe('AgentRunnerManager', () => {
       (m) => m.type === 'TEST_RESULT_UPDATE' && m.payload.status === 'failed'
     );
     assert.ok(failedUpdate);
-    assert.ok(failedUpdate.payload.error.includes('Expected output to contain'));
+    assert.ok(failedUpdate.payload.error.includes('Agent server is offline'));
   });
 
   it('should accept targetDirectory and resolve virtual environment', async () => {
@@ -268,6 +270,215 @@ describe('AgentRunnerManager', () => {
     const manager = new AgentRunnerManager('/mock/extension');
     assert.doesNotThrow(() => {
       manager.cancelRun('nonexistent-run-id');
+      manager.cancelAll();
+      manager.dispose();
     });
   });
+
+  it('should extract scenarios from triggerNode with testPrompts config', () => {
+    const manager = new AgentRunnerManager('/mock/extension');
+    const docWithPrompts: AgentWorkflowDocument = {
+      schemaVersion: '1.0.0',
+      name: 'Prompt Test Flow',
+      framework: 'adk',
+      language: 'python',
+      nodes: [
+        {
+          id: 'trigger-prompt-1',
+          type: 'triggerNode' as any,
+          position: { x: 50, y: 100 },
+          data: {
+            label: 'Chat Trigger',
+            config: {
+              testPrompts: [
+                {
+                  id: 'tp-1',
+                  name: 'Prompt Test 1',
+                  prompt: 'Hello agent, what is the status?',
+                  expectedOutput: 'status ok',
+                },
+              ],
+            },
+          },
+        },
+      ],
+      edges: [],
+      settings: {},
+    };
+
+    const scenarios = manager.extractScenarios(docWithPrompts);
+    assert.equal(scenarios.length, 1);
+    assert.equal(scenarios[0].id, 'tp-1');
+    assert.equal(scenarios[0].inputQuery, 'Hello agent, what is the status?');
+    assert.equal(scenarios[0].expectedOutput, 'status ok');
+  });
+
+  it('should run tests and post execution logs and results to bridge', async () => {
+    const manager = new AgentRunnerManager('/mock/extension');
+    const postedMessages: any[] = [];
+    const mockBridge: any = {
+      postMessage: async (msg: any) => {
+        postedMessages.push(msg);
+      },
+    };
+
+    const runId = await manager.runTests({
+      document: sampleDocument,
+      scenarioIds: ['scenario-1'],
+      bridge: mockBridge,
+    });
+
+    assert.ok(runId.startsWith('run-'));
+    assert.ok(postedMessages.some((m) => m.type === 'TEST_RESULT_UPDATE' && m.payload.scenarioId === 'scenario-1'));
+    assert.ok(postedMessages.some((m) => m.type === 'EXECUTION_COMPLETE'));
+  });
+
+  it('should execute killPort and stopLocalRunner with bridge notification cleanly', async () => {
+    const manager = new AgentRunnerManager('/mock/extension');
+    const postedMessages: any[] = [];
+    const mockBridge: any = {
+      postMessage: async (msg: any) => {
+        postedMessages.push(msg);
+      },
+    };
+
+    assert.doesNotThrow(() => {
+      manager.killPort(8999);
+      manager.killPort(0);
+      manager.killPort(-1);
+    });
+
+    await manager.stopLocalRunner(undefined, 8999, mockBridge);
+    const stoppedMsg = postedMessages.find((m) => m.type === 'LOCAL_RUNNER_STATUS' && m.payload.status === 'stopped');
+    assert.ok(stoppedMsg);
+    assert.equal(stoppedMsg.payload.port, 8999);
+  });
+
+  it('should sanitize model names and handle structured OpenAI completion responses', async () => {
+    const manager = new AgentRunnerManager('/mock/extension');
+    const docWithLegacyModel: AgentWorkflowDocument = {
+      ...sampleDocument,
+      nodes: [
+        sampleDocument.nodes[0],
+        {
+          ...sampleDocument.nodes[1],
+          data: {
+            ...sampleDocument.nodes[1].data,
+            model: 'gemini-2.5-flash',
+          },
+        },
+      ],
+    };
+
+    // Override httpPostJson to simulate OpenAI chat completions returning JSON content
+    (manager as any).httpPostJson = async (_port: number, _path: string, body: any) => {
+      assert.equal(body.model, 'gemini-flash-latest');
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          id: 'chatcmpl-test',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: '{"isBusiness":true}',
+              },
+            },
+          ],
+        },
+        text: '{"id":"chatcmpl-test","choices":[{"message":{"content":"{\\"isBusiness\\":true}"}}]}',
+      };
+    };
+
+    const postedMessages: any[] = [];
+    const mockBridge: any = {
+      postMessage: async (msg: any) => {
+        postedMessages.push(msg);
+      },
+    };
+
+    const runId = await manager.runTests({
+      document: docWithLegacyModel,
+      scenarioIds: ['scenario-1'],
+      port: 8000,
+      bridge: mockBridge,
+    });
+
+    assert.ok(runId.startsWith('run-'));
+    const testResult = postedMessages.find(
+      (m) => m.type === 'TEST_RESULT_UPDATE' && m.payload.scenarioId === 'scenario-1' && m.payload.status !== 'running'
+    );
+    assert.ok(testResult);
+    assert.equal(testResult.payload.output, '{"isBusiness":true}');
+  });
+
+  it('should verify httpGetCheck rejects 404 and accepts 200 status strictly', async () => {
+    const manager = new AgentRunnerManager('/mock/extension');
+    const http = await import('node:http');
+
+    // Create a dummy HTTP server returning 404 for health
+    const server404 = http.createServer((_req, res) => {
+      res.writeHead(404);
+      res.end('Not Found');
+    });
+
+    await new Promise<void>((resolve) => server404.listen(8995, '127.0.0.1', () => resolve()));
+    const isHealthy404 = await manager.httpGetCheck(8995, '/health', 300);
+    server404.close();
+
+    assert.equal(isHealthy404, false);
+
+    // Create a dummy HTTP server returning 200 for health
+    const server200 = http.createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"status":"healthy"}');
+    });
+
+    await new Promise<void>((resolve) => server200.listen(8996, '127.0.0.1', () => resolve()));
+    const isHealthy200 = await manager.httpGetCheck(8996, '/health', 300);
+    server200.close();
+
+    assert.equal(isHealthy200, true);
+  });
+
+  it('should skip empty body responses and connect to valid candidate response in httpPostJson', async () => {
+    const manager = new AgentRunnerManager('/mock/extension');
+    const http = await import('node:http');
+
+    // Server returning valid chat completions JSON
+    const agentServer = http.createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        id: 'chatcmpl-test-123',
+        choices: [
+          {
+            index: 0,
+            message: { role: 'assistant', content: '{"isBusiness": true}' },
+            finish_reason: 'stop',
+          },
+        ],
+      }));
+    });
+
+    await new Promise<void>((resolve) => agentServer.listen(8997, '127.0.0.1', () => resolve()));
+
+    const result = await manager.httpPostJson(
+      8997,
+      '/v1/chat/completions',
+      { model: 'gemini-flash-latest', messages: [{ role: 'user', content: '1600 Amphitheatre' }] },
+      2000
+    );
+
+    agentServer.close();
+
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 200);
+    assert.ok(result.text.includes('isBusiness'));
+    assert.equal(result.data.choices[0].message.content, '{"isBusiness": true}');
+  });
 });
+
+
+

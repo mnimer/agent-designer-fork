@@ -50,6 +50,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
   // Selected target in the dropdown: either 'local' or the cloud target selected in the Code Generation tab
   const [selectedTarget, setSelectedTarget] = useState<'local' | 'cloud_run' | 'agent_engine'>('local');
   const [copiedCmd, setCopiedCmd] = useState(false);
+  const [copiedCurl, setCopiedCurl] = useState(false);
   const [deployStatus, setDeployStatus] = useState<'idle' | 'deploying' | 'success' | 'error'>('idle');
   const [deployLogs, setDeployLogs] = useState<string[]>([]);
   const [serviceUrl, setServiceUrl] = useState<string | null>(null);
@@ -184,6 +185,9 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
         // Stop currently active local runner
         bridge.postMessage({
           type: 'STOP_LOCAL_RUNNER',
+          payload: {
+            port: deployConfig.localPort || 8000,
+          },
         });
         setDeployStatus('idle');
         setDeployLogs((prev) => [...prev, '[Local Runner] Stopping runner process...']);
@@ -554,32 +558,65 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
             </div>
           </div>
 
-          {/* Active Service Endpoint Card */}
+          {/* Active Service Endpoint Card & Quick Test */}
           {serviceUrl && (
-            <div className="p-3 rounded-lg bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between font-sans">
-              <div className="flex items-center gap-2.5">
-                <div className="p-1.5 rounded-md bg-emerald-900/40 text-emerald-400">
-                  <CheckCircle2 className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-emerald-300">
-                    {isLocalSelected ? 'Active Local Invocation Endpoint' : 'Live Cloud Service Endpoint'}
+            <div className="space-y-2">
+              <div className="p-3 rounded-lg bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between font-sans">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 rounded-md bg-emerald-900/40 text-emerald-400">
+                    <CheckCircle2 className="w-4 h-4" />
                   </div>
-                  <div className="text-[11px] font-mono text-gray-300 mt-0.5">
-                    {serviceUrl}
+                  <div>
+                    <div className="text-xs font-bold text-emerald-300">
+                      {isLocalSelected ? 'Active Local Invocation Endpoint' : 'Live Cloud Service Endpoint'}
+                    </div>
+                    <div className="text-[11px] font-mono text-gray-300 mt-0.5">
+                      {serviceUrl}
+                    </div>
                   </div>
                 </div>
+
+                <a
+                  href={serviceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1 text-xs px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-colors"
+                >
+                  <span>Open Endpoint</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
               </div>
 
-              <a
-                href={serviceUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 text-xs px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-colors"
-              >
-                <span>Open Endpoint</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
+              {/* Quick cURL Test Snippet */}
+              <div className="p-2.5 rounded-lg bg-[#161b22] border border-[#30363d] space-y-1.5">
+                <div className="text-[10px] text-gray-400 uppercase font-bold tracking-wider flex items-center justify-between font-sans">
+                  <span>Quick Test via OpenAI Chat Completions (POST)</span>
+                  <button
+                    onClick={() => {
+                      const curlCmd = `curl -X POST ${serviceUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-flash-latest",\n    "messages": [{"role": "user", "content": "Hello world"}]\n  }'`;
+                      navigator.clipboard.writeText(curlCmd);
+                      setCopiedCurl(true);
+                      setTimeout(() => setCopiedCurl(false), 2000);
+                    }}
+                    className="flex items-center gap-1 text-[10px] text-gray-300 hover:text-white transition-colors cursor-pointer"
+                  >
+                    {copiedCurl ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-400">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>Copy cURL</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <pre className="text-[11px] font-mono text-gray-300 whitespace-pre-wrap selection:bg-blue-900 selection:text-white">
+                  {`curl -X POST ${serviceUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-flash-latest",\n    "messages": [{"role": "user", "content": "Hello world"}]\n  }'`}
+                </pre>
+              </div>
             </div>
           )}
         </div>

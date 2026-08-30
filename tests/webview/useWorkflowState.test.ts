@@ -33,7 +33,7 @@ describe('useWorkflowState Logic', () => {
           label: 'Primary Agent',
           agentKind: 'standard',
           standardConfig: {
-            model: 'gemini-2.5-flash',
+            model: 'gemini-flash-latest',
             systemInstruction: 'Test instruction',
             tools: [],
           },
@@ -74,7 +74,7 @@ describe('useWorkflowState Logic', () => {
         label: 'Secondary Assistant',
         agentKind: 'standard',
         standardConfig: {
-          model: 'gemini-2.5-flash',
+          model: 'gemini-flash-latest',
           systemInstruction: 'Secondary instruction',
           tools: [],
         },

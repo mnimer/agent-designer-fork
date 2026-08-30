@@ -818,6 +818,7 @@ export const SettingsPage: React.FC = () => {
                         onChange={(e) => handleUpdate({ defaultGcpRegion: e.target.value })}
                         className="w-full px-3 py-1.5 bg-[var(--vscode-canvas-bg)] border border-[var(--vscode-border)] rounded-lg text-xs text-[var(--vscode-text-primary)] focus:outline-none cursor-pointer"
                       >
+                        <option value="global">global (Vertex AI Global Endpoint)</option>
                         <option value="us-central1">us-central1 (Iowa)</option>
                         <option value="us-east1">us-east1 (South Carolina)</option>
                         <option value="us-west1">us-west1 (Oregon)</option>

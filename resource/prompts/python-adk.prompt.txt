@@ -12,18 +12,79 @@ based on the provided react-flow JSON that describes the Agent Workflow.
 
 ### REQUIREMENTS:
 1. **Google GenAI SDK & Authentication**:
-   - Use the modern `from google import genai` and `from google.genai import types` package (not deprecated `google-generativeai`).
-   - Authentication: Initialize `client = genai.Client(api_key=os.getenv("GEMINI_API_KEY")) if os.getenv("GEMINI_API_KEY") else genai.Client()`. If `GEMINI_API_KEY` is not present, the client will automatically use Google Application Default Credentials (ADC) without error.
+   - Use the modern `from google import genai` and `from google.genai import types` package (never import deprecated `google.generativeai` or `google.api_core`).
+   - For error handling, use `from google.genai.errors import APIError` or standard `except Exception as e:`. DO NOT import from `google.api_core.exceptions`.
+   - Client Initialization & Fallback Pattern:
+     ```python
+     import os
+     from google import genai
+     from google.genai import types
+     from google.genai.errors import APIError
+
+     class AgentWorkflow:
+         def __init__(self, model_name: str = "gemini-flash-latest"):
+             self.model_name = model_name
+             self.use_vertex = False
+             self._init_client()
+
+         def _init_client(self, use_vertex: bool = False):
+             self.use_vertex = use_vertex
+             api_key = os.getenv("GEMINI_API_KEY")
+             if api_key and api_key.strip() and not use_vertex:
+                 self.client = genai.Client(api_key=api_key.strip())
+             else:
+                 self.use_vertex = True
+                 project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
+                 if not project:
+                     try:
+                         import subprocess
+                         project = subprocess.check_output(["gcloud", "config", "get-value", "project"], text=True).strip()
+                     except Exception:
+                         pass
+                 location = os.getenv("GOOGLE_CLOUD_LOCATION") or os.getenv("GOOGLE_CLOUD_REGION") or "global"
+                 self.client = genai.Client(vertexai=True, project=project or None, location=location)
+
+         def generate(self, user_prompt: str):
+             config = types.GenerateContentConfig(
+                 system_instruction=self.system_prompt,
+                 temperature=0.7,
+                 tools=self.tools if hasattr(self, 'tools') and self.tools else None,
+             )
+             try:
+                 # When tools are enabled, use client.chats for seamless Automatic Function Calling (AFC)
+                 if hasattr(self, 'tools') and self.tools:
+                     chat = self.client.chats.create(model=self.model_name, config=config)
+                     return chat.send_message(user_prompt)
+                 else:
+                     return self.client.models.generate_content(
+                         model=self.model_name,
+                         contents=user_prompt,
+                         config=config,
+                     )
+             except Exception as e:
+                 err_str = str(e)
+                 if ("API_KEY_INVALID" in err_str or "400" in err_str or "403" in err_str or "not found" in err_str.lower()) and not self.use_vertex:
+                     self._init_client(use_vertex=True)
+                     return self.generate(user_prompt)
+                 raise e
+     ```
+   - SDK Calling Conventions:
+     * Use `client.chats.create(model=self.model_name, config=config)` and `chat.send_message(user_prompt)` when tools are attached (to avoid AFC warnings and enable automatic tool loop).
+     * Use `client.models.generate_content(model=self.model_name, contents=user_input, config=config)` for stateless tool-less generation.
+     * The argument name is `model` (NOT `model_name`).
+     * Use `config=types.GenerateContentConfig(system_instruction=self.system_prompt, response_mime_type="application/json", response_schema=ResponseSchema, temperature=0.7)`.
+     * For structured outputs, retrieve `response.parsed` (which returns the validated Pydantic model instance) or `response.text`.
 2. **Architecture**:
    - `agent.py`: Contains the `MultiAgentWorkflow` or Agent class orchestrating model configuration, system instructions, tools, memory/session checkpointing, and structured output formatting.
    - `tools/*.py`: Contains all tool functions (e.g., Google Search grounding configurations, custom Python functions, REST clients, MCP connections). Group tools by source in their own file. For instance all of the google drive tools in one file. 
-   - `server.py`: FastAPI server running with Uvicorn.
-      * Dynamic Port: reads `port = int(os.environ.get("PORT", 8000))` and executes `uvicorn.run(app, host="0.0.0.0", port=port)` in `if __name__ == "__main__":`.
-      * Endpoints:
-        - `POST /v1/agents/invoke`: Accepts `{"prompt": "string"}` or `{"input": "string"}` and returns `{"response": "string"}` with agent output.
-        - `GET /v1/agents/invoke`: Returns `{"status": "ready", "message": "Agent is running. Send an HTTP POST request with JSON body: {\"prompt\": \"your text\"} to invoke."}`.
-        - `GET /` and `GET /health`: Returns `{"status": "healthy", "agent": "name", "version": "1.0.0"}`.
-        - `POST /v1/chat/completions`: OpenAI-compatible completions endpoint.
+   - `server.py`: FastAPI server running with Uvicorn, providing OpenAI API and conversation compliant endpoints.
+       * Standard Library Imports: ALWAYS explicitly include `import os`, `import time`, `import uuid`, `import json`. NEVER call `os.time()` (`os` module has no `time` attribute; always use `time.time()` for timestamps).
+       * Dynamic Port: reads `port = int(os.environ.get("PORT", 8000))` and executes `uvicorn.run(app, host="0.0.0.0", port=port)` in `if __name__ == "__main__":`.
+       * Endpoints:
+         - `POST /v1/chat/completions`: Standard OpenAI Chat Completions API accepting `{"model": Optional[str], "messages": [{"role": str, "content": str}], "temperature": Optional[float], "stream": Optional[bool]}` and returning standard OpenAI `ChatCompletionResponse` (`id=f"chatcmpl-{uuid.uuid4()}"`, `created=int(time.time())`, `model=...`, `choices=[{"index": 0, "message": {"role": "assistant", "content": ...}, "finish_reason": "stop"}]`). The server MUST accept any model string or omitted model and always execute the workflow using the agent's configured model (never return 400 for model mismatches).
+         - `POST /conversation`: Conversational endpoint accepting `{"prompt": Optional[str], "message": Optional[str], "messages": Optional[list]}` returning `{"id": f"conv-{uuid.uuid4()}", "created": int(time.time()), "response": ..., "content": ...}` or standard completion.
+         - `GET /v1/models`: OpenAI-compatible model listing endpoint returning available workflow models.
+         - `GET /` and `GET /health`: Standard health check endpoints returning `{"status": "healthy", "model": "...", "version": "1.0.0"}`.
    - `main.py`: Interactive CLI runner and turn execution harness with streaming token outputs.
    - `test_pipeline.py`: Comprehensive `pytest` test suite executing all test scenarios defined in the trigger nodes with assertions against expected patterns or structured schemas.
    - `requirements.txt`: Pinned production dependencies (`google-genai>=1.0.0`, `fastapi>=0.110.0`, `uvicorn>=0.28.0`, `pytest>=8.0.0`, `pydantic>=2.0.0`, `python-dotenv>=1.0.0`).

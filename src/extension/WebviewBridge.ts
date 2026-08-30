@@ -69,7 +69,9 @@ export class WebviewBridge implements vscode.Disposable {
     }
     try {
       this.outputChannel?.appendLine(`[WebviewBridge:SEND] Sending to webview: ${JSON.stringify(message.type)}`);
-      return await this.panel.webview.postMessage(message);
+      // Sanitize payload to guarantee plain JSON over VS Code's internal ExtensionHost IPC
+      const safeMessage = JSON.parse(JSON.stringify(message));
+      return await this.panel.webview.postMessage(safeMessage);
     } catch {
       // Panel was disposed or unavailable during async post
       return false;

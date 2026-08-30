@@ -88,7 +88,7 @@ function normalizeLoadedNodes(loadedNodes: any[]): Node<any>[] {
         id: n.id,
         label: data.label || 'Agent',
         agentKind: data.agentKind || 'standard',
-        model: data.model || data.standardConfig?.model || 'gemini-2.5-flash',
+        model: data.model || data.standardConfig?.model || 'gemini-flash-latest',
         description: data.description || '',
         systemPrompt: data.systemPrompt || data.standardConfig?.systemInstruction || '',
         tools: data.tools || data.standardConfig?.tools || [],
@@ -127,18 +127,22 @@ function normalizeLoadedEdges(loadedEdges: any[]): Edge[] {
  * Computes the target output folder from the .agent file path or filename.
  * It produces a subfolder with the same root name as the .agent file.
  * e.g., 'test/agents/myagent.agent' -> 'test/agents/myagent/'
+/**
+ * Derives a target output folder relative to the .agent file,
+ * where the folder name matches the file name without .agent extension.
+ * e.g., "agents/scratch/scratch-agent.agent" -> "./scratch-agent/"
+ * e.g., "sample_support.agent" -> "./sample_support/"
  *
- * @param filePathOrName - File path or filename (e.g. test/agents/myagent.agent)
- * @returns Derived target directory path ending with a trailing slash
+ * @param filePathOrName - File path or filename (e.g. agents/scratch/scratch-agent.agent)
+ * @returns Derived relative target directory path (e.g. ./scratch-agent/)
  */
 export const computeTargetFolder = (filePathOrName: string): string => {
-  if (!filePathOrName) return 'workflow/';
-  let cleaned = filePathOrName.replace(/\\/g, '/');
-  cleaned = cleaned.replace(/\.agent$/i, '');
-  if (!cleaned.endsWith('/')) {
-    cleaned += '/';
-  }
-  return cleaned;
+  if (!filePathOrName) return './workflow/';
+  const normalized = filePathOrName.replace(/\\/g, '/');
+  const filename = normalized.split('/').filter(Boolean).pop() || normalized;
+  let cleaned = filename.replace(/\.agent$/i, '');
+  if (!cleaned) cleaned = 'workflow';
+  return `./${cleaned}/`;
 };
 
 function FlowCanvas() {
@@ -165,7 +169,7 @@ function FlowCanvas() {
       config: {
         framework: 'google_adk',
         language: 'python',
-        outputFolder: computeTargetFolder('workflow.agent'),
+        outputFolder: './src/agents/',
         deploymentTarget: 'agent_engine',
         includeTests: true,
         includeDocker: false,
@@ -286,7 +290,7 @@ function FlowCanvas() {
   const [config, setConfig] = useState<GenerationConfig>({
     framework: 'google_adk',
     language: 'python',
-    outputFolder: computeTargetFolder('workflow.agent'),
+    outputFolder: './src/agents/',
     deploymentTarget: 'agent_engine',
     includeTests: true,
     includeDocker: false,
@@ -696,7 +700,8 @@ function FlowCanvas() {
         lastSentJsonRef.current = loadedJson;
       }
 
-      const targetFolder = computeTargetFolder(payload.filePath || (doc.name ? doc.name + '.agent' : 'workflow.agent'));
+      const docMetadata = doc.metadata || {};
+      const targetFolder = (docMetadata as any).outputFolder || computeTargetFolder(payload.filePath || (doc.name ? doc.name + '.agent' : 'workflow.agent'));
       setConfig((prev) => ({
         ...prev,
         framework: doc.framework === 'google-adk' ? 'google_adk' : (doc.framework as any) || prev.framework,
@@ -721,6 +726,9 @@ function FlowCanvas() {
       if (payload.success && payload.files && payload.files.length > 0) {
         setGeneratedFiles(payload.files);
         setHasGeneratedCode(true);
+      } else {
+        setGeneratedFiles([]);
+        setHasGeneratedCode(false);
       }
     });
 
@@ -783,6 +791,7 @@ function FlowCanvas() {
       nodes: documentNodes,
       edges: documentEdges,
       metadata: {
+        outputFolder: config.outputFolder,
         updatedAt: new Date().toISOString(),
       },
     };
@@ -1614,10 +1623,11 @@ function FlowCanvas() {
         data: e.data ? { ...e.data } : undefined,
       })),
       metadata: {
+        outputFolder: config.outputFolder,
         updatedAt: new Date().toISOString(),
       },
     };
-  }, [nodes, edges, config.framework, config.language, fileTabs, activeTabId]);
+  }, [nodes, edges, config.framework, config.language, config.outputFolder, fileTabs, activeTabId]);
 
   // Trigger Code Generation via LLM in Extension Host
   const handleTriggerGenerate = useCallback(() => {
@@ -1633,6 +1643,9 @@ function FlowCanvas() {
       }
     }
 
+    // Immediately clear all existing generated files and tabs so the user sees generation is running
+    setGeneratedFiles([]);
+    setHasGeneratedCode(false);
     setIsGenerating(true);
 
     bridge.postMessage({

@@ -14,7 +14,7 @@
  * @author Mike Nimer <mikenimer@google.com>
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   WebviewToExtensionMessage,
   ExtensionToWebviewMessage,
@@ -207,10 +207,13 @@ export function useWebviewBridge(): UseWebviewBridgeReturn {
     [postMessage, subscribe]
   );
 
-  return {
-    postMessage,
-    subscribe,
-    sendRequestWithReply,
-    isMockMode,
-  };
+  return useMemo(
+    () => ({
+      postMessage,
+      subscribe,
+      sendRequestWithReply,
+      isMockMode,
+    }),
+    [postMessage, subscribe, sendRequestWithReply, isMockMode]
+  );
 }

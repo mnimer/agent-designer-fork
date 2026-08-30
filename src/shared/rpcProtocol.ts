@@ -55,6 +55,7 @@ export type WebviewToExtensionMessage =
         document: AgentWorkflowDocument;
         testScenarioIds?: string[];
         targetDirectory?: string;
+        port?: number;
       };
     }
   | {
@@ -189,6 +190,7 @@ export type ExtensionToWebviewMessage =
       type: 'EXECUTION_LOG';
       payload: {
         runId: string;
+        scenarioId?: string;
         timestamp: string;
         level: 'info' | 'warn' | 'error';
         message: string;

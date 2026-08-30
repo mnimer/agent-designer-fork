@@ -37,7 +37,7 @@ describe('Standard Agent Inspector Logic & Configuration', () => {
   it('should update agent parameters immutably', () => {
     const initialAgent: AgentNodeData = {
       label: 'Analyst Agent',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-flash-latest',
       temperature: 0.5,
       memoryType: 'none',
       tools: [],
@@ -45,13 +45,13 @@ describe('Standard Agent Inspector Logic & Configuration', () => {
 
     const updatedAgent: AgentNodeData = {
       ...initialAgent,
-      model: 'gemini-2.5-pro',
+      model: 'gemini-pro-latest',
       temperature: 0.8,
       memoryType: 'postgres',
       tools: [AVAILABLE_TOOLS[0]],
     };
 
-    assert.equal(updatedAgent.model, 'gemini-2.5-pro');
+    assert.equal(updatedAgent.model, 'gemini-pro-latest');
     assert.equal(updatedAgent.temperature, 0.8);
     assert.equal(updatedAgent.memoryType, 'postgres');
     assert.equal(updatedAgent.tools?.length, 1);

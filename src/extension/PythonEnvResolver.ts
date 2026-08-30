@@ -158,6 +158,41 @@ export class PythonEnvResolver {
    * @returns ResolvedPythonEnv pointing to an isolated virtual environment
    */
   public async ensureVirtualEnvironment(targetDir?: string): Promise<ResolvedPythonEnv> {
+    // 1. Check if target directory already has an isolated virtual environment
+    if (targetDir) {
+      const targetVenvBin = this.getPythonBinPath(path.join(targetDir, '.venv'));
+      if (this.isFileExecutable(targetVenvBin)) {
+        const version = await this.queryPythonVersion(targetVenvBin);
+        return {
+          path: targetVenvBin,
+          isVirtualEnv: true,
+          version,
+          source: 'workspace-folder',
+        };
+      }
+    }
+
+    // 2. If target directory is specified, create .venv directly inside it for full agent isolation
+    if (targetDir && fs.existsSync(targetDir)) {
+      const venvDir = path.join(targetDir, '.venv');
+      const venvBin = this.getPythonBinPath(venvDir);
+      const systemPython = process.platform === 'win32' ? 'python.exe' : 'python3';
+
+      try {
+        await execFileAsync(systemPython, ['-m', 'venv', venvDir]);
+        if (this.isFileExecutable(venvBin)) {
+          const version = await this.queryPythonVersion(venvBin);
+          return {
+            path: venvBin,
+            isVirtualEnv: true,
+            version,
+            source: 'workspace-folder',
+          };
+        }
+      } catch {}
+    }
+
+    // 3. Fallback to existing workspace virtual environment or system interpreter
     const current = await this.resolvePythonEnvironment(targetDir);
     if (current.isVirtualEnv) {
       return current;
@@ -198,11 +233,10 @@ export class PythonEnvResolver {
    * are installed within the target virtual environment.
    *
    * Logic Flow:
-   * 1. Tests if core dependencies (fastapi, uvicorn) can be imported by the python binary.
+   * 1. Tests if core dependencies (fastapi, uvicorn, google-genai, pydantic) can be imported.
    * 2. If import succeeds, returns immediately to maintain low latency on startup.
-   * 3. If import fails, checks for 'requirements.txt' in target directory and runs 'pip install -r requirements.txt'.
-   * 4. If requirements.txt is absent, installs core fallback packages (fastapi, uvicorn, google-genai, pydantic).
-   * 5. Streams real-time progress logs via the optional onLog callback.
+   * 3. If import fails, runs 'pip install' with requirements.txt and core framework packages.
+   * 4. Streams real-time progress logs via the optional onLog callback.
    *
    * @param pythonBin Path to python binary inside virtual environment
    * @param targetDir Target workspace or agent directory
@@ -214,44 +248,59 @@ export class PythonEnvResolver {
     onLog?: (msg: string, stream?: 'stdout' | 'stderr' | 'system') => Promise<void> | void
   ): Promise<void> {
     try {
-      // Step 1: Quick import check
-      await execFileAsync(pythonBin, ['-c', 'import fastapi, uvicorn'], { cwd: targetDir });
+      // Step 1: Quick import check for all core packages
+      await execFileAsync(pythonBin, ['-c', 'import fastapi, uvicorn, pydantic, google.genai'], { cwd: targetDir });
       return; // All required packages are already installed
     } catch {
-      // Step 2: Dependencies need to be installed
+      // Step 2: Check if target directory requires dependencies
       const reqPath = path.join(targetDir, 'requirements.txt');
+      const serverPyPath = path.join(targetDir, 'server.py');
       const hasReqs = fs.existsSync(reqPath);
+      let needsFastApi = false;
+      if (fs.existsSync(serverPyPath)) {
+        try {
+          const content = fs.readFileSync(serverPyPath, 'utf-8');
+          needsFastApi = content.includes('fastapi') || content.includes('uvicorn');
+        } catch {}
+      }
+
+      if (!hasReqs && !needsFastApi) {
+        return;
+      }
 
       if (onLog) {
         await onLog(
           hasReqs
             ? `[Local Runner] Installing dependencies from requirements.txt into .venv...`
-            : `[Local Runner] Installing core dependencies (fastapi, uvicorn, google-genai) into .venv...`,
+            : `[Local Runner] Installing core dependencies (fastapi, uvicorn, google-genai, pydantic) into .venv...`,
           'system'
         );
       }
 
       try {
         if (hasReqs) {
-          await execFileAsync(pythonBin, ['-m', 'pip', 'install', '-r', reqPath], { cwd: targetDir });
+          await execFileAsync(
+            pythonBin,
+            ['-m', 'pip', 'install', '-r', reqPath, 'fastapi', 'uvicorn', 'google-genai', 'pydantic', 'python-dotenv'],
+            { cwd: targetDir }
+          );
         } else {
           await execFileAsync(
             pythonBin,
-            ['-m', 'pip', 'install', 'fastapi', 'uvicorn', 'google-genai', 'pydantic'],
+            ['-m', 'pip', 'install', 'fastapi', 'uvicorn', 'google-genai', 'pydantic', 'python-dotenv'],
             { cwd: targetDir }
           );
         }
 
         if (onLog) {
-          await onLog(`[Local Runner] Dependencies installed successfully.`, 'system');
+          await onLog(`[Local Runner] Dependencies installed successfully into .venv.`, 'system');
         }
       } catch (installErr: any) {
+        const errorMsg = `[Local Runner Warning] Failed to install dependencies via pip: ${installErr?.message || installErr}`;
         if (onLog) {
-          await onLog(
-            `[Local Runner Warning] Failed to install dependencies via pip: ${installErr?.message || installErr}`,
-            'stderr'
-          );
+          await onLog(errorMsg, 'stderr');
         }
+        throw new Error(errorMsg);
       }
     }
   }

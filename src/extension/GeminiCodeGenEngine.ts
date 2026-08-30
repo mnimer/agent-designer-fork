@@ -17,8 +17,20 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
-import { GoogleGenAI } from '@google/genai';
 import { GeneratedFile, CodeGenRequest, CodeGenResult } from '../shared/codegen/types';
+
+export interface AssertionEvaluationRequest {
+  inputQuery: string;
+  expectedCriteria: string;
+  actualOutput: string;
+  model?: string;
+  apiKey?: string;
+}
+
+export interface AssertionEvaluationResult {
+  passed: boolean;
+  reason: string;
+}
 
 export class GeminiCodeGenEngine {
   private extensionPath: string;
@@ -144,6 +156,19 @@ export class GeminiCodeGenEngine {
     }
   }
 
+  private readonly fileArraySchema = {
+    type: 'ARRAY',
+    items: {
+      type: 'OBJECT',
+      properties: {
+        path: { type: 'STRING' },
+        description: { type: 'STRING' },
+        content: { type: 'STRING' },
+      },
+      required: ['path', 'description', 'content'],
+    },
+  };
+
   /**
    * Calls Gemini REST API using an API key.
    *
@@ -159,6 +184,7 @@ export class GeminiCodeGenEngine {
       generationConfig: {
         temperature: 0.2,
         responseMimeType: 'application/json',
+        responseSchema: this.fileArraySchema,
       },
     };
 
@@ -197,28 +223,9 @@ export class GeminiCodeGenEngine {
       return this.callVertexAiGemini(prompt, model, adcToken, projectId);
     }
 
-    // 2. Try initializing GoogleGenAI with default environment
-    try {
-      const ai = new GoogleGenAI({});
-      const response = await ai.models.generateContent({
-        model: model,
-        contents: prompt,
-        config: {
-          temperature: 0.2,
-          responseMimeType: 'application/json',
-        },
-      });
-
-      if (response && response.text) {
-        return this.parseGeminiResponse(response.text);
-      }
-    } catch (sdkErr: any) {
-      throw new Error(
-        `Gemini ADC authentication failed: ${sdkErr?.message}. Please run 'gcloud auth application-default login' and ensure a project is set via 'gcloud config set project <PROJECT_ID>'.`
-      );
-    }
-
-    throw new Error('Failed to generate code via Gemini Application Default Credentials.');
+    throw new Error(
+      `Gemini ADC authentication failed: Unable to obtain Google Cloud access token or project ID. Please run 'gcloud auth application-default login' and ensure a project is set via 'gcloud config set project <PROJECT_ID>'.`
+    );
   }
 
   /**
@@ -235,10 +242,9 @@ export class GeminiCodeGenEngine {
     token: string,
     projectId: string
   ): Promise<GeneratedFile[]> {
-    const location = process.env.GOOGLE_CLOUD_REGION || process.env.CLOUD_ML_REGION || 'us-central1';
-    // Map developer model names to Vertex AI model names
-    const vertexModel = model === 'gemini-flash-latest' ? 'gemini-2.5-flash' : model;
-    const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${vertexModel}:generateContent`;
+    const location = process.env.GOOGLE_CLOUD_LOCATION || process.env.GOOGLE_CLOUD_REGION || process.env.CLOUD_ML_REGION || 'global';
+    const host = location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`;
+    const url = `https://${host}/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
 
     const requestBody = {
       contents: [
@@ -250,6 +256,7 @@ export class GeminiCodeGenEngine {
       generationConfig: {
         temperature: 0.2,
         responseMimeType: 'application/json',
+        responseSchema: this.fileArraySchema,
       },
     };
 
@@ -334,7 +341,8 @@ export class GeminiCodeGenEngine {
   }
 
   /**
-   * Strips markdown code fences (```json ... ```) and parses the JSON response into GeneratedFile array.
+   * Strips markdown code fences and parses the JSON response into GeneratedFile array.
+   * If direct JSON.parse encounters syntax errors, runs a resilient extractor.
    *
    * @param rawResponse Raw string returned from Gemini LLM
    * @returns Array of GeneratedFile objects conforming to { path, description, content }
@@ -359,9 +367,277 @@ export class GeminiCodeGenEngine {
         description: item.description || '',
         content: item.content || '',
       }));
-    } catch (err: any) {
-      throw new Error(`Failed to parse structured JSON response from Gemini: ${err?.message}\nRaw response:\n${rawResponse.substring(0, 500)}`);
+    } catch {
+      // Attempt resilient recovery parser
+      return this.robustExtractFiles(clean);
     }
   }
+
+  /**
+   * Resiliently extracts GeneratedFile items if JSON.parse fails due to character escaping,
+   * unescaped control characters, or partial array boundaries.
+   *
+   * @param raw Raw response string
+   * @returns Array of parsed GeneratedFile objects
+   */
+  public robustExtractFiles(raw: string): GeneratedFile[] {
+    // 1. Try stripping unescaped control characters and trailing commas
+    try {
+      const sanitized = raw
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+        .replace(/,\s*([\]}])/g, '$1');
+      const parsed = JSON.parse(sanitized);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((item: any) => ({
+          path: item.path || item.name || 'unnamed_file.py',
+          name: item.path || item.name || 'unnamed_file.py',
+          description: item.description || '',
+          content: item.content || '',
+        }));
+      }
+    } catch {
+      // Proceed to block regex parsing
+    }
+
+    // 2. Regex-based object extraction for file entries in array
+    const files: GeneratedFile[] = [];
+    const fileBlockRegex = /\{\s*"path"\s*:\s*"([^"]+)"\s*,\s*"description"\s*:\s*"([^"]*)"\s*,\s*"content"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g;
+    let match: RegExpExecArray | null;
+    while ((match = fileBlockRegex.exec(raw)) !== null) {
+      try {
+        const filePath = match[1];
+        const description = match[2];
+        const unescapedContent = JSON.parse(`"${match[3]}"`);
+        files.push({
+          path: filePath,
+          name: filePath,
+          description,
+          content: unescapedContent,
+        });
+      } catch {
+        // continue
+      }
+    }
+
+    if (files.length > 0) {
+      return files;
+    }
+
+    throw new Error(
+      `Failed to parse structured JSON response from Gemini. Raw response:\n${raw.substring(0, 500)}`
+    );
+  }
+
+  private readonly assertionSchema = {
+    type: 'OBJECT',
+    properties: {
+      passed: { type: 'BOOLEAN' },
+      reason: { type: 'STRING' },
+    },
+    required: ['passed', 'reason'],
+  };
+
+  /**
+   * Evaluates an agent test execution result using Gemini as an LLM judge.
+   * Compares the input query, expected criteria/outcome, and actual output.
+   *
+   * @param request AssertionEvaluationRequest
+   * @returns AssertionEvaluationResult containing pass/fail and explanation
+   */
+  public async evaluateAssertion(request: AssertionEvaluationRequest): Promise<AssertionEvaluationResult> {
+    const { inputQuery, expectedCriteria, actualOutput, model = 'gemini-flash-latest' } = request;
+    const apiKey = request.apiKey || process.env.GEMINI_API_KEY || '';
+
+    const prompt = `You are an automated QA test evaluator for an AI agent.
+Evaluate whether the agent's actual output satisfies the test's expected outcome given the input query.
+
+Input Query:
+"${inputQuery}"
+
+Expected Outcome / Criteria:
+"${expectedCriteria}"
+
+Actual Agent Output:
+"${actualOutput}"
+
+Instructions:
+1. If the criteria specifies structured data or JSON fields (e.g., {"isBusiness": true}), verify that the actual output contains or satisfies those data requirements.
+2. If the criteria specifies semantic behavior, verify whether the actual output satisfies that intent.
+3. If the actual output is an error or fails the criteria, set passed=false.
+4. Set "passed": true or false.
+5. Provide a concise explanation in "reason" (1-2 sentences).`;
+
+    try {
+      if (apiKey) {
+        try {
+          return await this.callGeminiAssertionWithApiKey(prompt, apiKey, model);
+        } catch {
+          // Fall through to ADC
+        }
+      }
+
+      return await this.callGeminiAssertionWithAdc(prompt, model);
+    } catch {
+      // Graceful fallback to deterministic heuristic if LLM judge is offline
+      return this.heuristicEvaluateAssertion(expectedCriteria, actualOutput);
+    }
+  }
+
+  private async callGeminiAssertionWithApiKey(
+    prompt: string,
+    apiKey: string,
+    model: string
+  ): Promise<AssertionEvaluationResult> {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const requestBody = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+        responseSchema: this.assertionSchema,
+      },
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Gemini API error (${response.status}): ${errText}`);
+    }
+
+    const data: any = await response.json();
+    const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!candidateText) {
+      throw new Error('Gemini API returned empty candidate content.');
+    }
+
+    const parsed = JSON.parse(candidateText.trim().replace(/^```json\s*/, '').replace(/\s*```$/, ''));
+    return {
+      passed: Boolean(parsed.passed),
+      reason: parsed.reason || (parsed.passed ? 'Assertion passed.' : 'Assertion failed.'),
+    };
+  }
+
+  private async callGeminiAssertionWithAdc(
+    prompt: string,
+    model: string
+  ): Promise<AssertionEvaluationResult> {
+    const adcToken = this.getGCloudAccessToken();
+    const projectId = this.getGCloudProjectId();
+
+    if (!adcToken || !projectId) {
+      throw new Error('Missing ADC credentials or project ID.');
+    }
+
+    const location =
+      process.env.GOOGLE_CLOUD_LOCATION ||
+      process.env.GOOGLE_CLOUD_REGION ||
+      process.env.CLOUD_ML_REGION ||
+      'global';
+    const host = location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`;
+    const url = `https://${host}/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
+
+    const requestBody = {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+        responseSchema: this.assertionSchema,
+      },
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${adcToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Vertex AI Gemini API error (${response.status}): ${errText}`);
+    }
+
+    const data: any = await response.json();
+    const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!candidateText) {
+      throw new Error('Vertex AI Gemini returned empty candidate content.');
+    }
+
+    const parsed = JSON.parse(candidateText.trim().replace(/^```json\s*/, '').replace(/\s*```$/, ''));
+    return {
+      passed: Boolean(parsed.passed),
+      reason: parsed.reason || (parsed.passed ? 'Assertion passed.' : 'Assertion failed.'),
+    };
+  }
+
+  /**
+   * Deterministic fallback when Gemini LLM judge is offline.
+   *
+   * @param expectedCriteria Expected output or criteria
+   * @param actualOutput Actual agent output
+   * @returns AssertionEvaluationResult
+   */
+  public heuristicEvaluateAssertion(
+    expectedCriteria: string,
+    actualOutput: string
+  ): AssertionEvaluationResult {
+    const exp = expectedCriteria.trim().toLowerCase();
+    const act = actualOutput.toLowerCase();
+
+    // 1. Check direct substring inclusion
+    if (act.includes(exp)) {
+      return { passed: true, reason: `Output satisfies expected criteria "${expectedCriteria}".` };
+    }
+
+    // 2. Check JSON key/value matching with case-insensitivity
+    try {
+      const parsed = JSON.parse(actualOutput);
+      const kvMatch = exp.match(/([a-zA-Z0-9_]+)\s*[:=]\s*(true|false|[-0-9.]+|"[^"]*"|'[^']*')/i);
+      if (kvMatch && parsed && typeof parsed === 'object') {
+        const targetKey = kvMatch[1].toLowerCase();
+        const valStr = kvMatch[2];
+        let expectedVal: any = valStr;
+        if (valStr.toLowerCase() === 'true') expectedVal = true;
+        else if (valStr.toLowerCase() === 'false') expectedVal = false;
+        else if (!isNaN(Number(valStr))) expectedVal = Number(valStr);
+        else expectedVal = valStr.replace(/^["']|["']$/g, '');
+
+        const matchingKey = Object.keys(parsed).find((k) => k.toLowerCase() === targetKey);
+        if (matchingKey !== undefined) {
+          const actualVal = parsed[matchingKey];
+          const match =
+            actualVal === expectedVal ||
+            String(actualVal).toLowerCase() === String(expectedVal).toLowerCase();
+          if (match) {
+            return { passed: true, reason: `Parsed JSON field "${matchingKey}" matches expected value.` };
+          } else {
+            return {
+              passed: false,
+              reason: `Expected field "${matchingKey}" to be ${JSON.stringify(expectedVal)}, but got ${JSON.stringify(actualVal)}.`,
+            };
+          }
+        }
+      }
+    } catch {}
+
+    return {
+      passed: false,
+      reason: `Expected output to contain or satisfy "${expectedCriteria}".`,
+    };
+  }
 }
+
+
 

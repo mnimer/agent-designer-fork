@@ -44,7 +44,7 @@
       "data": {
         "label": "Triage Specialist",
         "description": "Analyzes inbound support questions and grounds answers with search",
-        "model": "gemini-2.5-flash",
+        "model": "gemini-flash-latest",
         "systemPrompt": "You are a senior customer support triage specialist. Analyze the user request, ground answers using official documentation, and format output cleanly.",
         "temperature": 0.4,
         "tools": [

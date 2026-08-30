@@ -439,8 +439,8 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
 
           {/* RIGHT 2/3: Code Preview Editor */}
           <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117] border border-[#30363d] rounded-xl overflow-hidden shadow-xl">
-            {/* File Tabs (Only shown if generatedFiles exists) */}
-            {generatedFiles.length > 0 && (
+            {/* File Tabs (Only shown if generatedFiles exists and not actively generating) */}
+            {!isGenerating && generatedFiles.length > 0 && (
               <div className="flex items-center justify-between px-3 bg-[#161b22] border-b border-[#30363d] overflow-x-auto shrink-0 h-9">
                 <div className="flex items-center gap-1">
                   {generatedFiles.map((file, idx) => (
@@ -492,9 +492,15 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
             {/* Code Content View */}
             <div className="flex-1 p-4 overflow-auto bg-[#0d1117] font-mono text-xs text-[#c9d1d9] select-text leading-relaxed relative">
               <div className="absolute top-2 right-3 text-[10px] text-gray-400 uppercase font-bold tracking-wider pointer-events-none">
-                Preview
+                {isGenerating ? 'Generating' : 'Preview'}
               </div>
-              {generatedFiles.length > 0 && currentFile ? (
+              {isGenerating ? (
+                <div className="h-full flex flex-col items-center justify-center text-blue-400 gap-3 py-12">
+                  <RefreshCw className="w-8 h-8 animate-spin text-blue-400" />
+                  <span className="text-sm font-semibold text-gray-200">Generating code with Gemini...</span>
+                  <span className="text-xs text-gray-400 font-sans">Cleaning target directory & synthesizing agent files</span>
+                </div>
+              ) : generatedFiles.length > 0 && currentFile ? (
                 <div className="relative">
                   <div className="text-[10px] text-gray-400 mb-2 pb-1 border-b border-[#21262d] flex items-center justify-between font-sans">
                     <span>{currentFile.description}</span>
@@ -531,6 +537,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
           agents={agents}
           config={config}
           document={workflowDoc}
+          onNavigateToDeployment={() => setActiveTab('deployment')}
         />
       </div>
     </div>

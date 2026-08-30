@@ -52,7 +52,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   defaultSubAgentPattern: 'parallel',
   defaultMaxIterations: 10,
   defaultGcpProject: 'my-gcp-ai-agents',
-  defaultGcpRegion: 'us-central1',
+  defaultGcpRegion: 'global',
   autoLayoutDirection: 'TB',
   snapToGrid: true,
   showMiniMap: true,
