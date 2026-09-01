@@ -4,7 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node", "vscode"],
+    "types": ["node", "vscode", "react", "react-dom"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -12,7 +12,8 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "vscode": ["tests/mocks/vscode.ts"]
     }
   },
   "include": ["src/**/*", "vitest.config.ts", "vite.config.ts"],

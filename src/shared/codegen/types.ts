@@ -11,6 +11,7 @@ import { AgentWorkflowDocument, FrameworkTarget, LanguageTarget } from '../types
 
 export interface GeneratedFile {
   path: string;
+  name?: string;
   description?: string;
   content: string;
   language?: string;
@@ -20,6 +21,7 @@ export interface CodeGenRequest {
   document: AgentWorkflowDocument;
   framework?: FrameworkTarget;
   language?: LanguageTarget;
+  deploymentTarget?: 'cloudrun' | 'agent-engine' | string;
   apiKey?: string;
   model?: string;
 }

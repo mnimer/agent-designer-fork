@@ -112,7 +112,7 @@ export function useWorkflowState(options?: UseWorkflowStateOptions): UseWorkflow
   const onNodesChange = useCallback(
     (changes: any[]) => {
       const prev = docRef.current;
-      const nextNodes = applyNodeChanges(changes, prev.nodes as any) as WorkflowNode[];
+      const nextNodes = applyNodeChanges(changes, prev.nodes as any) as unknown as WorkflowNode[];
       const hasSignificantChange = changes.some(
         (c) => c.type === 'position' || c.type === 'remove'
       );

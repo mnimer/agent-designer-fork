@@ -205,7 +205,7 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
       if (payload.scenarioId && payload.message) {
         setLatestLogByScenario((prev) => ({
           ...prev,
-          [payload.scenarioId]: payload.message,
+          [payload.scenarioId as string]: payload.message,
         }));
       }
 

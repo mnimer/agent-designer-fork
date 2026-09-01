@@ -61,11 +61,209 @@ export interface StartLocalRunnerOptions {
 export class AgentRunnerManager {
   private activeProcesses: Map<string, ChildProcess> = new Map();
   private activeLocalRunners: Map<string, ChildProcess> = new Map();
+  private ephemeralFiles: Set<string> = new Set();
   private lastRunningPort: number = 8000;
   private runnerLogs: string[] = [];
   private runnerStatus: 'idle' | 'starting' | 'running' | 'stopped' | 'error' = 'idle';
   private pythonResolver: PythonEnvResolver;
   private codeGenEngine: GeminiCodeGenEngine;
+
+  /**
+   * Resolves or dynamically generates the test server entry point script.
+   * Supports:
+   * 1. FastAPI server.py (Cloud Run)
+   * 2. Reasoning Engine / Agent class agent.py (Vertex AI Agent Engine / ADK / Library)
+   * 3. CLI main.py
+   *
+   * If agent.py exists without server.py, generates an ephemeral _agent_test_runner.py
+   * that wraps the agent and exposes standard HTTP endpoints (/health and /v1/chat/completions)
+   * for live testing and assertion execution.
+   *
+   * @param targetDir Target workspace directory
+   * @returns Path to runner script or null if no runnable code found
+   */
+  public resolveRunnerScript(targetDir: string): string | null {
+    const serverPy = path.join(targetDir, 'server.py');
+    if (fs.existsSync(serverPy)) {
+      return serverPy;
+    }
+
+    const agentPy = path.join(targetDir, 'agent.py');
+    const mainPy = path.join(targetDir, 'main.py');
+
+    if (fs.existsSync(agentPy)) {
+      const runnerScript = path.join(targetDir, '_agent_test_runner.py');
+      const scriptContent = `import sys
+import os
+import json
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+# Add current directory to path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+agent_instance = None
+
+def get_agent():
+    global agent_instance
+    if agent_instance is not None:
+        return agent_instance
+    try:
+        import agent
+        for attr_name in ['AgentReasoningEngine', 'ReasoningEngine', 'AgentWorkflow', 'Agent', 'RootAgent', 'Workflow']:
+            if hasattr(agent, attr_name):
+                cls = getattr(agent, attr_name)
+                if isinstance(cls, type):
+                    inst = cls()
+                    if hasattr(inst, 'set_up') and callable(getattr(inst, 'set_up')):
+                        inst.set_up()
+                    agent_instance = inst
+                    return agent_instance
+        if hasattr(agent, 'query') and callable(getattr(agent, 'query')):
+            agent_instance = agent
+            return agent_instance
+    except Exception as e:
+        sys.stderr.write(f"[Agent Test Adapter Error] {e}\\n")
+        sys.stderr.flush()
+        raise e
+    return None
+
+class TestHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        sys.stdout.write(f"[Test Server] {format % args}\\n")
+        sys.stdout.flush()
+
+    def do_GET(self):
+        if self.path in ('/health', '/', '/healthz'):
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
+        elif self.path == '/v1/models':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"data":[{"id":"gemini-flash-latest"}]}')
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(content_length).decode('utf-8')
+        try:
+            data = json.loads(body) if body else {}
+        except Exception:
+            data = {}
+
+        prompt = ""
+        messages = data.get('messages', [])
+        if messages and isinstance(messages, list):
+            for m in reversed(messages):
+                if isinstance(m, dict) and m.get('role') == 'user':
+                    prompt = m.get('content', '')
+                    break
+        if not prompt:
+            prompt = data.get('prompt', '') or data.get('input', '') or data.get('query', '') or body
+
+        try:
+            ag = get_agent()
+            if ag is None:
+                raise RuntimeError("Could not find AgentReasoningEngine or agent class in agent.py")
+
+            if hasattr(ag, 'query') and callable(getattr(ag, 'query')):
+                res = ag.query(prompt=prompt)
+            elif hasattr(ag, 'generate') and callable(getattr(ag, 'generate')):
+                res = ag.generate(prompt=prompt)
+            elif hasattr(ag, 'invoke') and callable(getattr(ag, 'invoke')):
+                res = ag.invoke({"messages": [{"role": "user", "content": prompt}]})
+            elif hasattr(ag, 'run') and callable(getattr(ag, 'run')):
+                res = ag.run(prompt)
+            elif callable(ag):
+                res = ag(prompt)
+            else:
+                raise RuntimeError("Agent instance has no query, generate, invoke, or run method")
+
+            if isinstance(res, dict):
+                content_str = json.dumps(res)
+            else:
+                content_str = str(res)
+
+            resp_payload = {
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1234567890,
+                "model": data.get("model", "gemini-flash"),
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": content_str
+                        },
+                        "finish_reason": "stop"
+                    }
+                ]
+            }
+            resp_bytes = json.dumps(resp_payload).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(resp_bytes)))
+            self.end_headers()
+            self.wfile.write(resp_bytes)
+        except Exception as err:
+            err_payload = {
+                "error": {
+                    "message": str(err),
+                    "type": "agent_execution_error"
+                }
+            }
+            err_bytes = json.dumps(err_payload).encode('utf-8')
+            self.send_response(500)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(err_bytes)))
+            self.end_headers()
+            self.wfile.write(err_bytes)
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--port', type=int, default=8000)
+    args = parser.parse_args()
+    port = int(os.environ.get('PORT', args.port))
+    server = HTTPServer(('0.0.0.0', port), TestHandler)
+    print(f"Uvicorn running on http://0.0.0.0:{port} (Agent Test Adapter)", flush=True)
+    server.serve_forever()
+
+if __name__ == '__main__':
+    main()
+`;
+      try {
+        fs.writeFileSync(runnerScript, scriptContent, 'utf-8');
+        this.ephemeralFiles.add(runnerScript);
+      } catch {}
+      return runnerScript;
+    }
+
+    if (fs.existsSync(mainPy)) {
+      return mainPy;
+    }
+
+    return null;
+  }
+
+  /**
+   * Cleans up all generated ephemeral test adapter files.
+   */
+  private cleanupEphemeralFiles(): void {
+    for (const filePath of this.ephemeralFiles) {
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      } catch {}
+    }
+    this.ephemeralFiles.clear();
+  }
 
   /**
    * Constructs the AgentRunnerManager.
@@ -241,28 +439,22 @@ export class AgentRunnerManager {
       return runnerId;
     }
 
-    // Locate entrypoint server script (server.py or main.py)
-    const serverPy = path.join(targetDir, 'server.py');
-    const mainPy = path.join(targetDir, 'main.py');
-    let runnerScriptPath = serverPy;
+    // Locate entrypoint server script (server.py, agent.py adapter, or main.py)
+    const runnerScriptPath = this.resolveRunnerScript(targetDir);
 
-    if (!fs.existsSync(serverPy)) {
-      if (fs.existsSync(mainPy)) {
-        runnerScriptPath = mainPy;
-      } else {
-        this.runnerStatus = 'error';
-        const notFoundMsg = `[Local Runner Error] Entry point script (server.py or main.py) not found in ${targetDir}. Please generate code first.`;
-        this.appendRunnerLog(notFoundMsg);
-        await bridge.postMessage({
-          type: 'LOCAL_RUNNER_STATUS',
-          payload: {
-            status: 'error',
-            error: notFoundMsg,
-            logs: this.runnerLogs,
-          },
-        });
-        return runnerId;
-      }
+    if (!runnerScriptPath) {
+      this.runnerStatus = 'error';
+      const notFoundMsg = `[Local Runner Error] No runnable agent script (server.py, agent.py, or main.py) found in ${targetDir}. Please generate code first.`;
+      this.appendRunnerLog(notFoundMsg);
+      await bridge.postMessage({
+        type: 'LOCAL_RUNNER_STATUS',
+        payload: {
+          status: 'error',
+          error: notFoundMsg,
+          logs: this.runnerLogs,
+        },
+      });
+      return runnerId;
     }
 
     // Free the port if currently occupied
@@ -521,6 +713,8 @@ export class AgentRunnerManager {
     if (portToKill) {
       this.killPort(portToKill);
     }
+
+    this.cleanupEphemeralFiles();
 
     this.runnerStatus = 'stopped';
     const stopMsg = '[Local Runner] Process stopped.';
@@ -1246,6 +1440,7 @@ export class AgentRunnerManager {
   public dispose(): void {
     this.stopLocalRunner();
     this.cancelAll();
+    this.cleanupEphemeralFiles();
   }
 
   /**

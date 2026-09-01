@@ -184,7 +184,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       });
 
       // 3. Register diagnostic and core RPC handlers on the bridge
-      bridge.onMessage('BOOTSTRAP_LOADED', (payload) => {
+      bridge.onMessage('BOOTSTRAP_LOADED', (payload: any) => {
         this.outputChannel?.appendLine(`[AgentEditorProvider:Step 3a] Webview HTML container bootstrap loaded at ${payload?.timestamp}`);
       });
 
@@ -299,10 +299,16 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       await this.cleanTargetDirectory(targetDirPath, document);
 
       // 2. Synthesize new codebase with Gemini LLM
+      const deploymentTarget =
+        payload.deploymentTarget ||
+        payload.document?.metadata?.deploymentTarget ||
+        'agent-engine';
+
       const result = await this.codeGenEngine.generateCode({
         document: payload.document,
         framework: payload.targetFramework,
         language: payload.targetLanguage,
+        deploymentTarget: deploymentTarget,
         apiKey: apiKey,
         model: 'gemini-flash-latest',
       });
@@ -479,7 +485,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       });
     });
 
-    bridge.onMessage('STOP_LOCAL_RUNNER', async (payload) => {
+    bridge.onMessage('STOP_LOCAL_RUNNER', async (payload: any) => {
       await this.runnerManager.stopLocalRunner(payload?.runnerId, payload?.port, bridge);
     });
 
@@ -487,7 +493,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       await this.runnerManager.sendStatus(bridge);
     });
 
-    bridge.onMessage('CHECK_FILES_EXIST', async (payload) => {
+    bridge.onMessage('CHECK_FILES_EXIST', async (payload: any) => {
       const targetDir = this.resolveTargetDirectory(document, payload?.targetDirectory);
 
       const existingGeneratedFiles = this.loadGeneratedFilesFromDisk(targetDir);
@@ -994,6 +1000,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           try {
             const content = fs.readFileSync(path.join(targetDir, entry.name), 'utf-8');
             files.push({
+              path: entry.name,
               name: entry.name,
               language,
               content,
@@ -1013,8 +1020,8 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         'README.md': 5,
         'Dockerfile': 6,
       };
-      const pA = priorityOrder[a.name] || 10;
-      const pB = priorityOrder[b.name] || 10;
+      const pA = priorityOrder[a.name || a.path] || 10;
+      const pB = priorityOrder[b.name || b.path] || 10;
       return pA - pB;
     });
 

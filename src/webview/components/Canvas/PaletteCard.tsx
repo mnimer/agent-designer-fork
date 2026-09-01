@@ -141,7 +141,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
       case 'scheduled':
         return <Clock className="w-4 h-4 text-sky-400" />;
       case 'tester':
-        return <FlaskConical className="w-4 h-4 text-pink-400" />;
+        return <FlaskConical className="w-4 h-4 text-yellow-400" />;
       case 'eventarc':
         return <Zap className="w-4 h-4 text-purple-400" />;
       default:
@@ -262,7 +262,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
           <span className="[writing-mode:vertical-rl] rotate-180 text-[9px] font-bold uppercase tracking-wider py-0.5">
             Triggers
           </span>
-          <span className="text-[7.5px] font-mono mt-0.5 px-0.5 rounded bg-pink-500/20 text-pink-300 border border-pink-500/30">
+          <span className="text-[7.5px] font-mono mt-0.5 px-0.5 rounded bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
             QA
           </span>
         </button>
@@ -438,12 +438,12 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
               <>
                 {testSuiteTrigger && (
                   <div>
-                    <div className="text-[11px] font-semibold text-pink-400 mb-2 uppercase tracking-wide flex items-center justify-between">
+                    <div className="text-[11px] font-semibold text-yellow-400 mb-2 uppercase tracking-wide flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
-                        <FlaskConical className="w-3.5 h-3.5 text-pink-400" />
+                        <FlaskConical className="w-3.5 h-3.5 text-yellow-400" />
                         Test Suite & Validation
                       </span>
-                      <span className="text-[9px] text-pink-300/90 bg-pink-950/50 px-1.5 py-0.2 rounded border border-pink-500/40 font-mono">
+                      <span className="text-[9px] text-yellow-300/90 bg-yellow-950/50 px-1.5 py-0.2 rounded border border-yellow-500/40 font-mono">
                         QA Suite
                       </span>
                     </div>
@@ -451,19 +451,19 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                     <div
                       draggable
                       onDragStart={(e) => handleDragStartTrigger(e, testSuiteTrigger)}
-                      className="group relative flex items-start justify-between p-2.5 bg-[#21262d] border border-pink-500/40 rounded-lg cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-pink-400 shadow-sm transition-all shadow-pink-950/20"
+                      className="group relative flex items-start justify-between p-2.5 bg-[#21262d] border border-yellow-500/40 rounded-lg cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-yellow-400 shadow-sm transition-all shadow-yellow-950/20"
                     >
                       <div className="flex items-start gap-2.5 min-w-0">
-                        <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-pink-400 shrink-0 mt-1" />
-                        <div className="p-1.5 rounded-md bg-[#0d1117] border border-pink-500/30 shrink-0 mt-0.5 shadow-xs">
-                          <FlaskConical className="w-4 h-4 text-pink-400" />
+                        <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-yellow-400 shrink-0 mt-1" />
+                        <div className="p-1.5 rounded-md bg-[#0d1117] border border-yellow-500/30 shrink-0 mt-0.5 shadow-xs">
+                          <FlaskConical className="w-4 h-4 text-yellow-400" />
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className="font-semibold text-xs text-white truncate max-w-[130px]">
                               {testSuiteTrigger.name}
                             </span>
-                            <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-pink-500/20 text-pink-300 border border-pink-500/30">
+                            <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
                               {testSuiteTrigger.badge}
                             </span>
                           </div>
@@ -477,7 +477,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                         type="button"
                         onClick={() => onAddTrigger(testSuiteTrigger.type)}
                         title="Add Test Suite Trigger to Root Agent"
-                        className="p-1.5 rounded bg-[#0d1117] hover:bg-pink-600 border border-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer shrink-0 ml-1 mt-0.5"
+                        className="p-1.5 rounded bg-[#0d1117] hover:bg-yellow-600 border border-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer shrink-0 ml-1 mt-0.5"
                       >
                         <Plus className="w-3 h-3" />
                       </button>

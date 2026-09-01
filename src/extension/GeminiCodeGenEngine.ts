@@ -49,12 +49,13 @@ export class GeminiCodeGenEngine {
     const doc = request.document;
     const framework = request.framework || doc.framework || 'google-adk';
     const language = request.language || doc.language || 'python';
+    const target = request.deploymentTarget || doc.metadata?.deploymentTarget || 'agent-engine';
     const model = request.model || 'gemini-flash-latest';
     const apiKey = request.apiKey || process.env.GEMINI_API_KEY || '';
 
     try {
       // 1. Load prompt template from resource/prompts directory
-      const promptTemplate = this.loadPromptTemplate(framework, language);
+      const promptTemplate = this.loadPromptTemplate(framework, language, target);
       const workflowJson = JSON.stringify(doc, null, 2);
       const interpolatedPrompt = promptTemplate.replace('{{WORKFLOW_JSON}}', workflowJson);
 
@@ -84,23 +85,48 @@ export class GeminiCodeGenEngine {
   }
 
   /**
-   * Loads the prompt template file corresponding to the target framework and language
+   * Loads the prompt template file corresponding to the target framework, language, and deployment target
    * from the `resource/prompts/` directory.
    *
    * @param framework Framework identifier (e.g. 'google-adk', 'langgraph')
    * @param language Programming language (e.g. 'python', 'typescript')
+   * @param target Optional deployment target (e.g. 'cloudrun', 'agent-engine', 'agent_engine', 'cloud_run')
    * @returns The raw string prompt template
    */
-  public loadPromptTemplate(framework: string, language: string): string {
-    const cleanFramework = framework.replace('google-', '').replace('_', '-');
-    const promptFileName = `${language}-${cleanFramework}.prompt.txt`;
+  public loadPromptTemplate(framework: string, language: string, target?: string): string {
+    const cleanFramework = framework.replace('google-', '').replace('-', '_').replace('google_', '');
+    const rawTarget = (target || 'agent-engine').toLowerCase().trim();
+    const normalizedTarget = rawTarget.includes('agent')
+      ? 'agent-engine'
+      : rawTarget.includes('cloud')
+      ? 'cloudrun'
+      : rawTarget.replace(/_/g, '-');
 
-    const candidatePaths = [
-      path.join(this.extensionPath, 'resource', 'prompts', promptFileName),
-      path.join(this.extensionPath, 'resource', 'prompts', 'python-adk.prompt.txt'),
-      path.join(process.cwd(), 'resource', 'prompts', promptFileName),
-      path.join(process.cwd(), 'resource', 'prompts', 'python-adk.prompt.txt'),
+    const candidateFileNames = [
+      // 1. Target-specific filenames (e.g., python_adk_agent-engine.prompt.txt, python_adk_cloudrun.prompt.txt)
+      `${language}_${cleanFramework}_${normalizedTarget}.prompt.txt`,
+      `${language}_${cleanFramework}_${rawTarget.replace(/_/g, '-')}.prompt.txt`,
+      `${language}_${cleanFramework}_${rawTarget.replace(/[_-]/g, '')}.prompt.txt`,
+      `${language}-${cleanFramework}-${normalizedTarget}.prompt.txt`,
+      // 2. Default target filenames
+      `${language}_${cleanFramework}_agent-engine.prompt.txt`,
+      `${language}_${cleanFramework}_cloudrun.prompt.txt`,
+      `${language}_${cleanFramework}.prompt.txt`,
+      'python_adk_agent-engine.prompt.txt',
+      'python_adk_cloudrun.prompt.txt',
     ];
+
+    const searchDirs = [
+      path.join(this.extensionPath, 'resource', 'prompts'),
+      path.join(process.cwd(), 'resource', 'prompts'),
+    ];
+
+    const candidatePaths: string[] = [];
+    for (const dir of searchDirs) {
+      for (const fileName of candidateFileNames) {
+        candidatePaths.push(path.join(dir, fileName));
+      }
+    }
 
     for (const candidate of candidatePaths) {
       if (fs.existsSync(candidate)) {
@@ -109,7 +135,7 @@ export class GeminiCodeGenEngine {
     }
 
     throw new Error(
-      `Prompt template not found for framework '${framework}' and language '${language}'. Looked in: ${candidatePaths.join(', ')}`
+      `Prompt template not found for framework '${framework}', language '${language}', target '${target || 'default'}'. Looked in: ${candidatePaths.slice(0, 6).join(', ')}`
     );
   }
 

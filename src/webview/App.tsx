@@ -28,8 +28,10 @@ import {
   AgentKind,
   PatternType,
   AgentFileTab,
-  SampleWorkflowDefinition
+  SampleWorkflowDefinition,
+  GeneratedFile
 } from './types';
+import { generateCodeForGraph } from './components/codegen/codeGenerators';
 import { INITIAL_NODES, INITIAL_EDGES } from './data/initialGraph';
 import { 
   createSingleAgentNode, 
@@ -57,10 +59,17 @@ import { SAMPLES_CATALOG } from './data/sampleWorkflows';
 import { AlertTriangle, X, Bot, Sparkles, Zap, Undo2, Redo2, LayoutGrid, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { useDiagramHistory } from './hooks/useDiagramHistory';
 import { AgentWorkflowDocument, WorkflowNode, WorkflowEdge } from '../shared/types';
+import { WorkflowEdge as CustomWorkflowEdge } from './components/Canvas/edges/WorkflowEdge';
 
 const nodeTypes = {
   agentNode: AgentNode,
   triggerNode: TriggerNode,
+};
+
+const edgeTypes = {
+  default: CustomWorkflowEdge,
+  workflow: CustomWorkflowEdge,
+  workflowEdge: CustomWorkflowEdge,
 };
 
 const STORAGE_TOOLS_KEY = 'ais_agent_studio_tools_v1';
@@ -110,16 +119,39 @@ function normalizeLoadedNodes(loadedNodes: any[]): Node<any>[] {
 
 function normalizeLoadedEdges(loadedEdges: any[]): Edge[] {
   if (!Array.isArray(loadedEdges)) return [];
-  return loadedEdges.map((e) => ({
-    id: e.id || `e_${e.source}_${e.target}`,
-    source: e.source,
-    target: e.target,
-    sourceHandle: e.sourceHandle || null,
-    targetHandle: e.targetHandle || null,
-    label: typeof e.label === 'string' ? e.label : undefined,
-    animated: e.animated !== undefined ? e.animated : true,
-    style: e.style || (e.source.includes('trigger') ? { stroke: '#f59e0b', strokeWidth: 2 } : { stroke: '#3b82f6', strokeWidth: 2 }),
-  }));
+  return loadedEdges.map((e) => {
+    const isTester =
+      e.id?.includes('tester') ||
+      e.sourceHandle === 'trigger_out_right' ||
+      e.sourceHandle === 'trigger_out_bottom';
+
+    let stroke = e.style?.stroke || (isTester ? '#eab308' : '#3b82f6');
+    if (
+      stroke === '#ec4899' ||
+      stroke === '#db2777' ||
+      stroke === '#f472b6' ||
+      stroke === 'rgb(236, 72, 153)' ||
+      stroke?.toLowerCase().includes('pink') ||
+      isTester
+    ) {
+      stroke = '#eab308';
+    }
+
+    return {
+      id: e.id || `e_${e.source}_${e.target}`,
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle || null,
+      targetHandle: e.targetHandle || null,
+      animated: e.animated !== undefined ? e.animated : true,
+      style: {
+        strokeWidth: 2,
+        strokeDasharray: isTester ? '5 5' : e.style?.strokeDasharray,
+        ...e.style,
+        stroke,
+      },
+    };
+  });
 }
 
 /**
@@ -146,7 +178,7 @@ export const computeTargetFolder = (filePathOrName: string): string => {
 };
 
 function FlowCanvas() {
-  const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const reactFlowWrapper = useRef<HTMLDivElement | null>(null);
   const { screenToFlowPosition, zoomIn, zoomOut, fitView } = useReactFlow();
   const { settings, activeEditorTab, openSettings, openFlow, setActiveEditorTab } = usePluginSettings();
   const bridge = useBridgeContext();
@@ -896,15 +928,15 @@ function FlowCanvas() {
 
   // Synchronize isStartNode on agent nodes whenever trigger connections change
   useEffect(() => {
-    setNodes((nds) => {
+    setNodes((nds: any[]) => {
       let hasChanges = false;
       const targetId = triggerTargetAgentId;
 
-      const agentNodes = nds.filter((n) => n.type === 'agentNode');
-      const hasAnyStart = agentNodes.some((n) => (n.data as AgentData).isStartNode);
+      const agentNodes = nds.filter((n: any) => n.type === 'agentNode');
+      const hasAnyStart = agentNodes.some((n: any) => (n.data as AgentData).isStartNode);
       const defaultStartId = targetId || (hasAnyStart ? null : agentNodes[0]?.id);
 
-      const updated = nds.map((n) => {
+      const updated = nds.map((n: any) => {
         if (n.type === 'agentNode') {
           // If triggers are attached, only the targeted agent is start node
           // If no triggers are attached to any agent, preserve current or default first agent as start
@@ -931,46 +963,40 @@ function FlowCanvas() {
   }, [triggerTargetAgentId, setNodes]);
 
   // React Flow Connection Validation:
-  // Once a node has a trigger attached, you cannot add triggers to any other agents
+  // Validation for connections between nodes
   const isValidConnection = useCallback(
     (connection: Connection | Edge) => {
       if (!connection.source || !connection.target) return false;
+      if (connection.source === connection.target) return false;
+
       const sourceNode = nodes.find((n) => n.id === connection.source);
       const targetNode = nodes.find((n) => n.id === connection.target);
 
-      // Agent-to-Agent connectors should ONLY connect bottom to top (target handle must be 'input')
-      if (sourceNode?.type === 'agentNode' && targetNode?.type === 'agentNode') {
-        if (connection.targetHandle === 'input_left') {
+      // Target agent nodes accept connections on Top ('input'), Left ('input_left'), or Right ('input_right') "In" handles
+      if (targetNode?.type === 'agentNode') {
+        const validInHandles = ['input', 'input_left', 'input_right'];
+        if (connection.targetHandle && !validInHandles.includes(connection.targetHandle)) {
           return false;
         }
       }
 
-      // If source is a trigger node
+      // Agent nodes can only connect their Out handles to In handles of other Agent nodes
+      if (sourceNode?.type === 'agentNode') {
+        if (targetNode?.type !== 'agentNode') return false;
+      }
+
+      // If source is a trigger node (such as Test Suite)
       if (sourceNode?.type === 'triggerNode') {
-        // Triggers can only connect to Agent nodes
+        // Triggers can only connect to Agent nodes (Top, Left, or Right In handles)
         if (targetNode?.type !== 'agentNode') return false;
 
-        const triggerKind = (sourceNode.data as any)?.kind || (sourceNode.data as any)?.triggerType;
-        const isTester = triggerKind === 'test_suite' || triggerKind === 'test' || triggerKind === 'qa' || triggerKind === 'tester';
-
-        // Test Suite triggers can ONLY connect to the Root node (isStartNode === true)
-        if (isTester && !(targetNode.data as AgentData)?.isStartNode) {
-          return false;
-        }
-
-        // Non-test suite triggers can ONLY connect bottom to top (target handle must be 'input')
-        if (!isTester && connection.targetHandle === 'input_left') {
-          return false;
-        }
-
-        // Check if triggers are ALREADY attached to a DIFFERENT agent node
+        // If other triggers are ALREADY attached to an agent node, all triggers must connect to the same root agent
         const triggerNodes = nodes.filter((n) => n.type === 'triggerNode');
-        const existingTriggerEdges = edges.filter(
+        const otherTriggerEdges = edges.filter(
           (e) => triggerNodes.some((tn) => tn.id === e.source) && e.source !== connection.source
         );
-        const existingRootTargets = Array.from(new Set(existingTriggerEdges.map((e) => e.target)));
+        const existingRootTargets = Array.from(new Set(otherTriggerEdges.map((e) => e.target)));
 
-        // If another agent already has triggers, disallow connecting to this different agent
         if (existingRootTargets.length > 0 && !existingRootTargets.includes(connection.target)) {
           return false;
         }
@@ -984,8 +1010,8 @@ function FlowCanvas() {
   // Reconnect all triggers to a designated root agent
   const reconnectTriggersToRoot = useCallback((rootAgentId: string) => {
     // 1. Update all agent nodes so only rootAgentId is start node
-    setNodes((nds) =>
-      nds.map((n) => {
+    setNodes((nds: any[]) =>
+      nds.map((n: any) => {
         if (n.type === 'agentNode') {
           return {
             ...n,
@@ -1008,13 +1034,12 @@ function FlowCanvas() {
       })
     );
 
-    // 2. Update edges: remove old trigger edges, create clean ones to new root
-    setEdges((eds) => {
-      // Find all current trigger node IDs
+    // 2. Point all trigger edges to rootAgentId
+    setEdges((eds: any[]) => {
+      const nonTriggerEdges = eds.filter((e) => !nodes.some((n) => n.type === 'triggerNode' && n.id === e.source));
       const triggerNodes = nodes.filter((n) => n.type === 'triggerNode');
-      const nonTriggerEdges = eds.filter((e) => !triggerNodes.some((tn) => tn.id === e.source));
-      
-      const newTriggerEdges: Edge[] = triggerNodes.map((tn) => {
+
+      const newTriggerEdges = triggerNodes.map((tn) => {
         const isTester = (tn.data as TriggerData)?.triggerType === 'tester';
         return {
           id: `e_trigger_${tn.id}_${rootAgentId}`,
@@ -1023,11 +1048,10 @@ function FlowCanvas() {
           target: rootAgentId,
           targetHandle: isTester ? 'input_left' : 'input',
           animated: true,
-          label: isTester ? 'Test Suite Inbound' : 'Trigger Invocation',
           style: {
-            stroke: isTester ? '#ec4899' : '#f59e0b',
+            stroke: isTester ? '#eab308' : '#3b82f6',
             strokeWidth: 2,
-            strokeDasharray: '5 5',
+            strokeDasharray: isTester ? '5 5' : undefined,
           },
         };
       });
@@ -1115,17 +1139,41 @@ function FlowCanvas() {
           target: connection.target,
           targetHandle: connection.targetHandle || (isTester ? 'input_left' : 'input'),
           animated: true,
-          label: isTester ? 'Test Suite Inbound' : 'Trigger Invocation',
           style: {
-            stroke: isTester ? '#ec4899' : '#f59e0b',
+            stroke: isTester ? '#eab308' : '#3b82f6',
             strokeWidth: 2,
-            strokeDasharray: '5 5',
+            strokeDasharray: isTester ? '5 5' : undefined,
           },
         };
 
         const nextEdges = [...edges.filter((e) => e.source !== connection.source), newTriggerEdge];
         setEdges(nextEdges);
-        recordSnapshot(nodes, nextEdges, { description: 'Connect trigger' });
+
+        // Update target agent to be start node if not already, and sync trigger node's targetRootAgentId
+        const nextNodes = nodes.map((n) => {
+          if (n.id === connection.target && n.type === 'agentNode') {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                isStartNode: true,
+              },
+            };
+          }
+          if (n.id === connection.source && n.type === 'triggerNode') {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                targetRootAgentId: connection.target,
+              },
+            };
+          }
+          return n;
+        });
+        setNodes(nextNodes);
+
+        recordSnapshot(nextNodes, nextEdges, { description: 'Connect trigger' });
         return;
       }
 
@@ -1138,8 +1186,7 @@ function FlowCanvas() {
           ...connection,
           id: `e_router_${connection.source}_${connection.sourceHandle}_${connection.target}`,
           animated: true,
-          label: matchingBranch?.label ? `Route: ${matchingBranch.label}` : `Branch Route #${matchingBranchIdx + 1}`,
-          style: { stroke: '#a855f7', strokeWidth: 2 },
+          style: { stroke: '#3b82f6', strokeWidth: 2 },
           targetHandle: connection.targetHandle || 'input',
         } as Edge;
 
@@ -1181,9 +1228,8 @@ function FlowCanvas() {
         ...connection,
         id: `e_${connection.source}_${connection.target}_${Date.now()}`,
         animated: true,
-        label: isSubAgentConnection ? 'Sub-Agent Link' : 'Next Step',
         style: isSubAgentConnection
-          ? { stroke: '#f59e0b', strokeWidth: 2, strokeDasharray: '4 4' }
+          ? { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' }
           : { stroke: '#3b82f6', strokeWidth: 2 },
       } as Edge;
 
@@ -1293,8 +1339,8 @@ function FlowCanvas() {
     });
 
     // Synchronize to any agent nodes holding this tool
-    setNodes((nds) =>
-      nds.map((n) => {
+    setNodes((nds: any[]) =>
+      nds.map((n: any) => {
         if (n.type === 'agentNode') {
           const agentData = n.data as AgentData;
           const hasTool = agentData.tools?.some((t) => t.id === savedTool.id);
@@ -1315,8 +1361,8 @@ function FlowCanvas() {
 
   const handleDeleteTool = useCallback((toolId: string) => {
     setTools((prev) => prev.filter((t) => t.id !== toolId));
-    setNodes((nds) =>
-      nds.map((n) => {
+    setNodes((nds: any[]) =>
+      nds.map((n: any) => {
         if (n.type === 'agentNode') {
           const agentData = n.data as AgentData;
           return {
@@ -1392,11 +1438,10 @@ function FlowCanvas() {
             target: rootAgent.id,
             targetHandle: isTester ? 'input_left' : 'input',
             animated: true,
-            label: isTester ? 'Test Suite Inbound' : 'Trigger Invocation',
             style: {
-              stroke: isTester ? '#ec4899' : '#f59e0b',
+              stroke: isTester ? '#eab308' : '#3b82f6',
               strokeWidth: 2,
-              strokeDasharray: '5 5',
+              strokeDasharray: isTester ? '5 5' : undefined,
             },
           };
           nextEdges = [...edges, triggerEdge];
@@ -1433,7 +1478,7 @@ function FlowCanvas() {
           position.y, 
           undefined, 
           undefined, 
-          agentKind || 'standard',
+          (type as AgentKind) || 'standard',
           {
             model: settings.defaultModel,
             temperature: settings.defaultTemperature,
@@ -1446,18 +1491,17 @@ function FlowCanvas() {
         }
         const nextNodes = [...nodes, newNode];
         setNodes(nextNodes);
-        recordSnapshot(nextNodes, edges, { description: `Add agent` });
+        recordSnapshot(nextNodes, edges, { description: `Add ${type || 'agent'}` });
       }
     },
-    [screenToFlowPosition, setNodes, setEdges, selectedAgentId, handleAddSpecificTool, nodes, edges, settings, recordSnapshot]
+    [nodes, edges, settings, setNodes, setEdges, recordSnapshot]
   );
 
-  // Add Root Agent with Test Suite Trigger (no sub-agents)
+  // Quick Start template creation: Root Agent + Connected Test Suite
   const handleAddRootWithTestSuite = useCallback(() => {
-    const starterAgent = createSingleAgentNode(420, 160, 'Root Agent', undefined, 'standard', {
+    const starterAgent = createSingleAgentNode(420, 140, 'Primary Agent', 'Root coordinator and task orchestrator', 'standard', {
       model: settings.defaultModel,
       temperature: settings.defaultTemperature,
-      maxIterations: settings.defaultMaxIterations,
       memoryType: settings.defaultMemoryType,
       colorTheme: settings.defaultAgentTheme,
       subAgents: [],
@@ -1473,9 +1517,8 @@ function FlowCanvas() {
       target: starterAgent.id,
       targetHandle: 'input_left',
       animated: true,
-      label: 'Test Suite Inbound',
       style: {
-        stroke: '#ec4899',
+        stroke: '#eab308',
         strokeWidth: 2,
         strokeDasharray: '5 5',
       },
@@ -1565,11 +1608,10 @@ function FlowCanvas() {
           target: rootAgent.id,
           targetHandle: isTester ? 'input_left' : 'input',
           animated: true,
-          label: isTester ? 'Test Suite Inbound' : 'Trigger Invocation',
           style: {
-            stroke: isTester ? '#ec4899' : '#f59e0b',
+            stroke: isTester ? '#eab308' : '#3b82f6',
             strokeWidth: 2,
-            strokeDasharray: '5 5',
+            strokeDasharray: isTester ? '5 5' : undefined,
           },
         };
         nextEdges = [...edges, triggerEdge];
@@ -1587,16 +1629,18 @@ function FlowCanvas() {
   }, [nodes, edges, recordSnapshot]);
 
   // Auto Layout
-  const handleAutoLayout = useCallback(
-    (direction: 'LR' | 'TB' = 'TB') => {
-      const layouted = getLayoutedElements(nodes, edges, direction);
-      setNodes([...layouted.nodes]);
-      setEdges([...layouted.edges]);
-      recordSnapshot(layouted.nodes, layouted.edges, { description: 'Auto-layout diagram' });
-      setTimeout(() => fitView({ padding: 0.2 }), 50);
-    },
-    [nodes, edges, setNodes, setEdges, fitView, recordSnapshot]
-  );
+  const handleAutoLayout = useCallback(() => {
+    const layouted = getLayoutedElements(nodes, edges);
+    setNodes([...layouted.nodes]);
+    setEdges([...layouted.edges]);
+    recordSnapshot(layouted.nodes, layouted.edges, { description: 'Auto-layout diagram' });
+    setTimeout(() => {
+      fitView({ padding: 0.2 });
+      setTimeout(() => {
+        zoomOut();
+      }, 50);
+    }, 50);
+  }, [nodes, edges, setNodes, setEdges, fitView, zoomOut, recordSnapshot]);
 
   const currentWorkflowDocument = useMemo((): AgentWorkflowDocument => {
     const currentActiveFile = fileTabs.find((t) => t.id === activeTabId) || fileTabs[0];
@@ -1624,10 +1668,11 @@ function FlowCanvas() {
       })),
       metadata: {
         outputFolder: config.outputFolder,
+        deploymentTarget: config.deploymentTarget || 'agent_engine',
         updatedAt: new Date().toISOString(),
       },
     };
-  }, [nodes, edges, config.framework, config.language, config.outputFolder, fileTabs, activeTabId]);
+  }, [nodes, edges, config.framework, config.language, config.outputFolder, config.deploymentTarget, fileTabs, activeTabId]);
 
   // Trigger Code Generation via LLM in Extension Host
   const handleTriggerGenerate = useCallback(() => {
@@ -1654,10 +1699,11 @@ function FlowCanvas() {
         document: currentWorkflowDocument,
         targetFramework: currentWorkflowDocument.framework,
         targetLanguage: currentWorkflowDocument.language,
+        deploymentTarget: config.deploymentTarget || 'agent_engine',
         outputFolder: config.outputFolder,
       },
     });
-  }, [currentWorkflowDocument, config.outputFolder, bridge, isPanelMaximized, bottomPanelHeight]);
+  }, [currentWorkflowDocument, config.outputFolder, config.deploymentTarget, bridge, isPanelMaximized, bottomPanelHeight]);
 
   // Update generation configuration
   const handleUpdateConfig = useCallback((newConf: Partial<GenerationConfig>) => {
@@ -1702,8 +1748,7 @@ function FlowCanvas() {
                 target: b.targetAgentId,
                 targetHandle: 'input',
                 animated: true,
-                label: b.label ? `Route: ${b.label}` : `Branch Route #${idx + 1}`,
-                style: { stroke: '#a855f7', strokeWidth: 2 },
+                style: { stroke: '#3b82f6', strokeWidth: 2 },
               });
             }
           }
@@ -1780,7 +1825,7 @@ function FlowCanvas() {
             isValidConnection={isValidConnection}
             onDrop={onDrop}
             onDragOver={onDragOver}
-            onNodeClick={(_, node) => {
+            onNodeClick={(_: any, node: any) => {
               if (node.type === 'triggerNode') {
                 const triggerData = node.data as TriggerData;
                 if (triggerData?.triggerType === 'chat') {
@@ -1807,6 +1852,8 @@ function FlowCanvas() {
               setIsToolDrawerOpen(false);
             }}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            connectionLineStyle={{ stroke: '#eab308', strokeWidth: 2 }}
             onNodesDelete={handleNodesDelete}
             deleteKeyCode={['Backspace', 'Delete']}
             fitView
@@ -1845,26 +1892,15 @@ function FlowCanvas() {
 
               <div className="w-px h-4 bg-[#30363d] my-auto" />
 
-              {/* Auto Layout Left-to-Right */}
+              {/* Auto Layout */}
               <button
                 type="button"
-                onClick={() => handleAutoLayout('LR')}
-                title="Auto Layout (Horizontal LR)"
-                className="flex items-center gap-1 px-2 py-1 rounded hover:bg-[#21262d] text-gray-300 hover:text-white font-medium text-[11px] transition-colors cursor-pointer"
+                onClick={handleAutoLayout}
+                title="Auto Layout Diagram"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded hover:bg-[#21262d] text-gray-300 hover:text-white font-medium text-[11px] transition-colors cursor-pointer"
               >
                 <LayoutGrid className="w-3.5 h-3.5 text-blue-400" />
-                <span>Layout (L-R)</span>
-              </button>
-
-              {/* Auto Layout Top-to-Bottom */}
-              <button
-                type="button"
-                onClick={() => handleAutoLayout('TB')}
-                title="Auto Layout (Vertical TB)"
-                className="flex items-center gap-1 px-2 py-1 rounded hover:bg-[#21262d] text-gray-300 hover:text-white font-medium text-[11px] transition-colors cursor-pointer"
-              >
-                <LayoutGrid className="w-3.5 h-3.5 text-purple-400 rotate-90" />
-                <span>Layout (T-B)</span>
+                <span>Auto Layout</span>
               </button>
 
               <div className="w-px h-4 bg-[#30363d] my-auto" />

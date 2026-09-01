@@ -32,6 +32,9 @@ export interface PluginSettings {
   autoLayoutDirection: 'TB' | 'LR';
   snapToGrid: boolean;
   showMiniMap: boolean;
+  defaultAgentTheme?: string;
+  useStreamingByDefault?: boolean;
+  [key: string]: any;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {

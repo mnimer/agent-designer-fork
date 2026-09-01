@@ -10,7 +10,7 @@ import * as vscode from 'vscode';
 import { activate, deactivate } from '../../src/extension/extension';
 import { AgentEditorProvider } from '../../src/extension/AgentEditorProvider';
 
-describe('Extension Lifecycle', () => {
+describe('Extension Lifecycle', { concurrency: 1 }, () => {
   beforeEach(() => {
     vscode.resetAllMocks();
   });

@@ -266,6 +266,39 @@ describe('AgentRunnerManager', () => {
     } catch {}
   });
 
+  it('should resolve runner script for server.py, agent.py adapter, and main.py', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const manager = new AgentRunnerManager('/mock/extension');
+    const tmpDir = `/tmp/test_runner_resolve_${Date.now()}`;
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    // 1. Initially empty -> null
+    assert.equal(manager.resolveRunnerScript(tmpDir), null);
+
+    // 2. Only main.py
+    fs.writeFileSync(path.join(tmpDir, 'main.py'), 'print("main")', 'utf-8');
+    assert.equal(manager.resolveRunnerScript(tmpDir), path.join(tmpDir, 'main.py'));
+
+    // 3. agent.py (Reasoning Engine / ADK target) -> creates ephemeral adapter
+    fs.writeFileSync(path.join(tmpDir, 'agent.py'), 'class AgentReasoningEngine:\n    def query(self, prompt):\n        return "ok"\n', 'utf-8');
+    const adapterPath = manager.resolveRunnerScript(tmpDir);
+    assert.equal(adapterPath, path.join(tmpDir, '_agent_test_runner.py'));
+    assert.ok(fs.existsSync(adapterPath!));
+
+    // 4. server.py (Cloud Run FastAPI) -> takes priority
+    fs.writeFileSync(path.join(tmpDir, 'server.py'), 'print("server")', 'utf-8');
+    assert.equal(manager.resolveRunnerScript(tmpDir), path.join(tmpDir, 'server.py'));
+
+    // 5. Cleanup
+    manager.dispose();
+    assert.equal(fs.existsSync(adapterPath!), false);
+
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+  });
+
   it('should cancel running processes without error', () => {
     const manager = new AgentRunnerManager('/mock/extension');
     assert.doesNotThrow(() => {

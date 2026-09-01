@@ -1,3 +1,18 @@
+/**
+ * AgentNode - Canvas Component for AI Agents in Workflow Graph
+ * 
+ * Purpose:
+ * Renders individual Agent nodes on the visual workflow canvas, displaying agent
+ * roles, LLM models, configured tools, sub-agent delegations, and router branches.
+ * 
+ * Architectural Decisions:
+ * - Author: Mike Nimer <mikenimer@google.com>
+ * - In/Out Connection Model: Agents accept incoming connections on "In" handles (Top, Left, Right)
+ *   and send outgoing flows from "Out" handles (Bottom: sequential, subagent, router branches).
+ * - Uniform Blue Palette: All standard Agent In and Out handles use blue (!bg-blue-500).
+ * - Clear Typography Badges: Mini 'In' and 'Out' mono badges for effortless workflow wiring.
+ */
+
 import React, { memo, useState } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import { 
@@ -303,22 +318,43 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
           <span className="text-[10px] text-green-300">Release to add</span>
         </div>
       )}
-      {/* Target Connection Handle (Top) */}
+      {/* Target Connection Handle (Top - In) */}
       <Handle
         type="target"
         position={Position.Top}
         id="input"
-        className="!bg-blue-500 !w-3.5 !h-3.5 !-top-1.5 border-2 border-[#0d1117]"
+        className="!bg-blue-500 !w-3.5 !h-3.5 !-top-1.5 border-2 border-[#0d1117] hover:scale-125 transition-transform z-20 cursor-crosshair"
+        title="Top In Connector (Target)"
       />
-      {/* Target Connection Handle (Left) - ONLY rendered on Root Node for Test Suite connection */}
-      {data.isStartNode && (
-        <Handle
-          type="target"
-          position={Position.Left}
-          id="input_left"
-          className="!bg-blue-500 !w-3 !h-3 !-left-1.5 border-2 border-[#0d1117]"
-        />
-      )}
+      <span className="absolute -top-[28px] left-1/2 -translate-x-1/2 text-[9px] font-mono font-bold text-blue-300 bg-[#0d1117] px-1.5 py-0.5 rounded border border-blue-500/40 pointer-events-none select-none z-10 shadow-sm whitespace-nowrap">
+        In
+      </span>
+
+      {/* Target Connection Handle (Left - In) */}
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="input_left"
+        style={{ top: '50%' }}
+        className="!bg-blue-500 !w-3.5 !h-3.5 !-left-1.5 border-2 border-[#0d1117] hover:scale-125 transition-transform z-20 cursor-crosshair"
+        title="Left In Connector (Target)"
+      />
+      <span className="absolute -left-[36px] top-1/2 -translate-y-1/2 text-[9px] font-mono font-bold text-blue-300 bg-[#0d1117] px-1.5 py-0.5 rounded border border-blue-500/40 pointer-events-none select-none z-10 shadow-sm whitespace-nowrap">
+        In
+      </span>
+
+      {/* Target Connection Handle (Right - In) */}
+      <Handle
+        type="target"
+        position={Position.Right}
+        id="input_right"
+        style={{ top: '50%' }}
+        className="!bg-blue-500 !w-3.5 !h-3.5 !-right-1.5 border-2 border-[#0d1117] hover:scale-125 transition-transform z-20 cursor-crosshair"
+        title="Right In Connector (Target)"
+      />
+      <span className="absolute -right-[36px] top-1/2 -translate-y-1/2 text-[9px] font-mono font-bold text-blue-300 bg-[#0d1117] px-1.5 py-0.5 rounded border border-blue-500/40 pointer-events-none select-none z-10 shadow-sm whitespace-nowrap">
+        In
+      </span>
 
       {/* Node Header */}
       <div className={`flex items-center justify-between px-3.5 py-2.5 rounded-t-xl border-b ${theme.header}`}>
@@ -752,42 +788,53 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
           const handleId = branch.id || `branch_${idx}`;
 
           return (
-            <Handle
-              key={handleId}
-              type="source"
-              position={Position.Bottom}
-              id={handleId}
-              style={{ left: `${leftPercent}%` }}
-              className={`!w-4 !h-4 !-bottom-2 border-2 border-[#0d1117] transition-all cursor-crosshair z-20 hover:scale-125 ${
-                isConnected
-                  ? '!bg-purple-500 ring-2 ring-purple-400/80 shadow-md shadow-purple-500/50'
-                  : '!bg-[#21262d] !border-purple-400 hover:!bg-purple-500'
-              }`}
-              title={`Branch #${idx + 1}: ${branch.label} (${branch.conditionExpression || 'default'})${
-                branch.targetAgentId ? ' (Connected)' : ' → Drag to connect target agent'
-              }`}
-            />
+            <React.Fragment key={handleId}>
+              <Handle
+                type="source"
+                position={Position.Bottom}
+                id={handleId}
+                style={{ left: `${leftPercent}%` }}
+                className={`!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-all cursor-crosshair z-20 hover:scale-125 ${
+                  isConnected
+                    ? '!bg-blue-500 ring-2 ring-blue-400/80 shadow-md shadow-blue-500/50'
+                    : '!bg-[#21262d] !border-blue-400 hover:!bg-blue-500'
+                }`}
+                title={`Branch #${idx + 1}: ${branch.label} (${branch.conditionExpression || 'default'})${
+                  branch.targetAgentId ? ' (Connected)' : ' → Drag to connect target agent'
+                }`}
+              />
+              <span
+                style={{ left: `${leftPercent}%` }}
+                className="absolute -bottom-[28px] -translate-x-1/2 text-[9px] font-mono font-bold text-blue-300 bg-[#0d1117] px-1.5 py-0.5 rounded border border-blue-500/40 pointer-events-none select-none z-10 shadow-sm whitespace-nowrap"
+              >
+                Out
+              </span>
+            </React.Fragment>
           );
         })
       ) : (
         <>
-          {/* Main Flow Output Handle (Bottom Center Left) */}
+          {/* Main Flow Output Handle (Bottom Center) */}
           <Handle
             type="source"
             position={Position.Bottom}
             id="output"
-            className="!w-3.5 !h-3.5 !-bottom-1.5 left-1/3 border-2 border-[#0d1117] !bg-emerald-500"
-            title="Sequential Next Agent Output"
+            style={{ left: '50%' }}
+            className="!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] !bg-blue-500 hover:scale-125 transition-transform z-20 cursor-crosshair"
+            title="Agent Output (Out)"
           />
-
-          {/* Sub-Agent Delegation / Branch 2 Handle (Bottom Center Right - Purple) */}
+          {/* Fallback Subagent Handle (Stacked transparently for backward compatibility) */}
           <Handle
             type="source"
             position={Position.Bottom}
             id="subagent"
-            className="!bg-purple-500 !w-3.5 !h-3.5 !-bottom-1.5 left-2/3 border-2 border-[#0d1117] ring-2 ring-purple-500/40"
-            title="Sub-Agent Delegation Link (Drag to sub-agent input)"
+            style={{ left: '50%', opacity: 0, pointerEvents: 'none' }}
+            className="!w-3.5 !h-3.5 !-bottom-1.5"
+            title="Subagent Handle"
           />
+          <span className="absolute -bottom-[28px] left-1/2 -translate-x-1/2 text-[9px] font-mono font-bold text-blue-300 bg-[#0d1117] px-1.5 py-0.5 rounded border border-blue-500/40 pointer-events-none select-none z-10 shadow-sm whitespace-nowrap">
+            Out
+          </span>
         </>
       )}
     </div>

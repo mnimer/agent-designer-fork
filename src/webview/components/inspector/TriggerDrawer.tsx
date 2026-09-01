@@ -51,7 +51,7 @@ const getTriggerIcon = (type: TriggerType) => {
     case 'scheduled':
       return <Clock className="w-4 h-4 text-sky-400" />;
     case 'tester':
-      return <FlaskConical className="w-4 h-4 text-pink-400" />;
+      return <FlaskConical className="w-4 h-4 text-yellow-400" />;
     case 'eventarc':
       return <Zap className="w-4 h-4 text-purple-400" />;
     default:
@@ -568,9 +568,9 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
 
         {/* 5. TESTER TRIGGER (Test Suite & Add More Tests) */}
         {formData.triggerType === 'tester' && (
-          <div className="space-y-3 bg-[#0d1117] p-3 rounded-lg border border-pink-500/30">
+          <div className="space-y-3 bg-[#0d1117] p-3 rounded-lg border border-yellow-500/30">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-pink-400 font-bold text-xs">
+              <div className="flex items-center gap-1.5 text-yellow-400 font-bold text-xs">
                 <FlaskConical className="w-3.5 h-3.5" />
                 <span>Test Prompts & Mock Cases</span>
               </div>
@@ -622,13 +622,13 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
                         value={testCase.name}
                         onChange={(e) => updateTestCase({ name: e.target.value })}
                         placeholder="Test Name"
-                        className="font-bold text-xs text-white bg-transparent border-b border-transparent hover:border-[#30363d] focus:border-pink-500 focus:outline-none w-[180px]"
+                        className="font-bold text-xs text-white bg-transparent border-b border-transparent hover:border-[#30363d] focus:border-yellow-500 focus:outline-none w-[180px]"
                       />
                       <div className="flex items-center gap-1">
                         <select
                           value={testCase.assertionType || 'contains'}
                           onChange={(e) => updateTestCase({ assertionType: e.target.value as any })}
-                          className="px-1.5 py-0.5 bg-[#0d1117] border border-[#30363d] rounded text-[9px] text-pink-300 font-mono focus:outline-none cursor-pointer"
+                          className="px-1.5 py-0.5 bg-[#0d1117] border border-[#30363d] rounded text-[9px] text-yellow-300 font-mono focus:outline-none cursor-pointer"
                         >
                           <option value="contains">contains</option>
                           <option value="exact">exact match</option>
@@ -647,7 +647,7 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[9px] uppercase font-bold text-pink-400">
+                      <label className="text-[9px] uppercase font-bold text-yellow-400">
                         Test Prompt
                       </label>
                       <textarea
@@ -655,7 +655,7 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
                         value={testCase.prompt}
                         onChange={(e) => updateTestCase({ prompt: e.target.value })}
                         placeholder="Prompt to send to agent pipeline..."
-                        className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-pink-400 rounded text-[10px] font-mono text-gray-200 focus:outline-none"
+                        className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-yellow-400 rounded text-[10px] font-mono text-gray-200 focus:outline-none"
                       />
                     </div>
 
@@ -691,9 +691,9 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
                   };
                   handleConfigChange({ testPrompts: [...current, newTest] });
                 }}
-                className="w-full py-2 rounded-lg border border-dashed border-pink-500/40 hover:border-pink-400 hover:bg-pink-950/30 text-pink-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="w-full py-2 rounded-lg border border-dashed border-yellow-500/40 hover:border-yellow-400 hover:bg-yellow-950/30 text-yellow-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
-                <Plus className="w-3.5 h-3.5 text-pink-400" />
+                <Plus className="w-3.5 h-3.5 text-yellow-400" />
                 <span>+ Add More Tests</span>
               </button>
             </div>

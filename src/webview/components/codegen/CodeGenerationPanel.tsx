@@ -108,7 +108,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
     const element = document.createElement('a');
     const file = new Blob([currentFile.content], { type: 'text/plain' });
     element.href = URL.createObjectURL(file);
-    element.download = currentFile.name;
+    element.download = currentFile.name || currentFile.path || 'file.txt';
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);

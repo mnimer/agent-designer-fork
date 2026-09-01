@@ -30,6 +30,7 @@ export type WebviewToExtensionMessage =
         document: AgentWorkflowDocument;
         targetFramework?: FrameworkTarget;
         targetLanguage?: LanguageTarget;
+        deploymentTarget?: string;
         outputFolder?: string;
       };
     }
@@ -77,6 +78,7 @@ export type WebviewToExtensionMessage =
       type: 'STOP_LOCAL_RUNNER';
       payload?: {
         runnerId?: string;
+        port?: number;
       };
     }
   | {
@@ -114,7 +116,7 @@ export type WebviewToExtensionMessage =
     }
   | {
       type: 'BOOTSTRAP_LOADED';
-      payload?: { timestamp: string };
+      payload?: { timestamp?: string | number };
     }
   | {
       type: 'WEBVIEW_LOG';

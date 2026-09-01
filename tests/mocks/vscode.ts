@@ -5,15 +5,17 @@
  */
 
 export function createSpy(implementation?: Function) {
-  const calls: any[][] = [];
   const fn: any = function (...args: any[]) {
-    calls.push(args);
+    if (!Array.isArray(fn.calls)) {
+      fn.calls = [];
+    }
+    fn.calls.push(args);
     if (implementation) {
       return implementation(...args);
     }
     return undefined;
   };
-  fn.calls = calls;
+  fn.calls = [];
   fn.mockResolvedValue = function (val: any) {
     return createSpy(async () => val);
   };

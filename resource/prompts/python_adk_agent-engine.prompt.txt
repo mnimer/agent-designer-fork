@@ -1,0 +1,248 @@
+You are an expert Google Cloud and Vertex AI Agent Engine software engineer. 
+Your task is to generate a complete, production-ready Python repository utilizing Vertex AI Agent Engine / Reasoning Engines (`vertexai.preview.reasoning_engines` and `google-genai`), configured for native deployment to Google Cloud Vertex AI Agent Engine based on the provided react-flow JSON describing the Agent Workflow.
+
+### INPUT WORKFLOW SPECIFICATION:
+```json
+{{WORKFLOW_JSON}}
+```
+
+---
+
+### REQUIREMENTS & ARCHITECTURE:
+
+1. **Vertex AI Agent Engine (Reasoning Engine) Architecture**:
+   - The agent is implemented as a Python class that conforms to the Vertex AI Reasoning Engine specification (`set_up()`, `query()`, and optionally `stream_query()`).
+   - When deployed to Vertex AI Agent Engine, Google fully manages the runtime container, scaling, IAM authentication, telemetry, and exposes standard gRPC/REST endpoints (`:query`, `:streamQuery`).
+   - DO NOT generate a `Dockerfile` or a `server.py` (FastAPI) server, because Agent Engine natively manages the serving layer.
+
+2. **File Structure to Generate**:
+   - `agent.py`: Reasoning Engine class defining the agent runtime:
+     ```python
+     import os
+     from typing import Any, Dict, List, Optional
+     from pydantic import BaseModel
+     from pydantic_models import ResponseSchema
+
+     class AgentReasoningEngine:
+         """
+         Vertex AI Agent Engine Reasoning Engine implementation.
+         """
+         def __init__(self, model_name: str = "gemini-2.0-flash", temperature: float = 0.7):
+             self.model_name = model_name
+             self.temperature = temperature
+             self.system_prompt = "..."
+
+         def set_up(self):
+             """
+             Initializes the client and resources when loaded inside Vertex AI Agent Engine.
+             """
+             from google import genai
+             from google.genai import types
+             # Uses Vertex AI with Application Default Credentials
+             self.client = genai.Client(vertexai=True)
+
+         def query(self, prompt: str, **kwargs) -> Dict[str, Any]:
+             """
+             Executes a single turn query against the agent.
+             """
+             from google.genai import types
+
+             config = types.GenerateContentConfig(
+                 system_instruction=self.system_prompt,
+                 temperature=self.temperature,
+                 response_mime_type="application/json",
+                 response_schema=ResponseSchema,
+             )
+
+             response = self.client.models.generate_content(
+                 model=self.model_name,
+                 contents=prompt,
+                 config=config,
+             )
+
+             if response.parsed and isinstance(response.parsed, ResponseSchema):
+                 return response.parsed.model_dump()
+             
+             return {"raw_response": response.text}
+     ```
+   - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs.
+   - `tools/*.py`: Custom tools and functions passed to the Reasoning Engine.
+   - `deploy.py`: Deployment script to register and deploy the agent to Vertex AI Agent Engine:
+     ```python
+     import os
+     import vertexai
+     from vertexai.preview import reasoning_engines
+     from agent import AgentReasoningEngine
+
+     PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "YOUR_PROJECT_ID")
+     LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+     STAGING_BUCKET = os.getenv("STAGING_BUCKET", f"gs://{PROJECT_ID}-agent-staging")
+
+     vertexai.init(project=PROJECT_ID, location=LOCATION, staging_bucket=STAGING_BUCKET)
+
+     print("Deploying Agent to Vertex AI Agent Engine...")
+     remote_agent = reasoning_engines.ReasoningEngine.create(
+         AgentReasoningEngine(),
+         requirements=[
+             "google-cloud-aiplatform>=1.60.0",
+             "google-genai>=1.0.0",
+             "pydantic>=2.0.0",
+             "cloudpickle>=3.0.0",
+         ],
+         display_name="address-classifier-agent",
+         description="Agent deployed to Vertex AI Agent Engine",
+     )
+
+     print(f"Agent successfully deployed to Agent Engine!")
+     print(f"Resource Name: {remote_agent.resource_name}")
+     ```
+    - `main.py`: Local CLI test runner allowing developers to test `set_up()` and `query()` locally before deployment.
+    - `test_agent.py`: Comprehensive `pytest` test suite executing all test scenarios and assertions against `AgentReasoningEngine`.
+    - `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios for Vertex AI Agent Evaluation:
+      ```jsonl
+      {"prompt": "...", "reference": "...", "expected_tool_calls": ["..."]}
+      ```
+    - `evaluate.py`: Vertex AI Agent Evaluation script utilizing the official `vertexai.evaluation` SDK and `EvalTask`:
+      ```python
+      import os
+      import vertexai
+      from vertexai.evaluation import EvalTask
+      from agent import AgentReasoningEngine
+
+      PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "YOUR_PROJECT_ID")
+      LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+      EXPERIMENT = os.getenv("VERTEX_EXPERIMENT", "agent-evaluation-experiment")
+
+      vertexai.init(project=PROJECT_ID, location=LOCATION, experiment=EXPERIMENT)
+
+      def evaluate_agent():
+          """
+          Runs comprehensive trajectory, groundedness, and instruction following evaluation.
+          """
+          print("Initializing Agent for Vertex AI Evaluation...")
+          agent = AgentReasoningEngine()
+          agent.set_up()
+
+          dataset_path = os.path.join(os.path.dirname(__file__), "eval_dataset.jsonl")
+          if not os.path.exists(dataset_path):
+              print(f"Evaluation dataset not found at {dataset_path}")
+              return
+
+          eval_task = EvalTask(
+              dataset=dataset_path,
+              metrics=[
+                  "trajectory_exact_match",
+                  "trajectory_precision",
+                  "response_follows_trajectory",
+                  "groundedness",
+                  "instruction_following",
+                  "safety",
+              ],
+              experiment=EXPERIMENT,
+          )
+
+          print("Executing Vertex AI Agent Evaluation...")
+          results = eval_task.evaluate(
+              runnable=lambda query: agent.query(prompt=query) if isinstance(query, str) else agent.query(prompt=query.get("prompt", ""))
+          )
+          print("\n=== Vertex AI Evaluation Summary Metrics ===")
+          print(results.summary_metrics)
+          return results
+
+      if __name__ == "__main__":
+          evaluate_agent()
+      ```
+    - `requirements.txt`: Dependencies needed locally and for deployment:
+      ```
+      google-cloud-aiplatform[evaluation,reasoningengine]>=1.60.0
+      google-genai>=1.0.0
+      pydantic>=2.0.0
+      cloudpickle>=3.0.0
+      pytest>=8.0.0
+      python-dotenv>=1.0.0
+      ```
+   - `main.tf`: Bare-minimum Terraform linking to an **existing project ID** to provision the Agent Engine staging bucket and IAM:
+     ```hcl
+     terraform {
+       required_version = ">= 1.5.0"
+       required_providers {
+         google = {
+           source  = "hashicorp/google"
+           version = "~> 5.0"
+         }
+       }
+     }
+
+     variable "project_id" {
+       description = "The ID of the existing Google Cloud project."
+       type        = string
+     }
+
+     variable "region" {
+       description = "Google Cloud region for Vertex AI Agent Engine."
+       type        = string
+       default     = "us-central1"
+     }
+
+     variable "service_name" {
+       description = "Name for the agent resources."
+       type        = string
+       default     = "agent-engine-service"
+     }
+
+     provider "google" {
+       project = var.project_id
+       region  = var.region
+     }
+
+     # Dedicated Service Account for Agent Engine execution
+     resource "google_service_account" "agent_sa" {
+       account_id   = "${var.service_name}-sa"
+       display_name = "Service Account for ${var.service_name}"
+     }
+
+     # Grant Vertex AI User permissions
+     resource "google_project_iam_member" "vertex_user" {
+       project = var.project_id
+       role    = "roles/aiplatform.user"
+       member  = "serviceAccount:${google_service_account.agent_sa.email}"
+     }
+
+     # Staging bucket for Agent Engine artifacts
+     resource "google_storage_bucket" "staging_bucket" {
+       name                        = "${var.project_id}-${var.service_name}-staging"
+       location                    = var.region
+       uniform_bucket_level_access = true
+       force_destroy               = false
+     }
+
+     resource "google_storage_bucket_iam_member" "sa_storage_admin" {
+       bucket = google_storage_bucket.staging_bucket.name
+       role   = "roles/storage.objectAdmin"
+       member = "serviceAccount:${google_service_account.agent_sa.email}"
+     }
+
+     output "staging_bucket" {
+       description = "GCS bucket used for staging Agent Engine deployment artifacts."
+       value       = google_storage_bucket.staging_bucket.url
+     }
+
+     output "service_account_email" {
+       description = "Email of the dedicated service account."
+       value       = google_service_account.agent_sa.email
+     }
+     ```
+   - `README.md`: Architecture overview, local execution with `main.py`, deployment with `python deploy.py`, and invoking the deployed Agent Engine resource from Gemini Enterprise or Python SDK.
+
+---
+
+### OUTPUT FORMAT:
+Respond ONLY with a valid JSON array of file objects conforming to this exact schema (no markdown formatting, no backticks surrounding the JSON, only raw parseable JSON):
+
+[
+  {
+    "path": "<file name>",
+    "description": "<description>",
+    "content": "<file source code>"
+  }
+]

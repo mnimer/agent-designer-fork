@@ -298,10 +298,11 @@ export interface PatternDefinition {
 }
 
 export interface GeneratedFile {
-  name: string;
-  language: 'python' | 'typescript' | 'markdown' | 'json';
+  name?: string;
+  path?: string;
+  language?: 'python' | 'typescript' | 'markdown' | 'json' | string;
   content: string;
-  description: string;
+  description?: string;
 }
 
 export interface GenerationConfig {
@@ -318,17 +319,39 @@ export type DeploymentTarget = 'local' | 'agent_engine' | 'cloud_run';
 
 export interface DeploymentConfig {
   target: DeploymentTarget;
-  localMode: 'cli' | 'fastmcp' | 'docker';
-  localPort: number;
-  agentEngineProject: string;
-  agentEngineRegion: string;
-  agentEngineRuntime: string;
-  cloudRunProject: string;
-  cloudRunService: string;
-  cloudRunRegion: string;
-  cloudRunCpu: string;
-  cloudRunMemory: string;
-  cloudRunAllowUnauthenticated: boolean;
+  port?: number;
+  localMode?: string;
+  localPort?: number;
+  environmentVariables?: Record<string, string>;
+  gcpProjectId?: string;
+  gcpRegion?: string;
+  cloudRunServiceName?: string;
+  cloudRunService?: string;
+  cloudRunProject?: string;
+  cloudRunRegion?: string;
+  cloudRunCpu?: string;
+  cloudRunMemory?: string;
+  cloudRunAllowUnauthenticated?: boolean;
+  agentEngineProject?: string;
+  agentEngineRegion?: string;
+  agentEngineRuntime?: string;
+  agentEngineAppId?: string;
+  minInstances?: number;
+  maxInstances?: number;
+  cpu?: string;
+  memory?: string;
+  allowUnauthenticated?: boolean;
+  [key: string]: any;
+}
+
+export interface WorkflowState {
+  nodes: any[];
+  edges: any[];
+  config: GenerationConfig;
+  deploymentConfig?: DeploymentConfig;
+  selectedAgentId?: string | null;
+  selectedTriggerId?: string | null;
+  sampleId?: string;
 }
 
 export interface AgentFileTab {
@@ -364,5 +387,3 @@ export interface SampleWorkflowDefinition {
   deploymentConfig?: Partial<DeploymentConfig>;
   testPrompts?: TestPrompt[];
 }
-
-

@@ -10,6 +10,6 @@
 
 import { GeneratedFile } from '../../types';
 
-export function generateCodeForGraph(): GeneratedFile[] {
+export function generateCodeForGraph(nodes?: any, edges?: any, config?: any): GeneratedFile[] {
   return [];
 }

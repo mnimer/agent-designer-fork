@@ -10,7 +10,7 @@ import * as vscode from 'vscode';
 import { AgentEditorProvider } from '../../src/extension/AgentEditorProvider';
 import { AgentWorkflowDocument } from '../../src/shared/types';
 
-describe('AgentEditorProvider', () => {
+describe('AgentEditorProvider', { concurrency: 1 }, () => {
   beforeEach(() => {
     vscode.resetAllMocks();
   });

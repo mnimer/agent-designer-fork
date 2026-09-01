@@ -10,13 +10,13 @@ export type AgentKind = 'standard' | 'router' | 'a2a';
 export type TriggerKind = 'test' | 'chat' | 'pubsub' | 'scheduled' | 'eventarc' | 'manual' | 'webhook' | 'cron';
 export type FrameworkTarget = 'google-adk' | 'langgraph';
 export type LanguageTarget = 'python' | 'typescript';
-export type MemoryType = 'none' | 'buffer' | 'firestore' | 'redis' | 'postgres' | 'sqlite' | 'vector_rag';
+export type MemoryType = 'none' | 'buffer' | 'firestore' | 'redis' | 'postgres' | 'sqlite' | 'vector_rag' | 'langgraph_in_memory' | string;
 
 export interface ToolDefinition {
   id: string;
   name: string;
   description: string;
-  type: 'builtin' | 'rest' | 'mcp' | 'code' | 'custom' | 'database';
+  type: 'builtin' | 'rest' | 'mcp' | 'code' | 'custom' | 'database' | string;
   config?: Record<string, unknown>;
 }
 
@@ -97,6 +97,7 @@ export interface AgentNodeData {
   onDelete?: (id: string) => void;
   onAddTool?: (agentId: string) => void;
   onRemoveTool?: (agentId: string, toolId: string) => void;
+  [key: string]: any;
 }
 
 export interface TestSuiteScenario {
@@ -104,10 +105,23 @@ export interface TestSuiteScenario {
   name: string;
   inputQuery: string;
   expectedOutputPattern?: string;
+  expectedOutput?: string;
+  [key: string]: any;
+}
+
+export type TriggerTestScenario = TestSuiteScenario;
+
+export interface TestPrompt {
+  id: string;
+  name?: string;
+  prompt?: string;
+  text?: string;
+  [key: string]: any;
 }
 
 export interface TestSuiteTriggerConfig {
   testScenarios: TestSuiteScenario[];
+  testPrompts?: TestPrompt[];
 }
 
 export interface ChatTriggerConfig {
@@ -135,7 +149,8 @@ export interface EventarcTriggerConfig {
 export interface TriggerNodeData {
   label: string;
   description?: string;
-  triggerKind: TriggerKind;
+  triggerKind?: TriggerKind;
+  triggerType?: string;
   config?: Record<string, any>;
   testConfig?: TestSuiteTriggerConfig;
   chatConfig?: ChatTriggerConfig;
@@ -144,16 +159,17 @@ export interface TriggerNodeData {
   eventarcConfig?: EventarcTriggerConfig;
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
+  [key: string]: any;
 }
 
 export interface WorkflowNode {
   id: string;
-  type: 'agent' | 'trigger';
+  type: 'agent' | 'trigger' | string;
   position: {
     x: number;
     y: number;
   };
-  data: AgentNodeData | TriggerNodeData;
+  data: AgentNodeData | TriggerNodeData | any;
   selected?: boolean;
 }
 
@@ -170,6 +186,7 @@ export interface WorkflowEdge {
   data?: {
     branchId?: string;
     conditionExpression?: string;
+    [key: string]: any;
   };
 }
 
@@ -185,6 +202,17 @@ export interface WorkflowMetadata {
   createdAt?: string;
   updatedAt?: string;
   author?: string;
+  outputFolder?: string;
+  [key: string]: any;
+}
+
+export interface PluginSettings {
+  defaultAgentTheme?: string;
+  useStreamingByDefault?: boolean;
+  geminiApiKey?: string;
+  targetFramework?: FrameworkTarget;
+  targetLanguage?: LanguageTarget;
+  [key: string]: any;
 }
 
 export interface AgentWorkflowDocument {

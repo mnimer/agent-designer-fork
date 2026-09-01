@@ -315,7 +315,6 @@ function generateRawPattern(
         sourceHandle: 'output',
         targetHandle: 'input',
         animated: true,
-        label: 'Step 1: Plan Hand-off',
         style: { stroke: '#3b82f6', strokeWidth: 2 },
       },
       {
@@ -325,8 +324,7 @@ function generateRawPattern(
         sourceHandle: 'output',
         targetHandle: 'input',
         animated: true,
-        label: 'Step 2: Code Review',
-        style: { stroke: '#10b981', strokeWidth: 2 },
+        style: { stroke: '#3b82f6', strokeWidth: 2 },
       },
     ];
 
@@ -423,8 +421,7 @@ function generateRawPattern(
         sourceHandle: 'subagent',
         targetHandle: 'input',
         animated: true,
-        label: 'Parallel Branch A',
-        style: { stroke: '#a855f7', strokeWidth: 2, strokeDasharray: '4 4' },
+        style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' },
       },
       {
         id: `e_${rootId}_${sub2Id}`,
@@ -433,8 +430,7 @@ function generateRawPattern(
         sourceHandle: 'subagent',
         targetHandle: 'input',
         animated: true,
-        label: 'Parallel Branch B',
-        style: { stroke: '#a855f7', strokeWidth: 2, strokeDasharray: '4 4' },
+        style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' },
       },
       {
         id: `e_${rootId}_${sub3Id}`,
@@ -443,8 +439,7 @@ function generateRawPattern(
         sourceHandle: 'subagent',
         targetHandle: 'input',
         animated: true,
-        label: 'Parallel Branch C',
-        style: { stroke: '#a855f7', strokeWidth: 2, strokeDasharray: '4 4' },
+        style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' },
       },
     ];
 
@@ -575,8 +570,7 @@ function generateRawPattern(
         sourceHandle: branchCodeId,
         targetHandle: 'input',
         animated: true,
-        label: 'Route: [Code Intent]',
-        style: { stroke: '#a855f7', strokeWidth: 2 },
+        style: { stroke: '#3b82f6', strokeWidth: 2 },
       },
       {
         id: `e_${routerId}_${branchSearchId}_${searchId}`,
@@ -585,8 +579,7 @@ function generateRawPattern(
         sourceHandle: branchSearchId,
         targetHandle: 'input',
         animated: true,
-        label: 'Route: [Research Intent]',
-        style: { stroke: '#a855f7', strokeWidth: 2 },
+        style: { stroke: '#3b82f6', strokeWidth: 2 },
       },
       {
         id: `e_${routerId}_${branchCreativeId}_${creativeId}`,
@@ -595,8 +588,7 @@ function generateRawPattern(
         sourceHandle: branchCreativeId,
         targetHandle: 'input',
         animated: true,
-        label: 'Route: [Creative Intent]',
-        style: { stroke: '#a855f7', strokeWidth: 2 },
+        style: { stroke: '#3b82f6', strokeWidth: 2 },
       },
     ];
 
@@ -656,7 +648,6 @@ function generateRawPattern(
         sourceHandle: 'output',
         targetHandle: 'input',
         animated: true,
-        label: 'Draft Submission',
         style: { stroke: '#3b82f6', strokeWidth: 2 },
       },
       {
@@ -664,10 +655,9 @@ function generateRawPattern(
         source: evalId,
         target: genId,
         sourceHandle: 'subagent',
-        targetHandle: 'input_left',
+        targetHandle: 'input',
         animated: true,
-        label: 'Feedback & Refinements (Loop)',
-        style: { stroke: '#a855f7', strokeWidth: 2, strokeDasharray: '5 5' },
+        style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '5 5' },
       },
     ];
 
@@ -788,8 +778,7 @@ function generateRawPattern(
         sourceHandle: 'subagent',
         targetHandle: 'input',
         animated: true,
-        label: 'Commission Affirmative Case',
-        style: { stroke: '#10b981', strokeWidth: 2 },
+        style: { stroke: '#3b82f6', strokeWidth: 2 },
       },
       {
         id: `e_${modId}_${oppId}`,
@@ -798,18 +787,16 @@ function generateRawPattern(
         sourceHandle: 'subagent',
         targetHandle: 'input',
         animated: true,
-        label: 'Commission Counter-Thesis & Risks',
-        style: { stroke: '#f43f5e', strokeWidth: 2 },
+        style: { stroke: '#3b82f6', strokeWidth: 2 },
       },
       {
         id: `e_${propId}_${oppId}_critique`,
         source: propId,
         target: oppId,
         sourceHandle: 'output',
-        targetHandle: 'input_left',
+        targetHandle: 'input',
         animated: true,
-        label: 'Cross-Examination Rebuttal',
-        style: { stroke: '#f59e0b', strokeWidth: 2, strokeDasharray: '4 4' },
+        style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' },
       },
       {
         id: `e_${propId}_${judgeId}`,
@@ -818,8 +805,7 @@ function generateRawPattern(
         sourceHandle: 'output',
         targetHandle: 'input',
         animated: true,
-        label: 'Affirmative Brief Submission',
-        style: { stroke: '#10b981', strokeWidth: 2 },
+        style: { stroke: '#3b82f6', strokeWidth: 2 },
       },
       {
         id: `e_${oppId}_${judgeId}`,
@@ -828,8 +814,7 @@ function generateRawPattern(
         sourceHandle: 'output',
         targetHandle: 'input',
         animated: true,
-        label: 'Skeptical Brief Submission',
-        style: { stroke: '#f43f5e', strokeWidth: 2 },
+        style: { stroke: '#3b82f6', strokeWidth: 2 },
       },
     ];
 
@@ -906,7 +891,6 @@ function generateRawPattern(
         sourceHandle: 'output',
         targetHandle: 'input',
         animated: true,
-        label: 'Submit for Critique',
         style: { stroke: '#3b82f6', strokeWidth: 2 },
       },
       {
@@ -916,8 +900,7 @@ function generateRawPattern(
         sourceHandle: 'output',
         targetHandle: 'input',
         animated: true,
-        label: 'Critique & Synthesis',
-        style: { stroke: '#10b981', strokeWidth: 2 },
+        style: { stroke: '#3b82f6', strokeWidth: 2 },
       },
     ];
 
@@ -976,18 +959,16 @@ function generateRawPattern(
         sourceHandle: 'output',
         targetHandle: 'input',
         animated: true,
-        label: 'Version Output',
-        style: { stroke: '#06b6d4', strokeWidth: 2 },
+        style: { stroke: '#3b82f6', strokeWidth: 2 },
       },
       {
         id: `e_${evalId}_${genId}_refine`,
         source: evalId,
         target: genId,
         sourceHandle: 'subagent',
-        targetHandle: 'input_left',
+        targetHandle: 'input',
         animated: true,
-        label: 'Iterate (< 95% threshold)',
-        style: { stroke: '#a855f7', strokeWidth: 2, strokeDasharray: '4 4' },
+        style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' },
       },
     ];
 
@@ -1084,8 +1065,7 @@ function generateRawPattern(
         sourceHandle: 'subagent',
         targetHandle: 'input',
         animated: true,
-        label: 'Coordinator Task A',
-        style: { stroke: '#a855f7', strokeWidth: 2, strokeDasharray: '4 4' },
+        style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' },
       },
       {
         id: `e_${coordId}_${d2Id}`,
@@ -1094,8 +1074,7 @@ function generateRawPattern(
         sourceHandle: 'subagent',
         targetHandle: 'input',
         animated: true,
-        label: 'Coordinator Task B',
-        style: { stroke: '#a855f7', strokeWidth: 2, strokeDasharray: '4 4' },
+        style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' },
       },
       {
         id: `e_${coordId}_${d3Id}`,
@@ -1104,8 +1083,7 @@ function generateRawPattern(
         sourceHandle: 'subagent',
         targetHandle: 'input',
         animated: true,
-        label: 'Coordinator Task C',
-        style: { stroke: '#a855f7', strokeWidth: 2, strokeDasharray: '4 4' },
+        style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' },
       },
     ];
 
@@ -1262,7 +1240,6 @@ function generateRawPattern(
       sourceHandle: 'subagent',
       targetHandle: 'input',
       animated: true,
-      label: 'Decompose: UI Track',
       style: { stroke: '#3b82f6', strokeWidth: 2 },
     },
     {
@@ -1272,7 +1249,6 @@ function generateRawPattern(
       sourceHandle: 'subagent',
       targetHandle: 'input',
       animated: true,
-      label: 'Decompose: Backend Track',
       style: { stroke: '#3b82f6', strokeWidth: 2 },
     },
     {
@@ -1282,8 +1258,7 @@ function generateRawPattern(
       sourceHandle: 'subagent',
       targetHandle: 'input',
       animated: true,
-      label: 'Delegate: Components',
-      style: { stroke: '#10b981', strokeWidth: 2, strokeDasharray: '4 4' },
+      style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' },
     },
     {
       id: `e_${lead1Id}_${w2Id}`,
@@ -1292,8 +1267,7 @@ function generateRawPattern(
       sourceHandle: 'subagent',
       targetHandle: 'input',
       animated: true,
-      label: 'Delegate: State',
-      style: { stroke: '#10b981', strokeWidth: 2, strokeDasharray: '4 4' },
+      style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' },
     },
     {
       id: `e_${lead2Id}_${w3Id}`,
@@ -1302,8 +1276,7 @@ function generateRawPattern(
       sourceHandle: 'subagent',
       targetHandle: 'input',
       animated: true,
-      label: 'Delegate: Endpoints',
-      style: { stroke: '#a855f7', strokeWidth: 2, strokeDasharray: '4 4' },
+      style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' },
     },
     {
       id: `e_${lead2Id}_${w4Id}`,
@@ -1312,8 +1285,7 @@ function generateRawPattern(
       sourceHandle: 'subagent',
       targetHandle: 'input',
       animated: true,
-      label: 'Delegate: Database',
-      style: { stroke: '#a855f7', strokeWidth: 2, strokeDasharray: '4 4' },
+      style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' },
     },
   ];
 
@@ -1351,8 +1323,7 @@ export function createPatternNodesAndEdges(
       target: rootNode.id,
       targetHandle: 'input_left',
       animated: true,
-      label: 'Test Suite Inbound',
-      style: { stroke: '#ec4899', strokeWidth: 2, strokeDasharray: '5 5' },
+      style: { stroke: '#eab308', strokeWidth: 2, strokeDasharray: '5 5' },
     };
 
     combinedNodes = [testerNode, ...result.nodes];

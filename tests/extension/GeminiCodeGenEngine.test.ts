@@ -84,6 +84,24 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
     assert.ok(prompt.includes('google-genai'));
   });
 
+  it('should load prompt template for specific deployment targets', () => {
+    const cloudrunPrompt = engine.loadPromptTemplate('google-adk', 'python', 'cloudrun');
+    assert.ok(cloudrunPrompt.includes('Cloud Run'));
+    assert.ok(cloudrunPrompt.includes('server.py'));
+
+    const cloudrunUnderscorePrompt = engine.loadPromptTemplate('google-adk', 'python', 'cloud_run');
+    assert.ok(cloudrunUnderscorePrompt.includes('Cloud Run'));
+    assert.ok(cloudrunUnderscorePrompt.includes('server.py'));
+
+    const agentEnginePrompt = engine.loadPromptTemplate('google-adk', 'python', 'agent-engine');
+    assert.ok(agentEnginePrompt.includes('Agent Engine'));
+    assert.ok(agentEnginePrompt.includes('deploy.py'));
+
+    const agentEngineUnderscorePrompt = engine.loadPromptTemplate('google-adk', 'python', 'agent_engine');
+    assert.ok(agentEngineUnderscorePrompt.includes('Agent Engine'));
+    assert.ok(agentEngineUnderscorePrompt.includes('deploy.py'));
+  });
+
   it('should parse raw Gemini JSON response with markdown fences', () => {
     const rawFencedResponse = '```json\n[\n  {\n    "path": "test.py",\n    "description": "Test file",\n    "content": "print(123)"\n  }\n]\n```';
     const files = engine.parseGeminiResponse(rawFencedResponse);
