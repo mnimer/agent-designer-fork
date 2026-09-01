@@ -1,7 +1,7 @@
 {
-  "name": "agent-flow-builder",
-  "displayName": "Visual Studio Code Agent Flow Builder",
-  "description": "Visual multi-agent IDE canvas orchestrator for designing, testing, and generating production-ready compound AI systems.",
+  "name": "visual-agent-designer",
+  "displayName": "Visual Studio Agent Designer",
+  "description": "Visual multi-agent IDE canvas orchestrator for designing, testing, and generating production-ready AI agents.",
   "version": "1.0.0",
   "publisher": "mikenimer",
   "author": "Mike Nimer <mikenimer@google.com>",
@@ -17,11 +17,7 @@
   ],
   "main": "./dist/extension/extension.js",
   "activationEvents": [
-    "onStartupFinished",
-    "onCustomEditor:agentFlow.editor",
-    "onCommand:agentFlow.createWorkflow",
-    "onCommand:agentFlow.generateCode",
-    "onCommand:agentFlow.runTests"
+    "onStartupFinished"
   ],
   "contributes": {
     "customEditors": [
