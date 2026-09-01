@@ -22,7 +22,7 @@ metadata:
 
 # ADK Observability Guide
 
-> **Cloud Trace** works out of the box — no infrastructure needed. **Prompt-response logging** and **BigQuery Agent Analytics** require Terraform-provisioned infrastructure (service account, GCS bucket, BigQuery dataset). Run `agents-cli infra single-project --project PROJECT_ID` to provision these resources. See `references/cloud-trace-and-logging.md` for details, env vars, and verification commands. If your project isn't scaffolded yet, see @../google-agents-cli-scaffold/SKILL.md first.
+> **Cloud Trace** works out of the box — no infrastructure needed. **Prompt-response logging** and **BigQuery Agent Analytics** require Terraform-provisioned infrastructure (service account, GCS bucket, BigQuery dataset). Run `agents-cli infra single-project --project PROJECT_ID` to provision these resources. See `references/cloud-trace-and-logging.md` for details, env vars, and verification commands. If your project isn't scaffolded yet, see /google-agents-cli-scaffold first.
 
 ### Order of operations for `agent_runtime` deployments
 
@@ -160,6 +160,6 @@ For detailed documentation beyond what this skill covers, fetch these pages:
 
 ## Related Skills
 
-- @../google-agents-cli-deploy/SKILL.md — Deployment targets, CI/CD pipelines, and production workflows
-- @../google-agents-cli-workflow/SKILL.md — Development workflow, coding guidelines, and operational rules
-- @../google-agents-cli-adk-code/SKILL.md — ADK Python API quick reference for writing agent code
+- /google-agents-cli-deploy — Deployment targets, CI/CD pipelines, and production workflows
+- /google-agents-cli-workflow — Development workflow, coding guidelines, and operational rules
+- /google-agents-cli-adk-code — ADK Python API quick reference for writing agent code

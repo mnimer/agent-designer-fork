@@ -1,6 +1,6 @@
 # Cloud Run Infrastructure
 
-> **Assumes @../google-agents-cli-scaffold/SKILL.md scaffolding.** If your project isn't scaffolded yet, see @../google-agents-cli-scaffold/SKILL.md first.
+> **Assumes /google-agents-cli-scaffold scaffolding.** If your project isn't scaffolded yet, see /google-agents-cli-scaffold first.
 
 ## Scaling & Resource Defaults
 
@@ -8,7 +8,7 @@ Agents CLI scaffolds Cloud Run infrastructure in `deployment/terraform/single-pr
 
 Key settings to be aware of: `cpu_idle` (CPU allocation strategy), `min_instance_count` (cold start avoidance), `max_instance_request_concurrency` (concurrency per instance), and `session_affinity` (sticky routing).
 
-For how to size cpu/memory/workers/concurrency together (and avoid OOM), see **Sizing a deployment** in the @../google-agents-cli-deploy/SKILL.md skill.
+For how to size cpu/memory/workers/concurrency together (and avoid OOM), see **Sizing a deployment** in the /google-agents-cli-deploy skill.
 
 ## Dockerfile
 

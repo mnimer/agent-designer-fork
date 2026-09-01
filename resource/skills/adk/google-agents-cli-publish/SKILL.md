@@ -202,6 +202,6 @@ Docs: https://docs.cloud.google.com/agent-registry/manage-agents · https://docs
 
 ## Related Skills
 
-- @../google-agents-cli-deploy/SKILL.md — Deployment targets, CI/CD pipelines, and production workflows (also covers Agent Gateway governed ingress/egress and Semantic Governance awareness)
-- @../google-agents-cli-workflow/SKILL.md — Development workflow, coding guidelines, and operational rules
-- @../google-agents-cli-scaffold/SKILL.md — Project creation and enhancement with `agents-cli scaffold create` / `scaffold enhance`
+- /google-agents-cli-deploy — Deployment targets, CI/CD pipelines, and production workflows (also covers Agent Gateway governed ingress/egress and Semantic Governance awareness)
+- /google-agents-cli-workflow — Development workflow, coding guidelines, and operational rules
+- /google-agents-cli-scaffold — Project creation and enhancement with `agents-cli scaffold create` / `scaffold enhance`

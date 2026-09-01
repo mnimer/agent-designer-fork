@@ -1,6 +1,6 @@
 # GKE Infrastructure
 
-> **Assumes `agents-cli` scaffolding.** If your project isn't scaffolded yet, see @../google-agents-cli-scaffold/SKILL.md first.
+> **Assumes `agents-cli` scaffolding.** If your project isn't scaffolded yet, see /google-agents-cli-scaffold first.
 
 ## Deployment Architecture
 

@@ -1,6 +1,6 @@
 # Cloud Trace & Prompt-Response Logging (Scaffolded Projects)
 
-> **Assumes @../google-agents-cli-scaffold/SKILL.md scaffolding.** Observability infrastructure is provisioned by Terraform in scaffolded projects.
+> **Assumes /google-agents-cli-scaffold scaffolding.** Observability infrastructure is provisioned by Terraform in scaffolded projects.
 
 ## Cloud Trace
 

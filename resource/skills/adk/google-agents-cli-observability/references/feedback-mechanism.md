@@ -1,6 +1,6 @@
 # Feedback Mechanism (Scaffolded Projects)
 
-> **Assumes @../google-agents-cli-scaffold/SKILL.md scaffolding.** Reuses the same telemetry infrastructure documented in `cloud-trace-and-logging.md`.
+> **Assumes /google-agents-cli-scaffold scaffolding.** Reuses the same telemetry infrastructure documented in `cloud-trace-and-logging.md`.
 
 To collect end-user feedback (ratings, thumbs up/down, free-text) and land it in BigQuery for analysis, reuse the same pattern as GenAI logs: **structured log → log sink → BigQuery**. There are three components.
 

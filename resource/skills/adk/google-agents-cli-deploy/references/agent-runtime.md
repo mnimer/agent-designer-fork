@@ -1,6 +1,6 @@
 # Agent Runtime Infrastructure
 
-> **Assumes @../google-agents-cli-scaffold/SKILL.md scaffolding.** If your project isn't scaffolded yet, see @../google-agents-cli-scaffold/SKILL.md first.
+> **Assumes /google-agents-cli-scaffold scaffolding.** If your project isn't scaffolded yet, see /google-agents-cli-scaffold first.
 
 ## Deployment Architecture
 

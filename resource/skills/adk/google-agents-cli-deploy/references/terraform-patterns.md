@@ -1,6 +1,6 @@
 # Custom Infrastructure (Terraform)
 
-> **Assumes @../google-agents-cli-scaffold/SKILL.md scaffolding.** These patterns apply to projects with `deployment/terraform/` directories.
+> **Assumes /google-agents-cli-scaffold scaffolding.** These patterns apply to projects with `deployment/terraform/` directories.
 
 ## Where to Put Custom Terraform
 
@@ -128,7 +128,7 @@ agents-cli infra single-project  # Runs terraform apply in deployment/terraform/
 - Create the remote function via SQL after deployment
 
 **Cloud SQL sessions:**
-- Already configured when using `--session-type cloud_sql` via the Agents CLI (see @../google-agents-cli-scaffold/SKILL.md)
+- Already configured when using `--session-type cloud_sql` via the Agents CLI (see /google-agents-cli-scaffold)
 - Additional tables/schemas can be added via migration scripts
 
 ## Terraform State Management

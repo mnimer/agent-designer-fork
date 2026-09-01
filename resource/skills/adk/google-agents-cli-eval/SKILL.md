@@ -22,7 +22,7 @@ metadata:
 
 > **Requires:** `agents-cli` (`uv tool install google-agents-cli`) — [install uv](https://docs.astral.sh/uv/getting-started/installation/index.md) first if needed.
 
-> **Scaffolded project?** If you used @../google-agents-cli-scaffold/SKILL.md, you already have `agents-cli eval run` (chains `generate` + `grade`), `tests/eval/datasets/`, and `tests/eval/eval_config.yaml`. Start with executing `eval run` and iterate from there.
+> **Scaffolded project?** If you used /google-agents-cli-scaffold, you already have `agents-cli eval run` (chains `generate` + `grade`), `tests/eval/datasets/`, and `tests/eval/eval_config.yaml`. Start with executing `eval run` and iterate from there.
 
 ## Reference Files
 
@@ -357,8 +357,8 @@ Don't assert that eval passes — show the evidence. Concrete output prevents fa
 
 ## Related Skills
 
-- @../google-agents-cli-workflow/SKILL.md — Development workflow and the spec-driven build-evaluate-deploy lifecycle
-- @../google-agents-cli-adk-code/SKILL.md — ADK Python API quick reference for writing agent code
-- @../google-agents-cli-scaffold/SKILL.md — Project creation and enhancement with `agents-cli scaffold create` / `scaffold enhance`
-- @../google-agents-cli-deploy/SKILL.md — Deployment targets, CI/CD pipelines, and production workflows
-- @../google-agents-cli-observability/SKILL.md — Cloud Trace, logging, and monitoring for debugging agent behavior
+- /google-agents-cli-workflow — Development workflow and the spec-driven build-evaluate-deploy lifecycle
+- /google-agents-cli-adk-code — ADK Python API quick reference for writing agent code
+- /google-agents-cli-scaffold — Project creation and enhancement with `agents-cli scaffold create` / `scaffold enhance`
+- /google-agents-cli-deploy — Deployment targets, CI/CD pipelines, and production workflows
+- /google-agents-cli-observability — Cloud Trace, logging, and monitoring for debugging agent behavior

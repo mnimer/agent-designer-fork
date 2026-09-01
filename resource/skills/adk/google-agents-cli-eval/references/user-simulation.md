@@ -1,6 +1,6 @@
 # User Simulation for Dynamic Evaluation
 
-> File paths below reference the scaffolded layout. Adjust for your project structure if not using @../google-agents-cli-scaffold/SKILL.md.
+> File paths below reference the scaffolded layout. Adjust for your project structure if not using /google-agents-cli-scaffold.
 
 ## When to Use
 

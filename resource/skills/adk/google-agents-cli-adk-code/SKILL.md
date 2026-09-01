@@ -21,7 +21,7 @@ metadata:
 
 # ADK Code Reference
 
-Review @../google-agents-cli-workflow/SKILL.md first for required development phases and scaffolding steps.
+Review /google-agents-cli-workflow first for required development phases and scaffolding steps.
 
 ## 1. Study Recipes (No Project Needed)
 
@@ -72,7 +72,7 @@ Use cheatsheets for common patterns. For deep knowledge, fetch the docs index or
 
 ## Related Skills
 
-- @../google-agents-cli-workflow/SKILL.md — Development workflow, coding guidelines, and operational rules
-- @../google-agents-cli-scaffold/SKILL.md — Project creation and enhancement with `agents-cli scaffold create` / `scaffold enhance`
-- @../google-agents-cli-eval/SKILL.md — Evaluation methodology, dataset schema, and the eval-fix loop
-- @../google-agents-cli-deploy/SKILL.md — Deployment targets, CI/CD pipelines, and production workflows
+- /google-agents-cli-workflow — Development workflow, coding guidelines, and operational rules
+- /google-agents-cli-scaffold — Project creation and enhancement with `agents-cli scaffold create` / `scaffold enhance`
+- /google-agents-cli-eval — Evaluation methodology, dataset schema, and the eval-fix loop
+- /google-agents-cli-deploy — Deployment targets, CI/CD pipelines, and production workflows

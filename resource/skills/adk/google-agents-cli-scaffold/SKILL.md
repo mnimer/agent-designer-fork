@@ -29,7 +29,7 @@ Use the `agents-cli` CLI to create new ADK agent projects or enhance existing on
 
 ## Prerequisite: Clarify Requirements (MANDATORY for new projects)
 
-**Before scaffolding a new project, load @../google-agents-cli-workflow/SKILL.md and complete Phase 0** — clarify the user's requirements before running any `scaffold create` command. Ask what the agent should do, what tools/APIs it needs, and whether they want a prototype or full deployment.
+**Before scaffolding a new project, load /google-agents-cli-workflow and complete Phase 0** — clarify the user's requirements before running any `scaffold create` command. Ask what the agent should do, what tools/APIs it needs, and whether they want a prototype or full deployment.
 
 ---
 
@@ -39,7 +39,7 @@ Use the `agents-cli` CLI to create new ADK agent projects or enhance existing on
 
 | Choice | CLI flag |
 |--------|----------|
-| Retrieval/RAG, sandboxed execution, cross-session memory, OAuth consent, guardrails, scheduled runs | **No flag** — these come from clone-and-study recipes; see the topic index in @../google-agents-cli-adk-code/SKILL.md → `references/samples.md` |
+| Retrieval/RAG, sandboxed execution, cross-session memory, OAuth consent, guardrails, scheduled runs | **No flag** — these come from clone-and-study recipes; see the topic index in /google-agents-cli-adk-code → `references/samples.md` |
 | A2A protocol | built into every ADK agent — scaffold normally (`--agent adk`) |
 | Prototype (no deployment) | `--prototype` |
 | Deployment target | `--deployment-target <agent_runtime\|cloud_run\|gke>` |
@@ -129,7 +129,7 @@ agents-cli scaffold enhance . --cicd-runner github_actions
 
 > **`adk` is the only template.** Capabilities beyond it — retrieval, sandboxed execution, memory,
 > OAuth, guardrails — are clone-and-study recipes, not templates. See the topic index in
-> @../google-agents-cli-adk-code/SKILL.md → `references/samples.md`.
+> /google-agents-cli-adk-code → `references/samples.md`.
 
 ---
 
@@ -164,7 +164,7 @@ When using `agent_runtime` as the deployment target, Agent Runtime manages sessi
 
 ## Step 3: Load Dev Workflow
 
-After scaffolding, immediately load @../google-agents-cli-workflow/SKILL.md — it contains the development workflow, coding guidelines, and operational rules you must follow when implementing the agent.
+After scaffolding, immediately load /google-agents-cli-workflow — it contains the development workflow, coding guidelines, and operational rules you must follow when implementing the agent.
 
 **Key files to customize:** `app/agent.py` (instruction, tools, model), `app/tools.py` (custom tool functions), `.env` (project ID, location, API keys).
 **Files to preserve:** `agents-cli-manifest.yaml` (CLI reads this), deployment configs under `deployment/`, `Makefile`, `app/__init__.py` (the `App(name=...)` must match the directory name — default `app`), and the generated runtime/A2A infra (`app/fast_api_app.py`, `app/app_utils/a2a.py`, `app/app_utils/services.py`, `Dockerfile`) — these wire up serving, sessions, and the built-in A2A surface; don't hand-edit them.
@@ -198,7 +198,7 @@ This is useful for:
 
 ## Critical Rules
 
-- **NEVER skip requirements clarification** — load @../google-agents-cli-workflow/SKILL.md Phase 0 and clarify the user's intent before running `scaffold create`
+- **NEVER skip requirements clarification** — load /google-agents-cli-workflow Phase 0 and clarify the user's intent before running `scaffold create`
 - **NEVER change the model** in existing code unless explicitly asked
 - **NEVER `mkdir` before `create`** — the CLI creates the directory; pre-creating it causes enhance mode instead of create mode
 - **NEVER create a Git repo or push to remote without asking** — confirm repo name, public vs private, and whether the user wants it created at all
@@ -235,13 +235,13 @@ Result: Valid A2A imports and Dockerfile — no manual A2A code written.
 
 ### `agents-cli` command not found
 
-See @../google-agents-cli-workflow/SKILL.md → **Setup** section.
+See /google-agents-cli-workflow → **Setup** section.
 
 ---
 
 ## Related Skills
 
-- @../google-agents-cli-workflow/SKILL.md — Development workflow, coding guidelines, and the build-evaluate-deploy lifecycle
-- @../google-agents-cli-adk-code/SKILL.md — ADK Python API quick reference for writing agent code
-- @../google-agents-cli-deploy/SKILL.md — Deployment targets, CI/CD pipelines, and production workflows
-- @../google-agents-cli-eval/SKILL.md — Evaluation methodology, dataset schema, and the eval-fix loop
+- /google-agents-cli-workflow — Development workflow, coding guidelines, and the build-evaluate-deploy lifecycle
+- /google-agents-cli-adk-code — ADK Python API quick reference for writing agent code
+- /google-agents-cli-deploy — Deployment targets, CI/CD pipelines, and production workflows
+- /google-agents-cli-eval — Evaluation methodology, dataset schema, and the eval-fix loop

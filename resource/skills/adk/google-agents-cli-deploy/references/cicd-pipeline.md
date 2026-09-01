@@ -8,7 +8,7 @@
 3. GitHub repository name and owner
 
 **Steps:**
-1. If prototype, first add Terraform/CI-CD files using the Agents CLI (see @../google-agents-cli-scaffold/SKILL.md for full options):
+1. If prototype, first add Terraform/CI-CD files using the Agents CLI (see /google-agents-cli-scaffold for full options):
    ```bash
    agents-cli scaffold enhance . --cicd-runner github_actions
    ```

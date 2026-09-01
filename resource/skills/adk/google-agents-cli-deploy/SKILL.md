@@ -23,7 +23,7 @@ metadata:
 
 > **Requires:** `agents-cli` (`uv tool install google-agents-cli`) — [install uv](https://docs.astral.sh/uv/getting-started/installation/index.md) first if needed.
 
-> Prefer using the `agents-cli` commands throughout this guide — they wrap Terraform, Docker, and deployment into a tested pipeline. If your project isn't scaffolded yet, see @../google-agents-cli-scaffold/SKILL.md to add deployment support first.
+> Prefer using the `agents-cli` commands throughout this guide — they wrap Terraform, Docker, and deployment into a tested pipeline. If your project isn't scaffolded yet, see /google-agents-cli-scaffold to add deployment support first.
 
 ### Reference Files
 
@@ -33,11 +33,11 @@ For deeper details, consult these reference files in `references/`:
 - **`agent-runtime.md`** — container-based deploy, unified FastAPI app, the `/api` passthrough, Terraform resource, deployment metadata, CI/CD differences
 - **`gke.md`** — GKE Autopilot cluster, Kubernetes manifests, Workload Identity, session types, networking
 - **`terraform-patterns.md`** — Custom infrastructure, IAM, state management, importing resources
-- **`batch-inference.md`** — BigQuery Remote Function trigger; for Pub/Sub / Eventarc see @../google-agents-cli-adk-code
+- **`batch-inference.md`** — BigQuery Remote Function trigger; for Pub/Sub / Eventarc see /google-agents-cli-adk-code
 - **`cicd-pipeline.md`** — Full CI/CD pipeline setup, `infra cicd` flags, runner comparison, WIF auth, pipeline stages
 - **`testing-deployed-agents.md`** — Testing instructions per deployment target, curl examples, load tests
 
-> **Observability:** See the @../google-agents-cli-observability/SKILL.md skill for Cloud Trace, prompt-response logging, BigQuery Analytics, and third-party integrations.
+> **Observability:** See the /google-agents-cli-observability skill for Cloud Trace, prompt-response logging, BigQuery Analytics, and third-party integrations.
 
 ---
 
@@ -50,7 +50,7 @@ Choose the right deployment target based on your requirements:
 | **Scaling** | Managed auto-scaling (configurable min/max, concurrency) | Fully configurable (min/max instances, concurrency, CPU allocation) | Full Kubernetes scaling (HPA, VPA, node auto-provisioning) |
 | **Networking** | VPC-SC and PSC-I supported (private VPC connectivity via network attachments) | Full VPC support, direct VPC egress, IAP, ingress rules | Full Kubernetes networking |
 | **Session state** | Native `VertexAiSessionService` (persistent, managed) | In-memory (dev), Cloud SQL, or Agent Platform Sessions backend | In-memory (dev), Cloud SQL, or Agent Platform Sessions backend |
-| **Batch/event processing** | Trigger endpoints reachable via the Agent Engine `/api` passthrough | Native trigger endpoints (Pub/Sub, Eventarc); see @../google-agents-cli-adk-code/SKILL.md | Custom (Kubernetes Jobs, Pub/Sub) |
+| **Batch/event processing** | Trigger endpoints reachable via the Agent Engine `/api` passthrough | Native trigger endpoints (Pub/Sub, Eventarc); see /google-agents-cli-adk-code | Custom (Kubernetes Jobs, Pub/Sub) |
 | **Cost model** | vCPU-hours + memory-hours (not billed when idle) | Per-instance-second + min instance costs | Node pool costs (always-on or auto-provisioned) |
 | **Setup complexity** | Lower (managed, purpose-built for agents) | Medium (Dockerfile, Terraform, networking) | Higher (Kubernetes expertise required) |
 | **Best for** | Managed infrastructure, minimal ops | Custom infra, full networking control | Full Kubernetes control |
@@ -61,9 +61,9 @@ All three targets are container-based, so any language works.
 
 > **Product name mapping:** "Agent Engine" / "Vertex AI Agent Engine" is now **Agent Runtime**. Use `--deployment-target agent_runtime`.
 
-> **Ambient / scheduled / event-driven agents:** ADK's `trigger_sources` registers `/apps/{app}/trigger/*` endpoints on the same FastAPI app for **all** targets. On **Cloud Run** / **GKE** these are public HTTP routes you point a Pub/Sub push subscription or Eventarc trigger at; on **Agent Runtime** the same routes are reachable through the Agent Engine `/api` passthrough (e.g. `.../reasoningEngines/v1/{resource}/api/apps/{app}/trigger/pubsub`). Cloud Run remains the simplest target for unauthenticated trigger sources. See @../google-agents-cli-adk-code/SKILL.md (`references/adk-python.md`, section "12. Event-Driven / Ambient Agents") for the `trigger_sources` pattern.
+> **Ambient / scheduled / event-driven agents:** ADK's `trigger_sources` registers `/apps/{app}/trigger/*` endpoints on the same FastAPI app for **all** targets. On **Cloud Run** / **GKE** these are public HTTP routes you point a Pub/Sub push subscription or Eventarc trigger at; on **Agent Runtime** the same routes are reachable through the Agent Engine `/api` passthrough (e.g. `.../reasoningEngines/v1/{resource}/api/apps/{app}/trigger/pubsub`). Cloud Run remains the simplest target for unauthenticated trigger sources. See /google-agents-cli-adk-code (`references/adk-python.md`, section "12. Event-Driven / Ambient Agents") for the `trigger_sources` pattern.
 
-> **OAuth / user consent agents:** Use **Agent Runtime** with Gemini Enterprise for agents that need OAuth 2.0 user consent (e.g., accessing Google Drive, Calendar, or other user-scoped APIs). Cloud Run does not currently support managed OAuth flows. For a worked example, look up OAuth user consent in the topic index in @../google-agents-cli-adk-code/SKILL.md → `references/samples.md`.
+> **OAuth / user consent agents:** Use **Agent Runtime** with Gemini Enterprise for agents that need OAuth 2.0 user consent (e.g., accessing Google Drive, Calendar, or other user-scoped APIs). Cloud Run does not currently support managed OAuth flows. For a worked example, look up OAuth user consent in the topic index in /google-agents-cli-adk-code → `references/samples.md`.
 
 ---
 
@@ -82,7 +82,7 @@ All three targets are container-based, so any language works.
 
 **IMPORTANT**: Never run `agents-cli deploy` without explicit human approval.
 
-> **Do NOT run `agents-cli infra single-project` before deploying.** It is not a prerequisite — `agents-cli deploy` works on its own. Run it separately if the user needs observability features (prompt-response logging, BigQuery analytics) — see @../google-agents-cli-observability/SKILL.md.
+> **Do NOT run `agents-cli infra single-project` before deploying.** It is not a prerequisite — `agents-cli deploy` works on its own. Run it separately if the user needs observability features (prompt-response logging, BigQuery analytics) — see /google-agents-cli-observability.
 
 ### Single-Project Infrastructure Setup (Optional — Advanced)
 
@@ -168,7 +168,7 @@ For the full CI/CD pipeline setup guide — prerequisites, `infra cicd` flags, r
 
 For detailed infrastructure configuration (scaling defaults, Dockerfile, FastAPI endpoints, session types, networking), see `references/cloud-run.md`. For ADK docs on Cloud Run deployment, fetch `https://adk.dev/deploy/cloud-run/index.md`.
 
-For event-driven / ambient agent deployment on Cloud Run, see the [`ambient-expense-agent`](https://github.com/google/adk-samples/tree/main/core/python/ambient-expense-agent) sample and @../google-agents-cli-adk-code/SKILL.md (`references/adk-python.md`, section "12. Event-Driven / Ambient Agents") for the `trigger_sources` pattern.
+For event-driven / ambient agent deployment on Cloud Run, see the [`ambient-expense-agent`](https://github.com/google/adk-samples/tree/main/core/python/ambient-expense-agent) sample and /google-agents-cli-adk-code (`references/adk-python.md`, section "12. Event-Driven / Ambient Agents") for the `trigger_sources` pattern.
 
 ---
 
@@ -360,7 +360,7 @@ For custom infrastructure patterns, consult `references/terraform-patterns.md` f
 
 ## Platform Registration
 
-For registering deployed agents with Gemini Enterprise, see @../google-agents-cli-publish/SKILL.md.
+For registering deployed agents with Gemini Enterprise, see /google-agents-cli-publish.
 
 ---
 
@@ -418,9 +418,9 @@ constraints.
 
 ## Related Skills
 
-- @../google-agents-cli-workflow/SKILL.md — Development workflow, coding guidelines, and operational rules
-- @../google-agents-cli-adk-code/SKILL.md — ADK Python API quick reference for writing agent code
-- @../google-agents-cli-eval/SKILL.md — Evaluation methodology, dataset schema, and the eval-fix loop
-- @../google-agents-cli-scaffold/SKILL.md — Project creation and enhancement with `agents-cli scaffold create` / `scaffold enhance`
-- @../google-agents-cli-observability/SKILL.md — Cloud Trace, logging, BigQuery Analytics, and third-party integrations
-- @../google-agents-cli-publish/SKILL.md — Gemini Enterprise registration
+- /google-agents-cli-workflow — Development workflow, coding guidelines, and operational rules
+- /google-agents-cli-adk-code — ADK Python API quick reference for writing agent code
+- /google-agents-cli-eval — Evaluation methodology, dataset schema, and the eval-fix loop
+- /google-agents-cli-scaffold — Project creation and enhancement with `agents-cli scaffold create` / `scaffold enhance`
+- /google-agents-cli-observability — Cloud Trace, logging, BigQuery Analytics, and third-party integrations
+- /google-agents-cli-publish — Gemini Enterprise registration

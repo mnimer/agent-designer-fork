@@ -2,7 +2,7 @@
 
 Invoke an ADK agent as a BigQuery Remote Function for batch inference over table rows. This requires a custom `POST /` endpoint since BQ cannot use URL paths.
 
-> For event-driven triggers (Pub/Sub, Eventarc), use ADK's native `trigger_sources` — see @../google-agents-cli-adk-code/SKILL.md.
+> For event-driven triggers (Pub/Sub, Eventarc), use ADK's native `trigger_sources` — see /google-agents-cli-adk-code.
 
 ## BigQuery Remote Function
 
