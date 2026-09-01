@@ -105,11 +105,38 @@ export function getLayoutedElements<T extends Record<string, unknown> = Record<s
   });
 
   // Register edges between main nodes
-  edges.forEach((edge) => {
-    const isTesterEdge = testerNodes.some((tn) => tn.id === edge.source);
-    if (!isTesterEdge && mainNodes.some((n) => n.id === edge.source) && mainNodes.some((n) => n.id === edge.target)) {
-      dagreGraph.setEdge(edge.source, edge.target);
+  // Sort outgoing edges from each parent node to preserve sub-agents order in layout
+  const orderedEdges: Edge[] = [];
+  mainNodes.forEach((node) => {
+    const parentOutEdges = edges.filter(
+      (edge) =>
+        edge.source === node.id &&
+        !testerNodes.some((tn) => tn.id === edge.source) &&
+        mainNodes.some((n) => n.id === edge.target)
+    );
+
+    const subAgentsList = (node.data as any)?.subAgents;
+    if (Array.isArray(subAgentsList) && subAgentsList.length > 0) {
+      const orderMap = new Map<string, number>();
+      subAgentsList.forEach((sub: any, idx: number) => {
+        if (sub && typeof sub === 'object' && sub.agentId) {
+          orderMap.set(sub.agentId, idx);
+        } else if (typeof sub === 'string') {
+          orderMap.set(sub, idx);
+        }
+      });
+      parentOutEdges.sort((a, b) => {
+        const orderA = orderMap.has(a.target) ? orderMap.get(a.target)! : 9999;
+        const orderB = orderMap.has(b.target) ? orderMap.get(b.target)! : 9999;
+        return orderA - orderB;
+      });
     }
+
+    orderedEdges.push(...parentOutEdges);
+  });
+
+  orderedEdges.forEach((edge) => {
+    dagreGraph.setEdge(edge.source, edge.target);
   });
 
   // Run Dagre Layout on main graph
