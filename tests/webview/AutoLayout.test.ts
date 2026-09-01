@@ -216,6 +216,80 @@ describe('AutoLayout', () => {
       assert.notEqual(s1.position.x, s2.position.x);
       assert.ok(Math.abs(s1.position.x - s2.position.x) >= 340);
     });
+
+    it('should place child agents horizontally in the exact order defined in parent subAgents', () => {
+      const orchestratorNode: WorkflowNode = {
+        id: 'parent-agent',
+        type: 'agentNode',
+        position: { x: 0, y: 0 },
+        data: {
+          label: 'Parent Coordinator',
+          isStartNode: true,
+          subAgents: [
+            { agentId: 'child-c', name: 'Child Charlie', role: 'Support' },
+            { agentId: 'child-a', name: 'Child Alice', role: 'Worker' },
+            { agentId: 'child-b', name: 'Child Bob', role: 'Analyst' },
+          ],
+        },
+      };
+
+      const childA: WorkflowNode = {
+        id: 'child-a',
+        type: 'agentNode',
+        position: { x: 0, y: 0 },
+        data: { label: 'Child Alice', role: 'Worker' },
+      };
+      const childB: WorkflowNode = {
+        id: 'child-b',
+        type: 'agentNode',
+        position: { x: 0, y: 0 },
+        data: { label: 'Child Bob', role: 'Analyst' },
+      };
+      const childC: WorkflowNode = {
+        id: 'child-c',
+        type: 'agentNode',
+        position: { x: 0, y: 0 },
+        data: { label: 'Child Charlie', role: 'Support' },
+      };
+
+      const edges: WorkflowEdge[] = [
+        { id: 'e1', source: 'parent-agent', sourceHandle: 'subagent', target: 'child-a', targetHandle: 'input' },
+        { id: 'e2', source: 'parent-agent', sourceHandle: 'subagent', target: 'child-b', targetHandle: 'input' },
+        { id: 'e3', source: 'parent-agent', sourceHandle: 'subagent', target: 'child-c', targetHandle: 'input' },
+      ];
+
+      // Layout with order [child-c, child-a, child-b]
+      const layout1 = getLayoutedElements([orchestratorNode, childA, childB, childC], edges);
+      const res1_C = layout1.nodes.find((n) => n.id === 'child-c')!;
+      const res1_A = layout1.nodes.find((n) => n.id === 'child-a')!;
+      const res1_B = layout1.nodes.find((n) => n.id === 'child-b')!;
+
+      // C should be leftmost, then A, then B
+      assert.ok(res1_C.position.x < res1_A.position.x, 'Child C should be to the left of Child A');
+      assert.ok(res1_A.position.x < res1_B.position.x, 'Child A should be to the left of Child B');
+
+      // Now reverse order in parent subAgents: [child-b, child-a, child-c]
+      const reversedParent: WorkflowNode = {
+        ...orchestratorNode,
+        data: {
+          ...orchestratorNode.data,
+          subAgents: [
+            { agentId: 'child-b', name: 'Child Bob', role: 'Analyst' },
+            { agentId: 'child-a', name: 'Child Alice', role: 'Worker' },
+            { agentId: 'child-c', name: 'Child Charlie', role: 'Support' },
+          ],
+        },
+      };
+
+      const layout2 = getLayoutedElements([reversedParent, childA, childB, childC], edges);
+      const res2_B = layout2.nodes.find((n) => n.id === 'child-b')!;
+      const res2_A = layout2.nodes.find((n) => n.id === 'child-a')!;
+      const res2_C = layout2.nodes.find((n) => n.id === 'child-c')!;
+
+      // B should now be leftmost, then A, then C
+      assert.ok(res2_B.position.x < res2_A.position.x, 'Child B should be to the left of Child A');
+      assert.ok(res2_A.position.x < res2_C.position.x, 'Child A should be to the left of Child C');
+    });
   });
 });
 

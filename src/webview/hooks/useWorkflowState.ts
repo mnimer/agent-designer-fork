@@ -42,6 +42,7 @@ export interface UseWorkflowStateReturn {
   setNodes: (nodes: WorkflowNode[]) => void;
   removeNode: (id: string) => void;
   updateNodeData: (id: string, partialData: Record<string, any>) => void;
+  reorderSubAgents: (agentId: string, startIndexOrNewOrder: number | any[], endIndex?: number) => void;
   updateWorkflowMetadata: (metadata: Partial<AgentWorkflowDocument>) => void;
   markClean: () => void;
 }
@@ -60,51 +61,132 @@ const DEFAULT_EMPTY_DOCUMENT: AgentWorkflowDocument = {
   },
 };
 
-function getInitialWorkflowDocument(): AgentWorkflowDocument {
-  if (typeof window !== 'undefined' && (window as any).__INITIAL_AGENT_DOCUMENT__) {
-    return (window as any).__INITIAL_AGENT_DOCUMENT__;
-  }
-  return DEFAULT_EMPTY_DOCUMENT;
+/**
+ * Synchronizes subAgents arrays for all agent nodes based on outgoing graph edges and latest node names/roles.
+ * Preserves custom ordering, updates names & roles on rename, appends new connections, and prunes severed connections.
+ */
+export function syncWorkflowSubAgents(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowNode[] {
+  const nodeMap = new Map<string, WorkflowNode>();
+  nodes.forEach((n) => nodeMap.set(n.id, n));
+
+  return nodes.map((node) => {
+    if (node.type !== 'agentNode' && node.type !== 'agent') return node;
+
+    const currentSubAgents: any[] = (node.data as any)?.subAgents || [];
+
+    // Find all outgoing edges where target is an existing agent node
+    const outgoingAgentEdges = edges.filter(
+      (e) => e.source === node.id && nodeMap.has(e.target) && (nodeMap.get(e.target)!.type === 'agentNode' || nodeMap.get(e.target)!.type === 'agent')
+    );
+    const connectedTargetIds = Array.from(new Set(outgoingAgentEdges.map((e) => e.target)));
+
+    // 1. Keep existing subAgents that are still connected, updating name & role
+    const updatedExisting: any[] = [];
+    currentSubAgents.forEach((sub) => {
+      const subId = typeof sub === 'string' ? sub : sub?.agentId;
+      if (subId && connectedTargetIds.includes(subId)) {
+        const targetNode = nodeMap.get(subId)!;
+        const targetData = (targetNode.data || {}) as any;
+        if (typeof sub === 'string') {
+          updatedExisting.push(sub);
+        } else {
+          updatedExisting.push({
+            ...sub,
+            name: targetData.label || sub.name || 'Agent',
+            role: targetData.role !== undefined ? targetData.role : (sub.role || ''),
+            delegationType: sub.delegationType || 'parallel',
+          });
+        }
+      }
+    });
+
+    // 2. Append newly connected targets
+    const existingIds = new Set(updatedExisting.map((s) => (typeof s === 'string' ? s : s?.agentId)));
+    const newSubAgents: any[] = [];
+    connectedTargetIds.forEach((targetId) => {
+      if (!existingIds.has(targetId)) {
+        const targetNode = nodeMap.get(targetId)!;
+        const targetData = (targetNode.data || {}) as any;
+        newSubAgents.push({
+          agentId: targetId,
+          name: targetData.label || 'Agent',
+          role: targetData.role || '',
+          delegationType: 'parallel',
+        });
+      }
+    });
+
+    const finalSubAgents = [...updatedExisting, ...newSubAgents];
+
+    // Check if subAgents actually changed
+    const isSameLength = currentSubAgents.length === finalSubAgents.length;
+    const isSameContent =
+      isSameLength &&
+      currentSubAgents.every((sub, idx) => {
+        const aId = typeof sub === 'string' ? sub : sub?.agentId;
+        const bId = typeof finalSubAgents[idx] === 'string' ? finalSubAgents[idx] : finalSubAgents[idx]?.agentId;
+        const aName = typeof sub === 'string' ? '' : sub?.name;
+        const bName = typeof finalSubAgents[idx] === 'string' ? '' : finalSubAgents[idx]?.name;
+        const aRole = typeof sub === 'string' ? '' : sub?.role;
+        const bRole = typeof finalSubAgents[idx] === 'string' ? '' : finalSubAgents[idx]?.role;
+        return aId === bId && aName === bName && aRole === bRole;
+      });
+
+    if (isSameContent) {
+      return node;
+    }
+
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        subAgents: finalSubAgents,
+      },
+    } as WorkflowNode;
+  });
 }
 
-export function useWorkflowState(options?: UseWorkflowStateOptions): UseWorkflowStateReturn {
-  const [document, setDocumentState] = useState<AgentWorkflowDocument>(
-    options?.initialDocument || getInitialWorkflowDocument()
-  );
+export function useWorkflowState(options: UseWorkflowStateOptions = {}): UseWorkflowStateReturn {
+  const { initialDocument = DEFAULT_EMPTY_DOCUMENT, onDocumentChange } = options;
+
+  const [document, setDocumentState] = useState<AgentWorkflowDocument>(initialDocument);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState<boolean>(false);
   const [docVersion, setDocVersion] = useState<number>(1);
 
-  const docRef = useRef(document);
+  // Keep a ref to latest doc state to avoid race conditions in asynchronous callbacks
+  const docRef = useRef<AgentWorkflowDocument>(document);
   docRef.current = document;
 
-  const versionRef = useRef(docVersion);
-  versionRef.current = docVersion;
-
   /**
-   * Helper to commit document changes and notify listeners.
+   * Internal helper to commit a document update, bump version, and notify listener.
    */
   const commitChange = useCallback(
     (newDoc: AgentWorkflowDocument) => {
-      const nextVersion = versionRef.current + 1;
+      const nextVersion = docVersion + 1;
       setDocVersion(nextVersion);
-      setDocumentState(newDoc);
       setIsDirty(true);
-      options?.onDocumentChange?.(newDoc, nextVersion);
+      setDocumentState(newDoc);
+      onDocumentChange?.(newDoc, nextVersion);
     },
-    [options]
+    [docVersion, onDocumentChange]
   );
 
   /**
-   * Loads a complete workflow document from VS Code Extension Host.
+   * Loads or replaces the active workflow document with an incoming document from extension host.
    */
-  const loadWorkflow = useCallback((doc: AgentWorkflowDocument, version?: number) => {
-    setDocumentState(doc);
-    if (version !== undefined) {
-      setDocVersion(version);
-    }
-    setIsDirty(false);
-  }, []);
+  const loadWorkflow = useCallback(
+    (incomingDoc: AgentWorkflowDocument, version?: number) => {
+      setDocumentState(incomingDoc);
+      docRef.current = incomingDoc;
+      setIsDirty(false);
+      if (typeof version === 'number') {
+        setDocVersion(version);
+      }
+      setSelectedNodeId(null);
+    },
+    []
+  );
 
   /**
    * Handles React Flow node changes (drag, selection, dimension updates).
@@ -141,8 +223,10 @@ export function useWorkflowState(options?: UseWorkflowStateOptions): UseWorkflow
       const nextEdges = applyEdgeChanges(changes, prev.edges as any) as WorkflowEdge[];
       const hasSignificantChange = changes.some((c) => c.type === 'remove');
       if (hasSignificantChange) {
+        const syncedNodes = syncWorkflowSubAgents(prev.nodes, nextEdges);
         commitChange({
           ...prev,
+          nodes: syncedNodes,
           edges: nextEdges,
           metadata: {
             ...prev.metadata,
@@ -183,9 +267,13 @@ export function useWorkflowState(options?: UseWorkflowStateOptions): UseWorkflow
         animated: connection.sourceHandle === 'subagent',
       };
 
+      const nextEdges = [...prev.edges, newEdge];
+      const syncedNodes = syncWorkflowSubAgents(prev.nodes, nextEdges);
+
       const nextDoc: AgentWorkflowDocument = {
         ...prev,
-        edges: [...prev.edges, newEdge],
+        nodes: syncedNodes,
+        edges: nextEdges,
         metadata: {
           ...prev.metadata,
           updatedAt: new Date().toISOString(),
@@ -223,12 +311,13 @@ export function useWorkflowState(options?: UseWorkflowStateOptions): UseWorkflow
   const removeNode = useCallback(
     (id: string) => {
       const prev = docRef.current;
-      const nextNodes = prev.nodes.filter((n) => n.id !== id);
+      const remainingNodes = prev.nodes.filter((n) => n.id !== id);
       const nextEdges = prev.edges.filter((e) => e.source !== id && e.target !== id);
+      const syncedNodes = syncWorkflowSubAgents(remainingNodes, nextEdges);
 
       const nextDoc: AgentWorkflowDocument = {
         ...prev,
-        nodes: nextNodes,
+        nodes: syncedNodes,
         edges: nextEdges,
         metadata: {
           ...prev.metadata,
@@ -251,7 +340,7 @@ export function useWorkflowState(options?: UseWorkflowStateOptions): UseWorkflow
   const updateNodeData = useCallback(
     (id: string, partialData: Record<string, any>) => {
       const prev = docRef.current;
-      const nextNodes = prev.nodes.map((node) => {
+      const rawUpdatedNodes = prev.nodes.map((node) => {
         if (node.id !== id) return node;
         return {
           ...node,
@@ -262,6 +351,8 @@ export function useWorkflowState(options?: UseWorkflowStateOptions): UseWorkflow
         } as WorkflowNode;
       });
 
+      const nextNodes = syncWorkflowSubAgents(rawUpdatedNodes, prev.edges);
+
       const nextDoc: AgentWorkflowDocument = {
         ...prev,
         nodes: nextNodes,
@@ -271,6 +362,63 @@ export function useWorkflowState(options?: UseWorkflowStateOptions): UseWorkflow
         },
       };
 
+      commitChange(nextDoc);
+    },
+    [commitChange]
+  );
+
+  /**
+   * Reorders sub-agents in a parent agent node.
+   * Supports both index swapping (startIndex, endIndex) and full array assignment.
+   */
+  const reorderSubAgents = useCallback(
+    (agentId: string, startIndexOrNewOrder: number | any[], endIndex?: number) => {
+      const prev = docRef.current;
+      const targetNode = prev.nodes.find((n) => n.id === agentId);
+      if (!targetNode) return;
+
+      const currentSubAgents: any[] = (targetNode.data as any)?.subAgents || [];
+      let newOrder: any[];
+
+      if (typeof startIndexOrNewOrder === 'number' && typeof endIndex === 'number') {
+        if (
+          startIndexOrNewOrder < 0 ||
+          startIndexOrNewOrder >= currentSubAgents.length ||
+          endIndex < 0 ||
+          endIndex >= currentSubAgents.length
+        ) {
+          return;
+        }
+        newOrder = [...currentSubAgents];
+        const [moved] = newOrder.splice(startIndexOrNewOrder, 1);
+        newOrder.splice(endIndex, 0, moved);
+      } else if (Array.isArray(startIndexOrNewOrder)) {
+        newOrder = startIndexOrNewOrder;
+      } else {
+        return;
+      }
+
+      const nextNodes = prev.nodes.map((n) => {
+        if (n.id === agentId) {
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              subAgents: newOrder,
+            },
+          } as WorkflowNode;
+        }
+        return n;
+      });
+
+      const nextDoc: AgentWorkflowDocument = {
+        ...prev,
+        nodes: nextNodes,
+        metadata: {
+          ...prev.metadata,
+          updatedAt: new Date().toISOString(),
+        },
+      };
       commitChange(nextDoc);
     },
     [commitChange]
@@ -337,6 +485,7 @@ export function useWorkflowState(options?: UseWorkflowStateOptions): UseWorkflow
     setNodes,
     removeNode,
     updateNodeData,
+    reorderSubAgents,
     updateWorkflowMetadata,
     markClean,
   };

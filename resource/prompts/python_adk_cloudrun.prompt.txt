@@ -207,3 +207,19 @@ Respond ONLY with a valid JSON array of file objects conforming to this exact sc
     "content": "<file source code>"
   }
 ]
+
+
+---
+
+
+## ADK Skills Reference
+
+| Skill | Description |
+|-------|-------------|
+| @../skills/google-agents-cli-adk-code/SKILL.md | Python API reference — agents, tools, orchestration, callbacks, state.  |
+| @../skills/google-agents-cli-scaffold/SKILL.md | Project scaffolding via Agents CLI |
+| @../skills/google-agents-cli-workflow/SKILL.md | ADK Development, lifecycle, code preservation rules, model selection |
+| @../skills/google-agents-cli-eval/SKILL.md | Evaluation lifecycle — datasets, metrics, generate/grade, compare, analyze, optimize, LLM-as-judge |
+| @../skills/google-agents-cli-deploy/SKILL.md | Deployment — Agent Runtime, Cloud Run, CI/CD, secrets |
+| @../skills/google-agents-cli-publish/SKILL.md | Gemini Enterprise registration |
+| @../skills/google-agents-cli-observability/SKILL.md | Observability — Cloud Trace, Cloud Logging, third-party integrations |

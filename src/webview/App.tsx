@@ -1,6 +1,17 @@
 /**
- * @license
- * SPDX-License-Identifier: Apache-2.0
+ * App.tsx - Main ReactFlow Canvas and State Orchestrator
+ *
+ * Purpose:
+ * Root component for the Visual Agent Designer webview canvas. Manages workflow diagram
+ * state, multi-tab file buffers, undo/redo snapshots, node/edge connections, code generation,
+ * and inspector drawers.
+ *
+ * Architectural Decisions:
+ * - Author: Mike Nimer <mikenimer@google.com>
+ * - Sub-Agent Synchronization: Outgoing agent connections automatically synchronize with the
+ *   parent agent's `subAgents` array, maintaining custom user reordering while keeping names and
+ *   roles synchronized across the workflow graph.
+ * - Auto-Layout Consistency: Graph layout respects user-defined sub-agent ordering on parent nodes.
  */
 
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
@@ -10,6 +21,7 @@ import {
   addEdge,
   useNodesState,
   useEdgesState,
+  applyEdgeChanges,
   Background,
   MiniMap,
   Connection,
@@ -21,6 +33,7 @@ import {
 
 import { 
   AgentData, 
+  SubAgentRef,
   GenerationConfig, 
   ToolDefinition, 
   TriggerData, 
@@ -155,10 +168,84 @@ function normalizeLoadedEdges(loadedEdges: any[]): Edge[] {
 }
 
 /**
- * Mike Nimer <mikenimer@google.com>
- * Computes the target output folder from the .agent file path or filename.
- * It produces a subfolder with the same root name as the .agent file.
- * e.g., 'test/agents/myagent.agent' -> 'test/agents/myagent/'
+ * Synchronizes subAgents arrays for all agent nodes based on outgoing graph edges and latest node names/roles.
+ * Preserves existing subAgent ordering configured by the user, appends newly connected targets,
+ * prunes severed connections, and ensures names and roles match the target agent's current state.
+ */
+export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>[] {
+  const nodeMap = new Map<string, Node<any>>();
+  nodes.forEach((n) => nodeMap.set(n.id, n));
+
+  return nodes.map((node) => {
+    if (node.type !== 'agentNode') return node;
+
+    const currentSubAgents: SubAgentRef[] = (node.data as AgentData)?.subAgents || [];
+
+    // Find all outgoing edges where target is an existing agent node
+    const outgoingAgentEdges = edges.filter(
+      (e) => e.source === node.id && nodeMap.has(e.target) && nodeMap.get(e.target)!.type === 'agentNode'
+    );
+    const connectedTargetIds = Array.from(new Set(outgoingAgentEdges.map((e) => e.target)));
+
+    // 1. Keep existing subAgents that are still connected, updating their name & role
+    const updatedExisting: SubAgentRef[] = [];
+    currentSubAgents.forEach((sub) => {
+      if (connectedTargetIds.includes(sub.agentId)) {
+        const targetNode = nodeMap.get(sub.agentId)!;
+        const targetData = targetNode.data as AgentData;
+        updatedExisting.push({
+          ...sub,
+          name: targetData.label || sub.name || 'Agent',
+          role: targetData.role !== undefined ? targetData.role : (sub.role || ''),
+          delegationType: sub.delegationType || 'parallel',
+        });
+      }
+    });
+
+    // 2. Append newly connected targets not already in subAgents
+    const existingIds = new Set(updatedExisting.map((s) => s.agentId));
+    const newSubAgents: SubAgentRef[] = [];
+    connectedTargetIds.forEach((targetId) => {
+      if (!existingIds.has(targetId)) {
+        const targetNode = nodeMap.get(targetId)!;
+        const targetData = targetNode.data as AgentData;
+        newSubAgents.push({
+          agentId: targetId,
+          name: targetData.label || 'Agent',
+          role: targetData.role || '',
+          delegationType: 'parallel',
+        });
+      }
+    });
+
+    const finalSubAgents = [...updatedExisting, ...newSubAgents];
+
+    // Check if subAgents actually changed
+    const isSameLength = currentSubAgents.length === finalSubAgents.length;
+    const isSameContent =
+      isSameLength &&
+      currentSubAgents.every(
+        (sub, idx) =>
+          sub.agentId === finalSubAgents[idx].agentId &&
+          sub.name === finalSubAgents[idx].name &&
+          sub.role === finalSubAgents[idx].role &&
+          sub.delegationType === finalSubAgents[idx].delegationType
+      );
+
+    if (isSameContent) {
+      return node;
+    }
+
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        subAgents: finalSubAgents,
+      },
+    };
+  });
+}
+
 /**
  * Derives a target output folder relative to the .agent file,
  * where the folder name matches the file name without .agent extension.
@@ -188,7 +275,21 @@ function FlowCanvas() {
   }, [bridge]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<any>>(INITIAL_NODES);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(INITIAL_EDGES);
+  const [edges, setEdges, onEdgesChangeState] = useEdgesState<Edge>(INITIAL_EDGES);
+
+  const onEdgesChange = useCallback(
+    (changes: any[]) => {
+      onEdgesChangeState(changes);
+      const hasRemove = changes.some((c) => c.type === 'remove' || c.type === 'reset');
+      if (hasRemove) {
+        setNodes((currentNodes) => {
+          const nextEdges = applyEdgeChanges(changes, edges);
+          return syncAgentSubAgents(currentNodes, nextEdges);
+        });
+      }
+    },
+    [onEdgesChangeState, edges, setNodes]
+  );
 
   // Multi-tab .agent file tabs state
   const [fileTabs, setFileTabs] = useState<AgentFileTab[]>([
@@ -576,8 +677,9 @@ function FlowCanvas() {
 
   const handleDeleteAgent = useCallback(
     (id: string) => {
-      const nextNodes = nodes.filter((n) => n.id !== id);
+      const remainingNodes = nodes.filter((n) => n.id !== id);
       const nextEdges = edges.filter((e) => e.source !== id && e.target !== id);
+      const nextNodes = syncAgentSubAgents(remainingNodes, nextEdges);
       setNodes(nextNodes);
       setEdges(nextEdges);
       if (selectedAgentId === id) setSelectedAgentId(null);
@@ -637,8 +739,36 @@ function FlowCanvas() {
     [nodes, edges, setNodes, recordSnapshot]
   );
 
+  /**
+   * Reorders sub-agents in a parent agent node.
+   * Supports both index swapping (startIndex, endIndex) and full array assignment (newOrder).
+   */
   const handleReorderSubAgents = useCallback(
-    (agentId: string, newOrder: any[]) => {
+    (agentId: string, startIndexOrNewOrder: number | any[], endIndex?: number) => {
+      const targetNode = nodes.find((n) => n.id === agentId);
+      if (!targetNode || targetNode.type !== 'agentNode') return;
+
+      const currentSubAgents: SubAgentRef[] = (targetNode.data as AgentData).subAgents || [];
+      let newOrder: SubAgentRef[];
+
+      if (typeof startIndexOrNewOrder === 'number' && typeof endIndex === 'number') {
+        if (
+          startIndexOrNewOrder < 0 ||
+          startIndexOrNewOrder >= currentSubAgents.length ||
+          endIndex < 0 ||
+          endIndex >= currentSubAgents.length
+        ) {
+          return;
+        }
+        newOrder = [...currentSubAgents];
+        const [moved] = newOrder.splice(startIndexOrNewOrder, 1);
+        newOrder.splice(endIndex, 0, moved);
+      } else if (Array.isArray(startIndexOrNewOrder)) {
+        newOrder = startIndexOrNewOrder;
+      } else {
+        return;
+      }
+
       const nextNodes = nodes.map((n) => {
         if (n.id === agentId && n.type === 'agentNode') {
           return {
@@ -1237,35 +1367,10 @@ function FlowCanvas() {
       setEdges(nextEdges);
 
       let nextNodes = nodes;
-      // If linking sub-agent, update parent agent's subAgents array
-      if (isSubAgentConnection && connection.source && connection.target) {
-        const targetNode = nodes.find((n) => n.id === connection.target);
-        if (targetNode && targetNode.type === 'agentNode') {
-          nextNodes = nodes.map((n) => {
-            if (n.id === connection.source && n.type === 'agentNode') {
-              const existing = (n.data as AgentData).subAgents || [];
-              if (!existing.some((s) => s.agentId === connection.target)) {
-                return {
-                  ...n,
-                  data: {
-                    ...n.data,
-                    subAgents: [
-                      ...existing,
-                      {
-                        agentId: targetNode.id,
-                        name: targetNode.data.label,
-                        role: targetNode.data.role,
-                        delegationType: 'parallel',
-                      },
-                    ],
-                  },
-                };
-              }
-            }
-            return n;
-          });
-          setNodes(nextNodes);
-        }
+      // If connecting agent to agent, synchronize subAgents on parent nodes
+      if (sourceNode?.type === 'agentNode') {
+        nextNodes = syncAgentSubAgents(nodes, nextEdges);
+        setNodes(nextNodes);
       }
       recordSnapshot(nextNodes, nextEdges, { description: 'Connect agents' });
     },
@@ -1724,6 +1829,9 @@ function FlowCanvas() {
       } else {
         nextNodes = nodes.map((n) => (n.id === selectedAgentId ? { ...n, data: { ...n.data, ...partialData } } : n));
       }
+
+      // Propagate label and role changes across all connected subAgents references
+      nextNodes = syncAgentSubAgents(nextNodes, edges);
       setNodes(nextNodes);
 
       let nextEdges = edges;

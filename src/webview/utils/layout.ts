@@ -1,3 +1,20 @@
+/**
+ * Layout Utilities - Auto Layout Engine for Visual Agent Designer
+ *
+ * Purpose:
+ * Computes deterministic, non-overlapping node positions for complex multi-agent workflows
+ * using connector-aware directional heuristics, sub-agent ordering enforcement, collision relaxation,
+ * and strict 8pt grid snapping.
+ *
+ * Architectural Decisions:
+ * - Author: Mike Nimer <mikenimer@google.com>
+ * - Sub-Agent Order Enforcement: Child nodes branching from parent nodes are placed along the perpendicular
+ *   axis in the exact sequence specified by the parent's `subAgents` list.
+ * - 8pt Grid Alignment: All node coordinates and margins strictly conform to multiples of 8px.
+ * - Dynamic Node Sizing: Dynamically measures trigger prompt counts, sub-agent lists, and attached tools
+ *   to eliminate clipping and overlap.
+ */
+
 import dagre from 'dagre';
 import { Node, Edge } from '@xyflow/react';
 
@@ -346,11 +363,33 @@ export function getLayoutedElements<T extends Record<string, unknown> = Record<s
 
     // Process each group of children
     edgesBySide.forEach((groupEdges, sourceSide) => {
-      const unplacedEdges = groupEdges.filter((e) => !visited.has(e.target));
+      let unplacedEdges = groupEdges.filter((e) => !visited.has(e.target));
       if (unplacedEdges.length === 0) return;
 
+      // Section: Sort unplaced child edges according to the parent's ordered subAgents list
+      // This ensures that Auto Layout strictly reflects the user's configured sub-agent sequence.
+      const parentNode = nodes.find((n) => n.id === nodeId);
+      const subAgentsList = (parentNode?.data as any)?.subAgents;
+      if (Array.isArray(subAgentsList) && subAgentsList.length > 0) {
+        const subAgentOrderMap = new Map<string, number>();
+        subAgentsList.forEach((sub: any, idx: number) => {
+          if (sub && typeof sub === 'object' && sub.agentId) {
+            subAgentOrderMap.set(sub.agentId, idx);
+          } else if (typeof sub === 'string') {
+            subAgentOrderMap.set(sub, idx);
+          }
+        });
+
+        // Stable sort: targets in subAgents come first ordered by their index, followed by unlisted targets
+        unplacedEdges = [...unplacedEdges].sort((a, b) => {
+          const orderA = subAgentOrderMap.has(a.target) ? subAgentOrderMap.get(a.target)! : 9999;
+          const orderB = subAgentOrderMap.has(b.target) ? subAgentOrderMap.get(b.target)! : 9999;
+          return orderA - orderB;
+        });
+      }
+
       if (sourceSide === 'bottom' || sourceSide === 'top') {
-        // Vertical primary direction -> distribute siblings horizontally across X axis
+        // Vertical primary direction -> distribute siblings horizontally across X axis in subagent order
         const childDims = unplacedEdges.map(
           (e) => nodeDimensionsMap.get(e.target) || { width: 340, height: 380 }
         );
@@ -379,7 +418,7 @@ export function getLayoutedElements<T extends Record<string, unknown> = Record<s
           startX += targetDims.width + HORIZONTAL_GAP;
         });
       } else {
-        // Horizontal primary direction (Right or Left) -> distribute siblings vertically across Y axis
+        // Horizontal primary direction (Right or Left) -> distribute siblings vertically across Y axis in subagent order
         const childDims = unplacedEdges.map(
           (e) => nodeDimensionsMap.get(e.target) || { width: 340, height: 380 }
         );
