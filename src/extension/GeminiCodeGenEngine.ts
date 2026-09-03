@@ -10,6 +10,7 @@
  * 2. Prompt Decoupling: Prompts reside in `resource/prompts/` (e.g., `resource/prompts/python-adk.prompt.txt`).
  * 3. Multi-Credential Support: Authenticates via `GEMINI_API_KEY` (settings/env) or falls back to Google Application Default Credentials (ADC).
  * 4. Structured Output Parsing: Robustly parses multi-file JSON arrays conforming to `{ path, description, content }`.
+ * 5. Dynamic Skill Append: Appends markdown skill documents from `resource/skills/<framework>/*.md` to the end of the prompt under `## ADK Skills Reference` so Gemini has full context of the ADK API, workflows, and deployment infrastructure.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -57,9 +58,12 @@ export class GeminiCodeGenEngine {
       // 1. Load prompt template from resource/prompts directory
       const promptTemplate = this.loadPromptTemplate(framework, language, target);
       const workflowJson = JSON.stringify(doc, null, 2);
-      const interpolatedPrompt = promptTemplate.replace('{{WORKFLOW_JSON}}', workflowJson);
+      let interpolatedPrompt = promptTemplate.replace('{{WORKFLOW_JSON}}', workflowJson);
 
-      // 2. Invoke Gemini LLM with credentials (API Key or ADC)
+      // 2. Append markdown skills from resource/skills/adk/*.md to the end of the prompt instructions
+      interpolatedPrompt = this.appendSkillsToPrompt(interpolatedPrompt, framework);
+
+      // 3. Invoke Gemini LLM with credentials (API Key or ADC)
       const generatedFiles = await this.callGeminiApi(interpolatedPrompt, apiKey, model);
 
       if (!generatedFiles || generatedFiles.length === 0) {
@@ -140,13 +144,118 @@ export class GeminiCodeGenEngine {
   }
 
   /**
-   * Invokes the Gemini API via @google/genai SDK or direct REST with API Key / ADC.
+   * Loads all markdown skill references from `resource/skills/<framework>/*.md` (or `resource/skills/adk/`)
+   * in deterministic order and returns their concatenated markdown content.
    *
-   * @param prompt Full interpolated prompt instruction
-   * @param apiKey Optional Gemini API key
-   * @param model Target model identifier (default: 'gemini-flash-latest')
-   * @returns Array of generated file objects
+   * Logic Flow:
+   * 1. Resolves candidate directories for skills under extensionPath and cwd.
+   * 2. Scans for all `.md` files (ignoring README.md or lowercase variations).
+   * 3. Sorts file paths alphabetically to ensure deterministic prompt assembly.
+   * 4. Reads and concatenates file contents separated by markdown horizontal dividers.
+   *
+   * @param framework Framework identifier (e.g., 'google-adk', 'adk')
+   * @returns Formatted markdown string containing the contents of each skill file
    */
+  public loadSkillsReference(framework?: string): string {
+    // Section 1: Resolve the target framework directory name
+    const cleanFramework = (framework || 'adk')
+      .replace('google-', '')
+      .replace('-', '_')
+      .replace('google_', '');
+
+    const isAdk = cleanFramework === 'adk' || !framework;
+
+    // Section 2: Identify candidate search directories for skill files
+    const candidateDirs = [
+      path.join(this.extensionPath, 'resource', 'skills', cleanFramework),
+      path.join(process.cwd(), 'resource', 'skills', cleanFramework),
+    ];
+
+    if (isAdk) {
+      candidateDirs.push(
+        path.join(this.extensionPath, 'resource', 'skills', 'adk'),
+        path.join(process.cwd(), 'resource', 'skills', 'adk')
+      );
+    }
+
+    let skillsDir: string | null = null;
+    for (const dir of candidateDirs) {
+      if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+        skillsDir = dir;
+        break;
+      }
+    }
+
+    // Return empty string if no valid skills directory is located
+    if (!skillsDir) {
+      return '';
+    }
+
+    // Section 3: Read and sort all markdown files (excluding README.md)
+    const files = fs
+      .readdirSync(skillsDir)
+      .filter((file) => file.endsWith('.md') && !file.toLowerCase().startsWith('readme'))
+      .sort((a, b) => a.localeCompare(b));
+
+    if (files.length === 0) {
+      return '';
+    }
+
+    // Section 4: Read content for each skill file
+    const skillContents: string[] = [];
+    for (const file of files) {
+      const filePath = path.join(skillsDir, file);
+      try {
+        const content = fs.readFileSync(filePath, 'utf-8').trim();
+        if (content.length > 0) {
+          skillContents.push(content);
+        }
+      } catch (readErr) {
+        // NOTE: Silently skip any unreadable files to ensure robust prompt generation
+      }
+    }
+
+    return skillContents.join('\n\n---\n\n');
+  }
+
+  /**
+   * Appends the loaded skills markdown files to the end of the prompt instructions
+   * under the block:
+   * #################################################
+   * ## ADK Skills Reference
+   *
+   * Logic Flow:
+   * 1. Loads all skill markdown documents for the target framework.
+   * 2. If no skills are found, returns the base prompt unchanged.
+   * 3. Checks if the prompt already contains the "## ADK Skills Reference" header block.
+   *    - If present, trims any trailing whitespace after the header and appends the skills content.
+   *    - If absent, appends the header block delimiter followed by the skills content.
+   *
+   * @param basePrompt The base prompt string (already interpolated with workflow JSON)
+   * @param framework Framework identifier (e.g. 'google-adk')
+   * @returns The full prompt with skills appended under the ADK Skills Reference block
+   */
+  public appendSkillsToPrompt(basePrompt: string, framework?: string): string {
+    // Section 1: Retrieve concatenated skill markdown files
+    const skillsContent = this.loadSkillsReference(framework);
+    if (!skillsContent) {
+      return basePrompt;
+    }
+
+    const headerMarker = '## ADK Skills Reference';
+    const blockHeader = '#################################################\n## ADK Skills Reference';
+
+    // Section 2: If the template already includes the marker, append right after it
+    if (basePrompt.includes(headerMarker)) {
+      const markerIndex = basePrompt.indexOf(headerMarker);
+      const beforeMarker = basePrompt.substring(0, markerIndex + headerMarker.length);
+      return `${beforeMarker.trimEnd()}\n\n${skillsContent}\n`;
+    }
+
+    // Section 3: If marker was not present in the template, append both the header and skills content
+    return `${basePrompt.trimEnd()}\n\n${blockHeader}\n\n${skillsContent}\n`;
+  }
+
   /**
    * Invokes the Gemini API via @google/genai SDK or direct REST with API Key / ADC.
    * Seamlessly falls back to Google Application Default Credentials (ADC) if the API key fails.

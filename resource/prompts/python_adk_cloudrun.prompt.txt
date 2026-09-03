@@ -197,14 +197,40 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
 
 ---
 
+## ADK Instructions
+
+### Prerequisites for Writing Code
+Do NOT write agent code until a project is scaffolded.
+
+1. Verify project: run `agents-cli info` (proceed if config exists).
+2. New project: run `agents-cli scaffold create <name>`.
+3. Existing code: run `agents-cli scaffold enhance .`.
+
+
+**Product name mapping:** "Agent Engine" / "Vertex AI Agent Engine" is now **Agent Runtime**. Use `--deployment-target agent_runtime`.
+
+**Ambient / scheduled / event-driven agents:** ADK's `trigger_sources` registers `/apps/{app}/trigger/*` endpoints on the same FastAPI app for **all** targets. On **Cloud Run** / **GKE** these are public HTTP routes you point a Pub/Sub push subscription or Eventarc trigger at; on **Agent Runtime** the same routes are reachable through the Agent Engine `/api` passthrough (e.g. `.../reasoningEngines/v1/{resource}/api/apps/{app}/trigger/pubsub`). Cloud Run remains the simplest target for unauthenticated trigger sources. See /google-agents-cli-adk-code (`references/adk-python.md`, section "12. Event-Driven / Ambient Agents") for the `trigger_sources` pattern.
+
+**OAuth / user consent agents:** Use **Agent Runtime** with Gemini Enterprise for agents that need OAuth 2.0 user consent (e.g., accessing Google Drive, Calendar, or other user-scoped APIs). Cloud Run does not currently support managed OAuth flows. For a worked example, look up OAuth user consent in the topic index in /google-agents-cli-adk-code → `references/samples.md`.
+
+
+### Quick Reference — Most Common Patterns
+
+```python
+from google.adk.agents import Agent
+
+def get_weather(city: str) -> dict:
+    """Get current weather for a city."""
+    return {"city": city, "temp": "22°C", "condition": "sunny"}
+
+root_agent = Agent(
+    name="my_agent",
+    model="gemini-3.7-flash",
+    instruction="You are a helpful assistant that ...",
+    tools=[get_weather],
+)
+```
+
+#################################################
 ## ADK Skills Reference
 
-| Skill | Description |
-|-------|-------------|
-| /google-agents-cli-adk-code | Python API reference — agents, tools, orchestration, callbacks, state.  |
-| /google-agents-cli-scaffold | Project scaffolding via Agents CLI |
-| /google-agents-cli-workflow | ADK Development, lifecycle, code preservation rules, model selection |
-| /google-agents-cli-eval | Evaluation lifecycle — datasets, metrics, generate/grade, compare, analyze, optimize, LLM-as-judge |
-| /google-agents-cli-deploy | Deployment — Agent Runtime, Cloud Run, CI/CD, secrets |
-| /google-agents-cli-publish | Gemini Enterprise registration |
-| /google-agents-cli-observability | Observability — Cloud Trace, Cloud Logging, third-party integrations |
