@@ -197,21 +197,6 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
 
 ---
 
-### OUTPUT FORMAT:
-Respond ONLY with a valid JSON array of file objects conforming to this exact schema (no markdown formatting, no backticks surrounding the JSON, only raw parseable JSON):
-
-[
-  {
-    "path": "<file name>",
-    "description": "<description>",
-    "content": "<file source code>"
-  }
-]
-
-
----
-
-
 ## ADK Skills Reference
 
 | Skill | Description |

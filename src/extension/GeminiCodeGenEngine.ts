@@ -182,14 +182,28 @@ export class GeminiCodeGenEngine {
     }
   }
 
+  /**
+   * Gemini response schema for structured output code generation.
+   * Constrains the LLM response to a strongly-typed JSON array of file objects.
+   */
   private readonly fileArraySchema = {
     type: 'ARRAY',
+    description: 'List of source code and configuration files generated for the complete agent project.',
     items: {
       type: 'OBJECT',
       properties: {
-        path: { type: 'STRING' },
-        description: { type: 'STRING' },
-        content: { type: 'STRING' },
+        path: {
+          type: 'STRING',
+          description: 'Relative file path including subdirectories (e.g., "src/agent.py", "tests/test_agent.py", "requirements.txt").',
+        },
+        description: {
+          type: 'STRING',
+          description: 'Brief 1-2 sentence description explaining the purpose and contents of this file.',
+        },
+        content: {
+          type: 'STRING',
+          description: 'Complete, production-ready, unabridged source code for the file without placeholders or truncation.',
+        },
       },
       required: ['path', 'description', 'content'],
     },

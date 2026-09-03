@@ -189,4 +189,18 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
     assert.equal(result.passed, true);
     assert.ok(result.reason);
   });
+
+  it('should enforce proper structured output schema with semantic field descriptions', () => {
+    const schema = (engine as any).fileArraySchema;
+    assert.equal(schema.type, 'ARRAY');
+    assert.ok(schema.description && schema.description.length > 0);
+    assert.equal(schema.items.type, 'OBJECT');
+    assert.deepEqual(schema.items.required, ['path', 'description', 'content']);
+    assert.equal(schema.items.properties.path.type, 'STRING');
+    assert.ok(schema.items.properties.path.description.includes('Relative file path'));
+    assert.equal(schema.items.properties.description.type, 'STRING');
+    assert.ok(schema.items.properties.description.description.includes('description'));
+    assert.equal(schema.items.properties.content.type, 'STRING');
+    assert.ok(schema.items.properties.content.description.includes('Complete, production-ready'));
+  });
 });
