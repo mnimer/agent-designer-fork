@@ -1,3 +1,18 @@
+/**
+ * StandardAgentDrawer - Inspector Drawer for Standard AI Agents
+ * 
+ * Purpose:
+ * Provides a slide-out configuration panel to inspect and edit standard agent
+ * properties including LLM model, prompt, memory, tools, and sub-agent delegation.
+ * 
+ * Architectural Decisions:
+ * - Author: Mike Nimer <mikenimer@google.com>
+ * - Sub-Agent Delegation Section: Conditionally hidden when subAgents.length === 0 to maintain clean UI.
+ * - Pattern Options: Strictly limited to valid Google ADK orchestration patterns (Sequential, Parallel, Loop, Coordinator).
+ * - Loop Configuration: Provides numeric Max Iterations bound (defaulting to 3) when Loop pattern is active.
+ * - Synchronization: Keeps sub-agent list and order strictly identical with the canvas node card.
+ */
+
 import React, { useState } from 'react';
 import { 
   Bot, 
@@ -30,7 +45,20 @@ import {
   Flame,
   CheckCircle2
 } from 'lucide-react';
-import { AgentData, ToolDefinition, DelegationPattern, SubAgentRef, AgentMemoryConfig, AgentMemoryType, AgentKind, StructuredOutputSchema, DebateConfig, DebateStyle, TieBreakerStrategy } from '../../types';
+import { 
+  AgentData, 
+  ToolDefinition, 
+  DelegationPattern, 
+  SubAgentRef, 
+  AgentMemoryConfig, 
+  AgentMemoryType, 
+  AgentKind, 
+  StructuredOutputSchema, 
+  DebateConfig, 
+  DebateStyle, 
+  TieBreakerStrategy,
+  ADK_DELEGATION_PATTERNS 
+} from '../../types';
 import { MEMORY_OPTIONS, getMemoryOption } from '../../data/memoryOptions';
 import { StructuredOutputBuilder } from './StructuredOutputBuilder';
 
@@ -47,10 +75,7 @@ const SUPPORTED_MODELS = [
   { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)', desc: 'Fast, lightweight, sub-second multimodal reasoning' },
 ];
 
-const PATTERN_OPTIONS: { id: DelegationPattern; label: string; desc: string }[] = [
-  { id: 'sequential', label: 'Sequential Pipeline', desc: 'Linear prompt chaining execution (Planner → Executor → Reviewer)' },
-  { id: 'parallel', label: 'Parallel / Fan-Out', desc: 'Concurrent async dispatch and fan-in aggregation' },
-];
+const PATTERN_OPTIONS = ADK_DELEGATION_PATTERNS;
 
 export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
   agent,
@@ -667,50 +692,75 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
           </div>
         </div>
 
-        {/* Sub-Agent Delegation Section: Pattern Dropdown ABOVE orderable list */}
-        <div className="space-y-2.5 pt-2 border-t border-[#30363d]">
-          <div className="flex items-center justify-between">
-            <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
-              <Layers className="w-3 h-3 text-purple-400" />
-              Sub-Agent Delegation ({subAgents.length})
-            </label>
-            <span className="text-[10px] text-gray-500 font-normal">drag handle to reorder</span>
-          </div>
-
-          {/* Pattern Dropdown placed directly above the list */}
-          <div className="space-y-1 bg-[#0d1117] p-2.5 rounded-lg border border-purple-500/30">
+        {/* Sub-Agent Delegation Section: Only rendered when child agents are connected */}
+        {subAgents.length > 0 && (
+          <div className="space-y-2.5 pt-2 border-t border-[#30363d]">
             <div className="flex items-center justify-between">
-              <label className="text-[10px] font-bold uppercase tracking-tight text-purple-300">
-                Orchestration Pattern
+              <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
+                <Layers className="w-3 h-3 text-purple-400" />
+                Sub-Agent Delegation ({subAgents.length})
               </label>
+              <span className="text-[10px] text-gray-500 font-normal">drag handle to reorder</span>
             </div>
-            <select
-              value={currentPattern}
-              onChange={(e) => {
-                const newPattern = e.target.value as DelegationPattern;
-                const updates: Partial<AgentData> = { subAgentPattern: newPattern };
-                if (newPattern === 'debate' && !agent.debateConfig) {
-                  updates.debateConfig = {
-                    maxRounds: 2,
-                    consensusThreshold: 0.85,
-                    earlyStoppingEnabled: true,
-                    debateStyle: 'structured_rebuttal',
-                    tieBreakerStrategy: 'conditional_approval',
-                    minWordLimitPerBrief: 250,
-                    requireEvidenceCitations: true,
-                  };
-                }
-                onUpdateAgent(updates);
-              }}
-              className="w-full px-2.5 py-1.5 bg-[#161b22] border border-purple-500/40 focus:border-purple-400 rounded text-xs text-purple-200 font-medium focus:outline-none cursor-pointer"
-            >
-              {PATTERN_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id} className="bg-[#161b22] text-gray-200">
-                  {opt.label} — {opt.desc}
-                </option>
-              ))}
-            </select>
-          </div>
+
+            {/* Pattern Dropdown placed directly above the list */}
+            <div className="space-y-1 bg-[#0d1117] p-2.5 rounded-lg border border-purple-500/30">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold uppercase tracking-tight text-purple-300">
+                  Orchestration Pattern
+                </label>
+              </div>
+              <select
+                value={currentPattern}
+                onChange={(e) => {
+                  const newPattern = e.target.value as DelegationPattern;
+                  const updates: Partial<AgentData> = { subAgentPattern: newPattern };
+                  if (newPattern === 'loop' && agent.maxIterations === undefined) {
+                    updates.maxIterations = 3;
+                  }
+                  if (newPattern === 'debate' && !agent.debateConfig) {
+                    updates.debateConfig = {
+                      maxRounds: 2,
+                      consensusThreshold: 0.85,
+                      earlyStoppingEnabled: true,
+                      debateStyle: 'structured_rebuttal',
+                      tieBreakerStrategy: 'conditional_approval',
+                      minWordLimitPerBrief: 250,
+                      requireEvidenceCitations: true,
+                    };
+                  }
+                  onUpdateAgent(updates);
+                }}
+                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-purple-500/40 focus:border-purple-400 rounded text-xs text-purple-200 font-medium focus:outline-none cursor-pointer"
+              >
+                {PATTERN_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id} className="bg-[#161b22] text-gray-200">
+                    {opt.label} — {opt.desc}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Loop Pattern Max Iterations Configuration */}
+            {currentPattern === 'loop' && (
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#0d1117] border border-purple-500/30">
+                <div>
+                  <label className="text-xs font-semibold text-purple-200">Max Iterations</label>
+                  <p className="text-[10px] text-gray-400">Maximum loop cycles before terminating (default 3)</p>
+                </div>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={agent.maxIterations ?? 3}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    onUpdateAgent({ maxIterations: isNaN(val) ? 3 : Math.max(1, val) });
+                  }}
+                  className="w-16 bg-[#161b22] text-purple-200 text-xs font-mono font-bold px-2 py-1 rounded border border-purple-500/40 focus:border-purple-400 focus:outline-none text-right cursor-text"
+                />
+              </div>
+            )}
 
           {/* Debate & Consensus Pattern Configuration Panel */}
           {(currentPattern === 'debate' || agent.debateConfig) && (
@@ -893,8 +943,7 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
 
           {/* Orderable Sub-Agents List */}
           <div className="space-y-1.5">
-            {subAgents.length > 0 ? (
-              subAgents.map((sub: SubAgentRef, idx: number) => (
+            {subAgents.map((sub: SubAgentRef, idx: number) => (
                 <div
                   key={sub.agentId || idx}
                   draggable
@@ -956,14 +1005,10 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
                     </button>
                   </div>
                 </div>
-              ))
-            ) : (
-              <div className="text-[11px] text-gray-400 italic p-2 bg-[#0d1117] rounded-lg border border-dashed border-[#30363d]">
-                No sub-agents attached. Connect this node to other agents by dragging from its bottom purple handle.
-              </div>
-            )}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

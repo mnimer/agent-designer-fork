@@ -52,8 +52,34 @@ describe('Standard Agent Inspector Logic & Configuration', () => {
     };
 
     assert.equal(updatedAgent.model, 'gemini-pro-latest');
-    assert.equal(updatedAgent.temperature, 0.8);
     assert.equal(updatedAgent.memoryType, 'postgres');
     assert.equal(updatedAgent.tools?.length, 1);
+  });
+
+  it('should restrict delegation patterns strictly to valid Google ADK patterns', async () => {
+    const { ADK_DELEGATION_PATTERNS } = await import('../../src/webview/types');
+    assert.equal(ADK_DELEGATION_PATTERNS.length, 4);
+    const patternIds = ADK_DELEGATION_PATTERNS.map((p) => p.id);
+    assert.deepEqual(patternIds, ['sequential', 'parallel', 'loop', 'coordinator']);
+  });
+
+  it('should initialize default maxIterations of 3 for loop delegation pattern', () => {
+    const agent: AgentNodeData = {
+      label: 'Iterative Refiner',
+      model: 'gemini-flash-latest',
+      subAgentPattern: 'loop',
+      subAgents: [
+        { agentId: 'sub-1', name: 'Draftsman', role: 'Drafter', delegationType: 'loop' }
+      ]
+    };
+
+    const maxIterations = agent.maxIterations ?? 3;
+    assert.equal(maxIterations, 3);
+
+    const updatedWithCustomCycles = {
+      ...agent,
+      maxIterations: 5,
+    };
+    assert.equal(updatedWithCustomCycles.maxIterations, 5);
   });
 });

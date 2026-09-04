@@ -4,14 +4,37 @@ export type AgentKind = 'standard' | 'a2a' | 'router';
 export type DelegationPattern = 
   | 'sequential' 
   | 'parallel' 
-  | 'router' 
   | 'loop' 
+  | 'coordinator'
+  // Legacy / fallback patterns for backwards compatibility with existing documents
+  | 'router' 
   | 'debate'
   | 'consensus'
   | 'review_critique' 
   | 'iterative_refinement' 
-  | 'coordinator' 
   | 'hierarchical_decomposition';
+
+export interface DelegationPatternOption {
+  id: DelegationPattern;
+  label: string;
+  desc: string;
+}
+
+/**
+ * Valid Agent Delegation Patterns supported natively by Google ADK.
+ * - Sequential: SequentialAgent
+ * - Parallel: ParallelAgent
+ * - Loop: LoopAgent (with max_iterations)
+ * - Coordinator: Agent with LLM dynamic routing via sub_agents
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
+export const ADK_DELEGATION_PATTERNS: DelegationPatternOption[] = [
+  { id: 'sequential', label: 'Sequential', desc: 'Linear pipeline execution (SequentialAgent)' },
+  { id: 'parallel', label: 'Parallel', desc: 'Concurrent async dispatch (ParallelAgent)' },
+  { id: 'loop', label: 'Loop', desc: 'Iterative execution up to max iterations (LoopAgent)' },
+  { id: 'coordinator', label: 'Coordinator', desc: 'LLM dynamic routing and delegation (Agent with sub_agents)' },
+];
 
 export type TriggerType = 'chat' | 'pubsub' | 'scheduled' | 'tester' | 'eventarc';
 
@@ -270,6 +293,7 @@ export interface AgentData extends Record<string, unknown> {
   onRemoveTool?: (agentId: string, toolId: string) => void;
   onReorderSubAgents?: (agentId: string, startIndex: number, endIndex: number) => void;
   onUpdateSubAgentPattern?: (agentId: string, pattern: DelegationPattern) => void;
+  onUpdateMaxIterations?: (agentId: string, maxIterations: number) => void;
   onUpdateMemoryConfig?: (agentId: string, memoryConfig: AgentMemoryConfig) => void;
 }
 

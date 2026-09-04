@@ -790,6 +790,12 @@ function FlowCanvas() {
     [nodes, edges, setNodes, recordSnapshot]
   );
 
+  /**
+   * Updates the sub-agent delegation pattern for an agent node and synchronizes
+   * child delegationType and default maxIterations for loop pattern.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
+   */
   const handleUpdateSubAgentPattern = useCallback(
     (agentId: string, pattern: any) => {
       const nextNodes = nodes.map((n) => {
@@ -799,11 +805,13 @@ function FlowCanvas() {
             ...sub,
             delegationType: pattern,
           }));
+          const existingMax = (n.data as AgentData)?.maxIterations;
           return {
             ...n,
             data: {
               ...n.data,
               subAgentPattern: pattern,
+              maxIterations: pattern === 'loop' && existingMax === undefined ? 3 : existingMax,
               subAgents: updatedSubAgents,
             },
           };
@@ -812,6 +820,31 @@ function FlowCanvas() {
       });
       setNodes(nextNodes);
       recordSnapshot(nextNodes, edges, { description: 'Update sub-agent pattern' });
+    },
+    [nodes, edges, setNodes, recordSnapshot]
+  );
+
+  /**
+   * Updates the max iterations loop bound for an agent node.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
+   */
+  const handleUpdateMaxIterations = useCallback(
+    (agentId: string, maxIterations: number) => {
+      const nextNodes = nodes.map((n) => {
+        if (n.id === agentId && n.type === 'agentNode') {
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              maxIterations: Math.max(1, maxIterations),
+            },
+          };
+        }
+        return n;
+      });
+      setNodes(nextNodes);
+      recordSnapshot(nextNodes, edges, { description: 'Update max iterations' });
     },
     [nodes, edges, setNodes, recordSnapshot]
   );
@@ -1223,6 +1256,7 @@ function FlowCanvas() {
           onRemoveTool: handleRemoveTool,
           onReorderSubAgents: handleReorderSubAgents,
           onUpdateSubAgentPattern: handleUpdateSubAgentPattern,
+          onUpdateMaxIterations: handleUpdateMaxIterations,
         },
       };
     });
@@ -1235,6 +1269,7 @@ function FlowCanvas() {
     handleRemoveTool, 
     handleReorderSubAgents, 
     handleUpdateSubAgentPattern,
+    handleUpdateMaxIterations,
     handleEditTrigger,
     handleDeleteTrigger
   ]);
@@ -1830,6 +1865,33 @@ function FlowCanvas() {
     (partialData: Partial<AgentData>) => {
       if (!selectedAgentId) return;
 
+      let nextEdges = edges;
+      if (partialData.subAgents) {
+        // If subAgents was explicitly updated (e.g. sub-agent removed from drawer), prune edges connecting to removed subAgents
+        const remainingTargetIds = new Set((partialData.subAgents as SubAgentRef[]).map((s) => s.agentId));
+        nextEdges = edges.filter((e) => !(e.source === selectedAgentId && !remainingTargetIds.has(e.target)));
+        if (nextEdges.length !== edges.length) {
+          setEdges(nextEdges);
+        }
+      }
+
+      // If updating pattern, synchronize delegationType across all child sub-agents and default loop iterations
+      if (partialData.subAgentPattern) {
+        const targetNode = nodes.find((n) => n.id === selectedAgentId);
+        const curSubs = ((partialData.subAgents || (targetNode?.data as AgentData)?.subAgents) || []) as SubAgentRef[];
+        partialData.subAgents = curSubs.map((sub) => ({
+          ...sub,
+          delegationType: partialData.subAgentPattern,
+        }));
+        if (
+          partialData.subAgentPattern === 'loop' && 
+          partialData.maxIterations === undefined && 
+          (targetNode?.data as AgentData)?.maxIterations === undefined
+        ) {
+          partialData.maxIterations = 3;
+        }
+      }
+
       let nextNodes: Node<any>[];
       if (partialData.isStartNode === true) {
         // If making this agent the root, reconnect triggers
@@ -1840,17 +1902,16 @@ function FlowCanvas() {
       }
 
       // Propagate label and role changes across all connected subAgents references
-      nextNodes = syncAgentSubAgents(nextNodes, edges);
+      nextNodes = syncAgentSubAgents(nextNodes, nextEdges);
       setNodes(nextNodes);
 
-      let nextEdges = edges;
       // If updating routerConfig, automatically synchronize connecting lines from router branches
       if (partialData.routerConfig) {
         const branches = partialData.routerConfig.branches || [];
         const currentSelectedId = selectedAgentId;
 
         // Filter out existing edges from this router node
-        const preservedEdges = edges.filter((e) => e.source !== currentSelectedId);
+        const preservedEdges = nextEdges.filter((e) => e.source !== currentSelectedId);
 
         // Build new edges for branches with a targetAgentId
         const newBranchEdges: Edge[] = [];
