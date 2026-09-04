@@ -80,7 +80,10 @@ export function syncWorkflowSubAgents(nodes: WorkflowNode[], edges: WorkflowEdge
     );
     const connectedTargetIds = Array.from(new Set(outgoingAgentEdges.map((e) => e.target)));
 
-    // 1. Keep existing subAgents that are still connected, updating name & role
+    const agentData = (node.data || {}) as any;
+    const parentPattern = agentData.subAgentPattern || 'parallel';
+
+    // 1. Keep existing subAgents that are still connected, updating name, role, and delegationType
     const updatedExisting: any[] = [];
     currentSubAgents.forEach((sub) => {
       const subId = typeof sub === 'string' ? sub : sub?.agentId;
@@ -94,13 +97,14 @@ export function syncWorkflowSubAgents(nodes: WorkflowNode[], edges: WorkflowEdge
             ...sub,
             name: targetData.label || sub.name || 'Agent',
             role: targetData.role !== undefined ? targetData.role : (sub.role || ''),
-            delegationType: sub.delegationType || 'parallel',
+            // Inherit parent agent's subAgentPattern as delegationType so child never contradicts parent
+            delegationType: agentData.subAgentPattern || sub.delegationType || 'parallel',
           });
         }
       }
     });
 
-    // 2. Append newly connected targets
+    // 2. Append newly connected targets with parent's delegation pattern
     const existingIds = new Set(updatedExisting.map((s) => (typeof s === 'string' ? s : s?.agentId)));
     const newSubAgents: any[] = [];
     connectedTargetIds.forEach((targetId) => {
@@ -111,14 +115,14 @@ export function syncWorkflowSubAgents(nodes: WorkflowNode[], edges: WorkflowEdge
           agentId: targetId,
           name: targetData.label || 'Agent',
           role: targetData.role || '',
-          delegationType: 'parallel',
+          delegationType: parentPattern,
         });
       }
     });
 
     const finalSubAgents = [...updatedExisting, ...newSubAgents];
 
-    // Check if subAgents actually changed
+    // Check if subAgents actually changed (including delegationType)
     const isSameLength = currentSubAgents.length === finalSubAgents.length;
     const isSameContent =
       isSameLength &&
@@ -129,7 +133,9 @@ export function syncWorkflowSubAgents(nodes: WorkflowNode[], edges: WorkflowEdge
         const bName = typeof finalSubAgents[idx] === 'string' ? '' : finalSubAgents[idx]?.name;
         const aRole = typeof sub === 'string' ? '' : sub?.role;
         const bRole = typeof finalSubAgents[idx] === 'string' ? '' : finalSubAgents[idx]?.role;
-        return aId === bId && aName === bName && aRole === bRole;
+        const aDel = typeof sub === 'string' ? '' : sub?.delegationType;
+        const bDel = typeof finalSubAgents[idx] === 'string' ? '' : finalSubAgents[idx]?.delegationType;
+        return aId === bId && aName === bName && aRole === bRole && aDel === bDel;
       });
 
     if (isSameContent) {

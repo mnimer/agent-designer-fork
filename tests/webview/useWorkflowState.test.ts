@@ -387,5 +387,48 @@ describe('useWorkflowState Logic', () => {
       assert.equal(subs[2].name, 'New Gamma');
       assert.equal(subs[2].role, 'DevOps Lead');
     });
+
+    it('should inherit parent agent subAgentPattern as delegationType so children never contradict parent', async () => {
+      const { syncWorkflowSubAgents } = await import('../../src/webview/hooks/useWorkflowState');
+
+      const parentSequential: AgentWorkflowNode = {
+        id: 'parent-seq',
+        type: 'agentNode',
+        position: { x: 0, y: 0 },
+        data: {
+          label: 'Sequential Orchestrator',
+          subAgentPattern: 'sequential',
+          subAgents: [],
+        },
+      };
+
+      const childA: AgentWorkflowNode = {
+        id: 'child-a',
+        type: 'agentNode',
+        position: { x: 100, y: 100 },
+        data: { label: 'Child A', role: 'Step 1' },
+      };
+
+      const childB: AgentWorkflowNode = {
+        id: 'child-b',
+        type: 'agentNode',
+        position: { x: 200, y: 100 },
+        data: { label: 'Child B', role: 'Step 2' },
+      };
+
+      const edges: any[] = [
+        { id: 'e1', source: 'parent-seq', target: 'child-a' },
+        { id: 'e2', source: 'parent-seq', target: 'child-b' },
+      ];
+
+      const synced = syncWorkflowSubAgents([parentSequential, childA, childB], edges);
+      const syncedParent = synced.find((n) => n.id === 'parent-seq')!;
+      const subs = syncedParent.data.subAgents as any[];
+
+      assert.equal(subs.length, 2);
+      assert.equal(subs[0].delegationType, 'sequential');
+      assert.equal(subs[1].delegationType, 'sequential');
+    });
   });
 });
+

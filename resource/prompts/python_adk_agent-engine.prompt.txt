@@ -31,14 +31,31 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
    - All code MUST execute real live inference using the official Google GenAI SDK (`google-genai` / `genai.Client()`) with Vertex AI (`genai.Client(vertexai=True)`).
    - If client initialization or API calls fail, the code MUST raise a clear runtime exception (`RuntimeError` or `ValueError`) rather than faking an answer or returning dummy data.
 
-3. **Multi-Agent & Sub-Agent Orchestration**:
+3. **Multi-Agent & Hierarchical Orchestration (Recursive Across N-Layers)**:
    - You MUST inspect ALL nodes in the provided workflow specification JSON (including all `agent` and `trigger` nodes) and all connections in `edges` (or `data.subAgents`).
-   - **Pattern Compliance Rule (MANDATORY)**:
-     Every orchestration decision MUST be based on the workflow JSON agent properties. Use the `subAgentPattern` as the Agent pattern to implement:
-     * **Sequential (`subAgentPattern: "sequential"` / `"iterative_refinement"`)**: Use `SequentialAgent(sub_agents=[agent_1, agent_2, synthesizer])`. DO NOT use `ParallelAgent`.
-     * **Parallel (`subAgentPattern: "parallel"` / `"broadcast"`)**: Use `SequentialAgent(sub_agents=[ParallelAgent(name="parallel_workers", sub_agents=[agent_1, agent_2]), synthesizer])`.
-     * **Loop (`subAgentPattern: "loop"` / `"review_critique"`)**: Use `SequentialAgent(sub_agents=[LoopAgent(name="refinement_loop", sub_agents=[agent_1, agent_2], max_iterations=3), synthesizer])`. DO NOT use `ParallelAgent`.
-     * **Coordinator (`subAgentPattern: "coordinator"` / `"hierarchical_decomposition"`)**: Use `Agent(name="coordinator", model="gemini-3.7-flash", sub_agents=[agent_1, agent_2], output_schema=ResponseSchema)`. DO NOT use `ParallelAgent` or `SequentialAgent` as root.
+   - **Hierarchical Parent Authority Rule (CRITICAL & MANDATORY)**:
+     Every orchestration decision MUST be based on the PARENT agent's properties. In any agent hierarchy (whether 2, 3, 4, or 5+ layers deep):
+     1. **The Parent's `subAgentPattern` Exclusively Governs Its Immediate Children**:
+        * **Sequential (`subAgentPattern: "sequential"` / `"iterative_refinement"`)**:
+          The parent MUST orchestrate its child sub-agents in a strict sequence:
+          `SequentialAgent(name="...", sub_agents=[child_1, child_2, ..., synthesizer])`.
+          **DO NOT insert an intermediate `ParallelAgent`!** Even if child nodes have `"subAgentPattern": "parallel"` or child elements have `"delegationType": "parallel"`, the parent's `subAgentPattern: "sequential"` strictly controls execution.
+        * **Parallel (`subAgentPattern: "parallel"` / `"broadcast"`)**:
+          The parent runs its child sub-agents concurrently:
+          `SequentialAgent(sub_agents=[ParallelAgent(name="parallel_workers", sub_agents=[child_1, child_2, ...]), synthesizer])`.
+        * **Loop (`subAgentPattern: "loop"` / `"review_critique"`)**:
+          The parent runs its child sub-agents iteratively in a loop:
+          `SequentialAgent(sub_agents=[LoopAgent(name="refinement_loop", sub_agents=[child_1, child_2, ...], max_iterations=3), synthesizer])`. DO NOT use `ParallelAgent`.
+        * **Coordinator (`subAgentPattern: "coordinator"` / `"hierarchical_decomposition"`)**:
+          The parent acts as an LLM coordinator delegating to its sub-agents:
+          `Agent(name="...", model="gemini-3.7-flash", sub_agents=[child_1, child_2, ...], output_schema=ResponseSchema)`. DO NOT use `ParallelAgent` or `SequentialAgent` as root.
+     2. **Leaf Nodes are Plain Agents (Ignore their `subAgentPattern`)**:
+        * If an agent node has NO sub-agents (`subAgents` is empty `[]` or omitted), its own `subAgentPattern` MUST BE COMPLETELY IGNORED. A leaf node is always a standard `Agent(...)` with its own instructions, tools, and `output_schema` / `output_key`. It is NEVER an orchestrator and MUST NOT be wrapped in a `ParallelAgent` or `SequentialAgent`.
+     3. **Ignore Legacy `delegationType` in Child Objects**:
+        * Always use the parent node's top-level `subAgentPattern` as the single source of truth. Any per-item `delegationType` inside child objects in `subAgents: [...]` is secondary and MUST NOT override the parent's `subAgentPattern`.
+     4. **Recursive Composition Across N-Layers (2, 3, 4, 5+ Tiers Deep)**:
+        * When a child agent itself has its own connected `subAgents: [...]`, that child is an intermediate parent. Its OWN `subAgentPattern` dictates how its grandchildren are orchestrated.
+        * Always construct the hierarchy bottom-up: instantiate leaf `Agent`s first, compose them into intermediate layer orchestrators according to each intermediate parent's `subAgentPattern`, and finally assemble the root orchestrator as `root_agent`.
 
 4. **Structured Output** (if defined in workload specification JSON):
    - Generate `pydantic_models.py` with the Pydantic schema model.

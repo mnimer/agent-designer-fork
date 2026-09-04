@@ -187,7 +187,9 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
     );
     const connectedTargetIds = Array.from(new Set(outgoingAgentEdges.map((e) => e.target)));
 
-    // 1. Keep existing subAgents that are still connected, updating their name & role
+    const parentPattern = (node.data as AgentData)?.subAgentPattern || 'parallel';
+
+    // 1. Keep existing subAgents that are still connected, updating their name, role, and delegationType
     const updatedExisting: SubAgentRef[] = [];
     currentSubAgents.forEach((sub) => {
       if (connectedTargetIds.includes(sub.agentId)) {
@@ -197,7 +199,8 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
           ...sub,
           name: targetData.label || sub.name || 'Agent',
           role: targetData.role !== undefined ? targetData.role : (sub.role || ''),
-          delegationType: sub.delegationType || 'parallel',
+          // Inherit parent agent's subAgentPattern as delegationType so child never contradicts parent
+          delegationType: (node.data as AgentData)?.subAgentPattern || sub.delegationType || 'parallel',
         });
       }
     });
@@ -213,7 +216,7 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
           agentId: targetId,
           name: targetData.label || 'Agent',
           role: targetData.role || '',
-          delegationType: 'parallel',
+          delegationType: parentPattern,
         });
       }
     });
@@ -791,11 +794,17 @@ function FlowCanvas() {
     (agentId: string, pattern: any) => {
       const nextNodes = nodes.map((n) => {
         if (n.id === agentId && n.type === 'agentNode') {
+          const currentSubAgents = (n.data as AgentData)?.subAgents || [];
+          const updatedSubAgents = currentSubAgents.map((sub) => ({
+            ...sub,
+            delegationType: pattern,
+          }));
           return {
             ...n,
             data: {
               ...n.data,
               subAgentPattern: pattern,
+              subAgents: updatedSubAgents,
             },
           };
         }

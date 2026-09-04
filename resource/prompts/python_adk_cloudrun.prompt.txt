@@ -27,8 +27,21 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
      * Local Runner & CLI: `from google.adk.runner import Runner`
    - Agent Definition Convention:
      * Every ADK agent module must export a top-level `root_agent` object in `agent.py`.
-       - **NO Custom Agent Subclasses**: Under NO circumstances should you subclass `Agent`, `BaseAgent`, or `SequentialAgent`. Never override internal methods like `_run_async_impl()`. All agents must be instantiated directly as variables.
-       - Single Agent or Multi-Agent Coordinator:
+        - **NO Custom Agent Subclasses**: Under NO circumstances should you subclass `Agent`, `BaseAgent`, or `SequentialAgent`. Never override internal methods like `_run_async_impl()`. All agents must be instantiated directly as variables.
+        - **Hierarchical Parent Authority Rule (CRITICAL & MANDATORY)**:
+          In any workflow or agent hierarchy (whether 2, 3, 4, or 5+ layers deep):
+          1. **The Parent's `subAgentPattern` Exclusively Governs Its Immediate Children**:
+             * **Sequential (`subAgentPattern: "sequential"` / `"iterative_refinement"`)**: Use `SequentialAgent(name="...", sub_agents=[child_1, child_2, ..., synthesizer])`. **DO NOT insert an intermediate `ParallelAgent`!** Even if child nodes have `"subAgentPattern": "parallel"` or child elements have `"delegationType": "parallel"`, the parent's `subAgentPattern: "sequential"` strictly controls execution.
+             * **Parallel (`subAgentPattern: "parallel"` / `"broadcast"`)**: Use `SequentialAgent(sub_agents=[ParallelAgent(name="parallel_workers", sub_agents=[child_1, child_2, ...]), synthesizer])`.
+             * **Loop (`subAgentPattern: "loop"` / `"review_critique"`)**: Use `SequentialAgent(sub_agents=[LoopAgent(name="refinement_loop", sub_agents=[child_1, child_2, ...], max_iterations=3), synthesizer])`. DO NOT use `ParallelAgent`.
+             * **Coordinator (`subAgentPattern: "coordinator"` / `"hierarchical_decomposition"`)**: Use `Agent(name="...", model="gemini-3.7-flash", sub_agents=[child_1, child_2, ...], output_schema=ResponseSchema)`.
+          2. **Leaf Nodes are Plain Agents (Ignore their `subAgentPattern`)**:
+             * If an agent node has NO sub-agents (`subAgents` is empty `[]` or omitted), its own `subAgentPattern` MUST BE COMPLETELY IGNORED. A leaf node is always a standard `Agent(...)` with its own instructions and tools. It is NEVER an orchestrator and MUST NOT be wrapped in a `ParallelAgent` or `SequentialAgent`.
+          3. **Ignore Legacy `delegationType` in Child Objects**:
+             * Always use the parent node's top-level `subAgentPattern` as the single source of truth. Any per-item `delegationType` inside child objects in `subAgents: [...]` is secondary and MUST NOT override the parent's `subAgentPattern`.
+          4. **Recursive Composition Across N-Layers (2, 3, 4, 5+ Tiers Deep)**:
+             * When a child agent itself has its own connected `subAgents: [...]`, that child is an intermediate parent. Its OWN `subAgentPattern` dictates how its grandchildren are orchestrated. Construct the hierarchy bottom-up: leaf agents first, intermediate orchestrators next, and root orchestrator as `root_agent`.
+        - Single Agent or Multi-Agent Coordinator:
         ```python
         import os
         from google.adk.agents import Agent
