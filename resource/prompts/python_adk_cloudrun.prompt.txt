@@ -27,29 +27,30 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
      * Local Runner & CLI: `from google.adk.runner import Runner`
    - Agent Definition Convention:
      * Every ADK agent module must export a top-level `root_agent` object in `agent.py`.
-     * Single Agent or Multi-Agent Coordinator:
-       ```python
-       import os
-       from google.adk.agents import Agent
-       from tools import get_weather, search_docs
+       - **NO Custom Agent Subclasses**: Under NO circumstances should you subclass `Agent`, `BaseAgent`, or `SequentialAgent`. Never override internal methods like `_run_async_impl()`. All agents must be instantiated directly as variables.
+       - Single Agent or Multi-Agent Coordinator:
+        ```python
+        import os
+        from google.adk.agents import Agent
+        from tools import get_weather, search_docs
 
-       # Define sub-agents if graph contains child agent nodes
-       child_agent = Agent(
-           name="specialist_agent",
-           model="gemini-2.5-flash",
-           instruction="You are a domain specialist...",
-           tools=[get_weather],
-       )
+        # Define sub-agents if graph contains child agent nodes
+        child_agent = Agent(
+            name="specialist_agent",
+            model="gemini-3.7-flash",
+            instruction="You are a domain specialist...",
+            tools=[get_weather],
+        )
 
-       # Root agent orchestrating the workflow
-       root_agent = Agent(
-           name="coordinator_agent",
-           model="gemini-2.5-flash",
-           instruction="You are the lead coordinator...",
-           tools=[search_docs],
-           sub_agents=[child_agent],
-       )
-       ```
+        # Root agent orchestrating the workflow
+        root_agent = Agent(
+            name="coordinator_agent",
+            model="gemini-3.7-flash",
+            instruction="You are the lead coordinator...",
+            tools=[search_docs],
+            sub_agents=[child_agent],
+        )
+        ```
      * When graph workflow with routing edges:
        ```python
        from google.adk.workflow import Workflow
@@ -73,15 +74,37 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
        ```
      * ADK automatically converts Python functions into tool declarations and handles tool execution in the loop.
 
+    - Observability: Logging, Tracing & Metrics (ADK & OpenTelemetry Strategy):
+      * **NO Hardcoded `print()` Statements**: Under NO circumstances should you use `print()` for agent tracing or logging. Do NOT subclass `Agent` or override `_run_async_impl` to intercept execution.
+      * **Structured Logging**: Configure Python's standard `logging` module (`logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')`) in `server.py`, `main.py`, and `agent.py`. All ADK loggers are children of `google_adk` (use `DEBUG` level for LLM prompt/response inspection).
+      * **Distributed Tracing & Metrics**: ADK natively implements OpenTelemetry GenAI Semantic Conventions (`invoke_agent`, `invoke_workflow`, `execute_tool`, `generate_content`, `gen_ai.client.token.usage`, etc.). Initialize ADK telemetry providers via `maybe_set_otel_providers([get_gcp_exporters(...)])` for Cloud Logging, Cloud Trace, and Cloud Monitoring.
+      * **Tool Observability**: In custom tool functions (`tools/*.py`), log activity using `logger.info(...)` or `logger.debug(...)` rather than `print()`.
+
 2. **File Structure to Generate**:
    - `agent.py`: Core ADK agent module defining `root_agent` (`Agent` or `Workflow`) with sub-agents, system instructions, tools, and output schemas.
    - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs (when defined in nodes).
-   - `tools/*.py`: Tool definitions (e.g., Google Search, custom functions, MCP tools). Group tools logically by category/source.
-   - `server.py`: Production FastAPI server leveraging ADK's built-in FastAPI integration:
+   - `tools/*.py`: Tool definitions (e.g., Google Search, custom functions, MCP tools). Group tools logically by category/source. Use standard `logging.getLogger(__name__)`.
+   - `server.py`: Production FastAPI server leveraging ADK's built-in FastAPI integration with OpenTelemetry exporters:
      ```python
      import os
+     import logging
      import uvicorn
      from google.adk.cli.fast_api import get_fast_api_app
+     from google.adk.telemetry.google_cloud import get_gcp_exporters
+     from google.adk.telemetry.setup import maybe_set_otel_providers
+
+     logging.basicConfig(
+         level=logging.INFO,
+         format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+     )
+
+     # Wire OpenTelemetry to Google Cloud Logging, Cloud Trace, and Cloud Monitoring
+     gcp_exporters = get_gcp_exporters(
+         enable_cloud_logging=True,
+         enable_cloud_tracing=True,
+         enable_cloud_metrics=True,
+     )
+     maybe_set_otel_providers([gcp_exporters])
 
      AGENTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -99,9 +122,15 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
    - `main.py`: Interactive CLI runner for local prompt testing using ADK `Runner`:
      ```python
      import asyncio
+     import logging
      from agent import root_agent
      from google.adk.runner import Runner
      from google.adk.sessions import InMemorySessionService
+
+     logging.basicConfig(
+         level=logging.INFO,
+         format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+     )
 
      async def main():
          runner = Runner(agent=root_agent, session_service=InMemorySessionService())
