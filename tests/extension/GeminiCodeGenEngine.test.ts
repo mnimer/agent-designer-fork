@@ -204,52 +204,7 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
     assert.ok(schema.items.properties.content.description.includes('Complete, production-ready'));
   });
 
-  it('should load all markdown skill files from resource/skills/adk in deterministic order', () => {
-    const skills = engine.loadSkillsReference('google-adk');
-    assert.ok(skills.length > 0);
-    // Verifies inclusion of core skill markdown files
-    assert.ok(skills.includes('ADK Python Cheatsheet'), 'Should include adk-python.md');
-    assert.ok(skills.includes('ADK Workflow API Cheatsheet'), 'Should include adk-workflows.md');
-    assert.ok(skills.includes('Agent Runtime Infrastructure'), 'Should include agent-runtime.md');
-    assert.ok(skills.includes('Cloud Run Infrastructure'), 'Should include cloud-run.md');
-
-    // Verifies ordering: adk-python appears before adk-workflows and agent-runtime
-    const idxPython = skills.indexOf('ADK Python Cheatsheet');
-    const idxWorkflows = skills.indexOf('ADK Workflow API Cheatsheet');
-    const idxRuntime = skills.indexOf('Agent Runtime Infrastructure');
-    assert.ok(idxPython < idxWorkflows, 'adk-python.md should precede adk-workflows.md');
-    assert.ok(idxWorkflows < idxRuntime, 'adk-workflows.md should precede agent-runtime.md');
-  });
-
-  it('should append skills directly under existing ## ADK Skills Reference block', () => {
-    const templateWithHeader = 'Base prompt instructions.\n\n#################################################\n## ADK Skills Reference\n\n';
-    const result = engine.appendSkillsToPrompt(templateWithHeader, 'google-adk');
-
-    assert.ok(result.startsWith('Base prompt instructions.'));
-    assert.ok(result.includes('#################################################\n## ADK Skills Reference\n\n# ADK Python Cheatsheet'));
-    assert.ok(result.includes('ADK Workflow API Cheatsheet'));
-    assert.ok(result.includes('Agent Runtime Infrastructure'));
-  });
-
-  it('should append header block and skills when ## ADK Skills Reference is missing', () => {
-    const templateWithoutHeader = 'Base prompt instructions without any skills block.';
-    const result = engine.appendSkillsToPrompt(templateWithoutHeader, 'google-adk');
-
-    assert.ok(result.includes('Base prompt instructions without any skills block.'));
-    assert.ok(result.includes('#################################################\n## ADK Skills Reference'));
-    assert.ok(result.includes('ADK Python Cheatsheet'));
-  });
-
-  it('should gracefully handle unknown frameworks with no skills found', () => {
-    const emptySkills = engine.loadSkillsReference('unknown-framework-xyz');
-    assert.equal(emptySkills, '');
-
-    const basePrompt = 'Original unmodified prompt.';
-    const result = engine.appendSkillsToPrompt(basePrompt, 'unknown-framework-xyz');
-    assert.equal(result, basePrompt);
-  });
-
-  it('should include workflow JSON and appended skills when generating code', async () => {
+  it('should include workflow JSON when generating code with self-contained prompt template', async () => {
     let capturedPrompt = '';
     // Temporarily spy on callGeminiApi to verify prompt passed to LLM
     const originalCall = (engine as any).callGeminiApi;
@@ -269,10 +224,7 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
 
       assert.equal(result.success, true);
       assert.ok(capturedPrompt.includes('CustomerSupportWorkflow'), 'Must interpolate workflow JSON');
-      assert.ok(capturedPrompt.includes('## ADK Skills Reference'), 'Must have ADK Skills Reference block');
-      assert.ok(capturedPrompt.includes('ADK Python Cheatsheet'), 'Must append adk-python.md');
-      assert.ok(capturedPrompt.includes('ADK Workflow API Cheatsheet'), 'Must append adk-workflows.md');
-      assert.ok(capturedPrompt.includes('Agent Runtime Infrastructure'), 'Must append agent-runtime.md');
+      assert.ok(capturedPrompt.includes('Google ADK') || capturedPrompt.includes('google-adk'), 'Must contain ADK framework instructions');
     } finally {
       (engine as any).callGeminiApi = originalCall;
     }

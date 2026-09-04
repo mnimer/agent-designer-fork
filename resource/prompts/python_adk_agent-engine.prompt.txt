@@ -1,7 +1,14 @@
 You are an expert Google Cloud and Vertex AI Agent Engine software engineer. 
-Your task is to generate a complete, production-ready Python repository utilizing Vertex AI Agent Engine / Reasoning Engines (`vertexai.preview.reasoning_engines` and `google-genai`), configured for native deployment to Google Cloud Vertex AI Agent Engine based on the provided react-flow JSON describing the Agent Workflow.
 
-### INPUT WORKFLOW SPECIFICATION:
+Your task is to generate a complete, production-ready AI Agent repository. Configured for native deployment to Google Cloud Vertex AI Agent Engine / Agent Runtime based on the provided react-flow JSON describing the Agent Workflow Specification.
+
+### Language: Python
+
+### Agent Harness: [Google ADK](https://adk.dev/get-started/python/)
+
+### Deployment Target: Google Vertex Agent Engine
+
+### WORKFLOW SPECIFICATION:
 ```json
 {{WORKFLOW_JSON}}
 ```
@@ -10,232 +17,68 @@ Your task is to generate a complete, production-ready Python repository utilizin
 
 ### REQUIREMENTS & ARCHITECTURE:
 
-1. **Vertex AI Agent Engine (Reasoning Engine) Architecture**:
-   - The agent is implemented as a Python class that conforms to the Vertex AI Reasoning Engine specification (`set_up()`, `query()`, and optionally `stream_query()`).
-   - When deployed to Vertex AI Agent Engine, Google fully manages the runtime container, scaling, IAM authentication, telemetry, and exposes standard gRPC/REST endpoints (`:query`, `:streamQuery`).
-   - DO NOT generate a `Dockerfile` or a `server.py` (FastAPI) server, because Agent Engine natively manages the serving layer.
+1. **Agent Harness & Agent Architecture**:
+   - You MUST implement agents using the official Google ADK SDK/Harness (`from google.adk.agents import Agent`).
+   - Every agent node in the workflow canvas must correspond to an `Agent(...)` instance with `name`, `model`, `instruction`, `description` (critical for delegation), and optional `tools=[...]`.
+   - Sub-agents defined in the workflow JSON MUST be declared as distinct `Agent` instances and wired into the parent agent using the `sub_agents=[...]` array.
 
-2. **File Structure to Generate**:
-   - `agent.py`: Reasoning Engine class defining the agent runtime:
-     ```python
-     import os
-     from typing import Any, Dict, List, Optional
-     from pydantic import BaseModel
-     from pydantic_models import ResponseSchema
+2. **CRITICAL: LLM MODEL CONSTRAINTS**:
+   - Under NO circumstances should any generated code (in `agent.py`, `tools/*.py`, etc.) reference deprecated Gemini models such as `gemini-2.0-flash`, `gemini-1.5-flash`, `gemini-1.5-pro`, or `gemini-flash-latest`.
+   - ALWAYS use modern Gemini 2.5/3.5 models (such as `gemini-2.5-flash` or the configured node model) as the global default model across all agent definitions AND all custom tool helper implementations.
+   - Under NO circumstances should you generate mock response fallbacks, fake dummy data, hardcoded if/else string checks (e.g. `if "1600 Amphitheatre" in prompt: return ResponseSchema(...)`), or simulated client returns.
+   - All code MUST execute real live inference using the official Google GenAI SDK (`google-genai` / `genai.Client()`) with Vertex AI (`genai.Client(vertexai=True)`).
+   - If client initialization or API calls fail, the code MUST raise a clear runtime exception (`RuntimeError` or `ValueError`) rather than faking an answer or returning dummy data.
 
-     class AgentReasoningEngine:
-         """
-         Vertex AI Agent Engine Reasoning Engine implementation.
-         """
-         def __init__(self, model_name: str = "gemini-2.0-flash", temperature: float = 0.7):
-             self.model_name = model_name
-             self.temperature = temperature
-             self.system_prompt = "..."
+3. **Multi-Agent & Sub-Agent Orchestration**:
+   - You MUST inspect ALL nodes in the provided workflow specification JSON (including all `agent` and `trigger` nodes) and all connections in `edges` (or `data.subAgents`).
+   - **Pattern Compliance Rule (MANDATORY)**:
+     Every orchestration decision MUST be based on the workflow JSON agent properties. Use the `subAgentPattern` as the Agent pattern to implement:
+     * **Sequential (`subAgentPattern: "sequential"` / `"iterative_refinement"`)**: Use `SequentialAgent(sub_agents=[agent_1, agent_2, synthesizer])`. DO NOT use `ParallelAgent`.
+     * **Parallel (`subAgentPattern: "parallel"` / `"broadcast"`)**: Use `SequentialAgent(sub_agents=[ParallelAgent(name="parallel_workers", sub_agents=[agent_1, agent_2]), synthesizer])`.
+     * **Loop (`subAgentPattern: "loop"` / `"review_critique"`)**: Use `SequentialAgent(sub_agents=[LoopAgent(name="refinement_loop", sub_agents=[agent_1, agent_2], max_iterations=3), synthesizer])`. DO NOT use `ParallelAgent`.
+     * **Coordinator (`subAgentPattern: "coordinator"` / `"hierarchical_decomposition"`)**: Use `Agent(name="coordinator", model="gemini-2.5-flash", sub_agents=[agent_1, agent_2], output_schema=ResponseSchema)`. DO NOT use `ParallelAgent` or `SequentialAgent` as root.
 
-         def set_up(self):
-             """
-             Initializes the client and resources when loaded inside Vertex AI Agent Engine.
-             """
-             from google import genai
-             from google.genai import types
-             # Uses Vertex AI with Application Default Credentials
-             self.client = genai.Client(vertexai=True)
+4. **Structured Output** (if defined in workload specification JSON):
+   - Generate `pydantic_models.py` with the Pydantic schema model.
+   - Configure sub-agents with `output_key="<name>_output"` to store results in session state.
+   - For Sequential, Parallel, and Loop: Create a tool-free synthesizer `Agent` with `output_schema=ResponseSchema` evaluating `{<name>_output}` from state.
+   - For Coordinator: Place `output_schema=ResponseSchema` directly on the root `Agent` since it coordinates conversational delegation directly.
 
-         def query(self, prompt: str, **kwargs) -> Dict[str, Any]:
-             """
-             Executes a single turn query against the agent.
-             """
-             from google.genai import types
+5. **Multi-Agent Trace Logging (Console & Test Runner Visibility)**:
+   - You MUST include informative, structured console logging using `print(..., flush=True)` so that the Test Runner Console and live visualizer can trace execution into the root agent, through each sub-agent, and back:
+     * When entering root agent: `print(f"[Agent Trace: RootAgent] ➔ Received query: {prompt}", flush=True)`
+     * When delegating to a sub-agent: `print(f"[Agent Trace: RootAgent] ➔ Delegating to Sub-Agent '{name}' with input: {sub_prompt}", flush=True)`
+     * Inside sub-agent execution: `print(f"[Agent Trace: SubAgent:{name}] ➔ Executing model ({model})...", flush=True)`
+     * When sub-agent completes: `print(f"[Agent Trace: SubAgent:{name}] ⬅ Finished with output: {result[:120]}...", flush=True)`
+     * When root agent receives sub-agent output: `print(f"[Agent Trace: RootAgent] ⬅ Received response from Sub-Agent '{name}'", flush=True)`
+     * When synthesizing final output: `print(f"[Agent Trace: RootAgent] ➔ Synthesizing final workflow output", flush=True)`
 
-             config = types.GenerateContentConfig(
-                 system_instruction=self.system_prompt,
-                 temperature=self.temperature,
-                 response_mime_type="application/json",
-                 response_schema=ResponseSchema,
-             )
-
-             response = self.client.models.generate_content(
-                 model=self.model_name,
-                 contents=prompt,
-                 config=config,
-             )
-
-             if response.parsed and isinstance(response.parsed, ResponseSchema):
-                 return response.parsed.model_dump()
-             
-             return {"raw_response": response.text}
-     ```
-   - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs.
-   - `tools/*.py`: Custom tools and functions passed to the Reasoning Engine.
-   - `deploy.py`: Deployment script to register and deploy the agent to Vertex AI Agent Engine:
-     ```python
-     import os
-     import vertexai
-     from vertexai.preview import reasoning_engines
-     from agent import AgentReasoningEngine
-
-     PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "YOUR_PROJECT_ID")
-     LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-     STAGING_BUCKET = os.getenv("STAGING_BUCKET", f"gs://{PROJECT_ID}-agent-staging")
-
-     vertexai.init(project=PROJECT_ID, location=LOCATION, staging_bucket=STAGING_BUCKET)
-
-     print("Deploying Agent to Vertex AI Agent Engine...")
-     remote_agent = reasoning_engines.ReasoningEngine.create(
-         AgentReasoningEngine(),
-         requirements=[
-             "google-cloud-aiplatform>=1.60.0",
-             "google-genai>=1.0.0",
-             "pydantic>=2.0.0",
-             "cloudpickle>=3.0.0",
-         ],
-         display_name="address-classifier-agent",
-         description="Agent deployed to Vertex AI Agent Engine",
-     )
-
-     print(f"Agent successfully deployed to Agent Engine!")
-     print(f"Resource Name: {remote_agent.resource_name}")
-     ```
-    - `main.py`: Local CLI test runner allowing developers to test `set_up()` and `query()` locally before deployment.
-    - `test_agent.py`: Comprehensive `pytest` test suite executing all test scenarios and assertions against `AgentReasoningEngine`.
-    - `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios for Vertex AI Agent Evaluation:
-      ```jsonl
-      {"prompt": "...", "reference": "...", "expected_tool_calls": ["..."]}
-      ```
-    - `evaluate.py`: Vertex AI Agent Evaluation script utilizing the official `vertexai.evaluation` SDK and `EvalTask`:
-      ```python
-      import os
-      import vertexai
-      from vertexai.evaluation import EvalTask
-      from agent import AgentReasoningEngine
-
-      PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "YOUR_PROJECT_ID")
-      LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-      EXPERIMENT = os.getenv("VERTEX_EXPERIMENT", "agent-evaluation-experiment")
-
-      vertexai.init(project=PROJECT_ID, location=LOCATION, experiment=EXPERIMENT)
-
-      def evaluate_agent():
-          """
-          Runs comprehensive trajectory, groundedness, and instruction following evaluation.
-          """
-          print("Initializing Agent for Vertex AI Evaluation...")
-          agent = AgentReasoningEngine()
-          agent.set_up()
-
-          dataset_path = os.path.join(os.path.dirname(__file__), "eval_dataset.jsonl")
-          if not os.path.exists(dataset_path):
-              print(f"Evaluation dataset not found at {dataset_path}")
-              return
-
-          eval_task = EvalTask(
-              dataset=dataset_path,
-              metrics=[
-                  "trajectory_exact_match",
-                  "trajectory_precision",
-                  "response_follows_trajectory",
-                  "groundedness",
-                  "instruction_following",
-                  "safety",
-              ],
-              experiment=EXPERIMENT,
-          )
-
-          print("Executing Vertex AI Agent Evaluation...")
-          results = eval_task.evaluate(
-              runnable=lambda query: agent.query(prompt=query) if isinstance(query, str) else agent.query(prompt=query.get("prompt", ""))
-          )
-          print("\n=== Vertex AI Evaluation Summary Metrics ===")
-          print(results.summary_metrics)
-          return results
-
-      if __name__ == "__main__":
-          evaluate_agent()
-      ```
-    - `requirements.txt`: Dependencies needed locally and for deployment:
-      ```
-      google-cloud-aiplatform[evaluation,reasoningengine]>=1.60.0
-      google-genai>=1.0.0
-      pydantic>=2.0.0
-      cloudpickle>=3.0.0
-      pytest>=8.0.0
-      python-dotenv>=1.0.0
-      ```
-   - `main.tf`: Bare-minimum Terraform linking to an **existing project ID** to provision the Agent Engine staging bucket and IAM:
-     ```hcl
-     terraform {
-       required_version = ">= 1.5.0"
-       required_providers {
-         google = {
-           source  = "hashicorp/google"
-           version = "~> 5.0"
-         }
-       }
-     }
-
-     variable "project_id" {
-       description = "The ID of the existing Google Cloud project."
-       type        = string
-     }
-
-     variable "region" {
-       description = "Google Cloud region for Vertex AI Agent Engine."
-       type        = string
-       default     = "us-central1"
-     }
-
-     variable "service_name" {
-       description = "Name for the agent resources."
-       type        = string
-       default     = "agent-engine-service"
-     }
-
-     provider "google" {
-       project = var.project_id
-       region  = var.region
-     }
-
-     # Dedicated Service Account for Agent Engine execution
-     resource "google_service_account" "agent_sa" {
-       account_id   = "${var.service_name}-sa"
-       display_name = "Service Account for ${var.service_name}"
-     }
-
-     # Grant Vertex AI User permissions
-     resource "google_project_iam_member" "vertex_user" {
-       project = var.project_id
-       role    = "roles/aiplatform.user"
-       member  = "serviceAccount:${google_service_account.agent_sa.email}"
-     }
-
-     # Staging bucket for Agent Engine artifacts
-     resource "google_storage_bucket" "staging_bucket" {
-       name                        = "${var.project_id}-${var.service_name}-staging"
-       location                    = var.region
-       uniform_bucket_level_access = true
-       force_destroy               = false
-     }
-
-     resource "google_storage_bucket_iam_member" "sa_storage_admin" {
-       bucket = google_storage_bucket.staging_bucket.name
-       role   = "roles/storage.objectAdmin"
-       member = "serviceAccount:${google_service_account.agent_sa.email}"
-     }
-
-     output "staging_bucket" {
-       description = "GCS bucket used for staging Agent Engine deployment artifacts."
-       value       = google_storage_bucket.staging_bucket.url
-     }
-
-     output "service_account_email" {
-       description = "Email of the dedicated service account."
-       value       = google_service_account.agent_sa.email
-     }
-     ```
+6. **File Structure to Generate**:
+   - `agent.py`: Official Google ADK Agent definitions and execution runner: Defines `root_agent` (`Agent`, `SequentialAgent`, `ParallelAgent`, `LoopAgent`, or `Workflow`), tools, sub-agents, and the `AdkReasoningEngine` runtime adapter.
+   - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs (when defined in nodes).
+   - `tools/*.py`: Custom tools and functions passed to the agents. Group tools logically by category/source.
+   - `deploy.py`: Deployment script to register and deploy the agent to Vertex AI Agent Runtime / Agent Engine using `vertexai.preview.reasoning_engines.ReasoningEngine.create()`.
+   - `main.py`: Local CLI test runner allowing developers to test `run_agent()` and `root_agent` locally before deployment using ADK `Runner`.
+   - `test_agent.py`: Comprehensive `pytest` test suite executing all test scenarios and assertions against `root_agent`.
+   - `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios for Vertex AI Agent Evaluation. Do not add additional tests; you should only use tests defined by the user in the "Test Suite" node (attached to the root agent) in the workflow JSON.
+   - `evaluate.py`: Vertex AI Agent Evaluation script utilizing the official `vertexai.evaluation` SDK and `EvalTask`.
+   - `requirements.txt`: Dependencies needed locally and for deployment: Must include `google-adk>=2.0.0`, `google-cloud-aiplatform[evaluation,reasoningengine]>=1.60.0`, `google-genai>=1.0.0`, `pydantic>=2.0.0`, `cloudpickle>=3.0.0`, `pytest>=8.0.0`, `pytest-asyncio>=0.23.0`, `python-dotenv>=1.0.0`.
    - `README.md`: Architecture overview, local execution with `main.py`, deployment with `python deploy.py`, and invoking the deployed Agent Engine resource from Gemini Enterprise or Python SDK.
 
 ---
 
+### OUTPUT FORMAT:
+Respond ONLY with a valid JSON array of file objects conforming to this exact schema (no markdown formatting, no backticks surrounding the JSON, only raw parseable JSON):
+
+[
+  {
+    "path": "<file name>",
+    "description": "<description>",
+    "content": "<file source code>"
+  }
+]
+
+---
 
 ## ADK Instructions
 
@@ -253,24 +96,1647 @@ Do NOT write agent code until a project is scaffolded.
 
 **OAuth / user consent agents:** Use **Agent Runtime** with Gemini Enterprise for agents that need OAuth 2.0 user consent (e.g., accessing Google Drive, Calendar, or other user-scoped APIs). Cloud Run does not currently support managed OAuth flows. For a worked example, look up OAuth user consent in the topic index in /google-agents-cli-adk-code → `references/samples.md`.
 
+#################################################
+## ADK Skills Reference
 
-### Quick Reference — Most Common Patterns
+# ADK Python Cheatsheet
+
+## 1. Core Concepts & Project Structure
+
+### Essential Primitives
+
+*   **`Agent`**: The core intelligent unit. Can be `LlmAgent` (LLM-driven) or `BaseAgent` (custom/workflow).
+*   **`Tool`**: Callable function providing external capabilities (`FunctionTool`, `AgentTool`, etc.).
+*   **`Session`**: A stateful conversation thread with history (`events`) and short-term memory (`state`).
+*   **`State`**: Key-value dictionary within a `Session` for transient conversation data.
+*   **`Runner`**: The execution engine; orchestrates agent activity and event flow.
+*   **`Event`**: Atomic unit of communication; carries content and side-effect `actions`.
+
+### Standard Project Layout
+
+```
+your_project_root/
+├── <agent_name>/ or app/    # Agent code directory
+│   ├── __init__.py
+│   ├── agent.py            # Contains root_agent definition
+│   ├── tools.py            # Custom tool functions
+│   └── .env                # Environment variables
+├── tests/
+│   ├── eval/
+│   │   ├── eval_config.yaml    # Eval criteria and thresholds
+│   │   └── datasets/           # Eval datasets (JSON)
+│   ├── integration/
+│   └── unit/
+└── pyproject.toml or requirements.txt
+```
+
+---
+
+## 2. Agent Definitions (`LlmAgent`)
+
+### Basic Setup
 
 ```python
 from google.adk.agents import Agent
 
 def get_weather(city: str) -> dict:
-    """Get current weather for a city."""
-    return {"city": city, "temp": "22°C", "condition": "sunny"}
+    """Returns weather for a city."""
+    return {"status": "success", "weather": "sunny", "temp": 72}
 
-root_agent = Agent(
-    name="my_agent",
+my_agent = Agent(
+    name="weather_agent",
     model="gemini-3.7-flash",
-    instruction="You are a helpful assistant that ...",
-    tools=[get_weather],
+    instruction="You help users check the weather. Use the get_weather tool.",
+    description="Provides weather information.",  # Important for multi-agent delegation
+    tools=[get_weather]
 )
 ```
 
-#################################################
-## ADK Skills Reference
+### Key Configuration Options
+
+```python
+from google.genai import types as genai_types
+from google.adk.agents import Agent
+
+agent = Agent(
+    name="my_agent",
+    model="gemini-3.7-flash",
+    instruction="Your instructions here. Use {state_key} for dynamic injection.",
+    description="Description for delegation.",
+
+    # LLM generation parameters
+    generate_content_config=genai_types.GenerateContentConfig(
+        temperature=0.2,
+        max_output_tokens=1024,
+    ),
+
+    # Save final output to state
+    output_key="agent_response",
+
+    # Control history sent to LLM
+    include_contents='default',  # 'default' or 'none'
+
+    # Delegation control
+    disallow_transfer_to_parent=False,
+    disallow_transfer_to_peers=False,
+
+    # Sub-agents for delegation
+    sub_agents=[specialist_agent],
+
+    # Tools
+    tools=[my_tool],
+
+    # Callbacks
+    before_agent_callback=my_callback,
+    after_agent_callback=my_callback,
+    before_model_callback=my_callback,
+    after_model_callback=my_callback,
+    before_tool_callback=my_callback,
+    after_tool_callback=my_callback,
+)
+```
+
+### Structured Output with Pydantic
+
+> **Warning**: Using `output_schema` disables tool calling and delegation.
+
+```python
+from pydantic import BaseModel, Field
+from typing import Literal
+
+class Evaluation(BaseModel):
+    grade: Literal["pass", "fail"] = Field(description="The evaluation result.")
+    comment: str = Field(description="Explanation of the grade.")
+
+evaluator = Agent(
+    name="evaluator",
+    model="gemini-3.7-flash",
+    instruction="Evaluate the input and provide structured feedback.",
+    output_schema=Evaluation,
+    output_key="evaluation_result",
+)
+```
+
+### Instruction Best Practices
+
+```python
+# Use dynamic state injection with {state_key} placeholders
+instruction = """
+You are a {role} assistant.
+User preferences: {user_preferences}
+
+Rules:
+- Always use tools when available
+- Never make up information
+"""
+```
+
+---
+
+## 3. Orchestration with Workflow Agents
+
+Workflow agents provide deterministic control flow without LLM orchestration.
+
+> These are `BaseAgent`-family composites (`SequentialAgent`, `ParallelAgent`, `LoopAgent`). For the new graph-based Workflow API introduced in ADK 2.0, see `references/adk-workflows.md`.
+
+### SequentialAgent
+
+Executes sub-agents in order. State changes propagate to subsequent agents.
+
+```python
+from google.adk.agents import SequentialAgent, Agent
+
+summarizer = Agent(
+    name="summarizer",
+    model="gemini-3.7-flash",
+    instruction="Summarize the input.",
+    output_key="summary"
+)
+
+question_gen = Agent(
+    name="question_generator",
+    model="gemini-3.7-flash",
+    instruction="Generate questions based on: {summary}"
+)
+
+pipeline = SequentialAgent(
+    name="pipeline",
+    sub_agents=[summarizer, question_gen],
+)
+```
+
+### ParallelAgent
+
+Executes sub-agents concurrently. Use distinct `output_key`s to avoid race conditions.
+
+```python
+from google.adk.agents import ParallelAgent, SequentialAgent, Agent
+
+fetch_a = Agent(name="fetch_a", ..., output_key="data_a")
+fetch_b = Agent(name="fetch_b", ..., output_key="data_b")
+
+merger = Agent(
+    name="merger",
+    instruction="Combine data_a: {data_a} and data_b: {data_b}"
+)
+
+pipeline = SequentialAgent(
+    name="full_pipeline",
+    sub_agents=[
+        ParallelAgent(name="fetchers", sub_agents=[fetch_a, fetch_b]),
+        merger
+    ]
+)
+```
+
+### LoopAgent
+
+Repeats sub-agents until `max_iterations` or an event with `escalate=True`.
+
+```python
+from google.adk.agents import LoopAgent
+
+refinement_loop = LoopAgent(
+    name="refinement_loop",
+    sub_agents=[evaluator, refiner, escalation_checker],
+    max_iterations=5,
+)
+```
+
+For a production LoopAgent with EscalationChecker, BuiltInPlanner, and grounding citations, look it up in the topic index in `references/samples.md`.
+
+---
+
+## 4. Multi-Agent Systems & Communication
+
+### Communication Methods
+
+1.  **Shared State**: Agents read/write `session.state`. Use `output_key` for convenience.
+
+2.  **LLM Delegation**: Agent transfers control to a sub-agent based on reasoning.
+    ```python
+    coordinator = Agent(
+        name="coordinator",
+        instruction="Route to sales_agent for sales, support_agent for help.",
+        sub_agents=[sales_agent, support_agent],
+    )
+    ```
+
+3.  **AgentTool**: Invoke another agent as a tool (parent stays in control).
+    ```python
+    from google.adk.tools import AgentTool
+
+    root = Agent(
+        name="root",
+        tools=[AgentTool(specialist_agent)],
+    )
+    ```
+
+4.  **Task Delegation (ADK 2.0)**: Set `mode` on a sub-agent for structured, schema-typed delegation — the coordinator gets a `request_task_{name}` tool; the sub-agent returns typed output via the auto-injected `finish_task` tool.
+    ```python
+    from pydantic import BaseModel
+
+    class ResearchOutput(BaseModel):
+        summary: str
+
+    researcher = Agent(
+        name="researcher",
+        model="gemini-3.7-flash",
+        mode="task",                        # 'chat' (default) | 'task' | 'single_turn'
+        output_schema=ResearchOutput,
+        description="Researches a topic.",  # required for delegation
+        instruction="Research the topic, then call finish_task.",
+    )
+    coordinator = Agent(name="coordinator", model="gemini-3.7-flash", sub_agents=[researcher])
+    ```
+    Modes: `task` (multi-turn, structured I/O) · `single_turn` (autonomous, no user turn). Sub-agents need a `description`; default I/O schemas (`goal`/`background` in, `result` out) are used if none set. Disabled inside graph `Workflow`s.
+
+---
+
+## 5. Building Custom Agents (`BaseAgent`)
+
+For custom orchestration logic beyond workflow agents.
+
+```python
+from google.adk.agents import BaseAgent
+from google.adk.agents.invocation_context import InvocationContext
+from google.adk.events import Event, EventActions
+from typing import AsyncGenerator
+
+class ConditionalRouter(BaseAgent):
+    async def _run_async_impl(
+        self, ctx: InvocationContext
+    ) -> AsyncGenerator[Event, None]:
+        # Read state
+        user_type = ctx.session.state.get("user_type", "regular")
+
+        # Custom routing logic
+        if user_type == "premium":
+            agent = self.premium_agent
+        else:
+            agent = self.regular_agent
+
+        # Run selected agent
+        async for event in agent.run_async(ctx):
+            yield event
+
+class EscalationChecker(BaseAgent):
+    """Stops a LoopAgent when condition is met."""
+    async def _run_async_impl(
+        self, ctx: InvocationContext
+    ) -> AsyncGenerator[Event, None]:
+        result = ctx.session.state.get("evaluation")
+        if result and result.get("grade") == "pass":
+            yield Event(author=self.name, actions=EventActions(escalate=True))
+        else:
+            yield Event(author=self.name)
+```
+
+---
+
+## 6. Models Configuration
+
+### Google Gemini (Default)
+
+```python
+# AI Studio (dev): in the project .env, comment the GOOGLE_* lines and
+# uncomment GEMINI_API_KEY (GOOGLE_API_KEY is also accepted).
+
+# Vertex AI (prod)
+# Set: GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GOOGLE_GENAI_USE_VERTEXAI=True
+
+agent = Agent(model="gemini-3.7-flash", ...)
+```
+
+### Other Models via LiteLLM
+
+```python
+from google.adk.models.lite_llm import LiteLlm
+
+agent = Agent(model=LiteLlm(model="openai/gpt-4o"), ...)
+agent = Agent(model=LiteLlm(model="anthropic/claude-sonnet-4-20250514"), ...)
+agent = Agent(model=LiteLlm(model="ollama_chat/llama3:instruct"), ...)
+```
+
+### Vertex AI Native Models
+
+```python
+from google.adk.models import Gemini
+
+# Vertex AI hosted Gemini (set GOOGLE_GENAI_USE_VERTEXAI=True)
+agent = Agent(model=Gemini(model="gemini-3.7-flash"), ...)
+```
+
+Provider guides: [Anthropic](https://adk.dev/agents/models/anthropic/index.md), [Ollama](https://adk.dev/agents/models/ollama/index.md), [vLLM](https://adk.dev/agents/models/vllm/index.md), [LiteLLM](https://adk.dev/agents/models/litellm/index.md)
+
+---
+
+## 7. Tools: The Agent's Capabilities
+
+### Function Tool Basics
+
+```python
+from google.adk.tools import ToolContext
+
+def search_database(
+    query: str,
+    limit: int,
+    tool_context: ToolContext  # Optional, for state access
+) -> dict:
+    """Searches the database for records matching the query.
+
+    Args:
+        query: The search query string.
+        limit: Maximum number of results to return.
+
+    Returns:
+        dict with 'status' and 'results' keys.
+    """
+    # Access state if needed
+    user_id = tool_context.state.get("user_id")
+
+    # Tool logic here
+    results = db.search(query, limit=limit, user=user_id)
+
+    return {"status": "success", "results": results}
+```
+
+**Tool Rules:**
+- Use clear docstrings (sent to LLM)
+- Type hints required, NO default values
+- Return a dict (JSON-serializable)
+- Don't mention `tool_context` in docstring
+
+### ToolContext Capabilities
+
+```python
+async def my_tool(query: str, tool_context: ToolContext) -> dict:
+    # Read/write state
+    tool_context.state["key"] = "value"
+
+    # Trigger escalation (stops LoopAgent)
+    tool_context.actions.escalate = True
+
+    # Artifacts — see Artifacts section below for full API
+    await tool_context.save_artifact("file.txt", part)
+
+    # Memory search
+    results = await tool_context.search_memory("query")
+
+    return {"status": "success"}
+```
+
+### Built-in Tools
+
+```python
+from google.adk.tools import google_search
+from google.adk.tools import VertexAiSearchTool
+from google.adk.tools.load_web_page import load_web_page
+from google.adk.code_executors import BuiltInCodeExecutor
+
+# Google Search grounding
+agent = Agent(tools=[google_search], ...)
+
+# Agent Platform Search grounding (your own data)
+agent = Agent(tools=[VertexAiSearchTool(data_store_id="projects/P/locations/L/collections/default_collection/dataStores/DS")], ...)
+
+# Web page loading
+agent = Agent(tools=[load_web_page], ...)
+
+# Code execution (model-internal)
+agent = Agent(code_executor=BuiltInCodeExecutor(), ...)
+
+# Managed sandbox (Vertex AI Code Interpreter). For a per-user sandbox an agent works
+# in across sessions, this primitive is not it — see the topic index in references/samples.md
+# from google.adk.code_executors import VertexAiCodeExecutor
+# agent = Agent(code_executor=VertexAiCodeExecutor(optimize_data_file=True, stateful=True), ...)
+
+```
+
+> **`google_search` is model-internal grounding, not a regular tool.** Mixing it with FunctionTools disables Automatic Function Calling (AFC) for all tools. If you need search alongside custom tools, consider a sub-agent architecture or a custom search function — see the [deep-search sample](https://github.com/google/adk-samples/tree/main/core/python/deep-search) for a working pattern. For eval implications, see the eval guide's `builtin-tools-eval` reference.
+
+### Tool Confirmation
+
+```python
+from google.adk.tools import FunctionTool
+
+# Simple confirmation
+sensitive_tool = FunctionTool(delete_record, require_confirmation=True)
+
+# Conditional confirmation
+def needs_approval(amount: float, **kwargs) -> bool:
+    return amount > 1000
+
+transfer_tool = FunctionTool(transfer_money, require_confirmation=needs_approval)
+```
+
+### Human-in-the-Loop (pause & resume)
+
+Pause a run to ask the user something, then resume. This is a general runtime feature (not workflow-specific). Enable resumption at the app level:
+
+```python
+from google.adk.apps import App, ResumabilityConfig
+
+app = App(name="my_app", root_agent=root_agent,
+          resumability_config=ResumabilityConfig(is_resumable=True))
+```
+
+- **Let the model ask:** add the built-in `request_input` tool (`from google.adk.tools import request_input`) to `tools=` — the model calls it when it needs clarification.
+- **Approval gate inside a tool:** `tool_context.request_confirmation(hint="Approve this transfer?")`, or `FunctionTool(fn, require_confirmation=...)` (above).
+- **Custom long-running tool:** wrap a function with `LongRunningFunctionTool(fn)` to pause until an external result arrives.
+
+The user's reply is read from `ctx.resume_inputs` (available on `ToolContext` and `CallbackContext`). Inside graph workflows the same mechanism is node-based — see `adk-workflows.md` §7.
+
+### Tool Authentication
+
+| Auth Type | Pattern |
+|-----------|---------|
+| API Key | `token_to_scheme_credential("apikey", "query", "apikey", "KEY")` → `auth_scheme, auth_credential` |
+| Service Account | `service_account_dict_to_scheme_credential(config, scopes=[...])` → `auth_scheme, auth_credential` |
+| OAuth2 / OIDC | `AuthCredential(auth_type=AuthCredentialTypes.OAUTH2, oauth2=OAuth2Auth(client_id=..., client_secret=...))` |
+| Custom FunctionTool | `tool_context.request_credential(AuthConfig(...))` to initiate, `tool_context.get_auth_response(AuthConfig(...))` to retrieve |
+
+Helpers: `from google.adk.tools.openapi_tool.auth.auth_helpers import token_to_scheme_credential, service_account_dict_to_scheme_credential`. Pass `auth_scheme` + `auth_credential` to `OpenAPIToolset(...)`. [Full docs](https://adk.dev/tools-custom/authentication/)
+
+### OpenAPI Tools
+
+```python
+from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_toolset import OpenAPIToolset
+
+toolset = OpenAPIToolset(spec_str=open("openapi.json").read(), spec_str_type="json")
+agent = Agent(name="api_agent", tools=[toolset], ...)
+```
+
+Pass `auth_scheme` + `auth_credential` from the auth helpers above for authenticated APIs. Tool names derive from `operationId` (snake_case, max 60 chars). [Full docs](https://adk.dev/tools-custom/openapi-tools/index.md)
+
+### MCP Tools
+
+Connect to MCP servers to use external tools (needs the `mcp` extra: scaffolded projects ship `google-adk[gcp,otel-gcp]`, so add `mcp` and re-sync). Use `StdioConnectionParams` for local dev, `StreamableHTTPConnectionParams` for remote HTTP servers.
+
+```python
+from google.adk.tools.mcp_tool import McpToolset
+from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams, StreamableHTTPConnectionParams
+from mcp import StdioServerParameters
+
+# Local MCP server via stdio
+agent = Agent(
+    name="my_agent",
+    tools=[
+        McpToolset(
+            connection_params=StdioConnectionParams(
+                server_params=StdioServerParameters(
+                    command="npx",
+                    args=["-y", "@modelcontextprotocol/server-filesystem", "/absolute/path"],
+                ),
+            ),
+            tool_filter=["list_directory", "read_file"],  # optional: restrict exposed tools
+        )
+    ],
+    ...
+)
+
+# Remote MCP server, e.g. Cloud Run with --no-allow-unauthenticated. ID tokens
+# expire in ~1h, so mint per call via `header_provider` (ADK calls it on every
+# tool call); a static `headers` dict goes stale. Audience = root, not /mcp.
+from google.auth.transport.requests import Request
+from google.oauth2.id_token import fetch_id_token
+
+McpToolset(
+    connection_params=StreamableHTTPConnectionParams(url=f"{MCP_SERVER_URL}/mcp"),
+    header_provider=lambda ctx: {
+        "Authorization": f"Bearer {fetch_id_token(Request(), MCP_SERVER_URL)}"
+    },
+)
+```
+
+**Gotchas:**
+- Paths must be absolute, not relative.
+- Agent definition must be synchronous (not async) for deployment.
+- Node.js/npx required for npm-based MCP servers — add to Dockerfile if containerizing.
+
+---
+
+## 8. Context, State, and Memory
+
+| Need | Solution |
+|---|---|
+| Within one conversation (task data, form state) | Session state — see [State Prefixes](#state-prefixes) and [Session Service Options](#session-service-options) below |
+| Across conversations (remember interactions, learn over time) | Memory Bank — see [Memory](#memory-long-term-knowledge) below |
+
+### State Prefixes
+
+```python
+# Session-specific (default)
+state["booking_step"] = 2
+
+# User-persistent (across sessions)
+state["user:preferred_language"] = "en"
+
+# App-wide (all users)
+state["app:total_queries"] = 1000
+
+# Temporary (current invocation only)
+state["temp:intermediate_result"] = data
+```
+
+### Session Service Options
+
+```python
+from google.adk.sessions import InMemorySessionService
+# For dev: InMemorySessionService()
+# For prod: VertexAiSessionService(), DatabaseSessionService()
+```
+
+### Session Rewind
+
+Roll back a session to the state before a specific invocation (useful for debugging or user-initiated undo):
+
+```python
+from google.adk.runners import InMemoryRunner
+
+runner = InMemoryRunner(agent=root_agent, app_name="my_app")
+
+# Rewind to state before a given invocation
+await runner.rewind_async(
+    user_id=user_id,
+    session_id=session.id,
+    rewind_before_invocation_id=invocation_id,  # exclusive: state before this call
+)
+```
+
+> **Note**: Restores session-level state and artifacts only; app/user-scoped state is unaffected.
+
+### Artifacts (File Storage)
+
+Store and retrieve binary data (PDFs, images, audio) scoped to session or user:
+
+```python
+from google.adk.artifacts import InMemoryArtifactService, GcsArtifactService
+from google.genai import types
+
+# Configure runner with artifact service
+runner = Runner(
+    agent=root_agent,
+    app_name="app",
+    session_service=session_service,
+    artifact_service=InMemoryArtifactService(),  # or GcsArtifactService(bucket_name="my-bucket")
+)
+
+# In a tool or callback:
+async def save_file(data: bytes, tool_context: ToolContext) -> dict:
+    part = types.Part(inline_data=types.Blob(mime_type="application/pdf", data=data))
+    version = await tool_context.save_artifact("report.pdf", part)       # session-scoped
+    await tool_context.save_artifact("user:profile.png", part)           # user-scoped
+    artifact = await tool_context.load_artifact("report.pdf")            # latest version
+    artifact_v0 = await tool_context.load_artifact("report.pdf", version=0)
+    names = await tool_context.list_artifacts()
+    return {"status": "saved", "version": version}
+```
+
+**Namespace prefixes:** plain name = session-scoped · `"user:"` = persistent across sessions
+
+### Memory (Long-term Knowledge)
+
+#### InMemoryMemoryService (Dev)
+
+In-memory implementation for local development. Memories don't persist across restarts.
+
+```python
+from google.adk.memory import InMemoryMemoryService
+
+memory_service = InMemoryMemoryService()
+# Add session to memory after conversation
+await memory_service.add_session_to_memory(session)
+# Search later
+results = await memory_service.search_memory(app_name=app_name, user_id=user_id, query="query")
+```
+
+#### Memory Bank (Long-term Memory)
+
+Managed cross-session memory that persists user preferences, remembers facts across sessions, and learns from conversations over time. See the [`cross-session-memory` recipe](https://github.com/google/adk-samples/tree/main/core/python/cross-session-memory) for a complete implementation.
+
+```python
+from google.adk.agents.callback_context import CallbackContext
+from google.adk.tools.preload_memory_tool import PreloadMemoryTool
+
+# PreloadMemoryTool retrieves memories at the start of each turn and injects
+# them into the system instruction. Alternative: LoadMemoryTool() — the model
+# calls it on-demand when it decides memories are needed.
+root_agent = Agent(
+    ...,
+    tools=[PreloadMemoryTool()],
+    after_agent_callback=generate_memories_callback,
+)
+
+# Alternative: callback_context.add_events_to_memory(events=...) to send only
+# a subset of events, which is better for incremental processing.
+async def generate_memories_callback(callback_context: CallbackContext):
+    """Sends the session's events to Memory Bank for memory generation."""
+    await callback_context.add_session_to_memory()
+    return None
+```
+
+### Context Caching
+
+Cache large context windows (system prompt + docs) to reduce latency and cost. Transparent to agent code.
+
+```python
+from google.adk.apps import App
+from google.adk.agents.context_cache_config import ContextCacheConfig
+
+app = App(
+    name="my_app",
+    root_agent=root_agent,
+    context_cache_config=ContextCacheConfig(
+        min_tokens=2048,     # only cache if context exceeds this
+        ttl_seconds=1800,    # cache lifetime (default 1800)
+        cache_intervals=10,  # re-cache every N invocations
+    ),
+)
+```
+
+### Context Compaction
+
+Prevent context overflow on long sessions by compacting older events into summaries. Use **token-based** compaction: it triggers on actual prompt-token volume, so it handles unpredictable inputs (pasted code, large tool results) better than a fixed turn count.
+
+```python
+from google.adk.apps import App
+from google.adk.apps.app import EventsCompactionConfig
+from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
+from google.adk.models import Gemini
+
+app = App(
+    name="my_app",
+    root_agent=root_agent,
+    events_compaction_config=EventsCompactionConfig(
+        token_threshold=32000,   # compact once prompt tokens reach this
+        event_retention_size=5,  # keep the last 5 raw events un-compacted
+        # Optional: custom summarizer model
+        summarizer=LlmEventSummarizer(llm=Gemini(model="gemini-3.7-flash")),
+    ),
+)
+```
+
+### App Name
+
+The `App(name=...)` parameter **must match the agent directory name** (default: `app`). A mismatch causes "Session not found" errors during evaluation because the runner infers the app name from the directory path.
+
+```python
+# CORRECT — matches the "app" directory
+app = App(name="app", root_agent=root_agent)
+
+# WRONG — causes eval failures
+app = App(name="my_custom_agent", root_agent=root_agent)
+```
+
+---
+
+## 9. Callbacks
+
+### Callback Types
+
+```python
+from google.adk.agents.callback_context import CallbackContext
+from google.adk.models.llm_request import LlmRequest
+from google.adk.models.llm_response import LlmResponse
+from google.adk.tools import BaseTool, ToolContext
+from google.genai import types as genai_types
+
+# Callbacks are invoked by keyword — parameter names must match exactly.
+
+# Agent lifecycle
+async def before_agent_callback(callback_context: CallbackContext) -> None:
+    callback_context.state["started"] = True
+
+async def after_agent_callback(callback_context: CallbackContext) -> genai_types.Content | None:
+    # Return None to continue, or Content to override
+    return None
+
+# Model interaction
+async def before_model_callback(callback_context: CallbackContext, llm_request: LlmRequest) -> LlmResponse | None:
+    # Return None to continue, or LlmResponse to skip model call
+    return None
+
+async def after_model_callback(callback_context: CallbackContext, llm_response: LlmResponse) -> LlmResponse | None:
+    # Return None to continue, or modified LlmResponse
+    return None
+
+# Tool execution
+async def before_tool_callback(tool: BaseTool, args: dict, tool_context: ToolContext) -> dict | None:
+    # Return None to continue, or dict to skip tool and use as result
+    return None
+
+async def after_tool_callback(tool: BaseTool, args: dict, tool_context: ToolContext, tool_response: dict) -> dict | None:
+    # Return None to continue, or modified dict
+    return None
+```
+
+### Common Pattern
+
+```python
+# Initialize state before agent runs
+async def init_state(callback_context: CallbackContext) -> None:
+    if "preferences" not in callback_context.state:
+        callback_context.state["preferences"] = {}
+
+agent = Agent(before_agent_callback=init_state, ...)
+```
+
+---
+
+## 10. Plugins
+
+Global callback hooks across all agents/tools/LLMs. Use for cross-cutting concerns (logging, guardrails); use callbacks for per-agent logic.
+
+```python
+from google.adk.plugins.base_plugin import BasePlugin
+from google.adk.apps import App
+
+class MyPlugin(BasePlugin):
+    async def before_model_callback(self, *, callback_context, llm_request):
+        return None  # return None to observe, return value to intervene
+
+# Register via App — plugins run BEFORE agent-level callbacks
+app = App(name="my_app", root_agent=root_agent, plugins=[MyPlugin()])
+runner = Runner(app=app, session_service=...)
+```
+
+Built-in plugins: `ReflectAndRetryToolPlugin` (retry failed tools), `BigQueryAgentAnalyticsPlugin` (log to BQ), `ContextFilterPlugin` (reduce context size), `GlobalInstructionPlugin` (shared system prompt), `SaveFilesAsArtifactsPlugin`, `LoggingPlugin`, `DebugLoggingPlugin`, `MultimodalToolResultsPlugin`.
+
+Hooks: `before/after_agent_callback`, `before/after_model_callback`, `before/after_tool_callback`, `on_model_error_callback`, `on_tool_error_callback`, `on_user_message_callback`, `before/after_run_callback`, `on_event_callback`. [Full docs](https://adk.dev/plugins/index.md)
+
+### Safety Guardrails
+
+Use `before_model_callback` to filter input or `after_model_callback` to filter output. Return `None` to pass through, or return a modified `LlmResponse` to block/replace. Evaluate with the `safety` metric. [Full docs](https://adk.dev/safety/index.md)
+
+---
+
+## 11. A2A Protocol
+
+Requires `pip install google-adk[a2a]`.
+
+```python
+# Expose an agent as an A2A service
+# Prefer scaffolding over manual code — scaffold a normal `adk` agent; A2A is built in (see /google-agents-cli-scaffold)
+from google.adk.a2a.utils.agent_to_a2a import to_a2a
+from a2a.types import AgentCard
+to_a2a(root_agent, port=8001)
+
+# Consume a remote A2A agent
+from google.adk.agents.remote_a2a_agent import RemoteA2aAgent, AGENT_CARD_WELL_KNOWN_PATH
+remote = RemoteA2aAgent(
+    name="remote_agent",
+    description="...",
+    agent_card=f"http://remote-host:8001{AGENT_CARD_WELL_KNOWN_PATH}",
+)
+```
+
+### A2UI
+
+Agents can return declarative UI via [a2ui](https://github.com/google/A2UI) (cards, forms, charts; rendered client-side over A2A) instead of plain text. Public preview; current release v0.9.1 (v1.0 release candidate). Docs: https://github.com/google/A2UI/tree/main/docs · ADK guide: https://adk.dev/integrations/a2ui/index.md
+
+```python
+# pip install a2ui-agent-sdk
+from a2ui.core.schema.manager import A2uiSchemaManager
+from a2ui.basic_catalog.provider import BasicCatalog
+from a2ui.a2a import create_a2ui_part, parse_response_to_parts
+
+# 1. Build the system prompt from a component catalog
+manager = A2uiSchemaManager(...)        # loads catalog(s) + few-shot examples
+instruction = manager.generate_system_prompt(...)
+
+# 2. Use it as the agent instruction
+root_agent = Agent(name="ui_agent", model="gemini-3.7-flash", instruction=instruction)
+
+# 3. Validate the model's JSON output, then wrap as an A2A DataPart
+#    (MIME application/a2ui+json) via a2ui.a2a before streaming to the client.
+```
+
+Runnable samples: https://github.com/google/A2UI/tree/main/samples/agent/adk
+
+---
+
+## 12. Event-Driven / Ambient Agents
+
+Ambient agents process events (Pub/Sub, Eventarc, schedules) autonomously. ADK provides built-in trigger endpoints that handle payload decoding, session creation, concurrency, and retries.
+
+> **Deployment:** `trigger_sources` registers `/apps/{app}/trigger/*` on the standard FastAPI app, so it works on **all** targets. On **Cloud Run** / **GKE** the endpoints are public HTTP routes you point a Pub/Sub push subscription or Eventarc trigger at. On **Agent Runtime** the same routes are reachable through Agent Engine's `/api` passthrough (`https://{location}-aiplatform.googleapis.com/reasoningEngines/v1/{resource}/api/apps/{app}/trigger/pubsub`). The scaffolded `fast_api_app.py` does not pass `trigger_sources` by default — add it to enable these endpoints.
+
+```python
+from google.adk.cli.fast_api import get_fast_api_app
+
+app = get_fast_api_app(
+    agents_dir=AGENTS_DIR,
+    web=False,
+    trigger_sources=["pubsub", "eventarc"],  # enables /apps/{app}/trigger/pubsub and /apps/{app}/trigger/eventarc
+)
+```
+
+```bash
+# CLI equivalent for local dev
+adk api_server --trigger_sources "pubsub,eventarc" path/to/your/agent
+```
+
+Trigger endpoints handle: base64 decoding, CloudEvent parsing, per-event session creation (UUID), concurrency semaphore, and exponential backoff on transient errors.
+
+| Setting | Default | Environment Variable |
+|---------|---------|----------------------|
+| Max concurrent invocations | 10 | `ADK_TRIGGER_MAX_CONCURRENT` |
+| Max retry attempts | 3 | `ADK_TRIGGER_MAX_RETRIES` |
+| Base backoff delay | 1.0s | `ADK_TRIGGER_RETRY_BASE_DELAY` |
+| Max backoff delay | 30.0s | `ADK_TRIGGER_RETRY_MAX_DELAY` |
+
+Sessions are ephemeral by default (`InMemorySessionService`); use `DatabaseSessionService` for audit trails. Pub/Sub and Eventarc have a 10-minute processing limit. For non-GCP sources, use `adk api_server --auto_create_session` with the `/run` endpoint instead.
+
+**Scheduled / cron execution:** Use Cloud Scheduler to publish to a Pub/Sub topic on a cron schedule, then connect the topic to the agent's `/apps/{app}/trigger/pubsub` endpoint. This is how you implement "run daily at 8 PM" — no custom scheduling code needed.
+
+Since ambient agents have no interactive user, route outputs via structured logging (JSON stdout → Cloud Logging → Cloud Monitoring alerts), Pub/Sub, or tool-based integrations (email, Jira, Slack).
+
+**Before implementing an ambient agent, clone and study the production sample** — it covers trigger wiring, middleware, structured logging, and Terraform. Look it up in the topic index in `references/samples.md`. [Full docs](https://adk.dev/runtime/ambient-agents/).
+
+---
+
+## 13. Managed Agents (server-hosted, first-party)
+
+> **Requires ADK ≥ 2.4.0.** `ManagedAgent` connects to Google's first-party, server-hosted agents (e.g. the Antigravity agent) via the Managed Agents API: reasoning, tools, and execution all run in Google's managed environment, so there's no local sandbox to provision. It's a `BaseAgent`, so a standard `Runner` runs it like any other agent.
+
+### When to use it
+
+- **Managed agent** — powerful out-of-the-box capabilities (server-side web search, code execution) without operating the environment yourself. Trade-off: predefined server-side toolset, no client-side tools, runs only in the managed environment.
+- **`LlmAgent` (§2)** — when you need control over the model, instructions, custom/MCP tools, or where execution happens.
+
+### Setup
+
+Two backends — satisfy the prerequisites for whichever you use, then supply an `agent_id`:
+- **Gemini API:** set `GEMINI_API_KEY`. Use an out-of-the-box id (e.g. `antigravity-preview-05-2026`) or create your own (see below).
+- **Agent Platform (GEAP, formerly Vertex):** authenticate with ADC (`gcloud auth application-default login`). The Managed Agents API is served only from the `global` location, and `ManagedAgent` enforces it.
+
+### Create & use
+
+```python
+from google import genai
+from google.adk.agents import ManagedAgent
+from google.adk.tools import google_search
+
+# Create your own agent (google-genai SDK, NOT ADK — ManagedAgent has no create()).
+# Get-or-create keeps it idempotent; or skip entirely and use an out-of-the-box id like "antigravity-preview-05-2026".
+client = genai.Client()
+if "researcher" not in {a.id for a in (client.agents.list().agents or [])}:  # id must be unique, no gemini-/google-/... prefixes
+    client.agents.create(
+        id="researcher", base_agent="antigravity-preview-05-2026",
+        system_instruction="Answer with fresh, grounded info from the web.",
+    )
+
+# Connect + use. A ManagedAgent is a BaseAgent: set it as root_agent, drop it in a
+# workflow, or wrap it as AgentTool. Only server-side tools are allowed.
+managed = ManagedAgent(
+    name="researcher", agent_id="researcher",
+    environment={"type": "remote"},        # tools run in the managed sandbox
+    tools=[google_search],                 # or types.Tool(code_execution=types.ToolCodeExecution())
+)
+```
+
+### Limits
+
+- **Client-side tools raise `NotImplementedError`:** Python functions/callables and client-side MCP (`McpToolset`). Server-side tools work — ADK built-ins, raw `types.Tool` configs, and server-side remote MCP via `RemoteMcpServer`.
+- **Backends differ:** the Gemini API and GEAP behave slightly differently today — test against your target backend.
+
+Docs: [Gemini API agents](https://ai.google.dev/gemini-api/docs/agents) · [Agent Platform managed agents](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/managed-agents) · [Interactions API](https://ai.google.dev/gemini-api/docs/interactions-overview) · [building custom agents](https://ai.google.dev/gemini-api/docs/custom-agents). Samples: [basic](https://github.com/google/adk-python/tree/main/contributing/samples/managed_agent/basic), [code execution](https://github.com/google/adk-python/tree/main/contributing/samples/managed_agent/code_execution).
+
+---
+
+## Quick Reference
+
+### Running Agents Programmatically
+
+```python
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
+
+session_service = InMemorySessionService()
+await session_service.create_session(app_name="app", user_id="user", session_id="s1")
+runner = Runner(agent=my_agent, app_name="app", session_service=session_service)
+
+async for event in runner.run_async(
+    user_id="user", session_id="s1",
+    new_message=types.Content(role="user", parts=[types.Part.from_text(text="Hello!")]),
+):
+    if event.is_final_response():
+        print(event.content.parts[0].text)
+```
+
+
+### ADK Built-in Tool Imports (Precision Required)
+
+```python
+# CORRECT - imports the tool instance
+from google.adk.tools.load_web_page import load_web_page
+
+# WRONG - imports the module, not the tool
+from google.adk.tools import load_web_page
+```
+
+Pass the imported tool directly to `tools=[load_web_page]`, not `tools=[load_web_page.load_web_page]`.
+
+### Factory Functions for Sub-agents
+
+Use factory functions (not module-level instances) to avoid "agent already has a parent" errors. Always **call** the factory — passing the function reference fails with `ValidationError: Input should be a valid dictionary or instance of BaseAgent`.
+
+```python
+def create_researcher():
+    return Agent(name="researcher", ...)
+
+root_agent = SequentialAgent(
+    sub_agents=[create_researcher(), create_analyst()],  # call the functions!
+    ...
+)
+```
+
+Data flows between sequential sub-agents via conversation history and `output_key` state.
+
+### Further Reading
+
+- [ADK Documentation](https://adk.dev/llms.txt)
+- [ADK Samples](https://github.com/google/adk-samples)
+- `references/samples.md` — topic index of the reference recipes, and how to clone one
+
+---
+
+## Inspecting ADK Source Code
+
+When you need to look up ADK internals, inspect the installed package directly:
+
+```bash
+# Find the ADK package location (use "uv run python" if using uv)
+python -c "import google.adk; print(google.adk.__path__[0])"
+```
+
+### ADK Package Directory Map
+
+```
+google/adk/
+├── agents/           # Agent types (LlmAgent, BaseAgent, SequentialAgent, etc.)
+├── tools/            # Tool implementations (FunctionTool, google_search, etc.)
+├── sessions/         # Session services (InMemory, Database, VertexAI)
+├── memory/           # Memory services
+├── runners.py        # Runner and execution engine
+├── events/           # Event types and actions
+├── models/           # Model integrations (Gemini, LiteLLM, etc.)
+├── code_executors/   # Code execution (BuiltInCodeExecutor, etc.)
+├── evaluation/       # Eval framework (criteria, evaluators, etc.)
+├── cli/              # ADK CLI internals (used by agents-cli playground, eval, etc.)
+├── flows/            # LLM flow implementations
+├── artifacts/        # Artifact services
+└── auth/             # Authentication helpers
+```
+
+Use Glob/Grep/Read on the installed package to find exact implementations, method signatures, and configuration options.
+
+For the full ADK documentation index, use `curl https://adk.dev/llms.txt`.
+
+---
+
+# ADK Workflow API Cheatsheet
+
+> Requires `google-adk >= 2.0.0`. Python only.
+> Requires **Python >= 3.11**. The `Workflow` class itself does not support Live Streaming (`Runner.run_live`) — the graph engine needs strict control over event emission. Use a plain `Agent` for live/bidi flows. ADK 2.0 itself still ships `Runner.run_live` and `LiveRequestQueue`.
+
+**Official docs:** [Workflows overview](https://adk.dev/workflows/index.md) ·
+[Graph routes](https://adk.dev/graphs/routes/index.md) ·
+[Collaboration](https://adk.dev/workflows/collaboration/index.md) ·
+[Data handling](https://adk.dev/graphs/data-handling/index.md) ·
+[Dynamic workflows](https://adk.dev/graphs/dynamic/index.md) ·
+[Human-in-the-loop](https://adk.dev/graphs/human-input/index.md)
+
+## 1. Core Concepts
+
+A `Workflow` is a graph-based agent: nodes do work, edges define flow, `START` is the entry point.
+
+```python
+from google.adk.workflow import Workflow
+
+def greet(node_input: str) -> str:
+  return f"Hello, {node_input}!"
+
+root_agent = Workflow(
+    name="greeter",
+    edges=[('START', greet)],
+)
+```
+
+Three building blocks: **Nodes** (functions, LLM agents, tools), **Edges** (connections with optional route conditions), **START** (built-in entry receiving user input).
+
+### Workflow Constructor
+
+```python
+root_agent = Workflow(
+    name="my_workflow",
+    edges=[...],                # Edge definitions (or use graph= instead)
+    description="",             # Agent description
+    input_schema=None,          # Pydantic model for input validation
+    output_schema=None,         # Pydantic model for the workflow's output
+    state_schema=None,          # Pydantic model for state validation
+    rerun_on_resume=True,       # Rerun workflow on resume (default: True)
+    max_concurrency=None,       # Limit parallel node execution (None = no limit)
+    retry_config=None,          # Default RetryConfig applied to nodes
+    timeout=None,               # Whole-workflow timeout in seconds
+    wait_for_output=False,      # Wait for dynamically scheduled child output
+)
+```
+
+---
+
+## 2. Node Types
+
+Any "NodeLike" is accepted in edges and auto-wrapped:
+
+| Python Object | Wrapped As | Default `rerun_on_resume` |
+|--------------|-----------|------------------------|
+| Function/callable | `FunctionNode` | `False` |
+| `LlmAgent` | Internal `_LlmAgentWrapper` | `True` |
+| Other `BaseAgent` | Internal `AgentNode` | `False` |
+| `BaseTool` | Internal `_ToolNode` | `False` |
+| `BaseNode` subclass | Used as-is | Per subclass |
+
+> **Auto-wrapping is the recommended approach.** Place functions, agents, and tools directly in edges — the framework wraps them automatically. You do not need to import or use internal wrapper classes directly.
+
+---
+
+## 3. Function Nodes
+
+Most common node type. Parameter resolution:
+
+| Parameter | Source |
+|-----------|--------|
+| `ctx` | Workflow `Context` object |
+| `node_input` | Output from predecessor node |
+| Any other name | `ctx.state[param_name]` |
+
+```python
+from google.adk.agents.context import Context
+
+def process(ctx: Context, node_input: Any, user_name: str) -> str:
+  # node_input = predecessor output; user_name = ctx.state['user_name']
+  # START outputs types.Content (not str) unless input_schema is set
+  return f"{user_name}: {node_input}"
+```
+
+### Return Types
+
+- **Value** -> wrapped in `Event(output=value)`, triggers downstream
+- **`None`** -> no event emitted, no downstream trigger
+- **`Event`** -> used directly (for routing or state updates)
+- **Generator** -> yield multiple events; only the last with `output` triggers downstream
+
+```python
+from google.adk.events.event import Event
+
+def classify(node_input: str):
+  if "urgent" in node_input:
+    return Event(output=node_input, route="urgent")
+  return Event(output=node_input, route="normal", state={"processed": True})
+```
+
+### Auto Type Conversion
+
+FunctionNode auto-converts `dict` inputs to Pydantic models based on type hints. Works for `list[Model]` and `dict[str, Model]` too.
+
+### `node_input` Type by Predecessor
+
+| Predecessor | `node_input` Type |
+|-------------|-------------------|
+| Function returning `str`/`dict` | `str`/`dict` |
+| Function returning `Event(output=X)` | type of `X` |
+| `LlmAgent` (no `output_schema`) | `types.Content` |
+| `LlmAgent` (with `output_schema`) | `dict` |
+| `JoinNode` | `dict[str, Any]` (keyed by predecessor names) |
+| `ParallelWorker` | `list` |
+| `START` (no `input_schema`) | `types.Content` |
+| `START` (with `input_schema`) | parsed schema type |
+
+### @node Decorator & Explicit FunctionNode
+
+```python
+from google.adk.workflow import node, FunctionNode, RetryConfig
+
+@node
+def my_func(node_input: str) -> str:
+  return node_input
+
+@node(name="custom", rerun_on_resume=True)
+async def my_async(node_input: str) -> str:
+  return node_input
+
+# Explicit FunctionNode for full control (func is keyword-only)
+fn = FunctionNode(
+    func=my_func,
+    retry_config=RetryConfig(max_attempts=3),
+    timeout=30.0,                          # Seconds before timeout
+    parameter_binding='state',             # 'state' (default) or 'node_input'
+    auth_config=None,                      # Requires rerun_on_resume=True
+    state_schema=None,                     # Pydantic model for state validation
+)
+```
+
+---
+
+## 4. Edge Patterns
+
+```python
+# Sequential chain
+edges = [('START', a), (a, b), (b, c)]
+
+# Conditional routing (node returns Event with route=)
+edges = [
+    ('START', classifier),
+    (classifier, success_handler, "success"),
+    (classifier, error_handler, "error"),
+    (classifier, fallback_handler, '__DEFAULT__'),  # Fallback route
+]
+
+# Fan-out (parallel branches)
+edges = [('START', (branch_a, branch_b, branch_c))]
+
+# Fan-in with JoinNode
+from google.adk.workflow import JoinNode
+join = JoinNode(name="merge")
+edges = [((branch_a, branch_b), join), (join, final)]
+# JoinNode output: {"branch_a": output_a, "branch_b": output_b}
+
+# Looping (must have at least one routed edge — unconditional cycles rejected)
+edges = [
+    ('START', process),
+    (process, check),
+    (check, process, "continue"),
+    (check, finish, "exit"),
+]
+```
+
+Route values: `str`, `bool`, `int`. Multi-route fan-out: `return Event(output=x, route=["a", "b"])`. Edge matching multiple routes: `(node, target, ["route_x", "route_y"])`.
+
+---
+
+## 5. LLM Agent Nodes
+
+Use `google.adk.agents.LlmAgent` in workflow edges — auto-wrapped internally, emits `Event(output=...)` for downstream data passing.
+
+```python
+from google.adk.agents import LlmAgent
+from pydantic import BaseModel
+
+class DraftOutput(BaseModel):
+  title: str
+  content: str
+
+writer = LlmAgent(
+    name="writer",
+    model="gemini-3.7-flash",
+    instruction="Write a draft based on the user's request.",
+    output_schema=DraftOutput,  # Always set for structured output
+    output_key="draft",         # Also store in state['draft']
+)
+
+agent = Workflow(
+    name="pipeline",
+    edges=[('START', writer), (writer, process_draft)],
+)
+```
+
+**Always use `output_schema`** (Pydantic model) on LLM agents in workflows. Without it, output is `types.Content` which may cause type errors in downstream function nodes or serialization failures with JoinNode/database sessions.
+
+---
+
+## 6. Parallel Processing
+
+### ParallelWorker — process list items concurrently
+
+```python
+from google.adk.workflow import node
+
+@node(parallel_worker=True)
+def process_item(node_input: int) -> int:
+  return node_input * 2
+
+# Input: [1, 2, 3] -> Output: [2, 4, 6]
+agent = Workflow(
+    name="parallel",
+    edges=[('START', split_input), (split_input, process_item), (process_item, collect)],
+)
+```
+
+Workers named `{parent_name}@{index}`. Input must be a list. Output is a list in same order.
+
+### Fan-Out / Fan-In — diamond pattern
+
+```python
+from google.adk.workflow import JoinNode
+join = JoinNode(name="merge")
+edges = [
+    ('START', splitter),
+    (splitter, (branch_a, branch_b)),
+    ((branch_a, branch_b), join),
+    (join, combiner),  # combiner receives {"branch_a": ..., "branch_b": ...}
+]
+```
+
+---
+
+## 7. Human-in-the-Loop (HITL)
+
+HITL is a general ADK feature (app-level `ResumabilityConfig`, the `request_input` tool, `resume_inputs`) — see `adk-python.md` "Human-in-the-Loop". Inside a workflow it works per node: a node yields `RequestInput` and reads replies from `ctx.resume_inputs` (keyed by `interrupt_id`).
+
+```python
+from google.adk.events.request_input import RequestInput
+
+async def multi_step(ctx: Context, node_input: str):
+  if not ctx.resume_inputs:
+    yield RequestInput(interrupt_id="ask_name", message="Name?")
+    return
+  if "ask_email" not in ctx.resume_inputs:
+    yield RequestInput(interrupt_id="ask_email", message="Email?")
+    return
+  yield Event(output={"name": ctx.resume_inputs["ask_name"],
+                      "email": ctx.resume_inputs["ask_email"]})
+```
+
+**Node resume behavior:** `rerun_on_resume=False` (default FunctionNode) → the user's response becomes the node output; `rerun_on_resume=True` (default LlmAgent) → the node reruns with `ctx.resume_inputs` populated. **In loops:** use a unique `interrupt_id` per iteration (e.g. `f'review_{count}'`) to avoid infinite restarts.
+
+---
+
+## 8. State & Events
+
+### Context Properties
+
+```python
+from google.adk.agents.context import Context
+
+def my_node(ctx: Context, node_input: str) -> str:
+  ctx.state.get("key", "default")   # Read state
+  ctx.session.id                     # Session ID
+  ctx.node_path                      # "Workflow/node_name"
+  ctx.node                           # Current node
+  ctx.run_id                         # Current execution ID
+  ctx.attempt_count                  # 1 on first attempt (1-based)
+  ctx.resume_inputs                  # HITL resume data (dict keyed by interrupt_id)
+  ctx.interrupt_ids                  # Active interrupt IDs
+  ctx.output                         # Node's result value (settable)
+  ctx.route                          # Routing value (settable)
+  return "result"
+```
+
+### Dynamic Node Scheduling
+
+```python
+async def orchestrator(ctx: Context, node_input: list) -> list:
+  results = []
+  for i, item in enumerate(node_input):
+    result = await ctx.run_node(process_item, node_input=item)
+    results.append(result)
+  return results
+```
+
+`ctx.run_node()` requires `rerun_on_resume=True` on the calling node. Use `use_as_output=True` to delegate the node's output to the dynamic child.
+
+### Event Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `output` | `Any` | Output data for downstream nodes (must be JSON-serializable) |
+| `route` | `str\|bool\|int\|list` | Routing signal for conditional edges (sets `actions.route`) |
+| `state` | `dict` | State delta to apply (sets `actions.state_delta`) |
+| `content` | `types.Content` | Content for web UI display |
+| `message` | `ContentUnion` | Alias for content (auto-converted) |
+
+### State: Prefer Event over ctx.state
+
+```python
+# Preferred — persisted in event history, replayable
+def save(node_input: str):
+  return Event(output=node_input, state={"key": node_input})
+
+# Avoid — side effect, may be lost on replay
+def save(ctx: Context, node_input: str) -> str:
+  ctx.state["key"] = node_input
+  return node_input
+```
+
+### Data Serialization Rules
+
+- `Event.output` must be JSON-serializable. BaseModel returns auto-converted via `model_dump()`.
+- `output_key` stores dicts (not BaseModel instances) — `validate_schema()` -> `model_dump()`.
+- `ctx.state.get(key)` returns a dict. Use `MyModel(**data)` to reconstruct typed access.
+
+---
+
+## 9. Retry Configuration
+
+```python
+from google.adk.workflow import FunctionNode, RetryConfig
+
+node = FunctionNode(
+    func=flaky_call,           # func is keyword-only
+    retry_config=RetryConfig(
+        max_attempts=5,        # Default: None (treated as 5); 1 = no retry
+        initial_delay=1.0,     # Seconds before first retry
+        max_delay=60.0,        # Max seconds between retries
+        backoff_factor=2.0,    # Delay multiplier per attempt
+        jitter=1.0,            # Randomness factor (0.0 = none)
+        exceptions=None,       # Exception types to retry (None = all)
+    ),
+)
+```
+
+Delay formula: `min(initial_delay * backoff_factor^attempt, max_delay) * (1 + random(0, jitter))`
+
+---
+
+## 10. Testing
+
+> **Note:** The testing utilities below (`testing_utils`, `InMemoryRunner`) are internal to the ADK repository. They are not part of the public `google-adk` package. For your own tests, use `App` + `InMemoryRunner` from `google.adk.runners` or write a custom test harness.
+
+```python
+import pytest
+from google.adk.workflow import Workflow
+from google.adk.apps import App
+from google.adk.runners import InMemoryRunner
+from google.genai import types
+
+@pytest.mark.asyncio
+async def test_workflow():
+  def step(node_input: str) -> str:
+    return "done"
+
+  agent = Workflow(name="test", edges=[('START', step)])
+  app = App(name="test_app", root_agent=agent)
+  runner = InMemoryRunner(app=app)
+
+  session = await runner.session_service.create_session(
+      app_name="test_app", user_id="test_user"
+  )
+  async for event in runner.run_async(
+      user_id="test_user",
+      session_id=session.id,
+      new_message=types.Content(role="user", parts=[types.Part.from_text(text="hello")]),
+  ):
+    if event.output is not None:
+      assert event.output == "done"
+```
+
+---
+
+## 11. Import Paths
+
+### Workflow Core
+
+| Component | Import |
+|-----------|--------|
+| `Workflow` | `from google.adk.workflow import Workflow` |
+| `Edge` | `from google.adk.workflow import Edge` |
+| `FunctionNode` | `from google.adk.workflow import FunctionNode` |
+| `JoinNode` | `from google.adk.workflow import JoinNode` |
+| `BaseNode`, `START` | `from google.adk.workflow import BaseNode, START` |
+| `Node` (subclassable) | `from google.adk.workflow import Node` |
+| `@node` decorator | `from google.adk.workflow import node` |
+| `RetryConfig` | `from google.adk.workflow import RetryConfig` |
+| `NodeTimeoutError` | `from google.adk.workflow import NodeTimeoutError` |
+| `DEFAULT_ROUTE` | `from google.adk.workflow import DEFAULT_ROUTE` |
+
+### Workflow Nodes (auto-wrapped)
+
+Nodes are auto-wrapped when placed in edges. You do not need to import wrapper classes.
+
+| Python Object | How to Use |
+|--------------|-----------|
+| `LlmAgent` | `from google.adk.agents import LlmAgent` — place directly in edges |
+| Function/callable | Use as-is or wrap with `@node` decorator for options |
+| `BaseTool` | Place directly in edges |
+| `BaseAgent` subclass | Place directly in edges |
+
+### Events & Context
+
+| Component | Import |
+|-----------|--------|
+| `Event` | `from google.adk.events.event import Event` |
+| `RequestInput` | `from google.adk.events.request_input import RequestInput` |
+| `Context` | `from google.adk.agents.context import Context` |
+
+### LLM Agent
+
+| Component | Import |
+|-----------|--------|
+| `LlmAgent` | `from google.adk.agents import LlmAgent` |
+
+### App & Resumability
+
+| Component | Import |
+|-----------|--------|
+| `App` | `from google.adk.apps import App` |
+| `ResumabilityConfig` | `from google.adk.apps import ResumabilityConfig` |
+
+---
+
+## 12. Best Practices
+
+### Use Pydantic Models, Not Raw Dicts
+
+Always define `BaseModel` classes for node I/O, LLM `output_schema`, and structured data:
+
+```python
+# Wrong: raw dicts
+def lookup(node_input: dict[str, Any]) -> dict[str, Any]:
+  return {"cost": 500}
+
+# Correct: typed schemas
+class FlightInfo(BaseModel):
+  cost: int
+  details: str
+
+def lookup(node_input: Itinerary) -> FlightInfo:
+  return FlightInfo(cost=500, details="Economy")
+```
+
+### Emit Content Events for Web UI
+
+`event.output` is internal — only `event.content` renders in the ADK web UI:
+
+```python
+from google.genai import types
+
+def final_output(node_input: str):
+  yield Event(content=types.Content(role='model', parts=[types.Part.from_text(text=node_input)]))
+  yield Event(output=node_input)
+```
+
+LLM agents emit content events automatically. Add them explicitly for function nodes with user-facing results.
+
+### Agent Directory Convention
+
+```
+my_workflow/
+  __init__.py    # from . import agent
+  agent.py       # root_agent = Workflow(...)
+```
+
+### Advanced Patterns
+
+- **Nested workflows**: A `Workflow` can be used as a node in another workflow
+- **Dynamic node scheduling**: Use `await ctx.run_node(func, node_input=item)` at runtime (requires `rerun_on_resume=True`)
+- **Custom Node subclass**: Subclass `Node`, implement `run_node_impl(*, ctx, node_input)` -> `AsyncGenerator`. Supports `parallel_worker=True` flag.
+- **Custom BaseNode**: Subclass `BaseNode`, implement `_run_impl(*, ctx, node_input)` -> `AsyncGenerator`
+
+### Graph Validation Rules
+
+1. START must exist and have no incoming edges
+2. All non-START nodes must be reachable
+3. No duplicate node names or edges
+4. At most one `__DEFAULT__` route per node
+5. No unconditional cycles (cycles need at least one routed edge)
+
+---
+
+## Further Reading
+
+- [Workflows overview](https://adk.dev/workflows/index.md)
+- [Graph routes & conditional edges](https://adk.dev/graphs/routes/index.md)
+- [Agent collaboration & task mode](https://adk.dev/workflows/collaboration/index.md)
+- [Data handling & state](https://adk.dev/graphs/data-handling/index.md)
+- [Dynamic workflows](https://adk.dev/graphs/dynamic/index.md)
+- [Human-in-the-loop](https://adk.dev/graphs/human-input/index.md)
+- [App class (workflow container)](https://adk.dev/apps/index.md)
+
+---
+
+# Agent Runtime Infrastructure
+
+> **Assumes /google-agents-cli-scaffold scaffolding.** If your project isn't scaffolded yet, see /google-agents-cli-scaffold first.
+
+## Deployment Architecture
+
+Agent Runtime uses **container-based deployment**: `agents-cli deploy` packages your project and Agent Engine builds a container image from your project's `Dockerfile` (required at the project root; scaffolded projects ship one).
+
+File selection honors the project-root `.gcloudignore`, else the project-root `.gitignore` (nested `.gitignore` files are not consulted).
+
+**App object:** `fast_api_app.py` builds a single FastAPI `app` via
+`get_fast_api_app(web=True, lifespan=...)`. The lifespan builds one `Runner`
+from the shared session/artifact services (`app_utils/services.py`) and mounts
+A2A routes (`attach_a2a_routes`); `attach_reasoning_engine_routes(app)` adds the
+reasoning_engine contract routes. There is no top-level `AgentEngineApp`/`AdkApp`
+deployment entrypoint anymore — the container serves HTTP directly (the
+reasoning_engine adapter still constructs an `AdkApp` internally to dispatch the
+native `:streamQuery`/`:query` contract).
+
+The container serves the ADK HTTP surface (`/run_sse`, `/apps/...`), the A2A
+routes under `/a2a/{app_name}` (JSON-RPC + agent card), and the
+reasoning_engine adapter routes `/api/reasoning_engine` +
+`/api/stream_reasoning_engine` (the native `:streamQuery`/`:query` contract used
+by the Console Playground and Gemini Enterprise ADK registration). It deploys as
+the `google-adk` agent framework (see `service.tf`).
+
+### The `/api` HTTP passthrough
+
+Agent Engine exposes the container's HTTP routes externally under an
+`/api` prefix, so deployed agents are reachable without a public Cloud Run URL:
+
+```
+https://{location}-aiplatform.googleapis.com/reasoningEngines/v1/{resource}/api/{container_path}
+```
+
+where `{resource}` is the full `projects/.../reasoningEngines/...` name. For
+example, the A2A agent card (container route `/a2a/{agent_directory}/.well-known/agent-card.json`)
+is reachable at:
+
+```
+https://{location}-aiplatform.googleapis.com/reasoningEngines/v1/{resource}/api/a2a/{agent_directory}/.well-known/agent-card.json
+```
+
+`{agent_directory}` is the app name (the project's `agent_directory`, recorded in
+`deployment_metadata.json`). This is the exact URL `deploy` advertises on
+success and `run` constructs for `--mode a2a` against an Agent Runtime URL — both
+authenticate with your Google credentials. On Agent Runtime, `publish` registers
+with **ADK** (`:streamQuery` against the reasoning-engine resource name), not
+this card URL.
+
+## Deploying
+
+Deploy with `agents-cli deploy` (run `agents-cli deploy --help` for the full flag reference). CI/CD pipelines invoke the same command.
+
+**Deployment flow:**
+1. `agents-cli deploy` packages the project files (honoring `.gcloudignore`/`.gitignore`)
+2. Agent Engine builds the container image and creates/updates the Agent Runtime instance
+3. Writes `deployment_metadata.json` with the engine resource ID
+
+## Terraform Resource
+
+Agent Runtime uses `google_vertex_ai_reasoning_engine` in `deployment/terraform/single-project/service.tf` (and the `cicd/service.tf` variant for CI/CD-managed deployments). Check those files for current scaling, concurrency, and resource limit settings.
+
+Key difference from Cloud Run: the `lifecycle.ignore_changes` (covering `container_spec`, `source_code_spec`, and `deployment_spec`) is critical — the image and source are updated by `agents-cli deploy` / CI/CD, not Terraform.
+
+## deployment_metadata.json
+
+Written by `agents-cli deploy` after a successful deployment:
+
+```json
+{
+  "remote_agent_runtime_id": "projects/PROJECT/locations/LOCATION/reasoningEngines/ENGINE_ID",
+  "deployment_target": "agent_runtime",
+  "is_a2a": true,
+  "agent_directory": "app",
+  "deployment_timestamp": "2025-02-25T10:30:00.000+00:00"
+}
+```
+
+Used by: subsequent deploys (update vs create), `agents-cli run --url`, and `agents-cli publish` (reads the runtime ID for the default ADK registration on Agent Runtime, and constructs the A2A card URL only when A2A registration is explicitly chosen). Cloud Run does not use this file.
+
+If deployment times out but the engine was created, manually populate this file with the engine resource ID.
+
+## CI/CD Differences from Cloud Run
+
+| Aspect | Agent Runtime | Cloud Run |
+|--------|-------------|-----------|
+| **Build** | Dockerfile → image (built by Agent Engine) | Dockerfile → image (`gcloud builds`) |
+| **Deploy command** | `agents-cli deploy` | `gcloud run deploy --image ...` |
+| **Artifact** | Container image | Container image in Artifact Registry |
+| **Python version** | Configurable in Dockerfile | Configurable in Dockerfile |
+| **Load testing** | Via `locust` against Agent Runtime endpoint | Direct HTTP to Cloud Run URL |
+
+## Playground & Remote Testing
+
+```bash
+# Local mode (uses local agent instance)
+agents-cli playground
+
+# Query your deployed Agent Runtime remotely (ADK agent)
+agents-cli run --url https://LOCATION-aiplatform.googleapis.com/v1/projects/PROJECT/locations/LOCATION/reasoningEngines/ID --mode adk "Hello, what can you do?"
+```
+
+`--mode` is required with `--url`: use `adk` for the ADK streaming API (`:streamQuery`) or `a2a` for the A2A protocol. Add `-v` for full JSON event payloads. Auth is auto-detected via Google Cloud credentials.
+
+To query Agent Runtime programmatically:
+
+```python
+import agentplatform
+
+client = agentplatform.Client(location="us-east1")
+agent = client.agent_engines.get(name="projects/PROJECT/locations/LOCATION/reasoningEngines/ENGINE_ID")
+
+async for event in agent.async_stream_query(message="Hello!", user_id="test"):
+    print(event)
+```
+
+## Session & Artifact Services
+
+Agent Runtime always uses in-memory sessions at scaffold time; at runtime `app_utils/services.py` upgrades to `VertexAiSessionService` when Agent Engine injects `GOOGLE_CLOUD_AGENT_ENGINE_ID`. `get_fast_api_app` receives the `shared://session` URI, resolved by `services.py`.
+
+Artifacts use `GcsArtifactService` when `LOGS_BUCKET_NAME` is set, otherwise `InMemoryArtifactService`.
+
+Environment variables set during deployment come from `agents-cli deploy` (the CLI's `deploy/agent_runtime.py`) for SDK deploys, and from `deployment/terraform/single-project/service.tf` (or the `cicd/` variant) for Terraform-managed deploys. Check those for current values.
+
+### Memory Bank
+
+To enable cross-session memory on Agent Runtime, configure `memory_bank_config` via `context_spec`. See the [`cross-session-memory` recipe](https://github.com/google/adk-samples/tree/main/core/python/cross-session-memory) for the full pattern.
+
+## Networking (PSC Interface)
+
+Agent Runtime cannot reach your VPC by default. To enable private connectivity, create a [network attachment](https://cloud.google.com/vpc/docs/create-manage-network-attachments) and deploy with `--network-attachment`. Add `--dns-peering-domain`, `--dns-peering-project`, and `--dns-peering-network` if you need private DNS resolution. PSC config is immutable after deployment — delete and redeploy to change it. See the [GCP docs](https://cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/private-service-connect-interface) for prerequisites and setup.
 
