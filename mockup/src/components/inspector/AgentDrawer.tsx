@@ -1,5 +1,19 @@
+/**
+ * AgentDrawer Component
+ *
+ * Inspector drawer orchestrator that renders the appropriate property panel
+ * (StandardAgentDrawer, RouterAgentDrawer, or A2AAgentDrawer) based on the agent's kind.
+ * Supports tool inspection, per-agent tool property editing, and sub-agent orchestration.
+ *
+ * Architectural Decisions:
+ * 1. Delegation: Routes directly to specialized agent drawers based on agentKind.
+ * 2. Scoped Tool Editing: Forwards onEditTool to StandardAgentDrawer so tools can be edited per-agent.
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
+
 import React from 'react';
-import { AgentData } from '../../types';
+import { AgentData, ToolDefinition } from '../../types';
 import { StandardAgentDrawer } from './StandardAgentDrawer';
 import { A2AAgentDrawer } from './A2AAgentDrawer';
 import { RouterAgentDrawer } from './RouterAgentDrawer';
@@ -12,6 +26,7 @@ interface AgentDrawerProps {
   onUpdateAgent: (updatedData: Partial<AgentData>) => void;
   onOpenAddTool: () => void;
   onRemoveTool: (toolId: string) => void;
+  onEditTool?: (tool: ToolDefinition) => void;
 }
 
 export const AgentDrawer: React.FC<AgentDrawerProps> = ({
@@ -22,6 +37,7 @@ export const AgentDrawer: React.FC<AgentDrawerProps> = ({
   onUpdateAgent,
   onOpenAddTool,
   onRemoveTool,
+  onEditTool,
 }) => {
   if (!isOpen || !agent) return null;
 
@@ -56,6 +72,7 @@ export const AgentDrawer: React.FC<AgentDrawerProps> = ({
       onUpdateAgent={onUpdateAgent}
       onOpenAddTool={onOpenAddTool}
       onRemoveTool={onRemoveTool}
+      onEditTool={onEditTool}
     />
   );
 };

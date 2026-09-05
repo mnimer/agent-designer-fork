@@ -29,9 +29,9 @@ describe('Standard Agent Inspector Logic & Configuration', () => {
     assert.ok(searchTool);
     assert.ok(searchTool?.type === 'search' || searchTool?.type === 'builtin');
 
-    const mcpTool = AVAILABLE_TOOLS.find((t) => t.id === 'tool_mcp_github');
-    assert.ok(mcpTool);
-    assert.equal(mcpTool?.type, 'mcp');
+    const ragTool = AVAILABLE_TOOLS.find((t) => t.id === 'builtin_vertex_ai_search');
+    assert.ok(ragTool);
+    assert.equal(ragTool?.type, 'rag');
   });
 
   it('should update agent parameters immutably', () => {

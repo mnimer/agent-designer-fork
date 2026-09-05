@@ -8,6 +8,10 @@
  *
  * Architectural Decisions:
  * - Author: Mike Nimer <mikenimer@google.com>
+ * - Scoped Tool Configuration: Tools attached to agents maintain independent deep-copied instances
+ *   in `node.data.tools`. Modifying a tool from an AgentDrawer updates only that specific agent's JSON.
+ *   Modifying a tool from the global palette/Tools menu updates the global designer template without
+ *   mutating existing agent-scoped tool instances.
  * - Sub-Agent Synchronization: Outgoing agent connections automatically synchronize with the
  *   parent agent's `subAgents` array, maintaining custom user reordering while keeping names and
  *   roles synchronized across the workflow graph.
@@ -52,6 +56,7 @@ import {
   createSingleTriggerNode
 } from './data/patterns';
 import { AVAILABLE_TOOLS } from './data/defaultTools';
+import { sanitizeToolList } from './data/builtinTools';
 import { TRIGGER_CATALOG, DEFAULT_MOCK_TEST_PROMPTS } from './data/triggerDefinitions';
 import { AgentNode } from './components/Canvas/nodes/AgentNode';
 import { TriggerNode } from './components/Canvas/nodes/TriggerNode';
@@ -61,7 +66,7 @@ import { CodeGenerationPanel } from './components/codegen/CodeGenerationPanel';
 import { AgentDrawer } from './components/inspector/AgentDrawer';
 import { TriggerDrawer } from './components/inspector/TriggerDrawer';
 import { AddToolModal } from './components/inspector/AddToolModal';
-import { ToolPropertyDrawer } from './components/inspector/ToolPropertyDrawer';
+import { ToolDrawer, ToolPropertyDrawer } from './components/inspector/ToolDrawer';
 import { MissingFeaturesModal } from './components/insights/MissingFeaturesModal';
 import { VSCodeChrome } from './components/vscode/VSCodeChrome';
 import { ThemeProvider } from './context/ThemeContext';
@@ -85,7 +90,7 @@ const edgeTypes = {
   workflowEdge: CustomWorkflowEdge,
 };
 
-const STORAGE_TOOLS_KEY = 'ais_agent_studio_tools_v1';
+const STORAGE_TOOLS_KEY = 'ais_agent_studio_tools_v2';
 
 function normalizeLoadedNodes(loadedNodes: any[]): Node<any>[] {
   if (!Array.isArray(loadedNodes)) return [];
@@ -113,7 +118,7 @@ function normalizeLoadedNodes(loadedNodes: any[]): Node<any>[] {
         model: data.model || data.standardConfig?.model || 'gemini-flash-latest',
         description: data.description || '',
         systemPrompt: data.systemPrompt || data.standardConfig?.systemInstruction || '',
-        tools: data.tools || data.standardConfig?.tools || [],
+        tools: sanitizeToolList(data.tools || data.standardConfig?.tools || []),
         memoryType: data.memoryType || data.standardConfig?.memory || 'none',
         ...data,
       };
@@ -332,9 +337,18 @@ function FlowCanvas() {
   // Tools library state (customizable tools catalog)
   const [tools, setTools] = useState<ToolDefinition[]>(() => {
     try {
+      // Clear legacy storage key containing stale mock tools
+      localStorage.removeItem('ais_agent_studio_tools_v1');
+
       const saved = localStorage.getItem(STORAGE_TOOLS_KEY);
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const sanitized = sanitizeToolList(parsed);
+          const existingIds = new Set(sanitized.map((t: any) => t.id));
+          const missingBuiltins = AVAILABLE_TOOLS.filter((t) => !existingIds.has(t.id));
+          return [...sanitized, ...missingBuiltins];
+        }
       }
     } catch (e) {
       console.warn('Failed to load saved tools from localStorage:', e);
@@ -345,7 +359,7 @@ function FlowCanvas() {
   // Save tools to local storage on change
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_TOOLS_KEY, JSON.stringify(tools));
+      localStorage.setItem(STORAGE_TOOLS_KEY, JSON.stringify(sanitizeToolList(tools)));
     } catch (e) {
       console.warn('Failed to persist tools:', e);
     }
@@ -371,6 +385,10 @@ function FlowCanvas() {
   // Tool Property Drawer state
   const [editingTool, setEditingTool] = useState<ToolDefinition | null>(null);
   const [isToolDrawerOpen, setIsToolDrawerOpen] = useState<boolean>(false);
+  const [editingToolScope, setEditingToolScope] = useState<{
+    type: 'global' | 'agent';
+    agentId?: string;
+  } | null>(null);
 
   // Resizable bottom panel state (Divider between diagram & bottom tabs)
   // Default is null to strictly maintain the 2/3 diagram (66.66%) and 1/3 tabs (33.33%) layout
@@ -698,6 +716,8 @@ function FlowCanvas() {
   const handleAddSpecificTool = useCallback(
     (agentId: string, tool: ToolDefinition) => {
       let updated = false;
+      // Deep copy all tool properties into the agent's scoped tool node
+      const toolInstance: ToolDefinition = JSON.parse(JSON.stringify(tool));
       const nextNodes = nodes.map((n) => {
         if (n.id === agentId && n.type === 'agentNode') {
           const currentTools = (n.data as AgentData).tools || [];
@@ -707,7 +727,7 @@ function FlowCanvas() {
               ...n,
               data: {
                 ...n.data,
-                tools: [...currentTools, tool],
+                tools: [...currentTools, toolInstance],
               },
             };
           }
@@ -1423,9 +1443,18 @@ function FlowCanvas() {
 
   // Tool Drawer Actions
   const handleOpenEditTool = useCallback((tool: ToolDefinition) => {
-    setEditingTool(tool);
+    setEditingToolScope({ type: 'global' });
+    setEditingTool(JSON.parse(JSON.stringify(tool)));
     setIsToolDrawerOpen(true);
     setSelectedAgentId(null);
+    setSelectedTriggerId(null);
+    setIsTriggerDrawerOpen(false);
+  }, []);
+
+  const handleOpenEditAgentTool = useCallback((agentId: string, tool: ToolDefinition) => {
+    setEditingToolScope({ type: 'agent', agentId });
+    setEditingTool(JSON.parse(JSON.stringify(tool)));
+    setIsToolDrawerOpen(true);
     setSelectedTriggerId(null);
     setIsTriggerDrawerOpen(false);
   }, []);
@@ -1444,6 +1473,7 @@ function FlowCanvas() {
       },
       enabled: true,
     };
+    setEditingToolScope({ type: 'global' });
     setEditingTool(newTool);
     setIsToolDrawerOpen(true);
     setSelectedAgentId(null);
@@ -1471,6 +1501,7 @@ function FlowCanvas() {
         autoApproveTools: ['read_*'],
       },
     };
+    setEditingToolScope({ type: 'global' });
     setEditingTool(newMcpTool);
     setIsToolDrawerOpen(true);
     setSelectedAgentId(null);
@@ -1478,35 +1509,50 @@ function FlowCanvas() {
     setIsTriggerDrawerOpen(false);
   }, []);
 
-  const handleSaveTool = useCallback((savedTool: ToolDefinition) => {
-    setTools((prev) => {
-      const exists = prev.some((t) => t.id === savedTool.id);
-      if (exists) {
-        return prev.map((t) => (t.id === savedTool.id ? savedTool : t));
-      }
-      return [savedTool, ...prev];
-    });
-
-    // Synchronize to any agent nodes holding this tool
-    setNodes((nds: any[]) =>
-      nds.map((n: any) => {
-        if (n.type === 'agentNode') {
-          const agentData = n.data as AgentData;
-          const hasTool = agentData.tools?.some((t) => t.id === savedTool.id);
-          if (hasTool) {
+  const handleSaveTool = useCallback(
+    (savedTool: ToolDefinition) => {
+      if (editingToolScope?.type === 'agent' && editingToolScope.agentId) {
+        const targetAgentId = editingToolScope.agentId;
+        // Save the modified properties into the JSON under this agent node only
+        let updated = false;
+        const nextNodes = nodes.map((n) => {
+          if (n.id === targetAgentId && n.type === 'agentNode') {
+            const agentData = n.data as AgentData;
+            updated = true;
             return {
               ...n,
               data: {
                 ...n.data,
-                tools: agentData.tools.map((t) => (t.id === savedTool.id ? savedTool : t)),
+                tools: (agentData.tools || []).map((t) =>
+                  t.id === savedTool.id ? JSON.parse(JSON.stringify(savedTool)) : t
+                ),
               },
             };
           }
+          return n;
+        });
+
+        if (updated) {
+          setNodes(nextNodes);
+          recordSnapshot(nextNodes, edges, {
+            description: `Configure ${savedTool.name} for agent`,
+          });
         }
-        return n;
-      })
-    );
-  }, [setNodes]);
+      } else {
+        // Global save: update the designer state (tools template collection)
+        const deepCopiedTool: ToolDefinition = JSON.parse(JSON.stringify(savedTool));
+        setTools((prev) => {
+          const exists = prev.some((t) => t.id === deepCopiedTool.id);
+          if (exists) {
+            return prev.map((t) => (t.id === deepCopiedTool.id ? deepCopiedTool : t));
+          }
+          return [deepCopiedTool, ...prev];
+        });
+        // Note: Global edits update the global template; existing agents retain their own decoupled tool instances
+      }
+    },
+    [editingToolScope, nodes, edges, setNodes, setTools, recordSnapshot]
+  );
 
   const handleDeleteTool = useCallback((toolId: string) => {
     setTools((prev) => prev.filter((t) => t.id !== toolId));
@@ -2209,6 +2255,7 @@ function FlowCanvas() {
             onUpdateAgent={handleUpdateSelectedAgent}
             onOpenAddTool={() => selectedAgentId && setToolModalAgentId(selectedAgentId)}
             onRemoveTool={(toolId) => selectedAgentId && handleRemoveTool(selectedAgentId, toolId)}
+            onEditTool={(tool) => selectedAgentId && handleOpenEditAgentTool(selectedAgentId, tool)}
           />
 
           {/* Slide-out Trigger Inspector Drawer */}
@@ -2230,16 +2277,26 @@ function FlowCanvas() {
           />
 
           {/* Slide-out Tool Definition & Code Directive Property Panel */}
-          <ToolPropertyDrawer
+          <ToolDrawer
             tool={editingTool}
             isOpen={isToolDrawerOpen}
-            onClose={() => setIsToolDrawerOpen(false)}
+            onClose={() => {
+              setIsToolDrawerOpen(false);
+              setEditingToolScope(null);
+            }}
             onSaveTool={handleSaveTool}
             onDeleteTool={handleDeleteTool}
+            scope={editingToolScope?.type || 'global'}
+            agentName={
+              editingToolScope?.type === 'agent'
+                ? (nodes.find((n) => n.id === editingToolScope.agentId)?.data as AgentData)?.label
+                : undefined
+            }
             selectedAgent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
             onAttachToAgent={(agentId, tool) => {
               handleAddSpecificTool(agentId, tool);
               setIsToolDrawerOpen(false);
+              setEditingToolScope(null);
             }}
           />
         </div>
@@ -2307,6 +2364,8 @@ function FlowCanvas() {
         onClose={() => setToolModalAgentId(null)}
         onSelectTool={handleAttachTool}
         existingToolIds={((targetAgentForTool?.data as AgentData)?.tools || []).map((t) => t.id)}
+        tools={tools}
+        targetAgentName={(targetAgentForTool?.data as AgentData)?.label}
       />
 
       {/* Architectural Advisor & "What is missing?" Modal */}

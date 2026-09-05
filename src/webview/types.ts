@@ -103,10 +103,57 @@ export interface McpToolConfig {
   timeoutSeconds?: number;
 }
 
+export type ToolCategory = 
+  | 'grounding' 
+  | 'enterprise_search' 
+  | 'system' 
+  | 'custom' 
+  | 'mcp' 
+  | 'api' 
+  | 'db' 
+  | 'code' 
+  | 'rag' 
+  | 'builtin';
+
+export type AdkBuiltinToolType = 
+  | 'google_search' 
+  | 'vertex_ai_search' 
+  | 'load_web_page' 
+  | 'request_input' 
+  | 'preload_memory' 
+  | 'code_execution' 
+  | 'agent_as_tool';
+
+export interface VertexAiSearchConfig {
+  dataStoreId?: string;
+  location?: string;
+  project?: string;
+  engineId?: string;
+  maxResults?: number;
+}
+
+export interface GoogleSearchConfig {
+  domainFilters?: string[];
+  dynamicThreshold?: number;
+}
+
+export interface RequestInputConfig {
+  prompt?: string;
+  timeoutSeconds?: number;
+}
+
+export interface AgentAsToolConfig {
+  subAgentId?: string;
+  subAgentName?: string;
+  subAgentDescription?: string;
+}
+
 export interface ToolDefinition {
   id: string;
   name: string;
-  type: 'search' | 'code' | 'api' | 'db' | 'custom' | 'rag' | 'mcp';
+  type: 'search' | 'code' | 'api' | 'db' | 'custom' | 'rag' | 'mcp' | 'builtin' | string;
+  category?: ToolCategory | string;
+  builtinType?: AdkBuiltinToolType;
   description: string;
   codePrompt?: string; // Describes what the code in the tool should do (e.g. "Call twitter api endpoint...")
   endpointUrl?: string;
@@ -115,7 +162,12 @@ export interface ToolDefinition {
   icon?: string;
   parameters?: Record<string, string>;
   enabled?: boolean;
+  config?: Record<string, unknown>;
   mcpConfig?: McpToolConfig;
+  vertexAiSearchConfig?: VertexAiSearchConfig;
+  googleSearchConfig?: GoogleSearchConfig;
+  requestInputConfig?: RequestInputConfig;
+  agentAsToolConfig?: AgentAsToolConfig;
 }
 
 export interface SubAgentRef {

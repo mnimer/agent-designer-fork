@@ -43,7 +43,8 @@ import {
   Scale,
   ShieldAlert,
   Flame,
-  CheckCircle2
+  CheckCircle2,
+  Pencil
 } from 'lucide-react';
 import { 
   AgentData, 
@@ -69,6 +70,7 @@ interface StandardAgentDrawerProps {
   onUpdateAgent: (updatedData: Partial<AgentData>) => void;
   onOpenAddTool: () => void;
   onRemoveTool: (toolId: string) => void;
+  onEditTool?: (tool: ToolDefinition) => void;
 }
 
 const SUPPORTED_MODELS = [
@@ -84,6 +86,7 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
   onUpdateAgent,
   onOpenAddTool,
   onRemoveTool,
+  onEditTool,
 }) => {
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
@@ -672,16 +675,30 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
                   key={tool.id}
                   className="flex items-center justify-between p-2 rounded-lg bg-[#0d1117] border border-[#30363d]"
                 >
-                  <div>
-                    <div className="font-semibold text-gray-200 text-xs">{tool.name}</div>
-                    <div className="text-[10px] text-gray-400 truncate max-w-[200px]">{tool.description}</div>
+                  <div className="min-w-0 pr-2">
+                    <div className="font-semibold text-gray-200 text-xs truncate">{tool.name}</div>
+                    <div className="text-[10px] text-gray-400 truncate max-w-[190px]">{tool.description}</div>
                   </div>
-                  <button
-                    onClick={() => onRemoveTool(tool.id)}
-                    className="p-1 text-gray-400 hover:text-rose-400 transition-colors cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {onEditTool && (
+                      <button
+                        type="button"
+                        onClick={() => onEditTool(tool)}
+                        title={`Configure ${tool.name} for this agent`}
+                        className="p-1 text-gray-400 hover:text-blue-400 hover:bg-[#161b22] rounded transition-colors cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onRemoveTool(tool.id)}
+                      title={`Remove ${tool.name}`}
+                      className="p-1 text-gray-400 hover:text-rose-400 hover:bg-[#161b22] rounded transition-colors cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))
             ) : (
