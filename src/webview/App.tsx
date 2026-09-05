@@ -138,21 +138,28 @@ function normalizeLoadedNodes(loadedNodes: any[]): Node<any>[] {
 function normalizeLoadedEdges(loadedEdges: any[]): Edge[] {
   if (!Array.isArray(loadedEdges)) return [];
   return loadedEdges.map((e) => {
-    const isTester =
+    const isTrigger =
       e.id?.includes('tester') ||
+      e.id?.includes('trigger') ||
       e.sourceHandle === 'trigger_out_right' ||
       e.sourceHandle === 'trigger_out_bottom';
 
-    let stroke = e.style?.stroke || (isTester ? '#eab308' : '#3b82f6');
+    let stroke = e.style?.stroke || (isTrigger ? '#f59e0b' : '#3b82f6');
     if (
       stroke === '#ec4899' ||
       stroke === '#db2777' ||
       stroke === '#f472b6' ||
+      stroke === '#eab308' ||
       stroke === 'rgb(236, 72, 153)' ||
       stroke?.toLowerCase().includes('pink') ||
-      isTester
+      isTrigger
     ) {
-      stroke = '#eab308';
+      stroke = '#f59e0b';
+    }
+
+    let targetHandle = e.targetHandle || null;
+    if (targetHandle === 'input_right') {
+      targetHandle = 'input';
     }
 
     return {
@@ -160,11 +167,11 @@ function normalizeLoadedEdges(loadedEdges: any[]): Edge[] {
       source: e.source,
       target: e.target,
       sourceHandle: e.sourceHandle || null,
-      targetHandle: e.targetHandle || null,
+      targetHandle,
       animated: e.animated !== undefined ? e.animated : true,
       style: {
         strokeWidth: 2,
-        strokeDasharray: isTester ? '5 5' : e.style?.strokeDasharray,
+        strokeDasharray: isTrigger ? '5 5' : e.style?.strokeDasharray,
         ...e.style,
         stroke,
       },
@@ -1164,9 +1171,10 @@ function FlowCanvas() {
       const sourceNode = nodes.find((n) => n.id === connection.source);
       const targetNode = nodes.find((n) => n.id === connection.target);
 
-      // Target agent nodes accept connections on Top ('input'), Left ('input_left'), or Right ('input_right') "In" handles
+      // Target agent nodes accept connections on Top ('input') or Left ('input_left' on Root agent only)
       if (targetNode?.type === 'agentNode') {
-        const validInHandles = ['input', 'input_left', 'input_right'];
+        const isRoot = (targetNode.data as AgentData)?.isStartNode;
+        const validInHandles = isRoot ? ['input', 'input_left'] : ['input'];
         if (connection.targetHandle && !validInHandles.includes(connection.targetHandle)) {
           return false;
         }
@@ -1241,9 +1249,9 @@ function FlowCanvas() {
           targetHandle: isTester ? 'input_left' : 'input',
           animated: true,
           style: {
-            stroke: isTester ? '#eab308' : '#3b82f6',
+            stroke: '#f59e0b',
             strokeWidth: 2,
-            strokeDasharray: isTester ? '5 5' : undefined,
+            strokeDasharray: '5 5',
           },
         };
       });
@@ -1334,9 +1342,9 @@ function FlowCanvas() {
           targetHandle: connection.targetHandle || (isTester ? 'input_left' : 'input'),
           animated: true,
           style: {
-            stroke: isTester ? '#eab308' : '#3b82f6',
+            stroke: '#f59e0b',
             strokeWidth: 2,
-            strokeDasharray: isTester ? '5 5' : undefined,
+            strokeDasharray: '5 5',
           },
         };
 

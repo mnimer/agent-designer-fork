@@ -146,41 +146,54 @@ describe('Trigger Configuration & Presets Logic', () => {
       assert.equal(updatedEdges[0].target, 'agent_new_root');
     });
 
-    it('should validate Test Suite connections to Top, Left, and Right In handles', () => {
-      const validInHandles = ['input', 'input_left', 'input_right'];
-      validInHandles.forEach((handle) => {
-        const isValid = ['input', 'input_left', 'input_right'].includes(handle);
-        assert.equal(isValid, true, `Handle ${handle} should be a valid In handle`);
+    it('should validate Test Suite connections to Top and Left In handles on Root agent', () => {
+      const rootAgentHandles = ['input', 'input_left'];
+      rootAgentHandles.forEach((handle) => {
+        const isValid = ['input', 'input_left'].includes(handle);
+        assert.equal(isValid, true, `Handle ${handle} should be a valid In handle on root agent`);
       });
 
-      const isInvalidHandle = ['input', 'input_left', 'input_right'].includes('random_handle');
+      // Right handle removed from agent nodes
+      const isRightHandleValid = ['input', 'input_left'].includes('input_right');
+      assert.equal(isRightHandleValid, false, 'input_right should no longer be a valid In handle');
+
+      const isInvalidHandle = ['input', 'input_left'].includes('random_handle');
       assert.equal(isInvalidHandle, false);
     });
 
     it('should validate Agent Out to In connections across multiple agents', () => {
       const sourceAgent = { id: 'agent_1', type: 'agentNode' };
-      const targetAgent = { id: 'agent_2', type: 'agentNode' };
+      const rootTargetAgent = { id: 'agent_2', type: 'agentNode', data: { isStartNode: true } };
+      const childTargetAgent = { id: 'agent_3', type: 'agentNode', data: { isStartNode: false } };
 
       const isValidAgentConnection = (source: any, target: any, targetHandle?: string) => {
         if (!source || !target) return false;
         if (source.id === target.id) return false;
         if (target.type !== 'agentNode') return false;
         if (source.type !== 'agentNode') return false;
-        const validInHandles = ['input', 'input_left', 'input_right'];
+        const isRoot = target.data?.isStartNode;
+        const validInHandles = isRoot ? ['input', 'input_left'] : ['input'];
         if (targetHandle && !validInHandles.includes(targetHandle)) return false;
         return true;
       };
 
-      // Valid: Out -> In (Top, Left, Right)
-      assert.equal(isValidAgentConnection(sourceAgent, targetAgent, 'input'), true);
-      assert.equal(isValidAgentConnection(sourceAgent, targetAgent, 'input_left'), true);
-      assert.equal(isValidAgentConnection(sourceAgent, targetAgent, 'input_right'), true);
+      // Valid: Out -> In (Top for child agent, Top & Left for root agent)
+      assert.equal(isValidAgentConnection(sourceAgent, rootTargetAgent, 'input'), true);
+      assert.equal(isValidAgentConnection(sourceAgent, rootTargetAgent, 'input_left'), true);
+      assert.equal(isValidAgentConnection(sourceAgent, childTargetAgent, 'input'), true);
+
+      // Invalid: Left handle on non-root child agent
+      assert.equal(isValidAgentConnection(sourceAgent, childTargetAgent, 'input_left'), false);
+
+      // Invalid: Right handle on any agent
+      assert.equal(isValidAgentConnection(sourceAgent, rootTargetAgent, 'input_right'), false);
+      assert.equal(isValidAgentConnection(sourceAgent, childTargetAgent, 'input_right'), false);
 
       // Invalid: Agent to self
       assert.equal(isValidAgentConnection(sourceAgent, sourceAgent, 'input'), false);
 
       // Invalid: Agent to unknown target handle
-      assert.equal(isValidAgentConnection(sourceAgent, targetAgent, 'invalid_handle'), false);
+      assert.equal(isValidAgentConnection(sourceAgent, rootTargetAgent, 'invalid_handle'), false);
     });
 
     it('should route backward feedback loop edges around node boundaries', () => {

@@ -11,7 +11,8 @@
  *   the DOM so the node can only maintain a single active connection to 1 root agent.
  *   If the connection is deleted, both handles are automatically restored.
  * - Handles: Provides right (horizontal) and bottom (vertical) output handles for flexible routing.
- * - Handles are styled uniformly in blue (!bg-blue-500) per visual guidelines.
+ * - Triggers Connect Orange to Orange: Handles are styled in the triggers orange/amber palette
+ *   (!bg-amber-500 ring-2 ring-amber-400/50) to visually match the Root agent's orange entry handles.
  */
 
 import React, { memo } from 'react';
@@ -281,12 +282,8 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
           position={Position.Right}
           id="trigger_out_right"
           isConnectable={true}
-          className={`!w-3.5 !h-3.5 !-right-1.5 border-2 border-[#0d1117] transition-transform hover:scale-125 z-20 cursor-crosshair ${
-            isTester
-              ? '!bg-yellow-500 ring-2 ring-yellow-400/50'
-              : '!bg-blue-500 ring-2 ring-blue-400/50'
-          }`}
-          title="Trigger Output (Connects to Root Agent In Handle)"
+          className="!w-3.5 !h-3.5 !-right-1.5 border-2 border-[#0d1117] transition-transform hover:scale-125 z-20 cursor-crosshair !bg-amber-500 ring-2 ring-amber-400/50"
+          title="Trigger Output (Connects to Root Agent Left In Handle)"
         />
       )}
 
@@ -297,12 +294,8 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
           position={Position.Bottom}
           id="trigger_out_bottom"
           isConnectable={true}
-          className={`!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-transform hover:scale-125 z-20 cursor-crosshair ${
-            isTester
-              ? '!bg-yellow-500 ring-2 ring-yellow-400/50'
-              : '!bg-blue-500 ring-2 ring-blue-400/50'
-          }`}
-          title="Trigger Inbound Output (Connects directly to Root Agent In Handle)"
+          className="!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-transform hover:scale-125 z-20 cursor-crosshair !bg-amber-500 ring-2 ring-amber-400/50"
+          title="Trigger Inbound Output (Connects directly to Root Agent Top In Handle)"
         />
       )}
     </div>

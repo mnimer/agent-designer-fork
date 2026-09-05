@@ -308,15 +308,19 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
         type="target"
         position={Position.Top}
         id="input"
-        className="!bg-blue-500 !w-3.5 !h-3.5 !-top-1.5 border-2 border-[#0d1117]"
+        className={`!w-3.5 !h-3.5 !-top-1.5 border-2 border-[#0d1117] ${
+          data.isStartNode
+            ? '!bg-amber-500 ring-2 ring-amber-400/50'
+            : '!bg-blue-500'
+        }`}
       />
-      {/* Target Connection Handle (Left) - ONLY rendered on Root Node for Test Suite connection */}
+      {/* Target Connection Handle (Left) - ONLY rendered on Root Node (Triggers connect Orange to Orange) */}
       {data.isStartNode && (
         <Handle
           type="target"
           position={Position.Left}
           id="input_left"
-          className="!bg-blue-500 !w-3 !h-3 !-left-1.5 border-2 border-[#0d1117]"
+          className="!bg-amber-500 ring-2 ring-amber-400/50 !w-3.5 !h-3.5 !-left-1.5 border-2 border-[#0d1117]"
         />
       )}
 

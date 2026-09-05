@@ -7,10 +7,12 @@
  * 
  * Architectural Decisions:
  * - Author: Mike Nimer <mikenimer@google.com>
- * - In/Out Connection Model: Agents accept incoming connections on "In" handles (Top, Left, Right)
- *   and send outgoing flows from "Out" handles (Bottom: sequential, subagent, router branches).
- * - Uniform Blue Palette: All standard Agent In and Out handles use blue (!bg-blue-500).
- * - Clear Typography Badges: Mini 'In' and 'Out' mono badges for effortless workflow wiring.
+ * - Clean Handle Architecture: In/out floating labels removed for a streamlined canvas visual design.
+ * - Triggers Connect Orange to Orange: The Root agent (`isStartNode: true`) features Top (`input`)
+ *   and Left (`input_left`) handles styled in the triggers orange/amber palette (!bg-amber-500 ring-2 ring-amber-400/50).
+ * - Non-root Agent Nodes: Feature only a Top (`input`) handle in blue (!bg-blue-500).
+ * - Right and Left handles are removed on all non-root agent nodes.
+ * - Outgoing Flows: Bottom handles (main output, subagent, router branches) connect to child agents.
  */
 
 import React, { memo, useState } from 'react';
@@ -315,38 +317,25 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
         type="target"
         position={Position.Top}
         id="input"
-        className="!bg-blue-500 !w-3.5 !h-3.5 !-top-1.5 border-2 border-[#0d1117] hover:scale-125 transition-transform z-20 cursor-crosshair"
-        title="Top In Connector (Target)"
+        className={`!w-3.5 !h-3.5 !-top-1.5 border-2 border-[#0d1117] hover:scale-125 transition-transform z-20 cursor-crosshair ${
+          data.isStartNode
+            ? '!bg-amber-500 ring-2 ring-amber-400/50'
+            : '!bg-blue-500'
+        }`}
+        title={data.isStartNode ? 'Root Agent Inbound (Top Handle - Triggers)' : 'Agent Input (Top Handle)'}
       />
-      <span className="absolute -top-[28px] left-1/2 -translate-x-1/2 text-[9px] font-mono font-bold text-blue-300 bg-[#0d1117] px-1.5 py-0.5 rounded border border-blue-500/40 pointer-events-none select-none z-10 shadow-sm whitespace-nowrap">
-        In
-      </span>
 
-      {/* Target Connection Handle (Left - In) */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        id="input_left"
-        style={{ top: '50%' }}
-        className="!bg-blue-500 !w-3.5 !h-3.5 !-left-1.5 border-2 border-[#0d1117] hover:scale-125 transition-transform z-20 cursor-crosshair"
-        title="Left In Connector (Target)"
-      />
-      <span className="absolute -left-[36px] top-1/2 -translate-y-1/2 text-[9px] font-mono font-bold text-blue-300 bg-[#0d1117] px-1.5 py-0.5 rounded border border-blue-500/40 pointer-events-none select-none z-10 shadow-sm whitespace-nowrap">
-        In
-      </span>
-
-      {/* Target Connection Handle (Right - In) */}
-      <Handle
-        type="target"
-        position={Position.Right}
-        id="input_right"
-        style={{ top: '50%' }}
-        className="!bg-blue-500 !w-3.5 !h-3.5 !-right-1.5 border-2 border-[#0d1117] hover:scale-125 transition-transform z-20 cursor-crosshair"
-        title="Right In Connector (Target)"
-      />
-      <span className="absolute -right-[36px] top-1/2 -translate-y-1/2 text-[9px] font-mono font-bold text-blue-300 bg-[#0d1117] px-1.5 py-0.5 rounded border border-blue-500/40 pointer-events-none select-none z-10 shadow-sm whitespace-nowrap">
-        In
-      </span>
+      {/* Target Connection Handle (Left - In) - Root Agent Only (Triggers connect Orange to Orange) */}
+      {data.isStartNode && (
+        <Handle
+          type="target"
+          position={Position.Left}
+          id="input_left"
+          style={{ top: '50%' }}
+          className="!bg-amber-500 ring-2 ring-amber-400/50 !w-3.5 !h-3.5 !-left-1.5 border-2 border-[#0d1117] hover:scale-125 transition-transform z-20 cursor-crosshair"
+          title="Root Agent Inbound (Left Handle - Triggers)"
+        />
+      )}
 
       {/* Node Header */}
       <div className={`flex items-center justify-between px-3.5 py-2.5 rounded-t-xl border-b ${theme.header}`}>
@@ -814,12 +803,6 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                   branch.targetAgentId ? ' (Connected)' : ' → Drag to connect target agent'
                 }`}
               />
-              <span
-                style={{ left: `${leftPercent}%` }}
-                className="absolute -bottom-[28px] -translate-x-1/2 text-[9px] font-mono font-bold text-blue-300 bg-[#0d1117] px-1.5 py-0.5 rounded border border-blue-500/40 pointer-events-none select-none z-10 shadow-sm whitespace-nowrap"
-              >
-                Out
-              </span>
             </React.Fragment>
           );
         })
@@ -832,7 +815,7 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
             id="output"
             style={{ left: '50%' }}
             className="!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] !bg-blue-500 hover:scale-125 transition-transform z-20 cursor-crosshair"
-            title="Agent Output (Out)"
+            title="Agent Output"
           />
           {/* Fallback Subagent Handle (Stacked transparently for backward compatibility) */}
           <Handle
@@ -843,9 +826,6 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
             className="!w-3.5 !h-3.5 !-bottom-1.5"
             title="Subagent Handle"
           />
-          <span className="absolute -bottom-[28px] left-1/2 -translate-x-1/2 text-[9px] font-mono font-bold text-blue-300 bg-[#0d1117] px-1.5 py-0.5 rounded border border-blue-500/40 pointer-events-none select-none z-10 shadow-sm whitespace-nowrap">
-            Out
-          </span>
         </>
       )}
     </div>

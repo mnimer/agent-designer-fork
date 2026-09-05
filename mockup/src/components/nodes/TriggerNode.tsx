@@ -237,7 +237,7 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
           type="source"
           position={Position.Right}
           id="trigger_out_right"
-          className="!w-3.5 !h-3.5 !-right-1.5 border-2 border-[#0d1117] transition-transform hover:scale-125 !bg-pink-500 ring-2 ring-pink-400/60"
+          className="!w-3.5 !h-3.5 !-right-1.5 border-2 border-[#0d1117] transition-transform hover:scale-125 !bg-amber-500 ring-2 ring-amber-400/50"
           title="Test Suite QA Inbound (Connects to Root Agent Left Handle)"
         />
       )}
@@ -247,11 +247,7 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
         type="source"
         position={Position.Bottom}
         id="trigger_out_bottom"
-        className={`!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-transform hover:scale-125 ${
-          isTester 
-            ? '!bg-pink-500/80 ring-2 ring-pink-400/40' 
-            : '!bg-amber-400 ring-2 ring-amber-400/50'
-        }`}
+        className="!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-transform hover:scale-125 !bg-amber-500 ring-2 ring-amber-400/50"
         title="Trigger Inbound Output (Connects directly to Root Agent Top Handle)"
       />
     </div>
