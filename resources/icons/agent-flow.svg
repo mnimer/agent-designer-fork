@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Root Coordinator Node -->
+  <circle cx="12" cy="5.5" r="3" />
+  <!-- Left Sub-Agent Node -->
+  <circle cx="5.5" cy="18.5" r="3" />
+  <!-- Right Sub-Agent Node -->
+  <circle cx="18.5" cy="18.5" r="3" />
+  <!-- Multi-Agent Flow Edges -->
+  <path d="M12 8.5v3.5m0 0l-6.5 3.5m6.5-3.5l6.5 3.5" />
+  <!-- Central Pulse Indicator -->
+  <circle cx="12" cy="12" r="1" fill="currentColor" />
+</svg>

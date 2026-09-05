@@ -289,6 +289,24 @@ if __name__ == '__main__':
   }
 
   /**
+   * Returns active local runner sessions with their IDs, process IDs, ports, and lifecycle states.
+   *
+   * @returns Array of active runner descriptors
+   */
+  public getActiveRunners(): Array<{ id: string; pid?: number; port?: number; status: string }> {
+    const runners: Array<{ id: string; pid?: number; port?: number; status: string }> = [];
+    for (const [id, proc] of this.activeLocalRunners.entries()) {
+      runners.push({
+        id,
+        pid: proc.pid,
+        port: this.lastRunningPort,
+        status: this.runnerStatus,
+      });
+    }
+    return runners;
+  }
+
+  /**
    * Sends the current runner lifecycle status and logs over the bridge.
    * Probes /health in real-time so that externally started servers are immediately recognized.
    *

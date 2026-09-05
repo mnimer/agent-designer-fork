@@ -97,6 +97,19 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   }
 
   /**
+   * Retrieves all active local runner sessions across active editor providers.
+   *
+   * @returns Array of runner descriptors
+   */
+  public static getAllActiveRunners(): Array<{ id: string; pid?: number; port?: number; status: string }> {
+    const all: Array<{ id: string; pid?: number; port?: number; status: string }> = [];
+    for (const provider of AgentEditorProvider.activeProviders) {
+      all.push(...provider.runnerManager.getActiveRunners());
+    }
+    return all;
+  }
+
+  /**
    * Disposes this provider and terminates its runner manager processes.
    */
   public dispose(): void {
