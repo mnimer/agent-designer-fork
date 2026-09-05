@@ -8,6 +8,7 @@ dist/
 out
 out/
 *.tsbuildinfo
+*.vsix
 
 # Logs & scratch
 *.log
