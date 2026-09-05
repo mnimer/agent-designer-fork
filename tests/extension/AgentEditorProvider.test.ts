@@ -42,9 +42,10 @@ describe('AgentEditorProvider', { concurrency: 1 }, () => {
     assert.ok(triggerNode);
     assert.ok(agentNode);
     assert.equal((agentNode?.data as any).agentKind, 'standard');
-    assert.equal((agentNode?.data as any).standardConfig.tools.length, 1);
-    assert.equal((agentNode?.data as any).standardConfig.tools[0].id, 'tool-google-search');
+    assert.equal((agentNode?.data as any).standardConfig.tools.length, 0);
     assert.equal(workflow.edges.length, 1);
+    assert.equal(workflow.edges[0].sourceHandle, 'trigger_out_right');
+    assert.equal(workflow.edges[0].targetHandle, 'input_left');
   });
 
   it('should generate valid HTML for webview with CSP, nonce, and bootstrap script', () => {

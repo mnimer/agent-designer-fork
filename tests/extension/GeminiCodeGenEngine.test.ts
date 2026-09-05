@@ -189,4 +189,44 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
     assert.equal(result.passed, true);
     assert.ok(result.reason);
   });
+
+  it('should enforce proper structured output schema with semantic field descriptions', () => {
+    const schema = (engine as any).fileArraySchema;
+    assert.equal(schema.type, 'ARRAY');
+    assert.ok(schema.description && schema.description.length > 0);
+    assert.equal(schema.items.type, 'OBJECT');
+    assert.deepEqual(schema.items.required, ['path', 'description', 'content']);
+    assert.equal(schema.items.properties.path.type, 'STRING');
+    assert.ok(schema.items.properties.path.description.includes('Relative file path'));
+    assert.equal(schema.items.properties.description.type, 'STRING');
+    assert.ok(schema.items.properties.description.description.includes('description'));
+    assert.equal(schema.items.properties.content.type, 'STRING');
+    assert.ok(schema.items.properties.content.description.includes('Complete, production-ready'));
+  });
+
+  it('should include workflow JSON when generating code with self-contained prompt template', async () => {
+    let capturedPrompt = '';
+    // Temporarily spy on callGeminiApi to verify prompt passed to LLM
+    const originalCall = (engine as any).callGeminiApi;
+    (engine as any).callGeminiApi = async (prompt: string) => {
+      capturedPrompt = prompt;
+      return [{ path: 'agent.py', description: 'Test', content: 'print("ok")' }];
+    };
+
+    try {
+      const result = await engine.generateCode({
+        document: sampleDoc,
+        framework: 'google-adk',
+        language: 'python',
+        deploymentTarget: 'agent-engine',
+        apiKey: 'test-key',
+      });
+
+      assert.equal(result.success, true);
+      assert.ok(capturedPrompt.includes('CustomerSupportWorkflow'), 'Must interpolate workflow JSON');
+      assert.ok(capturedPrompt.includes('Google ADK') || capturedPrompt.includes('google-adk'), 'Must contain ADK framework instructions');
+    } finally {
+      (engine as any).callGeminiApi = originalCall;
+    }
+  });
 });

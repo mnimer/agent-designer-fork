@@ -40,11 +40,13 @@ import {
   Server,
   Plug,
   TerminalSquare,
-  Globe2
+  Globe2,
+  History
 } from 'lucide-react';
 import { PATTERN_DEFINITIONS } from '../../data/patterns';
 import { TRIGGER_CATALOG, TriggerCatalogItem } from '../../data/triggerDefinitions';
 import { SAMPLES_CATALOG } from '../../data/sampleWorkflows';
+import { categorizeTools } from '../../data/builtinTools';
 import { PatternType, AgentKind, ToolDefinition, AgentData, TriggerType, SampleWorkflowDefinition } from '../../types';
 
 interface PaletteCardProps {
@@ -113,8 +115,26 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const getToolIcon = (type: ToolDefinition['type']) => {
-    switch (type) {
+  const getToolIcon = (tool: ToolDefinition) => {
+    if (tool.builtinType === 'google_search' || tool.id === 'builtin_google_search') {
+      return <Globe className="w-3.5 h-3.5 text-sky-400" />;
+    }
+    if (tool.builtinType === 'vertex_ai_search' || tool.id === 'builtin_vertex_ai_search') {
+      return <Database className="w-3.5 h-3.5 text-amber-400" />;
+    }
+    if (tool.builtinType === 'load_web_page' || tool.id === 'builtin_load_web_page') {
+      return <FileText className="w-3.5 h-3.5 text-sky-400" />;
+    }
+    if (tool.builtinType === 'request_input' || tool.id === 'builtin_request_input') {
+      return <HelpCircle className="w-3.5 h-3.5 text-rose-400" />;
+    }
+    if (tool.builtinType === 'preload_memory' || tool.id === 'builtin_preload_memory') {
+      return <History className="w-3.5 h-3.5 text-purple-400" />;
+    }
+    if (tool.builtinType === 'agent_as_tool' || tool.id === 'builtin_agent_as_tool') {
+      return <Bot className="w-3.5 h-3.5 text-indigo-400" />;
+    }
+    switch (tool.type) {
       case 'mcp':
         return <Server className="w-3.5 h-3.5 text-purple-400" />;
       case 'search':
@@ -390,41 +410,201 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
 
       {/* TAB 2: TOOLS CATALOG */}
       {activeTab === 'tools' && (
-        <div className="p-3 space-y-3 overflow-y-auto flex-1">
+        <div className="p-4 space-y-4 overflow-y-auto flex-1">
           {/* Header & Quick Action Buttons */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-purple-300 uppercase tracking-wide flex items-center gap-1">
+              <span className="text-[11px] font-semibold text-purple-300 uppercase tracking-wide flex items-center gap-1.5">
                 <Wrench className="w-3.5 h-3.5 text-purple-400" />
-                <span>Tool Registry (0)</span>
+                <span>Tool Registry ({tools.length})</span>
               </span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  disabled
-                  className="flex items-center gap-1 px-2 py-0.5 rounded bg-purple-500/10 text-purple-400/50 border border-purple-500/20 text-[10px] font-bold cursor-not-allowed opacity-50"
-                  title="Disabled in current release"
+                  onClick={onCreateMcpTool || onCreateCustomTool}
+                  className="flex items-center gap-1 px-2 py-1 rounded bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border border-purple-500/40 text-[10px] font-bold cursor-pointer transition-colors"
+                  title="Register new MCP server tool"
                 >
-                  <Plug className="w-3 h-3 text-purple-400/40" />
-                  <span>+ MCP Server</span>
+                  <Plug className="w-3 h-3 text-purple-400" />
+                  <span>+ MCP</span>
                 </button>
                 <button
                   type="button"
-                  disabled
-                  className="flex items-center gap-1 px-2 py-0.5 rounded bg-green-500/10 text-green-400/50 border border-green-500/20 text-[10px] font-bold cursor-not-allowed opacity-50"
-                  title="Disabled in current release"
+                  onClick={onCreateCustomTool}
+                  className="flex items-center gap-1 px-2 py-1 rounded bg-green-500/20 text-green-300 hover:bg-green-500/30 border border-green-500/40 text-[10px] font-bold cursor-pointer transition-colors"
+                  title="Create custom function or API tool"
                 >
                   <Plus className="w-3 h-3" />
-                  <span>+ API Tool</span>
+                  <span>+ Tool</span>
                 </button>
               </div>
             </div>
+
+            {/* Tool Search Bar */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-gray-500 absolute left-2.5 top-2" />
+              <input
+                type="text"
+                value={toolSearch}
+                onChange={(e) => setToolSearch(e.target.value)}
+                placeholder="Search tools & datastores..."
+                className="w-full pl-8 pr-6 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-purple-500 rounded-md text-[11px] text-gray-200 placeholder-gray-500 focus:outline-none"
+              />
+              {toolSearch && (
+                <button
+                  type="button"
+                  onClick={() => setToolSearch('')}
+                  className="absolute right-2 top-2 text-gray-400 hover:text-gray-200 text-xs cursor-pointer"
+                >
+                  ×
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Tools List Empty */}
-          <div className="text-center py-6 text-gray-500 text-xs italic bg-[#0d1117] rounded-lg border border-dashed border-[#30363d]">
-            No tools registered in this release.
-          </div>
+          {/* Categorized Tool Sections */}
+          {(() => {
+            // NOTE: Filter tools by name, description, category, or builtin type
+            const filtered = tools.filter((t) => {
+              if (!toolSearch.trim()) return true;
+              const q = toolSearch.toLowerCase();
+              return (
+                t.name.toLowerCase().includes(q) ||
+                t.description.toLowerCase().includes(q) ||
+                (t.category && t.category.toLowerCase().includes(q)) ||
+                (t.builtinType && t.builtinType.toLowerCase().includes(q))
+              );
+            });
+            const categorized = categorizeTools(filtered);
+
+            const categorySections = [
+              {
+                id: 'grounding',
+                title: 'Built-in Grounding',
+                subtitle: 'Live Web & Document Grounding',
+                icon: <Globe className="w-3.5 h-3.5 text-sky-400" />,
+                tools: categorized.grounding,
+                badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
+              },
+              {
+                id: 'enterprise_search',
+                title: 'Enterprise Search',
+                subtitle: 'Vertex AI Search & Knowledge Corpora',
+                icon: <Database className="w-3.5 h-3.5 text-amber-400" />,
+                tools: categorized.enterprise_search,
+                badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+              },
+              {
+                id: 'system',
+                title: 'System Tools',
+                subtitle: 'Execution, Memory, Interruption & Sub-Agents',
+                icon: <Terminal className="w-3.5 h-3.5 text-emerald-400" />,
+                tools: categorized.system,
+                badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+              },
+              {
+                id: 'custom',
+                title: 'Custom & Community Tools',
+                subtitle: 'MCP Servers, REST APIs & Custom Code',
+                icon: <Wrench className="w-3.5 h-3.5 text-purple-400" />,
+                tools: categorized.custom,
+                badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+              },
+            ];
+
+            const totalMatches = filtered.length;
+
+            if (totalMatches === 0) {
+              return (
+                <div className="text-center py-8 text-gray-500 text-xs italic bg-[#0d1117] rounded-lg border border-dashed border-[#30363d]">
+                  No tools found matching &quot;{toolSearch}&quot;.
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-4">
+                {categorySections.map((section) => {
+                  if (section.tools.length === 0) return null;
+
+                  return (
+                    <div key={section.id} className="space-y-2">
+                      <div className="flex items-center justify-between pb-1 border-b border-[#30363d]/60">
+                        <div className="flex items-center gap-1.5">
+                          {section.icon}
+                          <span className="text-[11px] font-bold text-gray-300 tracking-tight">
+                            {section.title}
+                          </span>
+                        </div>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono font-bold ${section.badgeColor}`}>
+                          {section.tools.length}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        {section.tools.map((t) => {
+                          const isAttached = selectedAgent?.tools?.some((at) => at.id === t.id);
+
+                          return (
+                            <div
+                              key={t.id}
+                              draggable
+                              onDragStart={(e) => handleDragStartTool(e, t)}
+                              className="group relative flex items-start gap-2 p-2 bg-[#0d1117] hover:bg-[#161b22] border border-[#30363d] hover:border-purple-500/50 rounded-lg transition-all cursor-grab active:cursor-grabbing shadow-xs"
+                            >
+                              <div className="mt-0.5 text-gray-500 group-hover:text-gray-300">
+                                <GripVertical className="w-3 h-3" />
+                              </div>
+
+                              <div className="p-1 rounded bg-[#161b22] border border-[#30363d] shrink-0 mt-0.5">
+                                {getToolIcon(t)}
+                              </div>
+
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-[11px] font-bold text-gray-200 group-hover:text-white truncate">
+                                    {t.name}
+                                  </span>
+                                  {isAttached && (
+                                    <span className="text-[8px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold shrink-0">
+                                      Attached
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-gray-400 line-clamp-2 leading-tight mt-0.5">
+                                  {t.description}
+                                </p>
+                              </div>
+
+                              {/* Hover / Quick Actions */}
+                              <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenEditTool(t)}
+                                  className="p-1 rounded text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"
+                                  title="Configure tool properties"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => onAddToolToAgent(t)}
+                                  className="p-1 rounded text-purple-400 hover:text-purple-200 hover:bg-purple-900/40 transition-colors cursor-pointer"
+                                  title="Add to selected Agent"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 

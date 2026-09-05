@@ -28,14 +28,20 @@ export function createSpy(implementation?: Function) {
 export function resetAllMocks() {
   window.onDidChangeActiveColorTheme.calls = [];
   window.registerCustomEditorProvider.calls = [];
+  window.registerTreeDataProvider.calls = [];
   window.createOutputChannel.calls = [];
   window.showInformationMessage.calls = [];
+  window.showWarningMessage.calls = [];
   window.showErrorMessage.calls = [];
+  window.showInputBox.calls = [];
+  window.showSaveDialog.calls = [];
   workspace.applyEdit.calls = [];
   workspace.asRelativePath.calls = [];
   workspace.openTextDocument.calls = [];
   workspace.onDidChangeTextDocument.calls = [];
   workspace.getConfiguration.calls = [];
+  workspace.findFiles.calls = [];
+  workspace.createFileSystemWatcher.calls = [];
   workspace.fs.stat.calls = [];
   workspace.fs.createDirectory.calls = [];
   workspace.fs.writeFile.calls = [];
@@ -53,12 +59,28 @@ export enum ColorThemeKind {
   HighContrastLight = 4,
 }
 
+export enum TreeItemCollapsibleState {
+  None = 0,
+  Collapsed = 1,
+  Expanded = 2,
+}
+
+export enum FileType {
+  Unknown = 0,
+  File = 1,
+  Directory = 2,
+  SymbolicLink = 64,
+}
+
 export const window = {
   activeColorTheme: { kind: ColorThemeKind.Dark },
   onDidChangeActiveColorTheme: createSpy((callback: Function) => ({
     dispose: createSpy(),
   })),
   registerCustomEditorProvider: createSpy((viewType: string, provider: any, options: any) => ({
+    dispose: createSpy(),
+  })),
+  registerTreeDataProvider: createSpy((viewId: string, treeDataProvider: any) => ({
     dispose: createSpy(),
   })),
   createOutputChannel: createSpy((name: string) => ({
@@ -70,7 +92,10 @@ export const window = {
     dispose: createSpy(),
   })),
   showInformationMessage: createSpy(),
+  showWarningMessage: createSpy(async (...args: any[]) => args[args.length - 1]),
   showErrorMessage: createSpy(),
+  showInputBox: createSpy(async (options?: any) => options?.value || 'new_agent_workflow'),
+  showSaveDialog: createSpy(async (options?: any) => options?.defaultUri || Uri.file('/mock/workspace/new_agent_workflow.agent')),
 };
 
 export const workspace = {
@@ -100,6 +125,13 @@ export const workspace = {
   getConfiguration: createSpy((section?: string) => ({
     get: createSpy((key: string, defaultValue?: any) => defaultValue || ''),
   })),
+  findFiles: createSpy(async (include: any, exclude: any) => []),
+  createFileSystemWatcher: createSpy((pattern: any) => ({
+    onDidCreate: createSpy((cb: Function) => ({ dispose: createSpy() })),
+    onDidChange: createSpy((cb: Function) => ({ dispose: createSpy() })),
+    onDidDelete: createSpy((cb: Function) => ({ dispose: createSpy() })),
+    dispose: createSpy(),
+  })),
   fs: {
     stat: createSpy(async () => {
       throw new Error('File not found');
@@ -121,20 +153,31 @@ export const commands = {
 
 export class Uri {
   public fsPath: string;
-  constructor(fsPath: string) {
+  public path: string;
+  public scheme: string;
+  constructor(fsPath: string, scheme: string = 'file') {
     this.fsPath = fsPath;
+    this.path = fsPath;
+    this.scheme = scheme;
   }
   public static file(path: string): Uri {
-    return new Uri(path);
+    return new Uri(path, 'file');
   }
   public static parse(uriString: string): Uri {
-    return new Uri(uriString.replace('file://', ''));
+    const match = uriString.match(/^([a-z0-9+.-]+):\/\/(.*)$/);
+    const scheme = match ? match[1] : 'file';
+    const p = match ? match[2] : uriString;
+    return new Uri(p.startsWith('/') ? p : '/' + p, scheme);
   }
   public static joinPath(base: Uri, ...paths: string[]): Uri {
-    return new Uri([base.fsPath, ...paths].join('/'));
+    if (!base || (!base.fsPath && !(base as any).path)) {
+      throw new Error('[UriError]: cannot call joinPath on URI without path: ' + String(base));
+    }
+    const basePath = base.fsPath || (base as any).path;
+    return new Uri([basePath.replace(/\/+$/, ''), ...paths.map((p) => p.replace(/^\/+/, ''))].join('/'));
   }
   public toString(): string {
-    return `file://${this.fsPath}`;
+    return `${this.scheme}://${this.fsPath}`;
   }
 }
 
@@ -160,5 +203,101 @@ export class WorkspaceEdit {
   public edits: any[] = [];
   public replace(uri: Uri, range: Range, newText: string) {
     this.edits.push({ uri, range, newText });
+  }
+}
+
+export class MarkdownString {
+  public value: string;
+  public isTrusted?: boolean;
+  public supportThemeIcons?: boolean;
+  constructor(value: string = '', isTrusted: boolean = false) {
+    this.value = value;
+    this.isTrusted = isTrusted;
+  }
+  public appendMarkdown(value: string): MarkdownString {
+    this.value += value;
+    return this;
+  }
+  public appendText(value: string): MarkdownString {
+    this.value += value;
+    return this;
+  }
+  public appendCodeblock(value: string, language?: string): MarkdownString {
+    this.value += `\n\`\`\`${language || ''}\n${value}\n\`\`\`\n`;
+    return this;
+  }
+}
+
+export class ThemeColor {
+  public id: string;
+  constructor(id: string) {
+    this.id = id;
+  }
+}
+
+export class ThemeIcon {
+  public id: string;
+  public color?: ThemeColor;
+  constructor(id: string, color?: ThemeColor) {
+    this.id = id;
+    this.color = color;
+  }
+}
+
+export class TreeItem {
+  public label?: string | { label: string; highlights?: any[] };
+  public collapsibleState?: TreeItemCollapsibleState;
+  public resourceUri?: Uri;
+  public iconPath?: any;
+  public description?: string | boolean;
+  public tooltip?: string;
+  public contextValue?: string;
+  public command?: any;
+
+  constructor(labelOrUri: string | Uri, collapsibleState?: TreeItemCollapsibleState) {
+    if (typeof labelOrUri === 'string') {
+      this.label = labelOrUri;
+    } else if (labelOrUri instanceof Uri || (labelOrUri && 'fsPath' in labelOrUri)) {
+      this.resourceUri = labelOrUri;
+    }
+    this.collapsibleState = collapsibleState ?? TreeItemCollapsibleState.None;
+  }
+}
+
+export class EventEmitter<T = any> {
+  private listeners: Array<(e: T) => any> = [];
+  public event = (listener: (e: T) => any) => {
+    this.listeners.push(listener);
+    return {
+      dispose: () => {
+        const idx = this.listeners.indexOf(listener);
+        if (idx >= 0) this.listeners.splice(idx, 1);
+      },
+    };
+  };
+  public fire(data?: T): void {
+    for (const listener of [...this.listeners]) {
+      listener(data as T);
+    }
+  }
+  public dispose(): void {
+    this.listeners = [];
+  }
+}
+
+export class Disposable {
+  private callOnDispose: Function;
+  constructor(callOnDispose: Function) {
+    this.callOnDispose = callOnDispose;
+  }
+  public dispose(): any {
+    return this.callOnDispose?.();
+  }
+  public static from(...disposables: { dispose(): any }[]): Disposable {
+    return new Disposable(() => {
+      for (const d of disposables) {
+        d.dispose?.();
+      }
+    });
   }
 }

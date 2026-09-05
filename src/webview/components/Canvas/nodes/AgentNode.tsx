@@ -55,7 +55,15 @@ import {
   Scale,
   Braces
 } from 'lucide-react';
-import { AgentData, ToolDefinition, DelegationPattern, SubAgentRef, AgentMemoryConfig, AgentMemoryType } from '../../../types';
+import { 
+  AgentData, 
+  ToolDefinition, 
+  DelegationPattern, 
+  SubAgentRef, 
+  AgentMemoryConfig, 
+  AgentMemoryType,
+  ADK_DELEGATION_PATTERNS 
+} from '../../../types';
 import { getMemoryOption } from '../../../data/memoryOptions';
 
 const getMemoryIcon = (type?: AgentMemoryType) => {
@@ -133,20 +141,10 @@ const getToolIcon = (type: ToolDefinition['type']) => {
   }
 };
 
-const getThemeStyles = (theme?: string, isA2A?: boolean, isRouter?: boolean) => {
+const getThemeStyles = (colorTheme?: string, isA2A?: boolean, isRouter?: boolean) => {
   if (isRouter) {
     return {
-      border: 'border-purple-500/60 hover:border-purple-400 shadow-purple-950/40',
-      header: 'bg-[#161b22] text-purple-300 border-[#30363d]',
-      badge: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-      accent: 'text-purple-400',
-      dot: 'bg-purple-500',
-    };
-  }
-
-  if (isA2A) {
-    return {
-      border: 'border-cyan-500/60 hover:border-cyan-400 shadow-cyan-950/40',
+      border: 'border-cyan-500/50 hover:border-cyan-400 shadow-cyan-950/30',
       header: 'bg-[#161b22] text-cyan-300 border-[#30363d]',
       badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
       accent: 'text-cyan-400',
@@ -154,15 +152,17 @@ const getThemeStyles = (theme?: string, isA2A?: boolean, isRouter?: boolean) => 
     };
   }
 
-  switch (theme) {
-    case 'emerald':
-      return {
-        border: 'border-emerald-500/50 hover:border-emerald-400 shadow-emerald-950/30',
-        header: 'bg-[#161b22] text-emerald-300 border-[#30363d]',
-        badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
-        accent: 'text-emerald-400',
-        dot: 'bg-emerald-500',
-      };
+  if (isA2A) {
+    return {
+      border: 'border-teal-500/50 hover:border-teal-400 shadow-teal-950/30',
+      header: 'bg-[#161b22] text-teal-300 border-[#30363d]',
+      badge: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
+      accent: 'text-teal-400',
+      dot: 'bg-teal-500',
+    };
+  }
+
+  switch (colorTheme) {
     case 'purple':
       return {
         border: 'border-purple-500/50 hover:border-purple-400 shadow-purple-950/30',
@@ -170,6 +170,14 @@ const getThemeStyles = (theme?: string, isA2A?: boolean, isRouter?: boolean) => 
         badge: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
         accent: 'text-purple-400',
         dot: 'bg-purple-500',
+      };
+    case 'green':
+      return {
+        border: 'border-emerald-500/50 hover:border-emerald-400 shadow-emerald-950/30',
+        header: 'bg-[#161b22] text-emerald-300 border-[#30363d]',
+        badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+        accent: 'text-emerald-400',
+        dot: 'bg-emerald-500',
       };
     case 'amber':
       return {
@@ -179,14 +187,6 @@ const getThemeStyles = (theme?: string, isA2A?: boolean, isRouter?: boolean) => 
         accent: 'text-amber-400',
         dot: 'bg-amber-500',
       };
-    case 'cyan':
-      return {
-        border: 'border-cyan-500/50 hover:border-cyan-400 shadow-cyan-950/30',
-        header: 'bg-[#161b22] text-cyan-300 border-[#30363d]',
-        badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
-        accent: 'text-cyan-400',
-        dot: 'bg-cyan-500',
-      };
     case 'rose':
       return {
         border: 'border-rose-500/50 hover:border-rose-400 shadow-rose-950/30',
@@ -195,6 +195,7 @@ const getThemeStyles = (theme?: string, isA2A?: boolean, isRouter?: boolean) => 
         accent: 'text-rose-400',
         dot: 'bg-rose-500',
       };
+    case 'blue':
     default:
       return {
         border: 'border-blue-500/50 hover:border-blue-400 shadow-blue-950/30',
@@ -206,16 +207,7 @@ const getThemeStyles = (theme?: string, isA2A?: boolean, isRouter?: boolean) => 
   }
 };
 
-const PATTERN_OPTIONS: { id: DelegationPattern; label: string }[] = [
-  { id: 'sequential', label: 'Sequential' },
-  { id: 'parallel', label: 'Parallel' },
-  { id: 'router', label: 'Router' },
-  { id: 'loop', label: 'Loop' },
-  { id: 'review_critique', label: 'Review & Critique' },
-  { id: 'iterative_refinement', label: 'Iterative Refinement' },
-  { id: 'coordinator', label: 'Coordinator' },
-  { id: 'hierarchical_decomposition', label: 'Hierarchical' },
-];
+const PATTERN_OPTIONS = ADK_DELEGATION_PATTERNS;
 
 export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: AgentData }) => {
   const isA2A = data.agentKind === 'a2a';
@@ -688,37 +680,60 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
               </div>
             </div>
 
-            {/* Sub-Agents Section with Pattern Dropdown Above the Orderable List */}
-            <div className="space-y-2 pt-1 border-t border-[#30363d]">
-              {/* Header & Pattern Dropdown above the sub-agent list */}
-              <div className="flex items-center justify-between gap-1.5">
-                <div className="flex items-center gap-1 text-[10px] font-bold tracking-wider text-gray-400 uppercase shrink-0">
-                  <Users className="w-3 h-3 text-purple-400" />
-                  <span>Sub-Agents ({subAgents.length})</span>
+            {/* Sub-Agents Section with Pattern Dropdown Above the Orderable List (only rendered if child agents are connected) */}
+            {subAgents.length > 0 && (
+              <div className="space-y-2 pt-1 border-t border-[#30363d]">
+                {/* Header & Pattern Dropdown above the sub-agent list */}
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-1 text-[10px] font-bold tracking-wider text-gray-400 uppercase shrink-0">
+                    <Users className="w-3 h-3 text-purple-400" />
+                    <span>Sub-Agents ({subAgents.length})</span>
+                  </div>
+
+                  {/* Pattern Dropdown above the list */}
+                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                    <select
+                      value={currentPattern}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        data.onUpdateSubAgentPattern?.(id, e.target.value as DelegationPattern);
+                      }}
+                      className="text-[10px] bg-[#0d1117] text-purple-300 border border-purple-500/30 rounded px-1.5 py-0.5 focus:outline-none focus:border-purple-400 font-medium cursor-pointer hover:border-purple-500/60"
+                      title="Select delegation pattern for sub-agents"
+                    >
+                      {PATTERN_OPTIONS.map((opt) => (
+                        <option key={opt.id} value={opt.id} className="bg-[#161b22] text-gray-200">
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                {/* Pattern Dropdown above the list */}
-                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                  <select
-                    value={currentPattern}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      data.onUpdateSubAgentPattern?.(id, e.target.value as DelegationPattern);
-                    }}
-                    className="text-[10px] bg-[#0d1117] text-purple-300 border border-purple-500/30 rounded px-1.5 py-0.5 focus:outline-none focus:border-purple-400 font-medium cursor-pointer hover:border-purple-500/60"
-                    title="Select delegation pattern for sub-agents"
+                {/* When Loop pattern is selected, show Max Iterations number input (default 3) */}
+                {currentPattern === 'loop' && (
+                  <div 
+                    className="flex items-center justify-between px-2 py-1 rounded bg-[#0d1117] border border-purple-500/30 text-[10px]"
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    {PATTERN_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id} className="bg-[#161b22] text-gray-200">
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+                    <span className="text-purple-300 font-medium">Max Iterations:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={data.maxIterations ?? 3}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        const val = parseInt(e.target.value, 10);
+                        data.onUpdateMaxIterations?.(id, isNaN(val) ? 3 : Math.max(1, val));
+                      }}
+                      className="w-12 text-center bg-[#161b22] text-purple-200 font-mono font-bold rounded border border-purple-500/40 px-1 py-0.5 focus:outline-none focus:border-purple-400 cursor-text"
+                      title="Maximum number of loop iterations"
+                    />
+                  </div>
+                )}
 
-              {/* Drag & Drop Orderable Sub-Agents List without individual pattern badges */}
-              {subAgents.length > 0 ? (
+                {/* Drag & Drop Orderable Sub-Agents List without individual pattern badges */}
                 <div className="space-y-1">
                   {subAgents.map((sub, idx) => (
                     <div
@@ -766,12 +781,8 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                     </div>
                   ))}
                 </div>
-              ) : (
-                <div className="text-[10px] text-gray-400 italic py-0.5">
-                  Drag from purple handle below to link sub-agents...
-                </div>
-              )}
-            </div>
+              </div>
+            )}
           </>
         )}
       </div>

@@ -12,12 +12,58 @@ export type FrameworkTarget = 'google-adk' | 'langgraph';
 export type LanguageTarget = 'python' | 'typescript';
 export type MemoryType = 'none' | 'buffer' | 'firestore' | 'redis' | 'postgres' | 'sqlite' | 'vector_rag' | 'langgraph_in_memory' | string;
 
+export type ToolCategory = 'grounding' | 'enterprise_search' | 'system' | 'custom' | 'mcp' | 'api' | 'db' | 'code' | 'rag' | 'builtin';
+
+export type AdkBuiltinToolType = 
+  | 'google_search' 
+  | 'vertex_ai_search' 
+  | 'load_web_page' 
+  | 'request_input' 
+  | 'preload_memory' 
+  | 'code_execution' 
+  | 'agent_as_tool';
+
+export interface VertexAiSearchConfig {
+  dataStoreId?: string;
+  location?: string;
+  project?: string;
+  engineId?: string;
+  maxResults?: number;
+}
+
+export interface GoogleSearchConfig {
+  domainFilters?: string[];
+  dynamicThreshold?: number;
+}
+
+export interface RequestInputConfig {
+  prompt?: string;
+  timeoutSeconds?: number;
+}
+
+export interface AgentAsToolConfig {
+  subAgentId?: string;
+  subAgentName?: string;
+  subAgentDescription?: string;
+}
+
 export interface ToolDefinition {
   id: string;
   name: string;
   description: string;
-  type: 'builtin' | 'rest' | 'mcp' | 'code' | 'custom' | 'database' | string;
+  type: 'builtin' | 'rest' | 'mcp' | 'code' | 'custom' | 'database' | 'search' | 'api' | 'db' | 'rag' | string;
+  category?: ToolCategory | string;
+  builtinType?: AdkBuiltinToolType;
   config?: Record<string, unknown>;
+  vertexAiSearchConfig?: VertexAiSearchConfig;
+  googleSearchConfig?: GoogleSearchConfig;
+  requestInputConfig?: RequestInputConfig;
+  agentAsToolConfig?: AgentAsToolConfig;
+  parameters?: Record<string, string>;
+  codePrompt?: string;
+  endpointUrl?: string;
+  authKeyEnv?: string;
+  enabled?: boolean;
 }
 
 export type AgentToolConfig = ToolDefinition;

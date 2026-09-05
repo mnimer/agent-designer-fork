@@ -97,6 +97,19 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   }
 
   /**
+   * Retrieves all active local runner sessions across active editor providers.
+   *
+   * @returns Array of runner descriptors
+   */
+  public static getAllActiveRunners(): Array<{ id: string; pid?: number; port?: number; status: string }> {
+    const all: Array<{ id: string; pid?: number; port?: number; status: string }> = [];
+    for (const provider of AgentEditorProvider.activeProviders) {
+      all.push(...provider.runnerManager.getActiveRunners());
+    }
+    return all;
+  }
+
+  /**
    * Disposes this provider and terminates its runner manager processes.
    */
   public dispose(): void {
@@ -729,7 +742,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           position: { x: 440, y: 160 },
           data: {
             label: 'Primary Assistant',
-            description: 'Core LLM agent with Google Search Grounding',
+            description: 'Core LLM agent',
             agentKind: 'standard',
             standardConfig: {
               model: 'gemini-flash-latest',
@@ -738,14 +751,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
               temperature: 0.7,
               topP: 0.95,
               maxOutputTokens: 2048,
-              tools: [
-                {
-                  id: 'tool-google-search',
-                  name: 'Google Search Grounding',
-                  description: 'Ground responses in live Google Web Search results',
-                  type: 'builtin',
-                },
-              ],
+              tools: [],
               memory: 'none',
             },
           },
@@ -756,6 +762,8 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           id: 'edge-trigger-to-agent',
           source: 'node-trigger-1',
           target: 'node-agent-1',
+          sourceHandle: 'trigger_out_right',
+          targetHandle: 'input_left',
         },
       ],
       viewport: { x: 0, y: 0, zoom: 1 },

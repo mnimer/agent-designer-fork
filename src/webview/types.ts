@@ -4,14 +4,37 @@ export type AgentKind = 'standard' | 'a2a' | 'router';
 export type DelegationPattern = 
   | 'sequential' 
   | 'parallel' 
-  | 'router' 
   | 'loop' 
+  | 'coordinator'
+  // Legacy / fallback patterns for backwards compatibility with existing documents
+  | 'router' 
   | 'debate'
   | 'consensus'
   | 'review_critique' 
   | 'iterative_refinement' 
-  | 'coordinator' 
   | 'hierarchical_decomposition';
+
+export interface DelegationPatternOption {
+  id: DelegationPattern;
+  label: string;
+  desc: string;
+}
+
+/**
+ * Valid Agent Delegation Patterns supported natively by Google ADK.
+ * - Sequential: SequentialAgent
+ * - Parallel: ParallelAgent
+ * - Loop: LoopAgent (with max_iterations)
+ * - Coordinator: Agent with LLM dynamic routing via sub_agents
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
+export const ADK_DELEGATION_PATTERNS: DelegationPatternOption[] = [
+  { id: 'sequential', label: 'Sequential', desc: 'Linear pipeline execution (SequentialAgent)' },
+  { id: 'parallel', label: 'Parallel', desc: 'Concurrent async dispatch (ParallelAgent)' },
+  { id: 'loop', label: 'Loop', desc: 'Iterative execution up to max iterations (LoopAgent)' },
+  { id: 'coordinator', label: 'Coordinator', desc: 'LLM dynamic routing and delegation (Agent with sub_agents)' },
+];
 
 export type TriggerType = 'chat' | 'pubsub' | 'scheduled' | 'tester' | 'eventarc';
 
@@ -80,10 +103,57 @@ export interface McpToolConfig {
   timeoutSeconds?: number;
 }
 
+export type ToolCategory = 
+  | 'grounding' 
+  | 'enterprise_search' 
+  | 'system' 
+  | 'custom' 
+  | 'mcp' 
+  | 'api' 
+  | 'db' 
+  | 'code' 
+  | 'rag' 
+  | 'builtin';
+
+export type AdkBuiltinToolType = 
+  | 'google_search' 
+  | 'vertex_ai_search' 
+  | 'load_web_page' 
+  | 'request_input' 
+  | 'preload_memory' 
+  | 'code_execution' 
+  | 'agent_as_tool';
+
+export interface VertexAiSearchConfig {
+  dataStoreId?: string;
+  location?: string;
+  project?: string;
+  engineId?: string;
+  maxResults?: number;
+}
+
+export interface GoogleSearchConfig {
+  domainFilters?: string[];
+  dynamicThreshold?: number;
+}
+
+export interface RequestInputConfig {
+  prompt?: string;
+  timeoutSeconds?: number;
+}
+
+export interface AgentAsToolConfig {
+  subAgentId?: string;
+  subAgentName?: string;
+  subAgentDescription?: string;
+}
+
 export interface ToolDefinition {
   id: string;
   name: string;
-  type: 'search' | 'code' | 'api' | 'db' | 'custom' | 'rag' | 'mcp';
+  type: 'search' | 'code' | 'api' | 'db' | 'custom' | 'rag' | 'mcp' | 'builtin' | string;
+  category?: ToolCategory | string;
+  builtinType?: AdkBuiltinToolType;
   description: string;
   codePrompt?: string; // Describes what the code in the tool should do (e.g. "Call twitter api endpoint...")
   endpointUrl?: string;
@@ -92,7 +162,12 @@ export interface ToolDefinition {
   icon?: string;
   parameters?: Record<string, string>;
   enabled?: boolean;
+  config?: Record<string, unknown>;
   mcpConfig?: McpToolConfig;
+  vertexAiSearchConfig?: VertexAiSearchConfig;
+  googleSearchConfig?: GoogleSearchConfig;
+  requestInputConfig?: RequestInputConfig;
+  agentAsToolConfig?: AgentAsToolConfig;
 }
 
 export interface SubAgentRef {
@@ -270,6 +345,7 @@ export interface AgentData extends Record<string, unknown> {
   onRemoveTool?: (agentId: string, toolId: string) => void;
   onReorderSubAgents?: (agentId: string, startIndex: number, endIndex: number) => void;
   onUpdateSubAgentPattern?: (agentId: string, pattern: DelegationPattern) => void;
+  onUpdateMaxIterations?: (agentId: string, maxIterations: number) => void;
   onUpdateMemoryConfig?: (agentId: string, memoryConfig: AgentMemoryConfig) => void;
 }
 

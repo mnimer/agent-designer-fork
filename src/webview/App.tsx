@@ -8,6 +8,10 @@
  *
  * Architectural Decisions:
  * - Author: Mike Nimer <mikenimer@google.com>
+ * - Scoped Tool Configuration: Tools attached to agents maintain independent deep-copied instances
+ *   in `node.data.tools`. Modifying a tool from an AgentDrawer updates only that specific agent's JSON.
+ *   Modifying a tool from the global palette/Tools menu updates the global designer template without
+ *   mutating existing agent-scoped tool instances.
  * - Sub-Agent Synchronization: Outgoing agent connections automatically synchronize with the
  *   parent agent's `subAgents` array, maintaining custom user reordering while keeping names and
  *   roles synchronized across the workflow graph.
@@ -52,6 +56,7 @@ import {
   createSingleTriggerNode
 } from './data/patterns';
 import { AVAILABLE_TOOLS } from './data/defaultTools';
+import { sanitizeToolList } from './data/builtinTools';
 import { TRIGGER_CATALOG, DEFAULT_MOCK_TEST_PROMPTS } from './data/triggerDefinitions';
 import { AgentNode } from './components/Canvas/nodes/AgentNode';
 import { TriggerNode } from './components/Canvas/nodes/TriggerNode';
@@ -61,7 +66,7 @@ import { CodeGenerationPanel } from './components/codegen/CodeGenerationPanel';
 import { AgentDrawer } from './components/inspector/AgentDrawer';
 import { TriggerDrawer } from './components/inspector/TriggerDrawer';
 import { AddToolModal } from './components/inspector/AddToolModal';
-import { ToolPropertyDrawer } from './components/inspector/ToolPropertyDrawer';
+import { ToolDrawer, ToolPropertyDrawer } from './components/inspector/ToolDrawer';
 import { MissingFeaturesModal } from './components/insights/MissingFeaturesModal';
 import { VSCodeChrome } from './components/vscode/VSCodeChrome';
 import { ThemeProvider } from './context/ThemeContext';
@@ -85,7 +90,7 @@ const edgeTypes = {
   workflowEdge: CustomWorkflowEdge,
 };
 
-const STORAGE_TOOLS_KEY = 'ais_agent_studio_tools_v1';
+const STORAGE_TOOLS_KEY = 'ais_agent_studio_tools_v2';
 
 function normalizeLoadedNodes(loadedNodes: any[]): Node<any>[] {
   if (!Array.isArray(loadedNodes)) return [];
@@ -113,7 +118,7 @@ function normalizeLoadedNodes(loadedNodes: any[]): Node<any>[] {
         model: data.model || data.standardConfig?.model || 'gemini-flash-latest',
         description: data.description || '',
         systemPrompt: data.systemPrompt || data.standardConfig?.systemInstruction || '',
-        tools: data.tools || data.standardConfig?.tools || [],
+        tools: sanitizeToolList(data.tools || data.standardConfig?.tools || []),
         memoryType: data.memoryType || data.standardConfig?.memory || 'none',
         ...data,
       };
@@ -187,7 +192,9 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
     );
     const connectedTargetIds = Array.from(new Set(outgoingAgentEdges.map((e) => e.target)));
 
-    // 1. Keep existing subAgents that are still connected, updating their name & role
+    const parentPattern = (node.data as AgentData)?.subAgentPattern || 'parallel';
+
+    // 1. Keep existing subAgents that are still connected, updating their name, role, and delegationType
     const updatedExisting: SubAgentRef[] = [];
     currentSubAgents.forEach((sub) => {
       if (connectedTargetIds.includes(sub.agentId)) {
@@ -197,7 +204,8 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
           ...sub,
           name: targetData.label || sub.name || 'Agent',
           role: targetData.role !== undefined ? targetData.role : (sub.role || ''),
-          delegationType: sub.delegationType || 'parallel',
+          // Inherit parent agent's subAgentPattern as delegationType so child never contradicts parent
+          delegationType: (node.data as AgentData)?.subAgentPattern || sub.delegationType || 'parallel',
         });
       }
     });
@@ -213,7 +221,7 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
           agentId: targetId,
           name: targetData.label || 'Agent',
           role: targetData.role || '',
-          delegationType: 'parallel',
+          delegationType: parentPattern,
         });
       }
     });
@@ -329,9 +337,18 @@ function FlowCanvas() {
   // Tools library state (customizable tools catalog)
   const [tools, setTools] = useState<ToolDefinition[]>(() => {
     try {
+      // Clear legacy storage key containing stale mock tools
+      localStorage.removeItem('ais_agent_studio_tools_v1');
+
       const saved = localStorage.getItem(STORAGE_TOOLS_KEY);
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const sanitized = sanitizeToolList(parsed);
+          const existingIds = new Set(sanitized.map((t: any) => t.id));
+          const missingBuiltins = AVAILABLE_TOOLS.filter((t) => !existingIds.has(t.id));
+          return [...sanitized, ...missingBuiltins];
+        }
       }
     } catch (e) {
       console.warn('Failed to load saved tools from localStorage:', e);
@@ -342,7 +359,7 @@ function FlowCanvas() {
   // Save tools to local storage on change
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_TOOLS_KEY, JSON.stringify(tools));
+      localStorage.setItem(STORAGE_TOOLS_KEY, JSON.stringify(sanitizeToolList(tools)));
     } catch (e) {
       console.warn('Failed to persist tools:', e);
     }
@@ -368,6 +385,10 @@ function FlowCanvas() {
   // Tool Property Drawer state
   const [editingTool, setEditingTool] = useState<ToolDefinition | null>(null);
   const [isToolDrawerOpen, setIsToolDrawerOpen] = useState<boolean>(false);
+  const [editingToolScope, setEditingToolScope] = useState<{
+    type: 'global' | 'agent';
+    agentId?: string;
+  } | null>(null);
 
   // Resizable bottom panel state (Divider between diagram & bottom tabs)
   // Default is null to strictly maintain the 2/3 diagram (66.66%) and 1/3 tabs (33.33%) layout
@@ -695,6 +716,8 @@ function FlowCanvas() {
   const handleAddSpecificTool = useCallback(
     (agentId: string, tool: ToolDefinition) => {
       let updated = false;
+      // Deep copy all tool properties into the agent's scoped tool node
+      const toolInstance: ToolDefinition = JSON.parse(JSON.stringify(tool));
       const nextNodes = nodes.map((n) => {
         if (n.id === agentId && n.type === 'agentNode') {
           const currentTools = (n.data as AgentData).tools || [];
@@ -704,7 +727,7 @@ function FlowCanvas() {
               ...n,
               data: {
                 ...n.data,
-                tools: [...currentTools, tool],
+                tools: [...currentTools, toolInstance],
               },
             };
           }
@@ -787,15 +810,29 @@ function FlowCanvas() {
     [nodes, edges, setNodes, recordSnapshot]
   );
 
+  /**
+   * Updates the sub-agent delegation pattern for an agent node and synchronizes
+   * child delegationType and default maxIterations for loop pattern.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
+   */
   const handleUpdateSubAgentPattern = useCallback(
     (agentId: string, pattern: any) => {
       const nextNodes = nodes.map((n) => {
         if (n.id === agentId && n.type === 'agentNode') {
+          const currentSubAgents = (n.data as AgentData)?.subAgents || [];
+          const updatedSubAgents = currentSubAgents.map((sub) => ({
+            ...sub,
+            delegationType: pattern,
+          }));
+          const existingMax = (n.data as AgentData)?.maxIterations;
           return {
             ...n,
             data: {
               ...n.data,
               subAgentPattern: pattern,
+              maxIterations: pattern === 'loop' && existingMax === undefined ? 3 : existingMax,
+              subAgents: updatedSubAgents,
             },
           };
         }
@@ -803,6 +840,31 @@ function FlowCanvas() {
       });
       setNodes(nextNodes);
       recordSnapshot(nextNodes, edges, { description: 'Update sub-agent pattern' });
+    },
+    [nodes, edges, setNodes, recordSnapshot]
+  );
+
+  /**
+   * Updates the max iterations loop bound for an agent node.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
+   */
+  const handleUpdateMaxIterations = useCallback(
+    (agentId: string, maxIterations: number) => {
+      const nextNodes = nodes.map((n) => {
+        if (n.id === agentId && n.type === 'agentNode') {
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              maxIterations: Math.max(1, maxIterations),
+            },
+          };
+        }
+        return n;
+      });
+      setNodes(nextNodes);
+      recordSnapshot(nextNodes, edges, { description: 'Update max iterations' });
     },
     [nodes, edges, setNodes, recordSnapshot]
   );
@@ -1214,6 +1276,7 @@ function FlowCanvas() {
           onRemoveTool: handleRemoveTool,
           onReorderSubAgents: handleReorderSubAgents,
           onUpdateSubAgentPattern: handleUpdateSubAgentPattern,
+          onUpdateMaxIterations: handleUpdateMaxIterations,
         },
       };
     });
@@ -1226,6 +1289,7 @@ function FlowCanvas() {
     handleRemoveTool, 
     handleReorderSubAgents, 
     handleUpdateSubAgentPattern,
+    handleUpdateMaxIterations,
     handleEditTrigger,
     handleDeleteTrigger
   ]);
@@ -1379,9 +1443,18 @@ function FlowCanvas() {
 
   // Tool Drawer Actions
   const handleOpenEditTool = useCallback((tool: ToolDefinition) => {
-    setEditingTool(tool);
+    setEditingToolScope({ type: 'global' });
+    setEditingTool(JSON.parse(JSON.stringify(tool)));
     setIsToolDrawerOpen(true);
     setSelectedAgentId(null);
+    setSelectedTriggerId(null);
+    setIsTriggerDrawerOpen(false);
+  }, []);
+
+  const handleOpenEditAgentTool = useCallback((agentId: string, tool: ToolDefinition) => {
+    setEditingToolScope({ type: 'agent', agentId });
+    setEditingTool(JSON.parse(JSON.stringify(tool)));
+    setIsToolDrawerOpen(true);
     setSelectedTriggerId(null);
     setIsTriggerDrawerOpen(false);
   }, []);
@@ -1400,6 +1473,7 @@ function FlowCanvas() {
       },
       enabled: true,
     };
+    setEditingToolScope({ type: 'global' });
     setEditingTool(newTool);
     setIsToolDrawerOpen(true);
     setSelectedAgentId(null);
@@ -1427,6 +1501,7 @@ function FlowCanvas() {
         autoApproveTools: ['read_*'],
       },
     };
+    setEditingToolScope({ type: 'global' });
     setEditingTool(newMcpTool);
     setIsToolDrawerOpen(true);
     setSelectedAgentId(null);
@@ -1434,35 +1509,50 @@ function FlowCanvas() {
     setIsTriggerDrawerOpen(false);
   }, []);
 
-  const handleSaveTool = useCallback((savedTool: ToolDefinition) => {
-    setTools((prev) => {
-      const exists = prev.some((t) => t.id === savedTool.id);
-      if (exists) {
-        return prev.map((t) => (t.id === savedTool.id ? savedTool : t));
-      }
-      return [savedTool, ...prev];
-    });
-
-    // Synchronize to any agent nodes holding this tool
-    setNodes((nds: any[]) =>
-      nds.map((n: any) => {
-        if (n.type === 'agentNode') {
-          const agentData = n.data as AgentData;
-          const hasTool = agentData.tools?.some((t) => t.id === savedTool.id);
-          if (hasTool) {
+  const handleSaveTool = useCallback(
+    (savedTool: ToolDefinition) => {
+      if (editingToolScope?.type === 'agent' && editingToolScope.agentId) {
+        const targetAgentId = editingToolScope.agentId;
+        // Save the modified properties into the JSON under this agent node only
+        let updated = false;
+        const nextNodes = nodes.map((n) => {
+          if (n.id === targetAgentId && n.type === 'agentNode') {
+            const agentData = n.data as AgentData;
+            updated = true;
             return {
               ...n,
               data: {
                 ...n.data,
-                tools: agentData.tools.map((t) => (t.id === savedTool.id ? savedTool : t)),
+                tools: (agentData.tools || []).map((t) =>
+                  t.id === savedTool.id ? JSON.parse(JSON.stringify(savedTool)) : t
+                ),
               },
             };
           }
+          return n;
+        });
+
+        if (updated) {
+          setNodes(nextNodes);
+          recordSnapshot(nextNodes, edges, {
+            description: `Configure ${savedTool.name} for agent`,
+          });
         }
-        return n;
-      })
-    );
-  }, [setNodes]);
+      } else {
+        // Global save: update the designer state (tools template collection)
+        const deepCopiedTool: ToolDefinition = JSON.parse(JSON.stringify(savedTool));
+        setTools((prev) => {
+          const exists = prev.some((t) => t.id === deepCopiedTool.id);
+          if (exists) {
+            return prev.map((t) => (t.id === deepCopiedTool.id ? deepCopiedTool : t));
+          }
+          return [deepCopiedTool, ...prev];
+        });
+        // Note: Global edits update the global template; existing agents retain their own decoupled tool instances
+      }
+    },
+    [editingToolScope, nodes, edges, setNodes, setTools, recordSnapshot]
+  );
 
   const handleDeleteTool = useCallback((toolId: string) => {
     setTools((prev) => prev.filter((t) => t.id !== toolId));
@@ -1821,6 +1911,33 @@ function FlowCanvas() {
     (partialData: Partial<AgentData>) => {
       if (!selectedAgentId) return;
 
+      let nextEdges = edges;
+      if (partialData.subAgents) {
+        // If subAgents was explicitly updated (e.g. sub-agent removed from drawer), prune edges connecting to removed subAgents
+        const remainingTargetIds = new Set((partialData.subAgents as SubAgentRef[]).map((s) => s.agentId));
+        nextEdges = edges.filter((e) => !(e.source === selectedAgentId && !remainingTargetIds.has(e.target)));
+        if (nextEdges.length !== edges.length) {
+          setEdges(nextEdges);
+        }
+      }
+
+      // If updating pattern, synchronize delegationType across all child sub-agents and default loop iterations
+      if (partialData.subAgentPattern) {
+        const targetNode = nodes.find((n) => n.id === selectedAgentId);
+        const curSubs = ((partialData.subAgents || (targetNode?.data as AgentData)?.subAgents) || []) as SubAgentRef[];
+        partialData.subAgents = curSubs.map((sub) => ({
+          ...sub,
+          delegationType: partialData.subAgentPattern,
+        }));
+        if (
+          partialData.subAgentPattern === 'loop' && 
+          partialData.maxIterations === undefined && 
+          (targetNode?.data as AgentData)?.maxIterations === undefined
+        ) {
+          partialData.maxIterations = 3;
+        }
+      }
+
       let nextNodes: Node<any>[];
       if (partialData.isStartNode === true) {
         // If making this agent the root, reconnect triggers
@@ -1831,17 +1948,16 @@ function FlowCanvas() {
       }
 
       // Propagate label and role changes across all connected subAgents references
-      nextNodes = syncAgentSubAgents(nextNodes, edges);
+      nextNodes = syncAgentSubAgents(nextNodes, nextEdges);
       setNodes(nextNodes);
 
-      let nextEdges = edges;
       // If updating routerConfig, automatically synchronize connecting lines from router branches
       if (partialData.routerConfig) {
         const branches = partialData.routerConfig.branches || [];
         const currentSelectedId = selectedAgentId;
 
         // Filter out existing edges from this router node
-        const preservedEdges = edges.filter((e) => e.source !== currentSelectedId);
+        const preservedEdges = nextEdges.filter((e) => e.source !== currentSelectedId);
 
         // Build new edges for branches with a targetAgentId
         const newBranchEdges: Edge[] = [];
@@ -2139,6 +2255,7 @@ function FlowCanvas() {
             onUpdateAgent={handleUpdateSelectedAgent}
             onOpenAddTool={() => selectedAgentId && setToolModalAgentId(selectedAgentId)}
             onRemoveTool={(toolId) => selectedAgentId && handleRemoveTool(selectedAgentId, toolId)}
+            onEditTool={(tool) => selectedAgentId && handleOpenEditAgentTool(selectedAgentId, tool)}
           />
 
           {/* Slide-out Trigger Inspector Drawer */}
@@ -2160,16 +2277,26 @@ function FlowCanvas() {
           />
 
           {/* Slide-out Tool Definition & Code Directive Property Panel */}
-          <ToolPropertyDrawer
+          <ToolDrawer
             tool={editingTool}
             isOpen={isToolDrawerOpen}
-            onClose={() => setIsToolDrawerOpen(false)}
+            onClose={() => {
+              setIsToolDrawerOpen(false);
+              setEditingToolScope(null);
+            }}
             onSaveTool={handleSaveTool}
             onDeleteTool={handleDeleteTool}
+            scope={editingToolScope?.type || 'global'}
+            agentName={
+              editingToolScope?.type === 'agent'
+                ? (nodes.find((n) => n.id === editingToolScope.agentId)?.data as AgentData)?.label
+                : undefined
+            }
             selectedAgent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
             onAttachToAgent={(agentId, tool) => {
               handleAddSpecificTool(agentId, tool);
               setIsToolDrawerOpen(false);
+              setEditingToolScope(null);
             }}
           />
         </div>
@@ -2237,6 +2364,8 @@ function FlowCanvas() {
         onClose={() => setToolModalAgentId(null)}
         onSelectTool={handleAttachTool}
         existingToolIds={((targetAgentForTool?.data as AgentData)?.tools || []).map((t) => t.id)}
+        tools={tools}
+        targetAgentName={(targetAgentForTool?.data as AgentData)?.label}
       />
 
       {/* Architectural Advisor & "What is missing?" Modal */}

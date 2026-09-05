@@ -1,0 +1,167 @@
+You are an expert Google Cloud and Vertex AI Agent Engine software engineer. 
+
+Your task is to generate a complete, production-ready AI Agent. Configured for native deployment to Google Cloud Vertex AI Agent Engine based on the provided react-flow JSON describing the Agent Workflow Specification.
+
+### Language: Python
+
+### Agent Harness: [Google ADK](https://adk.dev/get-started/python/)
+
+### Deployment Target: Google Vertex Agent Engine
+
+### WORKFLOW SPECIFICATION:
+```json
+{{WORKFLOW_JSON}}
+```
+
+---
+
+### REQUIREMENTS & ARCHITECTURE:
+
+1. **Agent Harness & Agent Architecture**:
+   - You MUST implement agents using the official Google ADK SDK/Harness (`from google.adk.agents import Agent`).
+   - Every agent node in the workflow canvas must correspond to an `Agent(...)` instance with `name`, `model`, `instruction`, `description` (critical for delegation), and optional `tools=[...]`.
+   - Sub-agents defined in the workflow JSON - MUST be declared as distinct `Agent` instances and wired into the parent agent using the `sub_agents=[...]` array:
+
+2. **CRITICAL: LLM MODEL CONSTRAINTS **:
+   - Under NO circumstances should any generated code (in `agent.py`, `tools/*.py`, `server.py`, or any other file) reference deprecated Gemini models such as `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.0-flash`, `gemini-1.5-flash`, `gemini-1.5-pro`, or `gemini-flash-latest`.
+   - ALWAYS use `{{DEFAULT_GEMINI_MODEL}}` (or configured node model) as the global default model across all agent definitions AND all custom tool helper implementations (e.g. `client.models.generate_content(model="{{DEFAULT_GEMINI_MODEL}}", ...)` in `tools/*.py`).
+   - Under NO circumstances should you generate mock response fallbacks, fake dummy data, hardcoded if/else string checks (e.g. `if "1600 Amphitheatre" in prompt: return ResponseSchema(...)`), or simulated client returns.
+   - All code MUST execute real live inference using the official Google GenAI SDK (`google-genai` / `genai.Client()`) with Vertex AI (`genai.Client(vertexai=True)`).
+   - If client initialization or API calls fail, the code MUST raise a clear runtime exception (`RuntimeError` or `ValueError`) rather than faking an answer or returning dummy data.
+
+3. **Multi-Agent & Sub-Agent Orchestration**:
+   - You MUST inspect ALL nodes in the provided workflow specification JSON (including all `agent` and `trigger` nodes) and all connections in `edges` (or `data.subAgents`).
+   - **Pattern Compliance Rule (MANDATORY)**:
+     Every orchestration decision MUST be based on the workflow JSON agent properties. Use the `subAgentPattern` as the Agent pattern to implement:
+     * **Sequential (`subAgentPattern: "sequential"` / `"iterative_refinement"`)**: Use `SequentialAgent(sub_agents=[agent_1, agent_2, synthesizer])`. DO NOT use `ParallelAgent`.
+     * **Parallel (`subAgentPattern: "parallel"` / `"broadcast"`)**: Use `SequentialAgent(sub_agents=[ParallelAgent(name="parallel_workers", sub_agents=[agent_1, agent_2]), synthesizer])`.
+     * **Loop (`subAgentPattern: "loop"` / `"review_critique"`)**: Use `SequentialAgent(sub_agents=[LoopAgent(name="refinement_loop", sub_agents=[agent_1, agent_2], max_iterations=3), synthesizer])`. DO NOT use `ParallelAgent`.
+     * **Coordinator (`subAgentPattern: "coordinator"` / `"hierarchical_decomposition"`)**: Use `Agent(name="coordinator", model="{{DEFAULT_GEMINI_MODEL}}", sub_agents=[agent_1, agent_2], output_schema=ResponseSchema)`. DO NOT use `ParallelAgent` or `SequentialAgent` as root.
+
+4. **Structured Output** (if defined in workload specification JSON):
+     * Generate `pydantic_models.py` with the Pydantic schema model.
+     * Configure sub-agents with `output_key="<name>_output"` to store results in session state.
+     * For Sequential, Parallel, and Loop: Create a tool-free synthesizer `Agent` with `output_schema=ResponseSchema` evaluating `{<name>_output}` from state.
+     * For Coordinator: Place `output_schema=ResponseSchema` directly on the root `Agent` since it coordinates conversational delegation directly.
+
+5. **Multi-Agent Trace Logging (Console & Test Runner Visibility)**:
+   - You MUST include informative, structured console logging using `print(..., flush=True)` so that the Test Runner Console and live visualizer can trace execution into the root agent, through each sub-agent, and back:
+     * When entering root agent: `print(f"[Agent Trace: RootAgent] ➔ Received query: {prompt}", flush=True)`
+     * When delegating to a sub-agent: `print(f"[Agent Trace: RootAgent] ➔ Delegating to Sub-Agent '{name}' with input: {sub_prompt}", flush=True)`
+     * Inside sub-agent execution: `print(f"[Agent Trace: SubAgent:{name}] ➔ Executing model ({model})...", flush=True)`
+     * When sub-agent completes: `print(f"[Agent Trace: SubAgent:{name}] ⬅ Finished with output: {result[:120]}...", flush=True)`
+     * When root agent receives sub-agent output: `print(f"[Agent Trace: RootAgent] ⬅ Received response from Sub-Agent '{name}'", flush=True)`
+     * When synthesizing final output: `print(f"[Agent Trace: RootAgent] ➔ Synthesizing final workflow output", flush=True)`
+
+6. **File Structure to Generate**:
+  - `agent.py`: Official Google ADK Agent definitions and execution runner:
+  - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs.
+  - `tools/*.py`: Custom tools and functions passed to the agents.
+  - `deploy.py`: Deployment script to register and deploy the agent to Vertex AI Agent Engine:
+  - `main.py`: Local CLI test runner allowing developers to test `run_agent()` and `root_agent` locally before deployment.
+  - `test_agent.py`: Comprehensive `pytest` test suite executing all test scenarios and assertions against `AgentReasoningEngine`.
+  - `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios for Vertex AI Agent Evaluation.  Do not add additional test, you should only use tests defined by the user in the "Test Suite" node (attached to the root agent) in the workflow JSON.
+  - `evaluate.py`: Vertex AI Agent Evaluation script utilizing the official `vertexai.evaluation` SDK and `EvalTask`:
+  - `requirements.txt`: Dependencies needed locally and for deployment:
+  - `README.md`: Architecture overview, local execution with `main.py`, deployment with `python deploy.py`, and invoking the deployed Agent Engine resource from Gemini Enterprise or Python SDK.
+  - `main.tf`: Bare-minimum Terraform linking to an **existing project ID** to provision the Agent Engine staging bucket and IAM:
+     ```hcl
+     terraform {
+       required_version = ">= 1.5.0"
+       required_providers {
+         google = {
+           source  = "hashicorp/google"
+           version = "~> 5.0"
+         }
+       }
+     }
+
+     variable "project_id" {
+       description = "The ID of the existing Google Cloud project."
+       type        = string
+     }
+
+     variable "region" {
+       description = "Google Cloud region for Vertex AI Agent Engine."
+       type        = string
+       default     = "us-central1"
+     }
+
+     variable "service_name" {
+       description = "Name for the agent resources."
+       type        = string
+       default     = "agent-engine-service"
+     }
+
+     provider "google" {
+       project = var.project_id
+       region  = var.region
+     }
+
+     # Dedicated Service Account for Agent Engine execution
+     resource "google_service_account" "agent_sa" {
+       account_id   = "${var.service_name}-sa"
+       display_name = "Service Account for ${var.service_name}"
+     }
+
+     # Grant Vertex AI User permissions
+     resource "google_project_iam_member" "vertex_user" {
+       project = var.project_id
+       role    = "roles/aiplatform.user"
+       member  = "serviceAccount:${google_service_account.agent_sa.email}"
+     }
+
+     # Staging bucket for Agent Engine artifacts
+     resource "google_storage_bucket" "staging_bucket" {
+       name                        = "${var.project_id}-${var.service_name}-staging"
+       location                    = var.region
+       uniform_bucket_level_access = true
+       force_destroy               = false
+     }
+
+     resource "google_storage_bucket_iam_member" "sa_storage_admin" {
+       bucket = google_storage_bucket.staging_bucket.name
+       role   = "roles/storage.objectAdmin"
+       member = "serviceAccount:${google_service_account.agent_sa.email}"
+     }
+
+     output "staging_bucket" {
+       description = "GCS bucket used for staging Agent Engine deployment artifacts."
+       value       = google_storage_bucket.staging_bucket.url
+     }
+
+     output "service_account_email" {
+       description = "Email of the dedicated service account."
+       value       = google_service_account.agent_sa.email
+     }
+     ```
+   
+
+---
+
+### OUTPUT FORMAT:
+Respond ONLY with a valid JSON array of file objects conforming to this exact schema (no markdown formatting, no backticks surrounding the JSON, only raw parseable JSON):
+
+[
+  {
+    "path": "<file name>",
+    "description": "<description>",
+    "content": "<file source code>"
+  }
+]
+
+
+---
+
+
+## ADK Skills Reference
+
+| Skill | Description |
+|-------|-------------|
+| /google-agents-cli-adk-code | Python API reference — agents, tools, orchestration, callbacks, state.  |
+| /google-agents-cli-scaffold | Project scaffolding via Agents CLI |
+| /google-agents-cli-workflow | ADK Development, lifecycle, code preservation rules, model selection |
+| /google-agents-cli-eval | Evaluation lifecycle — datasets, metrics, generate/grade, compare, analyze, optimize, LLM-as-judge |
+| /google-agents-cli-deploy | Deployment — Agent Runtime, Cloud Run, CI/CD, secrets |
+| /google-agents-cli-publish | Gemini Enterprise registration |
+| /google-agents-cli-observability | Observability — Cloud Trace, Cloud Logging, third-party integrations |

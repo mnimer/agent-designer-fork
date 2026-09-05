@@ -23,7 +23,7 @@
 | **TASK-108** | v1.0.0 | History & Sync | Undo/Redo Engine, Auto-Layout & Document Disk Sync | **Complete** | TASK-101, TASK-103 |
 | **TASK-109** | v1.0.0 | Quality | End-to-End Test Suite & 100% Coverage Suite | **In Progress** | TASK-100 to TASK-108 |
 | **TASK-110** | v1.0.1 | Triggers | Chat Trigger Node & Interactive Chat Runner Panel | **Not Started** | TASK-107 |
-| **TASK-111** | v1.0.1 | Deployment | Cloud Deployment & IaC Panel (Cloud Run & Agent Engine) | **Not Started** | TASK-106 |
+| **TASK-111** | v1.0.1 | Deployment | Cloud Infrastructure IaC Panel (Cloud Run & Shared GCP Resources) | **Not Started** | TASK-106 |
 | **TASK-112** | v1.0.2 | Canvas | Multi-Agent Wiring, Sockets & Connection Validation | **Not Started** | TASK-103 |
 | **TASK-113** | v1.0.2 | Patterns | Sequential Pipeline & Parallel Fan-Out Patterns | **Not Started** | TASK-112 |
 | **TASK-114** | v1.0.2 | Codegen | Multi-Agent DAG Python ADK Code Generation & Tracing | **Not Started** | TASK-113 |
@@ -36,7 +36,12 @@
 | **TASK-121** | v1.0.9 | Triggers & IAM | Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise IAM OIDC Auth | **Not Started** | TASK-105, TASK-111, TASK-116 |
 | **TASK-122** | v1.1.0 | Framework | LangGraph Framework Support (Python StateGraph Target) | **Not Started** | TASK-106, TASK-114 |
 | **TASK-123** | v1.1.1 | Runtime | TypeScript Runtime Support (@google/genai SDK & Vitest) | **Not Started** | TASK-106, TASK-122 |
-| **TASK-124** | v1.1.2 | Patterns | Advanced Patterns (Debate, Loop) & Blueprints Catalog | **Not Started** | TASK-113, TASK-117 |
+| **TASK-124** | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Not Started** | TASK-113, TASK-117 |
+| **TASK-125** | v1.0.1 | Deployment | Native Vertex AI Agent Engine (Agent Runtime) Container Deployment & Lifecycle Management | **Not Started** | TASK-106, TASK-110 |
+| **TASK-126** | v1.0.0 | Extension Host | VS Code Activity Bar Container & Sidebar Workflows Explorer | **Not Started** | TASK-100, TASK-108 |
+| **TASK-127** | v1.0.0 | Release & CI | Automated VSIX Packaging & Tag-Triggered GitHub Actions Release Workflow | **Done** | TASK-100, TASK-109 |
+| **TASK-128** | v1.0.1 | Blueprints | Visual Samples & Blueprints Gallery (Samples Tab & Palette) | **Not Started** | TASK-103, TASK-108 |
+| **TASK-129** | v1.0.6 | Tools | ADK Built-in Tools Registry & Cross-Harness Tool Adapter Architecture | **Not Started** | TASK-104, TASK-118 |
 
 ---
 
@@ -305,20 +310,21 @@
 
 ---
 
-### [TASK-111] Cloud Deployment & IaC Panel (Cloud Run & Agent Engine)
+### [TASK-111] Cloud Infrastructure IaC Panel (Cloud Run & Shared GCP Resources)
 * **Release**: `v1.0.1`
 * **Target Package/Files**:
   - `src/webview/components/deployment/DeploymentTab.tsx`
   - `src/shared/codegen/terraformGenerator.ts`
   - `src/webview/utils/runtimeSecrets.ts`
 * **Context**:
-  Implement Cloud Deployment & IaC panel. Support Google Cloud Run (v2 service) and Vertex AI Agent Engine. Automatically extract runtime secrets (`GEMINI_API_KEY`). Generate `main.tf`, `Dockerfile`, and `deploy.sh`.
+  Implement Cloud Infrastructure IaC panel. Support automated Terraform generation for Google Cloud Run (v2 service) and foundational GCP infrastructure (Secret Manager for runtime keys like `GEMINI_API_KEY`, IAM Service Accounts, Artifact Registry, and VPC Network Attachments for Private Service Connect). NOTE: In accordance with official Google ADK architecture, Agent Engine (Agent Runtime) application code and container updates are decoupled from Terraform via `lifecycle.ignore_changes` and deployed through native container deployment in [TASK-125].
 * **Sub-Agent Prompt**:
   ```
-  Implement Cloud Deployment & IaC generator.
+  Implement Cloud Infrastructure & IaC generator.
   1. Extract referenced environment variables into Cloud Secret Manager resources in main.tf.
-  2. Generate Terraform for Cloud Run v2 service and Vertex AI reasoning engine.
-  3. Provide DeploymentTab with deployment target selector, GCP project/region inputs, and one-click code copy/export.
+  2. Generate Terraform for Cloud Run v2 service, Artifact Registry, and IAM invoker roles.
+  3. Generate optional PSC Network Attachment Terraform for private VPC routing.
+  4. Provide DeploymentTab with target selector, GCP project/region inputs, and one-click code copy/export.
   ```
 * **Verification**:
   - Generated Terraform passes `terraform validate`.
@@ -564,20 +570,188 @@
 
 ---
 
-### [TASK-124] Advanced Cognitive Patterns & Blueprints Catalog
+### [TASK-124] Advanced Cognitive Patterns (Debate, Loop, Critic Triad)
 * **Release**: `v1.1.2`
 * **Target Package/Files**:
   - `src/webview/data/patterns.ts`
-  - `src/webview/data/sampleWorkflows.ts`
-  - `src/webview/components/canvas/PaletteCard.tsx`
+  - `src/webview/components/Canvas/PaletteCard.tsx`
 * **Context**:
-  Implement Evaluator-Optimizer loop, Multi-Agent Debate, Review & Critique Triad, and Central Coordinator patterns. Provide pre-built enterprise blueprints (e.g. `company_verifier.agent`).
+  Implement advanced cognitive patterns for agent orchestration: Multi-Agent Debate, Evaluator-Optimizer loop, and Review & Critique Triad.
 * **Sub-Agent Prompt**:
   ```
-  Implement Advanced Multi-Agent Patterns and Samples Catalog.
-  1. Add Debate, Evaluator-Optimizer, and Coordinator patterns to patterns.ts.
-  2. Add Company Verifier blueprint to sampleWorkflows.ts.
-  3. Enable one-click sample workflow loading in new .agent tab buffers.
+  Implement Advanced Multi-Agent Patterns:
+  1. Add Debate, Evaluator-Optimizer, and Critique Triad patterns to patterns.ts.
+  2. Enable canvas insertion and visual palette badges for cognitive patterns.
   ```
 * **Verification**:
-  - Loading `company_verifier.agent` loads complete topology, tools, schemas, and tests.
+  - Inserting each cognitive pattern into canvas generates valid node/edge layouts and sub-agent bindings.
+
+---
+
+### [TASK-125] Native Vertex AI Agent Engine (Agent Runtime) Container Deployment & Lifecycle Management
+* **Release**: `v1.0.1`
+* **Target Package/Files**:
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `src/extension/AgentEngineDeployer.ts`
+  - `src/webview/components/deployment/AgentEngineDeployTab.tsx`
+  - `src/shared/codegen/agentEngineScaffold.ts`
+  - `package.json`
+* **Context**:
+  Implement native container deployment and lifecycle management for Google Cloud Vertex AI Agent Engine (Agent Runtime) following the official Google ADK deployment protocol (`agents-cli deploy`).
+  1. **Prompt & Scaffolding Updates**:
+     - Update `resource/prompts/python_adk_agent-engine.prompt.txt` to include `cloudbuild.yaml` in the generated repository manifest:
+       * Pre-configured with steps to execute unit/eval tests (`pytest tests/`) in `python:3.11-slim`.
+       * Automatically runs `agents-cli deploy` (or `python deploy.py`) targeting Vertex AI Agent Runtime with substitutions (`_PROJECT_ID`, `_REGION`).
+     - Project-root `Dockerfile` configured with multi-stage distroless Python runtime.
+     - Project-root `.gcloudignore` and `.gitignore` to package strictly necessary agent assets.
+     - `fast_api_app.py` mounting ADK HTTP routes (`/run_sse`, `/apps/...`), A2A endpoints (`/a2a/{app_name}`), and reasoning engine adapter routes (`/api/reasoning_engine`, `/api/stream_reasoning_engine`).
+  2. **Deployment Flow**:
+     - Packages the active agent project directory.
+     - Invokes native Agent Engine deployment via CLI / Vertex AI SDK to trigger remote Cloud Build container compilation and Agent Runtime instance creation/update.
+     - Persists and manages `deployment_metadata.json` (`remote_agent_runtime_id`, `deployment_target: "agent_runtime"`, `is_a2a`, `agent_directory`, `deployment_timestamp`).
+     - Supports subsequent updates vs. initial creates using `deployment_metadata.json`.
+     - Streams remote build and deployment operation logs to the VS Code UI in real time via `WebviewBridge`.
+  3. **Live Remote Execution & Testing**:
+     - Provides one-click remote query and streaming chat directly against the deployed Agent Runtime via the `/api` HTTP passthrough:
+       `https://{location}-aiplatform.googleapis.com/reasoningEngines/v1/{resource}/api/run_sse`
+     - Displays live deployment status, resource ID, endpoint URLs, and Cloud Console direct links in the extension workbench.
+* **Sub-Agent Prompt**:
+  ```
+  Implement Native Vertex AI Agent Engine Deployment in extension backend, webview, and ADK prompt:
+  1. Update resource/prompts/python_adk_agent-engine.prompt.txt to include cloudbuild.yaml in file manifest with test and agents-cli deploy steps.
+  2. Create AgentEngineDeployer.ts to orchestrate packaging, invocation of agents-cli deploy / Vertex AI API, and reading/writing deployment_metadata.json.
+  3. Stream deployment progress, Cloud Build logs, and error status through WebviewBridge.
+  4. Create AgentEngineDeployTab.tsx in the webview to configure GCP Project, Location, Service Account, and Network Attachment.
+  5. Enable remote testing against the deployed engine via the /api HTTP passthrough.
+  ```
+* **Verification**:
+  - Prompt generation produces valid cloudbuild.yaml.
+  - AgentEngineDeployer unit tests validate packaging, deployment_metadata.json generation, update vs create resolution, and URL format validation.
+
+---
+
+### [TASK-126] VS Code Activity Bar Container & Sidebar Workflows Explorer
+* **Release**: `v1.0.0`
+* **Target Package/Files**:
+  - `src/extension/views/WorkflowExplorerTreeProvider.ts`
+  - `src/extension/views/AgentEngineDeploymentsTreeProvider.ts`
+  - `src/extension/extension.ts`
+  - `package.json`
+* **Context**:
+  Contribute an official Activity Bar icon and dedicated Sidebar explorer views to VS Code so users can discover, manage, and inspect agent workflows and runtime deployments without having to manually open `.agent` files from the generic file explorer. (Note: Blueprint and sample workflows are housed directly in the diagram's visual Samples Tab via [TASK-128]).
+  1. **Activity Bar Contribution**:
+     - Register `viewsContainers.activitybar` with `id: "agentFlow"` and custom icon.
+  2. **Sidebar Views (`views`)**:
+     - **Workflows Explorer (`agentFlow.views.workflows`)**: Automatically detects and lists all `*.agent` files in the open workspace, showing node count, topology type, and quick actions (Open, Duplicate, Delete).
+     - **Deployments & Run Targets (`agentFlow.views.deployments`)**: Lists active local runner subprocesses and known deployed Vertex AI Agent Engine / Cloud Run endpoints with status indicators and quick-test actions.
+  3. **Commands**:
+     - `agentFlow.sidebar.newWorkflow`, `agentFlow.sidebar.refresh`, `agentFlow.sidebar.openWorkflow`.
+* **Sub-Agent Prompt**:
+  ```
+  Implement VS Code Activity Bar container and Sidebar TreeViews:
+  1. Update package.json contributes with viewsContainers and views.
+  2. Implement WorkflowExplorerTreeProvider watching workspace *.agent files with vscode.FileSystemWatcher.
+  3. Implement AgentEngineDeploymentsTreeProvider listing active runners and endpoints.
+  4. Register tree providers and sidebar commands in extension.ts.
+  ```
+* **Status**: Complete
+* **Verification**:
+  - Unit tests verify tree data provider children resolution, file watcher events, and command registrations (`WorkflowExplorerTreeProvider.test.ts`, `AgentEngineDeploymentsTreeProvider.test.ts`, `extension.test.ts` - 122 tests pass).
+  - Clean TypeScript builds for both extension and webview.
+
+---
+
+### [TASK-127] Automated VSIX Packaging & Tag-Triggered GitHub Actions Release Workflow
+* **Release**: `v1.0.0`
+* **Target Package/Files**:
+  - `.github/workflows/release.yml`
+  - `.vscodeignore`
+  - `package.json`
+* **Context**:
+  Configure automated packaging and GitHub Actions CI/CD pipeline to produce release `.vsix` binaries and GitHub Releases whenever a version tag (`v*.*.*`) is pushed off the `main` branch.
+  1. **Packaging Tooling**:
+     - Add `@vscode/vsce` to `devDependencies` and configure `"package": "vsce package --no-dependencies"` in `package.json`.
+     - Configure `.vscodeignore` to exclude development assets, mockups, raw markdown specifications, test files, and non-production source trees.
+  2. **GitHub Actions Release Pipeline (`.github/workflows/release.yml`)**:
+     - Triggered on tag push: `tags: ['v*.*.*']`.
+     - Runs on `ubuntu-latest`.
+     - Sets up Node.js, runs `npm ci`, executes test suite (`npm test`), and builds production extension and webview (`npm run compile`).
+     - Packages `.vsix` archive using `npx @vscode/vsce package`.
+     - Creates official GitHub Release referencing the pushed tag, generates automated changelog notes, and attaches the `.vsix` binary as a downloadable release asset.
+* **Sub-Agent Prompt**:
+  ```
+  Configure VSIX packaging and GitHub Actions release workflow:
+  1. Add @vscode/vsce to devDependencies and package script in package.json.
+  2. Create comprehensive .vscodeignore excluding non-runtime directories.
+  3. Create .github/workflows/release.yml triggered on v* tags with test, compile, package, and softprops/action-gh-release steps.
+  ```
+* **Verification**:
+  - `npm run package` successfully produces a valid `.vsix` archive locally.
+  - Release workflow YAML validates against GitHub Actions schema.
+
+---
+
+### [TASK-128] Visual Samples & Blueprints Gallery (Samples Tab & Palette)
+* **Release**: `v1.0.1`
+* **Target Package/Files**:
+  - `src/webview/components/Canvas/PaletteCard.tsx`
+  - `src/webview/data/sampleWorkflows.ts`
+  - `src/webview/types.ts`
+* **Context**:
+  Build a dedicated Visual Samples & Blueprints Gallery inside the canvas diagram's `Samples` tab (and palette) containing production-ready agent blueprints.
+  1. **Gallery Content**:
+     - Pre-built enterprise blueprints:
+       * **Company Verifier & Entity Classifier**: Root sequential agent with domain research sub-agents and structured Pydantic response.
+       * **Customer Support Specialist**: Interactive multi-turn conversational agent with search grounding and escalation routing.
+       * **Financial Research Analyst**: Parallel fan-out agent gathering SEC filings, earnings calls, and news, synthesized into financial reports.
+       * **Code Quality Critic Triad**: Multi-agent loop pattern with Generator, Reviewer, and Refiner.
+  2. **Interactivity**:
+     - Visual preview cards with blueprint title, description badge, complexity tag, and node count.
+     - One-click "Load into Current Flow" (replaces or prompts to confirm) or "Open in New Flow".
+     - Draggable sample cards onto canvas.
+* **Sub-Agent Prompt**:
+  ```
+  Implement Visual Samples & Blueprints Gallery in PaletteCard:
+  1. Define rich SampleWorkflowDefinition items in sampleWorkflows.ts with complete topologies, nodes, edges, and test cases.
+  2. Implement the Samples tab in PaletteCard.tsx rendering interactive sample cards with icons, tags, and summary stats.
+  3. Wire sample loading handler in App.tsx to instantiate the topology into the active canvas or create a new file buffer.
+  ```
+* **Verification**:
+  - Unit tests verify all sample blueprints contain valid acyclic node/edge structures and load successfully into the React Flow state.
+
+---
+
+### [TASK-129] ADK Built-in Tools Registry & Cross-Harness Tool Adapter Architecture
+* **Release**: `v1.0.6`
+* **Target Package/Files**:
+  - `src/webview/data/builtinTools.ts`
+  - `src/webview/components/Canvas/PaletteCard.tsx`
+  - `src/webview/components/inspector/ToolDrawer.tsx`
+  - `src/shared/codegen/toolAdapters.ts`
+  - `src/webview/types.ts`
+* **Context**:
+  Expand the visual designer's Tool Registry to natively support all official Google ADK built-in tools, and establish a cross-harness tool compilation architecture so tools configured visually compile cleanly whether targeting Google ADK, LangGraph, or TypeScript.
+  1. **Built-in ADK Tools in PaletteCard**:
+     - **Google Search Grounding (`google_search`)**: Dynamic real-time web search grounding with configurable domain filters.
+     - **Vertex AI Search (`vertex_ai_search`)**: Grounding against enterprise datastores (`VertexAiSearchTool` with dataStoreId, location, project).
+     - **Web Page Reader (`load_web_page`)**: HTML-to-markdown reader tool (`load_web_page`).
+     - **Human-in-the-Loop Clarification (`request_input`)**: Built-in interactive model pause/clarification tool (`request_input`).
+     - **Preload Memory Tool (`preload_memory`)**: Injects user session context and chat history (`PreloadMemoryTool`).
+     - **Code Interpreter (`code_execution`)**: Sandboxed Python code interpreter.
+     - **Sub-Agent as a Tool (`agent_as_tool`)**: Tool wrapper delegating tasks to sub-agents (`AgentTool`).
+  2. **Cross-Harness Tool Adapter Architecture**:
+     - Tools are stored in canonical, runtime-agnostic JSON (name, category, description, parameters schema, configuration).
+     - **Codegen Compilers**:
+       * **Google ADK (Python)**: Generates direct imports (`from google.adk.tools import ...`) and bindings into `Agent(tools=[...])`.
+       * **LangGraph (Python)**: Generates LangGraph/LangChain equivalents (e.g. `@tool` decorators for custom functions, `langchain_community` search tools, or `langchain.interrupt()` for `request_input`).
+       * **TypeScript**: Generates `@google/genai` tool declaration schemas and function callbacks.
+* **Sub-Agent Prompt**:
+  ```
+  Implement ADK Built-in Tools Registry and Cross-Harness Tool Adapters:
+  1. Populate builtinTools.ts with full metadata, parameter schemas, and icons for all ADK built-in tools.
+  2. Update PaletteCard.tsx Tools tab to categorize tools into Built-in Grounding, Enterprise Search, System Tools, and Custom Tools.
+  3. Create ToolDrawer.tsx configuration fields for Vertex AI search data stores and tool parameters.
+  4. Implement toolAdapters.ts to compile tool definitions to target harnesses (ADK vs LangGraph).
+  ```
+* **Verification**:
+  - Unit tests verify all built-in tools render in PaletteCard, can be attached to Agent nodes, serialize cleanly, and emit valid ADK/LangGraph code.

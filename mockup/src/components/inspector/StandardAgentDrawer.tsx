@@ -1,3 +1,18 @@
+/**
+ * StandardAgentDrawer - Inspector Drawer for Standard AI Agents
+ * 
+ * Purpose:
+ * Provides a slide-out configuration panel to inspect and edit standard agent
+ * properties including LLM model, prompt, memory, tools, and sub-agent delegation.
+ * 
+ * Architectural Decisions:
+ * - Author: Mike Nimer <mikenimer@google.com>
+ * - Sub-Agent Delegation Section: Conditionally hidden when subAgents.length === 0 to maintain clean UI.
+ * - Pattern Options: Strictly limited to valid Google ADK orchestration patterns (Sequential, Parallel, Loop, Coordinator).
+ * - Loop Configuration: Provides numeric Max Iterations bound (defaulting to 3) when Loop pattern is active.
+ * - Synchronization: Keeps sub-agent list and order strictly identical with the canvas node card.
+ */
+
 import React, { useState } from 'react';
 import { 
   Bot, 
@@ -28,9 +43,23 @@ import {
   Scale,
   ShieldAlert,
   Flame,
-  CheckCircle2
+  CheckCircle2,
+  Pencil
 } from 'lucide-react';
-import { AgentData, ToolDefinition, DelegationPattern, SubAgentRef, AgentMemoryConfig, AgentMemoryType, AgentKind, StructuredOutputSchema, DebateConfig, DebateStyle, TieBreakerStrategy } from '../../types';
+import { 
+  AgentData, 
+  ToolDefinition, 
+  DelegationPattern, 
+  SubAgentRef, 
+  AgentMemoryConfig, 
+  AgentMemoryType, 
+  AgentKind, 
+  StructuredOutputSchema, 
+  DebateConfig, 
+  DebateStyle, 
+  TieBreakerStrategy,
+  ADK_DELEGATION_PATTERNS 
+} from '../../types';
 import { MEMORY_OPTIONS, getMemoryOption } from '../../data/memoryOptions';
 import { StructuredOutputBuilder } from './StructuredOutputBuilder';
 
@@ -41,16 +70,14 @@ interface StandardAgentDrawerProps {
   onUpdateAgent: (updatedData: Partial<AgentData>) => void;
   onOpenAddTool: () => void;
   onRemoveTool: (toolId: string) => void;
+  onEditTool?: (tool: ToolDefinition) => void;
 }
 
 const SUPPORTED_MODELS = [
   { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)', desc: 'Fast, lightweight, sub-second multimodal reasoning' },
 ];
 
-const PATTERN_OPTIONS: { id: DelegationPattern; label: string; desc: string }[] = [
-  { id: 'sequential', label: 'Sequential Pipeline', desc: 'Linear prompt chaining execution (Planner → Executor → Reviewer)' },
-  { id: 'parallel', label: 'Parallel / Fan-Out', desc: 'Concurrent async dispatch and fan-in aggregation' },
-];
+const PATTERN_OPTIONS = ADK_DELEGATION_PATTERNS;
 
 export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
   agent,
@@ -59,6 +86,7 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
   onUpdateAgent,
   onOpenAddTool,
   onRemoveTool,
+  onEditTool,
 }) => {
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
@@ -241,89 +269,187 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
               </span>
             </div>
 
-          <div className="bg-[#0d1117] p-3 rounded-lg border border-cyan-500/30 space-y-3">
-            {/* Memory Provider Selection Dropdown */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase tracking-tight text-gray-300 flex items-center justify-between">
-                <span>State Storage / Memory Provider</span>
-                <span className="text-[9px] font-normal text-cyan-400">
-                  {getMemoryOption(agent.memoryConfig?.type || 'none').badge}
-                </span>
-              </label>
-              <select
-                value={agent.memoryConfig?.type || 'none'}
-                onChange={(e) => {
-                  const newType = e.target.value as AgentMemoryType;
-                  const def = getMemoryOption(newType);
-                  onUpdateAgent({
-                    memoryConfig: {
-                      ...def.defaultConfig,
-                      ...agent.memoryConfig,
-                      type: newType,
-                    },
-                  });
-                }}
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-cyan-500/40 focus:border-cyan-400 rounded-lg text-xs text-cyan-200 font-medium focus:outline-none cursor-pointer"
-              >
-                <option value="none" className="text-gray-200">🚫 Stateless (No Memory)</option>
-              </select>
-            </div>
-
-            {/* Provider Description */}
-            <div className="p-2 rounded bg-[#161b22] border border-[#30363d] text-[11px] text-gray-300 leading-relaxed">
-              <div className="text-cyan-300 font-semibold mb-0.5">
-                {getMemoryOption(agent.memoryConfig?.type || 'none').name}
+            <div className="bg-[#0d1117] p-3 rounded-lg border border-cyan-500/30 space-y-3">
+              {/* Memory Provider Selection Dropdown */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-tight text-gray-300 flex items-center justify-between">
+                  <span>State Storage / Memory Provider</span>
+                  <span className="text-[9px] font-normal text-cyan-400">
+                    {getMemoryOption(agent.memoryConfig?.type || 'none').badge}
+                  </span>
+                </label>
+                <select
+                  value={agent.memoryConfig?.type || 'none'}
+                  onChange={(e) => {
+                    const newType = e.target.value as AgentMemoryType;
+                    const def = getMemoryOption(newType);
+                    onUpdateAgent({
+                      memoryConfig: {
+                        ...def.defaultConfig,
+                        ...agent.memoryConfig,
+                        type: newType,
+                      },
+                    });
+                  }}
+                  className="w-full px-2.5 py-1.5 bg-[#161b22] border border-cyan-500/40 focus:border-cyan-400 rounded-lg text-xs text-cyan-200 font-medium focus:outline-none cursor-pointer"
+                >
+                  <option value="none" className="text-gray-200">🚫 Stateless (No Memory)</option>
+                </select>
               </div>
-              <p className="text-gray-400 text-[10px]">
-                {getMemoryOption(agent.memoryConfig?.type || 'none').description}
-              </p>
-              <div className="mt-1 pt-1 border-t border-[#30363d] text-[9px] text-gray-500">
-                <strong className="text-gray-400">Best for:</strong> {getMemoryOption(agent.memoryConfig?.type || 'none').bestFor}
-              </div>
-            </div>
 
-            {/* EDITABLE PARAMETERS FOR EACH MEMORY TYPE */}
-            {/* 1. LangGraph In-Memory */}
-            {agent.memoryConfig?.type === 'langgraph_in_memory' && (
-              <div className="space-y-2 pt-1 border-t border-[#30363d]">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
-                  LangGraph MemorySaver Settings
+              {/* Provider Description */}
+              <div className="p-2 rounded bg-[#161b22] border border-[#30363d] text-[11px] text-gray-300 leading-relaxed">
+                <div className="text-cyan-300 font-semibold mb-0.5">
+                  {getMemoryOption(agent.memoryConfig?.type || 'none').name}
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400">Thread ID State Key</label>
-                  <input
-                    type="text"
-                    value={agent.memoryConfig.threadIdKey || 'thread_id'}
-                    onChange={(e) => onUpdateAgent({
-                      memoryConfig: { ...agent.memoryConfig!, threadIdKey: e.target.value }
-                    })}
-                    placeholder="thread_id"
-                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                  />
-                  <span className="text-[9px] text-gray-500">Key used in configurable thread invocation dictionary</span>
+                <p className="text-gray-400 text-[10px]">
+                  {getMemoryOption(agent.memoryConfig?.type || 'none').description}
+                </p>
+                <div className="mt-1 pt-1 border-t border-[#30363d] text-[9px] text-gray-500">
+                  <strong className="text-gray-400">Best for:</strong> {getMemoryOption(agent.memoryConfig?.type || 'none').bestFor}
                 </div>
               </div>
-            )}
 
-            {/* 2. PostgreSQL / Cloud SQL */}
-            {agent.memoryConfig?.type === 'postgres' && (
-              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
-                  PostgreSQL Checkpointer Settings
+              {/* EDITABLE PARAMETERS FOR EACH MEMORY TYPE */}
+              {/* 1. LangGraph In-Memory */}
+              {agent.memoryConfig?.type === 'langgraph_in_memory' && (
+                <div className="space-y-2 pt-1 border-t border-[#30363d]">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                    LangGraph MemorySaver Settings
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Thread ID State Key</label>
+                    <input
+                      type="text"
+                      value={agent.memoryConfig.threadIdKey || 'thread_id'}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, threadIdKey: e.target.value }
+                      })}
+                      placeholder="thread_id"
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                    <span className="text-[9px] text-gray-500">Key used in configurable thread invocation dictionary</span>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400">Connection String Env Variable</label>
-                  <input
-                    type="text"
-                    value={agent.memoryConfig.connectionEnvVar || 'DATABASE_URL'}
-                    onChange={(e) => onUpdateAgent({
-                      memoryConfig: { ...agent.memoryConfig!, connectionEnvVar: e.target.value }
-                    })}
-                    placeholder="DATABASE_URL"
-                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                  />
+              )}
+
+              {/* 2. PostgreSQL / Cloud SQL */}
+              {agent.memoryConfig?.type === 'postgres' && (
+                <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                    PostgreSQL Checkpointer Settings
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Connection String Env Variable</label>
+                    <input
+                      type="text"
+                      value={agent.memoryConfig.connectionEnvVar || 'DATABASE_URL'}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, connectionEnvVar: e.target.value }
+                      })}
+                      placeholder="DATABASE_URL"
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+              )}
+
+              {/* 3. Redis */}
+              {agent.memoryConfig?.type === 'redis' && (
+                <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                    Redis Checkpointer Settings
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Redis URL Env Variable</label>
+                    <input
+                      type="text"
+                      value={agent.memoryConfig.connectionEnvVar || 'REDIS_URL'}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, connectionEnvVar: e.target.value }
+                      })}
+                      placeholder="REDIS_URL"
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400">TTL (Seconds)</label>
+                      <input
+                        type="number"
+                        value={agent.memoryConfig.ttlSeconds ?? 3600}
+                        onChange={(e) => onUpdateAgent({
+                          memoryConfig: { ...agent.memoryConfig!, ttlSeconds: parseInt(e.target.value) || 3600 }
+                        })}
+                        className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400">Session Key</label>
+                      <input
+                        type="text"
+                        value={agent.memoryConfig.threadIdKey || 'session_id'}
+                        onChange={(e) => onUpdateAgent({
+                          memoryConfig: { ...agent.memoryConfig!, threadIdKey: e.target.value }
+                        })}
+                        className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 4. Google Firestore / Spanner */}
+              {agent.memoryConfig?.type === 'firestore' && (
+                <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                    Google Cloud Firestore Settings
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Firestore Collection Name</label>
+                    <input
+                      type="text"
+                      value={agent.memoryConfig.collectionName || 'agent_sessions'}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, collectionName: e.target.value }
+                      })}
+                      placeholder="agent_sessions"
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Google Cloud Project Env</label>
+                    <input
+                      type="text"
+                      value={agent.memoryConfig.connectionEnvVar || 'GOOGLE_CLOUD_PROJECT'}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, connectionEnvVar: e.target.value }
+                      })}
+                      placeholder="GOOGLE_CLOUD_PROJECT"
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 5. SQLite File Store */}
+              {agent.memoryConfig?.type === 'sqlite' && (
+                <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                    SQLite Local File Settings
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400">Database File Path</label>
+                    <input
+                      type="text"
+                      value={agent.memoryConfig.sqlitePath || './agent_memory.sqlite'}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, sqlitePath: e.target.value }
+                      })}
+                      placeholder="./agent_memory.sqlite"
+                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                    />
+                  </div>
                   <div className="space-y-1">
                     <label className="text-[10px] text-gray-400">Table Name</label>
                     <input
@@ -336,318 +462,194 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
                       className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
                     />
                   </div>
+                </div>
+              )}
+
+              {/* 6. Sliding Window Buffer */}
+              {agent.memoryConfig?.type === 'window_buffer' && (
+                <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                    Sliding Window Context Settings
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400">Window Turns (K)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={agent.memoryConfig.windowTurns ?? 10}
+                        onChange={(e) => onUpdateAgent({
+                          memoryConfig: { ...agent.memoryConfig!, windowTurns: parseInt(e.target.value) || 10 }
+                        })}
+                        className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400">Max Token Budget</label>
+                      <input
+                        type="number"
+                        step="500"
+                        value={agent.memoryConfig.maxTokens ?? 4000}
+                        onChange={(e) => onUpdateAgent({
+                          memoryConfig: { ...agent.memoryConfig!, maxTokens: parseInt(e.target.value) || 4000 }
+                        })}
+                        className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 7. Summary Buffer */}
+              {agent.memoryConfig?.type === 'summary_buffer' && (
+                <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                    Conversation Summary Settings
+                  </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400">Thread Key</label>
+                    <label className="text-[10px] text-gray-400">Summary LLM Model</label>
                     <input
                       type="text"
-                      value={agent.memoryConfig.threadIdKey || 'thread_id'}
+                      value={agent.memoryConfig.summaryModel || 'gemini-flash-latest'}
                       onChange={(e) => onUpdateAgent({
-                        memoryConfig: { ...agent.memoryConfig!, threadIdKey: e.target.value }
+                        memoryConfig: { ...agent.memoryConfig!, summaryModel: e.target.value }
                       })}
-                      placeholder="thread_id"
-                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 3. Redis Store */}
-            {agent.memoryConfig?.type === 'redis' && (
-              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
-                  Redis Key-Value Settings
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400">Redis Connection Env Variable</label>
-                  <input
-                    type="text"
-                    value={agent.memoryConfig.connectionEnvVar || 'REDIS_URL'}
-                    onChange={(e) => onUpdateAgent({
-                      memoryConfig: { ...agent.memoryConfig!, connectionEnvVar: e.target.value }
-                    })}
-                    placeholder="REDIS_URL"
-                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400">TTL (seconds)</label>
-                    <input
-                      type="number"
-                      value={agent.memoryConfig.ttlSeconds ?? 86400}
-                      onChange={(e) => onUpdateAgent({
-                        memoryConfig: { ...agent.memoryConfig!, ttlSeconds: parseInt(e.target.value) || 3600 }
-                      })}
+                      placeholder="gemini-flash-latest"
                       className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400">Session Key</label>
-                    <input
-                      type="text"
-                      value={agent.memoryConfig.threadIdKey || 'session_id'}
-                      onChange={(e) => onUpdateAgent({
-                        memoryConfig: { ...agent.memoryConfig!, threadIdKey: e.target.value }
-                      })}
-                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 4. Google Firestore / Spanner */}
-            {agent.memoryConfig?.type === 'firestore' && (
-              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
-                  Google Cloud Firestore Settings
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400">Firestore Collection Name</label>
-                  <input
-                    type="text"
-                    value={agent.memoryConfig.collectionName || 'agent_sessions'}
-                    onChange={(e) => onUpdateAgent({
-                      memoryConfig: { ...agent.memoryConfig!, collectionName: e.target.value }
-                    })}
-                    placeholder="agent_sessions"
-                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400">Google Cloud Project Env</label>
-                  <input
-                    type="text"
-                    value={agent.memoryConfig.connectionEnvVar || 'GOOGLE_CLOUD_PROJECT'}
-                    onChange={(e) => onUpdateAgent({
-                      memoryConfig: { ...agent.memoryConfig!, connectionEnvVar: e.target.value }
-                    })}
-                    placeholder="GOOGLE_CLOUD_PROJECT"
-                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* 5. SQLite File Store */}
-            {agent.memoryConfig?.type === 'sqlite' && (
-              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
-                  SQLite Local File Settings
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400">Database File Path</label>
-                  <input
-                    type="text"
-                    value={agent.memoryConfig.sqlitePath || './agent_memory.sqlite'}
-                    onChange={(e) => onUpdateAgent({
-                      memoryConfig: { ...agent.memoryConfig!, sqlitePath: e.target.value }
-                    })}
-                    placeholder="./agent_memory.sqlite"
-                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400">Table Name</label>
-                  <input
-                    type="text"
-                    value={agent.memoryConfig.tableName || 'checkpoints'}
-                    onChange={(e) => onUpdateAgent({
-                      memoryConfig: { ...agent.memoryConfig!, tableName: e.target.value }
-                    })}
-                    placeholder="checkpoints"
-                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* 6. Sliding Window Buffer */}
-            {agent.memoryConfig?.type === 'window_buffer' && (
-              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
-                  Sliding Window Context Settings
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400">Window Turns (K)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      value={agent.memoryConfig.windowTurns ?? 10}
-                      onChange={(e) => onUpdateAgent({
-                        memoryConfig: { ...agent.memoryConfig!, windowTurns: parseInt(e.target.value) || 10 }
-                      })}
-                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400">Max Token Budget</label>
+                    <label className="text-[10px] text-gray-400">Summary Token Threshold</label>
                     <input
                       type="number"
                       step="500"
-                      value={agent.memoryConfig.maxTokens ?? 4000}
+                      value={agent.memoryConfig.maxTokens ?? 2000}
                       onChange={(e) => onUpdateAgent({
-                        memoryConfig: { ...agent.memoryConfig!, maxTokens: parseInt(e.target.value) || 4000 }
+                        memoryConfig: { ...agent.memoryConfig!, maxTokens: parseInt(e.target.value) || 2000 }
                       })}
                       className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
                     />
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* 7. Summary Buffer */}
-            {agent.memoryConfig?.type === 'summary_buffer' && (
-              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
-                  Conversation Summary Settings
+              {/* 8. Vector Store / RAG */}
+              {agent.memoryConfig?.type === 'vector_rag' && (
+                <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                    Vector Store / Semantic Memory Settings
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400">Vector Provider</label>
+                      <select
+                        value={agent.memoryConfig.vectorProvider || 'pgvector'}
+                        onChange={(e) => onUpdateAgent({
+                          memoryConfig: { ...agent.memoryConfig!, vectorProvider: e.target.value as any }
+                        })}
+                        className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white cursor-pointer"
+                      >
+                        <option value="pgvector">pgvector (Postgres)</option>
+                        <option value="chroma">Chroma DB</option>
+                        <option value="pinecone">Pinecone</option>
+                        <option value="qdrant">Qdrant</option>
+                        <option value="weaviate">Weaviate</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400">Embedding Model</label>
+                      <input
+                        type="text"
+                        value={agent.memoryConfig.embeddingModel || 'text-embedding-004'}
+                        onChange={(e) => onUpdateAgent({
+                          memoryConfig: { ...agent.memoryConfig!, embeddingModel: e.target.value }
+                        })}
+                        placeholder="text-embedding-004"
+                        className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400">Top-K Retrieval</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="50"
+                        value={agent.memoryConfig.topK ?? 4}
+                        onChange={(e) => onUpdateAgent({
+                          memoryConfig: { ...agent.memoryConfig!, topK: parseInt(e.target.value) || 4 }
+                        })}
+                        className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400">Similarity Threshold</label>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        max="1"
+                        value={agent.memoryConfig.similarityThreshold ?? 0.75}
+                        onChange={(e) => onUpdateAgent({
+                          memoryConfig: { ...agent.memoryConfig!, similarityThreshold: parseFloat(e.target.value) || 0.75 }
+                        })}
+                        className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400">Summary LLM Model</label>
-                  <input
-                    type="text"
-                    value={agent.memoryConfig.summaryModel || 'gemini-flash-latest'}
-                    onChange={(e) => onUpdateAgent({
-                      memoryConfig: { ...agent.memoryConfig!, summaryModel: e.target.value }
-                    })}
-                    placeholder="gemini-flash-latest"
-                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400">Summary Token Threshold</label>
-                  <input
-                    type="number"
-                    step="500"
-                    value={agent.memoryConfig.maxTokens ?? 2000}
-                    onChange={(e) => onUpdateAgent({
-                      memoryConfig: { ...agent.memoryConfig!, maxTokens: parseInt(e.target.value) || 2000 }
-                    })}
-                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                  />
-                </div>
-              </div>
-            )}
+              )}
 
-            {/* 8. Vector Store / RAG */}
-            {agent.memoryConfig?.type === 'vector_rag' && (
-              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
-                  Vector Store / Semantic Memory Settings
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400">Vector Provider</label>
-                    <select
-                      value={agent.memoryConfig.vectorProvider || 'pgvector'}
-                      onChange={(e) => onUpdateAgent({
-                        memoryConfig: { ...agent.memoryConfig!, vectorProvider: e.target.value as any }
-                      })}
-                      className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white cursor-pointer"
-                    >
-                      <option value="pgvector">pgvector (Postgres)</option>
-                      <option value="chroma">Chroma DB</option>
-                      <option value="pinecone">Pinecone</option>
-                      <option value="qdrant">Qdrant</option>
-                      <option value="weaviate">Weaviate</option>
-                    </select>
+              {/* 9. Entity & Fact Memory */}
+              {agent.memoryConfig?.type === 'entity_fact' && (
+                <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                    Entity & Fact Memory Settings (Mem0 / Zep)
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400">Embedding Model</label>
+                    <label className="text-[10px] text-gray-400">User ID Parameter Key</label>
                     <input
                       type="text"
-                      value={agent.memoryConfig.embeddingModel || 'text-embedding-004'}
+                      value={agent.memoryConfig.userIdKey || 'user_id'}
                       onChange={(e) => onUpdateAgent({
-                        memoryConfig: { ...agent.memoryConfig!, embeddingModel: e.target.value }
+                        memoryConfig: { ...agent.memoryConfig!, userIdKey: e.target.value }
                       })}
-                      placeholder="text-embedding-004"
-                      className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400">Top-K Retrieval</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="50"
-                      value={agent.memoryConfig.topK ?? 4}
-                      onChange={(e) => onUpdateAgent({
-                        memoryConfig: { ...agent.memoryConfig!, topK: parseInt(e.target.value) || 4 }
-                      })}
+                      placeholder="user_id"
                       className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400">Similarity Threshold</label>
+                    <label className="text-[10px] text-gray-400">Entity Collection Name</label>
                     <input
-                      type="number"
-                      step="0.05"
-                      min="0"
-                      max="1"
-                      value={agent.memoryConfig.similarityThreshold ?? 0.75}
+                      type="text"
+                      value={agent.memoryConfig.collectionName || 'user_entities'}
                       onChange={(e) => onUpdateAgent({
-                        memoryConfig: { ...agent.memoryConfig!, similarityThreshold: parseFloat(e.target.value) || 0.75 }
+                        memoryConfig: { ...agent.memoryConfig!, collectionName: e.target.value }
                       })}
+                      placeholder="user_entities"
                       className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
                     />
                   </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="extractUserFactsToggle"
+                      checked={agent.memoryConfig.extractUserFacts !== false}
+                      onChange={(e) => onUpdateAgent({
+                        memoryConfig: { ...agent.memoryConfig!, extractUserFacts: e.target.checked }
+                      })}
+                      className="w-3.5 h-3.5 accent-cyan-500 rounded cursor-pointer"
+                    />
+                    <label htmlFor="extractUserFactsToggle" className="text-[10px] text-gray-300 cursor-pointer">
+                      Automatically extract and update user preferences & facts
+                    </label>
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {/* 9. Entity & Fact Memory */}
-            {agent.memoryConfig?.type === 'entity_fact' && (
-              <div className="space-y-2.5 pt-1 border-t border-[#30363d]">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
-                  Entity & Fact Memory Settings (Mem0 / Zep)
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400">User ID Parameter Key</label>
-                  <input
-                    type="text"
-                    value={agent.memoryConfig.userIdKey || 'user_id'}
-                    onChange={(e) => onUpdateAgent({
-                      memoryConfig: { ...agent.memoryConfig!, userIdKey: e.target.value }
-                    })}
-                    placeholder="user_id"
-                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400">Entity Collection Name</label>
-                  <input
-                    type="text"
-                    value={agent.memoryConfig.collectionName || 'user_entities'}
-                    onChange={(e) => onUpdateAgent({
-                      memoryConfig: { ...agent.memoryConfig!, collectionName: e.target.value }
-                    })}
-                    placeholder="user_entities"
-                    className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-500 rounded text-xs text-white font-mono"
-                  />
-                </div>
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="checkbox"
-                    id="extractUserFactsToggle"
-                    checked={agent.memoryConfig.extractUserFacts !== false}
-                    onChange={(e) => onUpdateAgent({
-                      memoryConfig: { ...agent.memoryConfig!, extractUserFacts: e.target.checked }
-                    })}
-                    className="w-3.5 h-3.5 accent-cyan-500 rounded cursor-pointer"
-                  />
-                  <label htmlFor="extractUserFactsToggle" className="text-[10px] text-gray-300 cursor-pointer">
-                    Automatically extract and update user preferences & facts
-                  </label>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
         )}
 
         {/* Attached Tools Section */}
@@ -673,16 +675,30 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
                   key={tool.id}
                   className="flex items-center justify-between p-2 rounded-lg bg-[#0d1117] border border-[#30363d]"
                 >
-                  <div>
-                    <div className="font-semibold text-gray-200 text-xs">{tool.name}</div>
-                    <div className="text-[10px] text-gray-400 truncate max-w-[200px]">{tool.description}</div>
+                  <div className="min-w-0 pr-2">
+                    <div className="font-semibold text-gray-200 text-xs truncate">{tool.name}</div>
+                    <div className="text-[10px] text-gray-400 truncate max-w-[190px]">{tool.description}</div>
                   </div>
-                  <button
-                    onClick={() => onRemoveTool(tool.id)}
-                    className="p-1 text-gray-400 hover:text-rose-400 transition-colors cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {onEditTool && (
+                      <button
+                        type="button"
+                        onClick={() => onEditTool(tool)}
+                        title={`Configure ${tool.name} for this agent`}
+                        className="p-1 text-gray-400 hover:text-blue-400 hover:bg-[#161b22] rounded transition-colors cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onRemoveTool(tool.id)}
+                      title={`Remove ${tool.name}`}
+                      className="p-1 text-gray-400 hover:text-rose-400 hover:bg-[#161b22] rounded transition-colors cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))
             ) : (
@@ -693,50 +709,75 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
           </div>
         </div>
 
-        {/* Sub-Agent Delegation Section: Pattern Dropdown ABOVE orderable list */}
-        <div className="space-y-2.5 pt-2 border-t border-[#30363d]">
-          <div className="flex items-center justify-between">
-            <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
-              <Layers className="w-3 h-3 text-purple-400" />
-              Sub-Agent Delegation ({subAgents.length})
-            </label>
-            <span className="text-[10px] text-gray-500 font-normal">drag handle to reorder</span>
-          </div>
-
-          {/* Pattern Dropdown placed directly above the list */}
-          <div className="space-y-1 bg-[#0d1117] p-2.5 rounded-lg border border-purple-500/30">
+        {/* Sub-Agent Delegation Section: Only rendered when child agents are connected */}
+        {subAgents.length > 0 && (
+          <div className="space-y-2.5 pt-2 border-t border-[#30363d]">
             <div className="flex items-center justify-between">
-              <label className="text-[10px] font-bold uppercase tracking-tight text-purple-300">
-                Orchestration Pattern
+              <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
+                <Layers className="w-3 h-3 text-purple-400" />
+                Sub-Agent Delegation ({subAgents.length})
               </label>
+              <span className="text-[10px] text-gray-500 font-normal">drag handle to reorder</span>
             </div>
-            <select
-              value={currentPattern}
-              onChange={(e) => {
-                const newPattern = e.target.value as DelegationPattern;
-                const updates: Partial<AgentData> = { subAgentPattern: newPattern };
-                if (newPattern === 'debate' && !agent.debateConfig) {
-                  updates.debateConfig = {
-                    maxRounds: 2,
-                    consensusThreshold: 0.85,
-                    earlyStoppingEnabled: true,
-                    debateStyle: 'structured_rebuttal',
-                    tieBreakerStrategy: 'conditional_approval',
-                    minWordLimitPerBrief: 250,
-                    requireEvidenceCitations: true,
-                  };
-                }
-                onUpdateAgent(updates);
-              }}
-              className="w-full px-2.5 py-1.5 bg-[#161b22] border border-purple-500/40 focus:border-purple-400 rounded text-xs text-purple-200 font-medium focus:outline-none cursor-pointer"
-            >
-              {PATTERN_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id} className="bg-[#161b22] text-gray-200">
-                  {opt.label} — {opt.desc}
-                </option>
-              ))}
-            </select>
-          </div>
+
+            {/* Pattern Dropdown placed directly above the list */}
+            <div className="space-y-1 bg-[#0d1117] p-2.5 rounded-lg border border-purple-500/30">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold uppercase tracking-tight text-purple-300">
+                  Orchestration Pattern
+                </label>
+              </div>
+              <select
+                value={currentPattern}
+                onChange={(e) => {
+                  const newPattern = e.target.value as DelegationPattern;
+                  const updates: Partial<AgentData> = { subAgentPattern: newPattern };
+                  if (newPattern === 'loop' && agent.maxIterations === undefined) {
+                    updates.maxIterations = 3;
+                  }
+                  if (newPattern === 'debate' && !agent.debateConfig) {
+                    updates.debateConfig = {
+                      maxRounds: 2,
+                      consensusThreshold: 0.85,
+                      earlyStoppingEnabled: true,
+                      debateStyle: 'structured_rebuttal',
+                      tieBreakerStrategy: 'conditional_approval',
+                      minWordLimitPerBrief: 250,
+                      requireEvidenceCitations: true,
+                    };
+                  }
+                  onUpdateAgent(updates);
+                }}
+                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-purple-500/40 focus:border-purple-400 rounded text-xs text-purple-200 font-medium focus:outline-none cursor-pointer"
+              >
+                {PATTERN_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id} className="bg-[#161b22] text-gray-200">
+                    {opt.label} — {opt.desc}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Loop Pattern Max Iterations Configuration */}
+            {currentPattern === 'loop' && (
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#0d1117] border border-purple-500/30">
+                <div>
+                  <label className="text-xs font-semibold text-purple-200">Max Iterations</label>
+                  <p className="text-[10px] text-gray-400">Maximum loop cycles before terminating (default 3)</p>
+                </div>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={agent.maxIterations ?? 3}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    onUpdateAgent({ maxIterations: isNaN(val) ? 3 : Math.max(1, val) });
+                  }}
+                  className="w-16 bg-[#161b22] text-purple-200 text-xs font-mono font-bold px-2 py-1 rounded border border-purple-500/40 focus:border-purple-400 focus:outline-none text-right cursor-text"
+                />
+              </div>
+            )}
 
           {/* Debate & Consensus Pattern Configuration Panel */}
           {(currentPattern === 'debate' || agent.debateConfig) && (
@@ -919,8 +960,7 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
 
           {/* Orderable Sub-Agents List */}
           <div className="space-y-1.5">
-            {subAgents.length > 0 ? (
-              subAgents.map((sub: SubAgentRef, idx: number) => (
+            {subAgents.map((sub: SubAgentRef, idx: number) => (
                 <div
                   key={sub.agentId || idx}
                   draggable
@@ -982,14 +1022,10 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
                     </button>
                   </div>
                 </div>
-              ))
-            ) : (
-              <div className="text-[11px] text-gray-400 italic p-2 bg-[#0d1117] rounded-lg border border-dashed border-[#30363d]">
-                No sub-agents attached. Connect this node to other agents by dragging from its bottom purple handle.
-              </div>
-            )}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

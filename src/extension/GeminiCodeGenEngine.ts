@@ -7,9 +7,10 @@
  *
  * Architectural Decisions:
  * 1. Pure LLM Generation: Code synthesis is 100% delegated to Gemini LLM (`gemini-flash-latest`). Zero template fallbacks.
- * 2. Prompt Decoupling: Prompts reside in `resource/prompts/` (e.g., `resource/prompts/python-adk.prompt.txt`).
+ * 2. Prompt Decoupling: Prompts reside in `resource/prompts/` (e.g., `resource/prompts/python_adk_agent-engine.prompt.txt`).
  * 3. Multi-Credential Support: Authenticates via `GEMINI_API_KEY` (settings/env) or falls back to Google Application Default Credentials (ADC).
  * 4. Structured Output Parsing: Robustly parses multi-file JSON arrays conforming to `{ path, description, content }`.
+ * 5. Standalone Merged Prompts: Self-contained prompt templates in `resource/prompts/` provide complete framework, workflow, and deployment instructions without external file appending.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -139,14 +140,8 @@ export class GeminiCodeGenEngine {
     );
   }
 
-  /**
-   * Invokes the Gemini API via @google/genai SDK or direct REST with API Key / ADC.
-   *
-   * @param prompt Full interpolated prompt instruction
-   * @param apiKey Optional Gemini API key
-   * @param model Target model identifier (default: 'gemini-flash-latest')
-   * @returns Array of generated file objects
-   */
+
+
   /**
    * Invokes the Gemini API via @google/genai SDK or direct REST with API Key / ADC.
    * Seamlessly falls back to Google Application Default Credentials (ADC) if the API key fails.
@@ -182,14 +177,28 @@ export class GeminiCodeGenEngine {
     }
   }
 
+  /**
+   * Gemini response schema for structured output code generation.
+   * Constrains the LLM response to a strongly-typed JSON array of file objects.
+   */
   private readonly fileArraySchema = {
     type: 'ARRAY',
+    description: 'List of source code and configuration files generated for the complete agent project.',
     items: {
       type: 'OBJECT',
       properties: {
-        path: { type: 'STRING' },
-        description: { type: 'STRING' },
-        content: { type: 'STRING' },
+        path: {
+          type: 'STRING',
+          description: 'Relative file path including subdirectories (e.g., "src/agent.py", "tests/test_agent.py", "requirements.txt").',
+        },
+        description: {
+          type: 'STRING',
+          description: 'Brief 1-2 sentence description explaining the purpose and contents of this file.',
+        },
+        content: {
+          type: 'STRING',
+          description: 'Complete, production-ready, unabridged source code for the file without placeholders or truncation.',
+        },
       },
       required: ['path', 'description', 'content'],
     },
