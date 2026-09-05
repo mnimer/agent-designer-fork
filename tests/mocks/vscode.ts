@@ -34,6 +34,7 @@ export function resetAllMocks() {
   window.showWarningMessage.calls = [];
   window.showErrorMessage.calls = [];
   window.showInputBox.calls = [];
+  window.showSaveDialog.calls = [];
   workspace.applyEdit.calls = [];
   workspace.asRelativePath.calls = [];
   workspace.openTextDocument.calls = [];
@@ -64,6 +65,13 @@ export enum TreeItemCollapsibleState {
   Expanded = 2,
 }
 
+export enum FileType {
+  Unknown = 0,
+  File = 1,
+  Directory = 2,
+  SymbolicLink = 64,
+}
+
 export const window = {
   activeColorTheme: { kind: ColorThemeKind.Dark },
   onDidChangeActiveColorTheme: createSpy((callback: Function) => ({
@@ -87,6 +95,7 @@ export const window = {
   showWarningMessage: createSpy(async (...args: any[]) => args[args.length - 1]),
   showErrorMessage: createSpy(),
   showInputBox: createSpy(async (options?: any) => options?.value || 'new_agent_workflow'),
+  showSaveDialog: createSpy(async (options?: any) => options?.defaultUri || Uri.file('/mock/workspace/new_agent_workflow.agent')),
 };
 
 export const workspace = {
@@ -144,20 +153,31 @@ export const commands = {
 
 export class Uri {
   public fsPath: string;
-  constructor(fsPath: string) {
+  public path: string;
+  public scheme: string;
+  constructor(fsPath: string, scheme: string = 'file') {
     this.fsPath = fsPath;
+    this.path = fsPath;
+    this.scheme = scheme;
   }
   public static file(path: string): Uri {
-    return new Uri(path);
+    return new Uri(path, 'file');
   }
   public static parse(uriString: string): Uri {
-    return new Uri(uriString.replace('file://', ''));
+    const match = uriString.match(/^([a-z0-9+.-]+):\/\/(.*)$/);
+    const scheme = match ? match[1] : 'file';
+    const p = match ? match[2] : uriString;
+    return new Uri(p.startsWith('/') ? p : '/' + p, scheme);
   }
   public static joinPath(base: Uri, ...paths: string[]): Uri {
-    return new Uri([base.fsPath, ...paths].join('/'));
+    if (!base || (!base.fsPath && !(base as any).path)) {
+      throw new Error('[UriError]: cannot call joinPath on URI without path: ' + String(base));
+    }
+    const basePath = base.fsPath || (base as any).path;
+    return new Uri([basePath.replace(/\/+$/, ''), ...paths.map((p) => p.replace(/^\/+/, ''))].join('/'));
   }
   public toString(): string {
-    return `file://${this.fsPath}`;
+    return `${this.scheme}://${this.fsPath}`;
   }
 }
 

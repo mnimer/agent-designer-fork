@@ -74,9 +74,11 @@ describe('WorkflowExplorerTreeProvider', { concurrency: 1 }, () => {
     assert.equal(children.length, 2);
 
     // uri1: customer_support.agent
-    const item1 = children.find((c) => c.workflowName === 'Customer Support Flow');
+    const item1 = children.find((c) => c.fileName === 'customer_support.agent');
     assert.ok(item1);
-    assert.equal(item1.label, 'Customer Support Flow');
+    assert.equal(item1.label, 'customer_support.agent');
+    assert.equal(item1.fileName, 'customer_support.agent');
+    assert.equal(item1.workflowName, 'Customer Support Flow');
     assert.equal(item1.nodeCount, 3);
     assert.equal(item1.framework, 'google-adk');
     assert.equal(item1.description, '3 nodes • google-adk');
@@ -85,9 +87,11 @@ describe('WorkflowExplorerTreeProvider', { concurrency: 1 }, () => {
     assert.equal(item1.command?.arguments?.[1], 'agentFlow.editor');
 
     // uri2: data_analyst.agent
-    const item2 = children.find((c) => c.workflowName === 'Data Analyst Pipeline');
+    const item2 = children.find((c) => c.fileName === 'data_analyst.agent');
     assert.ok(item2);
-    assert.equal(item2.label, 'Data Analyst Pipeline');
+    assert.equal(item2.label, 'data_analyst.agent');
+    assert.equal(item2.fileName, 'data_analyst.agent');
+    assert.equal(item2.workflowName, 'Data Analyst Pipeline');
     assert.equal(item2.nodeCount, 1);
     assert.equal(item2.framework, 'langgraph');
     assert.equal(item2.description, '1 node • langgraph');
@@ -103,6 +107,25 @@ describe('WorkflowExplorerTreeProvider', { concurrency: 1 }, () => {
     provider.dispose();
   });
 
+  it('should list tree items by file name rather than internal workflow document name', async () => {
+    const customUri = vscode.Uri.file('/mock/workspace/travel_assistant.agent');
+    vscode.workspace.findFiles = vscode.createSpy(async () => [customUri]);
+    vscode.workspace.fs.readFile = vscode.createSpy(async () =>
+      Buffer.from(JSON.stringify({ name: 'workflow 1', nodes: [{ id: 'n1' }] }))
+    );
+
+    const provider = new WorkflowExplorerTreeProvider();
+    const children = await provider.getChildren();
+
+    assert.equal(children.length, 1);
+    // Label should be the file name, NOT "workflow 1"
+    assert.equal(children[0].label, 'travel_assistant.agent');
+    assert.equal(children[0].fileName, 'travel_assistant.agent');
+    assert.equal(children[0].workflowName, 'workflow 1');
+
+    provider.dispose();
+  });
+
   it('should gracefully handle corrupt or empty workflow files with fallback labels', async () => {
     const corruptUri = vscode.Uri.file('/mock/workspace/corrupt.agent');
     vscode.workspace.findFiles = vscode.createSpy(async () => [corruptUri]);
@@ -114,7 +137,8 @@ describe('WorkflowExplorerTreeProvider', { concurrency: 1 }, () => {
     const children = await provider.getChildren();
 
     assert.equal(children.length, 1);
-    assert.equal(children[0].label, 'corrupt');
+    assert.equal(children[0].label, 'corrupt.agent');
+    assert.equal(children[0].fileName, 'corrupt.agent');
     assert.equal(children[0].nodeCount, 0);
     assert.equal(children[0].descriptionText, 'Unparsed workflow');
 
@@ -296,6 +320,56 @@ describe('WorkflowExplorerTreeProvider', { concurrency: 1 }, () => {
     assert.equal(deleted, false);
     assert.equal(vscode.workspace.fs.delete.calls.length, 0);
 
+    provider.dispose();
+  });
+
+  it('should handle view context object from view title button without throwing UriError', async () => {
+    vscode.window.showInputBox = vscode.createSpy(async () => 'sidebar_created_flow');
+
+    const provider = new WorkflowExplorerTreeProvider();
+    // Simulate VS Code passing view context object when user clicks '+' in view title
+    const viewContext = { $mid: 1, id: 'agentFlow.views.workflows' };
+    const targetUri = await provider.newWorkflow(viewContext);
+
+    assert.ok(targetUri);
+    assert.ok(targetUri.fsPath.endsWith('sidebar_created_flow.agent'));
+    assert.equal(vscode.workspace.fs.writeFile.calls.length, 1);
+    assert.equal(vscode.commands.executeCommand.calls.length, 1);
+
+    provider.dispose();
+  });
+
+  it('should resolve parent directory when target is a file URI or WorkflowTreeItem', async () => {
+    vscode.window.showInputBox = vscode.createSpy(async () => 'child_flow');
+
+    const provider = new WorkflowExplorerTreeProvider();
+    const fileUri = vscode.Uri.file('/mock/workspace/subfolder/existing.agent');
+    const targetUri = await provider.newWorkflow(fileUri);
+
+    assert.ok(targetUri);
+    assert.equal(targetUri.fsPath, '/mock/workspace/subfolder/child_flow.agent');
+    assert.equal(vscode.workspace.fs.writeFile.calls.length, 1);
+
+    provider.dispose();
+  });
+
+  it('should prompt showSaveDialog when no workspace folder is open', async () => {
+    const originalFolders = vscode.workspace.workspaceFolders;
+    (vscode.workspace as any).workspaceFolders = [];
+
+    vscode.window.showInputBox = vscode.createSpy(async () => 'standalone_flow');
+    const chosenUri = vscode.Uri.file('/custom/location/standalone_flow.agent');
+    vscode.window.showSaveDialog = vscode.createSpy(async () => chosenUri);
+
+    const provider = new WorkflowExplorerTreeProvider();
+    const targetUri = await provider.newWorkflow();
+
+    assert.equal(targetUri, chosenUri);
+    assert.equal(vscode.window.showSaveDialog.calls.length, 1);
+    assert.equal(vscode.workspace.fs.writeFile.calls.length, 1);
+    assert.equal(vscode.workspace.fs.writeFile.calls[0][0], chosenUri);
+
+    (vscode.workspace as any).workspaceFolders = originalFolders;
     provider.dispose();
   });
 });

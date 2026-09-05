@@ -55,7 +55,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 4. Register Sidebar Commands
   const newWorkflowCmd = vscode.commands.registerCommand(
     'agentFlow.sidebar.newWorkflow',
-    async (folderUri?: vscode.Uri) => {
+    async (folderUri?: any) => {
       await workflowExplorerProvider.newWorkflow(folderUri);
     }
   );
@@ -71,7 +71,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const duplicateWorkflowCmd = vscode.commands.registerCommand(
     'agentFlow.sidebar.duplicateWorkflow',
-    async (item?: WorkflowTreeItem) => {
+    async (item?: any) => {
       await workflowExplorerProvider.duplicateWorkflow(item);
     }
   );
@@ -79,7 +79,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const deleteWorkflowCmd = vscode.commands.registerCommand(
     'agentFlow.sidebar.deleteWorkflow',
-    async (item?: WorkflowTreeItem) => {
+    async (item?: any) => {
       await workflowExplorerProvider.deleteWorkflow(item);
     }
   );

@@ -30,13 +30,14 @@ import { AgentWorkflowDocument } from '../../shared/types';
  */
 export class WorkflowTreeItem extends vscode.TreeItem {
   public readonly uri: vscode.Uri;
+  public readonly fileName: string;
   public readonly workflowName: string;
   public readonly nodeCount: number;
   public readonly framework: string;
   public readonly descriptionText?: string;
 
   /**
-   * Constructs a WorkflowTreeItem.
+   * Constructs a WorkflowTreeItem representing an individual `.agent` workflow file.
    *
    * @param uri URI of the .agent file
    * @param workflowName Human-readable name of the agent workflow
@@ -51,22 +52,25 @@ export class WorkflowTreeItem extends vscode.TreeItem {
     framework: string,
     descriptionText?: string
   ) {
-    super(workflowName || path.basename(uri.fsPath), vscode.TreeItemCollapsibleState.None);
+    const fileName = path.basename(uri.fsPath);
+    super(fileName, vscode.TreeItemCollapsibleState.None);
 
     this.uri = uri;
     this.resourceUri = uri;
+    this.fileName = fileName;
     this.workflowName = workflowName;
     this.nodeCount = nodeCount;
     this.framework = framework;
     this.descriptionText = descriptionText;
 
-    // Format display description: e.g. "4 nodes (google-adk)"
+    // Format display description: e.g. "4 nodes • google-adk"
     const nodeLabel = nodeCount === 1 ? '1 node' : `${nodeCount} nodes`;
     this.description = `${nodeLabel} • ${framework}`;
 
-    // Tooltip with detailed file path and description
+    // Tooltip with detailed file path, title, and description
     this.tooltip = new vscode.MarkdownString(
-      `**${workflowName}**\n\n` +
+      `**${fileName}**\n\n` +
+      `${workflowName && workflowName !== fileName && workflowName !== path.basename(uri.fsPath, '.agent') ? `*${workflowName}*\n\n` : ''}` +
       `${descriptionText ? descriptionText + '\n\n' : ''}` +
       `- **Nodes**: ${nodeCount}\n` +
       `- **Framework**: ${framework}\n` +
@@ -86,6 +90,39 @@ export class WorkflowTreeItem extends vscode.TreeItem {
       arguments: [uri, AgentEditorProvider.viewType],
     };
   }
+}
+
+/**
+ * Safely extracts a valid vscode.Uri from various VS Code context arguments.
+ * Handles vscode.Uri instances, WorkflowTreeItem instances, or plain URI objects.
+ *
+ * @param target Input argument from commands or tree views
+ * @returns vscode.Uri if valid, or undefined
+ */
+export function extractValidUri(target: unknown): vscode.Uri | undefined {
+  if (!target) {
+    return undefined;
+  }
+  if (target instanceof vscode.Uri) {
+    return target;
+  }
+  if (typeof target === 'object' && target !== null) {
+    const candidate = target as Record<string, any>;
+    if (candidate.uri instanceof vscode.Uri) {
+      return candidate.uri;
+    }
+    if (typeof candidate.fsPath === 'string' && candidate.fsPath.length > 0) {
+      return vscode.Uri.file(candidate.fsPath);
+    }
+    if (typeof candidate.path === 'string' && candidate.path.length > 0 && typeof candidate.scheme === 'string') {
+      try {
+        return vscode.Uri.file(candidate.fsPath || candidate.path);
+      } catch {
+        return undefined;
+      }
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -184,7 +221,7 @@ export class WorkflowExplorerTreeProvider
         items.push(new WorkflowTreeItem(uri, workflowName, nodeCount, framework, description));
       } catch (err) {
         // Fallback for empty or corrupt files
-        const fallbackName = path.basename(uri.fsPath, '.agent');
+        const fallbackName = path.basename(uri.fsPath);
         items.push(new WorkflowTreeItem(uri, fallbackName, 0, 'google-adk', 'Unparsed workflow'));
       }
     }
@@ -196,12 +233,28 @@ export class WorkflowExplorerTreeProvider
    * Creates a new `.agent` workflow file in the workspace, populates default scaffolding,
    * and opens it in the custom editor.
    *
-   * @param targetFolderUri Optional folder URI where the new file should be located
+   * @param targetFolder Optional folder URI, TreeItem, or view context where the new file should be located
    * @returns URI of the newly created workflow file, or undefined if cancelled
    */
-  public async newWorkflow(targetFolderUri?: vscode.Uri): Promise<vscode.Uri | undefined> {
-    // 1. Determine destination directory
-    let folder = targetFolderUri;
+  public async newWorkflow(targetFolder?: unknown): Promise<vscode.Uri | undefined> {
+    // 1. Determine destination directory from argument or active workspace
+    let folder = extractValidUri(targetFolder);
+
+    // If folder points to an existing file, resolve to its containing directory
+    if (folder) {
+      try {
+        const stat = await vscode.workspace.fs.stat(folder);
+        if ((stat.type & vscode.FileType.Directory) === 0) {
+          folder = vscode.Uri.file(path.dirname(folder.fsPath));
+        }
+      } catch {
+        if (folder.fsPath.endsWith('.agent') || path.extname(folder.fsPath)) {
+          folder = vscode.Uri.file(path.dirname(folder.fsPath));
+        }
+      }
+    }
+
+    // Default to workspace folder if no valid folder was provided
     if (!folder) {
       const workspaceFolders = vscode.workspace.workspaceFolders;
       if (workspaceFolders && workspaceFolders.length > 0) {
@@ -211,7 +264,7 @@ export class WorkflowExplorerTreeProvider
 
     // 2. Prompt user for workflow name
     const inputName = await vscode.window.showInputBox({
-      title: 'New Agent Flow Workflow',
+      title: 'New Agent Designer Workflow',
       prompt: 'Enter workflow name (without extension)',
       value: 'new_agent_workflow',
       validateInput: (val) => {
@@ -230,11 +283,11 @@ export class WorkflowExplorerTreeProvider
     }
 
     const cleanBaseName = inputName.trim().replace(/\.agent$/i, '');
-    let fileName = `${cleanBaseName}.agent`;
+    let targetUri: vscode.Uri;
 
     // 3. Resolve target URI and ensure unique non-colliding file name
-    let targetUri: vscode.Uri;
     if (folder) {
+      let fileName = `${cleanBaseName}.agent`;
       targetUri = vscode.Uri.joinPath(folder, fileName);
       let counter = 1;
       while (true) {
@@ -255,16 +308,29 @@ export class WorkflowExplorerTreeProvider
       const content = Buffer.from(JSON.stringify(defaultDoc, null, 2), 'utf-8');
       await vscode.workspace.fs.writeFile(targetUri, content);
     } else {
-      const defaultDoc = AgentEditorProvider.createDefaultWorkflowDocument(cleanBaseName);
-      const doc = await vscode.workspace.openTextDocument({
-        language: 'json',
-        content: JSON.stringify(defaultDoc, null, 2),
+      // If no workspace folder is open, ask the user where to save the file
+      const chosenUri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(`${cleanBaseName}.agent`),
+        filters: {
+          'Agent Workflows': ['agent'],
+        },
+        title: 'Save New Agent Designer Workflow',
+        saveLabel: 'Create Workflow',
       });
-      targetUri = doc.uri;
+
+      if (!chosenUri) {
+        return undefined;
+      }
+
+      targetUri = chosenUri;
+      const defaultDoc = AgentEditorProvider.createDefaultWorkflowDocument(
+        path.basename(targetUri.fsPath, '.agent')
+      );
+      const content = Buffer.from(JSON.stringify(defaultDoc, null, 2), 'utf-8');
+      await vscode.workspace.fs.writeFile(targetUri, content);
     }
 
     // 4. Preload and open in custom visual editor
-    await vscode.workspace.openTextDocument(targetUri);
     await vscode.commands.executeCommand(
       'vscode.openWith',
       targetUri,
@@ -279,11 +345,11 @@ export class WorkflowExplorerTreeProvider
   /**
    * Duplicates an existing workflow file, giving it a unique copy name, and opens it.
    *
-   * @param item Selected WorkflowTreeItem to duplicate
+   * @param item Selected WorkflowTreeItem or URI to duplicate
    * @returns URI of the duplicated file, or undefined if cancelled
    */
-  public async duplicateWorkflow(item?: WorkflowTreeItem): Promise<vscode.Uri | undefined> {
-    const sourceUri = item?.uri;
+  public async duplicateWorkflow(item?: unknown): Promise<vscode.Uri | undefined> {
+    const sourceUri = extractValidUri(item);
     if (!sourceUri) {
       vscode.window.showInformationMessage('Please select a workflow to duplicate.');
       return undefined;
@@ -303,7 +369,7 @@ export class WorkflowExplorerTreeProvider
 
     // Prompt user for duplicate workflow name
     const copyName = await vscode.window.showInputBox({
-      title: 'Duplicate Agent Flow Workflow',
+      title: 'Duplicate Agent Designer Workflow',
       prompt: 'Enter name for the duplicated workflow',
       value: defaultCopyName,
       validateInput: (val) => {
@@ -358,11 +424,11 @@ export class WorkflowExplorerTreeProvider
   /**
    * Prompts user confirmation and deletes the specified workflow file.
    *
-   * @param item Selected WorkflowTreeItem to delete
+   * @param item Selected WorkflowTreeItem or URI to delete
    * @returns true if deleted, false if cancelled or failed
    */
-  public async deleteWorkflow(item?: WorkflowTreeItem): Promise<boolean> {
-    const targetUri = item?.uri;
+  public async deleteWorkflow(item?: unknown): Promise<boolean> {
+    const targetUri = extractValidUri(item);
     if (!targetUri) {
       return false;
     }

@@ -28,7 +28,7 @@
       "activitybar": [
         {
           "id": "agentFlow",
-          "title": "Agent Flow",
+          "title": "Agent Designer",
           "icon": "resources/icons/agent-flow.svg"
         }
       ]
@@ -76,31 +76,31 @@
       {
         "command": "agentFlow.sidebar.newWorkflow",
         "title": "New Workflow",
-        "category": "Agent Flow",
+        "category": "Agent Designer",
         "icon": "$(add)"
       },
       {
         "command": "agentFlow.sidebar.refreshWorkflows",
         "title": "Refresh Workflows",
-        "category": "Agent Flow",
+        "category": "Agent Designer",
         "icon": "$(refresh)"
       },
       {
         "command": "agentFlow.sidebar.duplicateWorkflow",
         "title": "Duplicate Workflow",
-        "category": "Agent Flow",
+        "category": "Agent Designer",
         "icon": "$(copy)"
       },
       {
         "command": "agentFlow.sidebar.deleteWorkflow",
         "title": "Delete Workflow",
-        "category": "Agent Flow",
+        "category": "Agent Designer",
         "icon": "$(trash)"
       },
       {
         "command": "agentFlow.sidebar.refreshDeployments",
         "title": "Refresh Deployments",
-        "category": "Agent Flow",
+        "category": "Agent Designer",
         "icon": "$(refresh)"
       }
     ],
