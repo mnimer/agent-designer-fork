@@ -1,0 +1,207 @@
+/**
+ * Unit Tests for workflowSync Utilities
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
+
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  normalizeLoadedNodes,
+  normalizeLoadedEdges,
+  syncAgentSubAgents,
+  computeTargetFolder,
+} from '../../src/webview/utils/workflowSync';
+import { Node, Edge } from '@xyflow/react';
+import { AgentData } from '../../src/webview/types';
+
+describe('workflowSync Domain Utilities', () => {
+  describe('normalizeLoadedNodes', () => {
+    it('should return an empty array for non-array inputs', () => {
+      assert.deepEqual(normalizeLoadedNodes(null as any), []);
+      assert.deepEqual(normalizeLoadedNodes(undefined as any), []);
+      assert.deepEqual(normalizeLoadedNodes({} as any), []);
+    });
+
+    it('should normalize trigger nodes with fallback positions and default test configs', () => {
+      const rawNodes = [
+        {
+          id: 'trig-1',
+          type: 'trigger',
+          data: {
+            label: 'My Trigger',
+            triggerType: 'chat',
+          },
+        },
+        {
+          id: 'trig-2',
+          type: 'triggerNode',
+          data: {
+            triggerKind: 'test',
+          },
+        },
+      ];
+
+      const normalized = normalizeLoadedNodes(rawNodes);
+      assert.equal(normalized.length, 2);
+
+      assert.equal(normalized[0].id, 'trig-1');
+      assert.equal(normalized[0].type, 'triggerNode');
+      assert.deepEqual(normalized[0].position, { x: 100, y: 100 });
+      assert.equal(normalized[0].data.label, 'My Trigger');
+      assert.equal(normalized[0].data.triggerType, 'chat');
+
+      assert.equal(normalized[1].id, 'trig-2');
+      assert.equal(normalized[1].type, 'triggerNode');
+      assert.equal(normalized[1].data.triggerType, 'tester');
+      assert.equal(normalized[1].data.label, 'Test Suite Trigger');
+    });
+
+    it('should normalize agent nodes with fallback defaults', () => {
+      const rawNodes = [
+        {
+          id: 'agent-1',
+          type: 'agentNode',
+          position: { x: 250, y: 350 },
+          data: {
+            label: 'Custom Agent',
+            model: 'gemini-pro-latest',
+          },
+        },
+        {
+          id: 'agent-2',
+          type: 'agent',
+          data: {},
+        },
+      ];
+
+      const normalized = normalizeLoadedNodes(rawNodes);
+      assert.equal(normalized.length, 2);
+
+      assert.equal(normalized[0].id, 'agent-1');
+      assert.equal(normalized[0].type, 'agentNode');
+      assert.deepEqual(normalized[0].position, { x: 250, y: 350 });
+      assert.equal(normalized[0].data.label, 'Custom Agent');
+      assert.equal(normalized[0].data.model, 'gemini-pro-latest');
+
+      assert.equal(normalized[1].id, 'agent-2');
+      assert.equal(normalized[1].type, 'agentNode');
+      assert.deepEqual(normalized[1].position, { x: 100, y: 100 });
+      assert.equal(normalized[1].data.label, 'Agent');
+      assert.equal(normalized[1].data.model, 'gemini-flash-latest');
+    });
+
+    it('should sanitize deprecated mock tools when loading agent nodes', () => {
+      const rawNodes = [
+        {
+          id: 'agent-tools',
+          type: 'agentNode',
+          data: {
+            label: 'Tool Agent',
+            tools: [
+              { id: 'tool_twitter_api', name: 'Twitter / X API' },
+              { id: 'custom_calc', name: 'Calculator' },
+            ],
+          },
+        },
+      ];
+
+      const normalized = normalizeLoadedNodes(rawNodes);
+      assert.equal(normalized[0].data.tools.length, 1);
+      assert.equal(normalized[0].data.tools[0].name, 'Calculator');
+    });
+  });
+
+  describe('normalizeLoadedEdges', () => {
+    it('should return empty array for non-array inputs', () => {
+      assert.deepEqual(normalizeLoadedEdges(null as any), []);
+      assert.deepEqual(normalizeLoadedEdges(undefined as any), []);
+    });
+
+    it('should normalize edge ids and stroke colors', () => {
+      const rawEdges = [
+        {
+          id: 'e1',
+          source: 'nodeA',
+          target: 'nodeB',
+        },
+        {
+          source: 'tester-1',
+          target: 'nodeA',
+          sourceHandle: 'trigger_out_right',
+          targetHandle: 'input_right',
+        },
+        {
+          id: 'e3',
+          source: 'nodeA',
+          target: 'nodeC',
+          style: { stroke: '#ec4899' },
+        },
+      ];
+
+      const normalized = normalizeLoadedEdges(rawEdges);
+      assert.equal(normalized.length, 3);
+
+      assert.equal(normalized[0].id, 'e1');
+      assert.equal(normalized[0].style?.stroke, '#3b82f6');
+
+      assert.equal(normalized[1].id, 'e_tester-1_nodeA');
+      assert.equal(normalized[1].style?.stroke, '#f59e0b');
+      assert.equal(normalized[1].style?.strokeDasharray, '5 5');
+      // input_right migrated to input
+      assert.equal(normalized[1].targetHandle, 'input');
+
+      // Pink color converted to amber #f59e0b
+      assert.equal(normalized[2].style?.stroke, '#f59e0b');
+    });
+  });
+
+  describe('computeTargetFolder', () => {
+    it('should compute folder paths correctly', () => {
+      assert.equal(computeTargetFolder('agents/scratch/scratch-agent.agent'), './scratch-agent/');
+      assert.equal(computeTargetFolder('workflow.agent'), './workflow/');
+      assert.equal(computeTargetFolder(''), './workflow/');
+      assert.equal(computeTargetFolder('folder\\sub\\my_bot.agent'), './my_bot/');
+    });
+  });
+
+  describe('syncAgentSubAgents', () => {
+    it('should synchronize connected agents and inherit parent pattern', () => {
+      const nodes: Node<AgentData>[] = [
+        {
+          id: 'parent',
+          type: 'agentNode',
+          position: { x: 0, y: 0 },
+          data: {
+            label: 'Parent',
+            agentKind: 'standard',
+            subAgentPattern: 'coordinator',
+            subAgents: [],
+          },
+        },
+        {
+          id: 'child1',
+          type: 'agentNode',
+          position: { x: 0, y: 200 },
+          data: {
+            label: 'Child One',
+            role: 'Researcher',
+            agentKind: 'standard',
+          },
+        },
+      ];
+
+      const edges: Edge[] = [
+        { id: 'e1', source: 'parent', target: 'child1' },
+      ];
+
+      const synced = syncAgentSubAgents(nodes, edges);
+      const syncedParent = synced.find((n) => n.id === 'parent')!;
+      assert.equal(syncedParent.data.subAgents?.length, 1);
+      assert.equal(syncedParent.data.subAgents?.[0].agentId, 'child1');
+      assert.equal(syncedParent.data.subAgents?.[0].name, 'Child One');
+      assert.equal(syncedParent.data.subAgents?.[0].role, 'Researcher');
+      assert.equal(syncedParent.data.subAgents?.[0].delegationType, 'coordinator');
+    });
+  });
+});

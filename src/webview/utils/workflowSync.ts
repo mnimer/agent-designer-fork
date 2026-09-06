@@ -1,0 +1,243 @@
+/**
+ * workflowSync.ts - Workflow Graph Normalization and Synchronization Engine
+ *
+ * Purpose:
+ * Provides pure utility functions to validate, normalize, and synchronize workflow
+ * graph elements between disk/extension state and React Flow canvas state. Handles
+ * automatic synchronization of parent agent `subAgents` lists with graph topology,
+ * and derives workspace target directories from workflow document paths.
+ *
+ * Architectural Decisions:
+ * - Author: Mike Nimer <mikenimer@google.com>
+ * - Pure Function Design: All synchronization and normalization algorithms are side-effect-free,
+ *   enabling robust unit testing and high performance during rapid canvas graph re-evaluations.
+ * - Sub-Agent Ordering Preservation: Preserves custom user ordering of sub-agents on parent nodes,
+ *   while updating names, roles, and delegation types to match connected child agent nodes.
+ * - Single-Root Hierarchy: Enforces trigger handle and target alignment to establish unambiguous
+ *   workflow entrypoints.
+ */
+
+import { Node, Edge } from '@xyflow/react';
+import { AgentData, SubAgentRef, TriggerData } from '../types';
+import { sanitizeToolList } from '../data/builtinTools';
+
+/**
+ * Normalizes raw nodes loaded from a document into typed ReactFlow Canvas nodes.
+ *
+ * @param loadedNodes - Array of raw node objects loaded from an .agent workflow file.
+ * @returns Array of typed and structured ReactFlow Node objects with fallback coordinates and data models.
+ */
+export function normalizeLoadedNodes(loadedNodes: any[]): Node<any>[] {
+  // NOTE: Defensive check for empty or non-array inputs
+  if (!Array.isArray(loadedNodes)) {
+    return [];
+  }
+
+  return loadedNodes.map((n) => {
+    // Determine whether node is a trigger or agent
+    const isTrigger = n.type === 'trigger' || n.type === 'triggerNode';
+    const type = isTrigger ? 'triggerNode' : 'agentNode';
+
+    let data = { ...(n.data || {}) };
+
+    if (isTrigger) {
+      // Normalize trigger types and fallback configurations
+      const triggerType = data.triggerType || data.triggerKind || 'tester';
+      const normalizedTriggerType = triggerType === 'test' ? 'tester' : triggerType;
+      data = {
+        ...data,
+        id: n.id,
+        label: data.label || (normalizedTriggerType === 'tester' ? 'Test Suite Trigger' : 'Workflow Trigger'),
+        triggerType: normalizedTriggerType,
+        description: data.description || 'Workflow Trigger',
+        config: data.config || data.testConfig || data.chatConfig || data.pubsubConfig || data.scheduledConfig || data.eventarcConfig || {},
+      };
+    } else {
+      // Normalize agent types, model defaults, and tool assignments
+      data = {
+        ...data,
+        id: n.id,
+        label: data.label || 'Agent',
+        agentKind: data.agentKind || 'standard',
+        model: data.model || data.standardConfig?.model || 'gemini-flash-latest',
+        description: data.description || '',
+        systemPrompt: data.systemPrompt || data.standardConfig?.systemInstruction || '',
+        tools: sanitizeToolList(data.tools || data.standardConfig?.tools || []),
+        memoryType: data.memoryType || data.standardConfig?.memory || 'none',
+      };
+    }
+
+    return {
+      id: n.id,
+      type: type,
+      position: n.position && typeof n.position.x === 'number' && typeof n.position.y === 'number'
+        ? n.position
+        : { x: 100, y: 100 },
+      data: data,
+    };
+  });
+}
+
+/**
+ * Normalizes edge styles, handles, and stroke colors for workflow rendering.
+ *
+ * @param loadedEdges - Array of raw edge objects loaded from an .agent workflow file.
+ * @returns Array of styled ReactFlow Edge objects with visual differentiation for triggers and agents.
+ */
+export function normalizeLoadedEdges(loadedEdges: any[]): Edge[] {
+  // NOTE: Defensive check for empty or non-array inputs
+  if (!Array.isArray(loadedEdges)) {
+    return [];
+  }
+
+  return loadedEdges.map((e) => {
+    const isTrigger =
+      e.id?.includes('tester') ||
+      e.id?.includes('trigger') ||
+      e.sourceHandle === 'trigger_out_right' ||
+      e.sourceHandle === 'trigger_out_bottom';
+
+    let stroke = e.style?.stroke || (isTrigger ? '#f59e0b' : '#3b82f6');
+    if (
+      stroke === '#ec4899' ||
+      stroke === '#db2777' ||
+      stroke === '#f472b6' ||
+      stroke === '#eab308' ||
+      stroke === 'rgb(236, 72, 153)' ||
+      stroke?.toLowerCase().includes('pink') ||
+      isTrigger
+    ) {
+      stroke = '#f59e0b';
+    }
+
+    let targetHandle = e.targetHandle || null;
+    if (targetHandle === 'input_right') {
+      targetHandle = 'input';
+    }
+
+    return {
+      id: e.id || `e_${e.source}_${e.target}`,
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle || null,
+      targetHandle,
+      animated: e.animated !== undefined ? e.animated : true,
+      style: {
+        strokeWidth: 2,
+        strokeDasharray: isTrigger ? '5 5' : e.style?.strokeDasharray,
+        ...e.style,
+        stroke,
+      },
+    };
+  });
+}
+
+/**
+ * Synchronizes subAgents arrays for all agent nodes based on outgoing graph edges and latest node names/roles.
+ * Preserves existing subAgent ordering configured by the user, appends newly connected targets,
+ * prunes severed connections, and ensures names and roles match the target agent's current state.
+ *
+ * @param nodes - Current array of ReactFlow nodes.
+ * @param edges - Current array of ReactFlow edges.
+ * @returns Updated array of ReactFlow nodes with synchronized subAgents arrays on parent agent nodes.
+ */
+export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>[] {
+  const nodeMap = new Map<string, Node<any>>();
+  nodes.forEach((n) => nodeMap.set(n.id, n));
+
+  return nodes.map((node) => {
+    // Only agent nodes possess subAgents delegation arrays
+    if (node.type !== 'agentNode') {
+      return node;
+    }
+
+    const currentSubAgents: SubAgentRef[] = (node.data as AgentData)?.subAgents || [];
+
+    // NOTE: Find all outgoing edges where target is an existing agent node
+    const outgoingAgentEdges = edges.filter(
+      (e) => e.source === node.id && nodeMap.has(e.target) && nodeMap.get(e.target)!.type === 'agentNode'
+    );
+    const connectedTargetIds = Array.from(new Set(outgoingAgentEdges.map((e) => e.target)));
+    const parentPattern = (node.data as AgentData)?.subAgentPattern || 'parallel';
+
+    // 1. Keep existing subAgents that are still connected, updating name, role, and delegationType
+    const updatedExisting: SubAgentRef[] = [];
+    currentSubAgents.forEach((sub) => {
+      if (connectedTargetIds.includes(sub.agentId)) {
+        const targetNode = nodeMap.get(sub.agentId)!;
+        const targetData = targetNode.data as AgentData;
+        updatedExisting.push({
+          ...sub,
+          name: targetData.label || sub.name || 'Agent',
+          role: targetData.role !== undefined ? targetData.role : (sub.role || ''),
+          // Inherit parent agent's subAgentPattern as delegationType so child never contradicts parent
+          delegationType: (node.data as AgentData)?.subAgentPattern || sub.delegationType || 'parallel',
+        });
+      }
+    });
+
+    // 2. Append newly connected targets not already in subAgents list
+    const existingIds = new Set(updatedExisting.map((s) => s.agentId));
+    const newSubAgents: SubAgentRef[] = [];
+    connectedTargetIds.forEach((targetId) => {
+      if (!existingIds.has(targetId)) {
+        const targetNode = nodeMap.get(targetId)!;
+        const targetData = targetNode.data as AgentData;
+        newSubAgents.push({
+          agentId: targetId,
+          name: targetData.label || 'Agent',
+          role: targetData.role || '',
+          delegationType: parentPattern,
+        });
+      }
+    });
+
+    const finalSubAgents = [...updatedExisting, ...newSubAgents];
+
+    // NOTE: Perform shallow equality comparison to avoid unnecessary node reference mutations
+    const isSameLength = currentSubAgents.length === finalSubAgents.length;
+    const isSameContent =
+      isSameLength &&
+      currentSubAgents.every(
+        (sub, idx) =>
+          sub.agentId === finalSubAgents[idx].agentId &&
+          sub.name === finalSubAgents[idx].name &&
+          sub.role === finalSubAgents[idx].role &&
+          sub.delegationType === finalSubAgents[idx].delegationType
+      );
+
+    if (isSameContent) {
+      return node;
+    }
+
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        subAgents: finalSubAgents,
+      },
+    };
+  });
+}
+
+/**
+ * Derives a target output folder relative to the .agent file,
+ * where the folder name matches the file name without .agent extension.
+ * e.g., "agents/scratch/scratch-agent.agent" -> "./scratch-agent/"
+ * e.g., "sample_support.agent" -> "./sample_support/"
+ *
+ * @param filePathOrName - File path or filename (e.g. agents/scratch/scratch-agent.agent)
+ * @returns Derived relative target directory path (e.g. ./scratch-agent/)
+ */
+export const computeTargetFolder = (filePathOrName: string): string => {
+  if (!filePathOrName) {
+    return './workflow/';
+  }
+  const normalized = filePathOrName.replace(/\\/g, '/');
+  const filename = normalized.split('/').filter(Boolean).pop() || normalized;
+  let cleaned = filename.replace(/\.agent$/i, '');
+  if (!cleaned) {
+    cleaned = 'workflow';
+  }
+  return `./${cleaned}/`;
+};
