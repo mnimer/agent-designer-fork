@@ -38,7 +38,7 @@
 | **TASK-123** | v1.1.1 | Runtime | TypeScript Runtime Support (@google/genai SDK & Vitest) | **Not Started** | TASK-106, TASK-122 |
 | **TASK-124** | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Not Started** | TASK-113, TASK-117 |
 | **TASK-125** | v1.0.1 | Deployment | Native Vertex AI Agent Engine (Agent Runtime) Container Deployment & Lifecycle Management | **Not Started** | TASK-106, TASK-110 |
-| **TASK-126** | v1.0.0 | Extension Host | VS Code Activity Bar Container & Sidebar Workflows Explorer | **Not Started** | TASK-100, TASK-108 |
+| **TASK-126** | v1.0.0 | Extension Host | VS Code Activity Bar Container & Sidebar Workflows Explorer | **Done** | TASK-100, TASK-108 |
 | **TASK-127** | v1.0.0 | Release & CI | Automated VSIX Packaging & Tag-Triggered GitHub Actions Release Workflow | **Done** | TASK-100, TASK-109 |
 | **TASK-128** | v1.0.1 | Blueprints | Visual Samples & Blueprints Gallery (Samples Tab & Palette) | **Not Started** | TASK-103, TASK-108 |
 | **TASK-129** | v1.0.6 | Tools | ADK Built-in Tools Registry & Cross-Harness Tool Adapter Architecture | **Not Started** | TASK-104, TASK-118 |
