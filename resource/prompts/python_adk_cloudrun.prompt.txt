@@ -94,7 +94,16 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
       * **Tool Observability**: In custom tool functions (`tools/*.py`), log activity using `logger.info(...)` or `logger.debug(...)` rather than `print()`.
 
 2. **File Structure to Generate**:
-   - `agent.py`: Core ADK agent module defining `root_agent` (`Agent` or `Workflow`) with sub-agents, system instructions, tools, and output schemas.
+   - `agent.py`: Core ADK agent module defining `root_agent` (`Agent` or `Workflow`) with sub-agents, system instructions, tools, and output schemas. Prepend its own directory to `sys.path` so that local sibling modules (e.g. `pydantic_models`, `tools`) resolve cleanly when imported:
+     ```python
+     import os
+     import sys
+     from pathlib import Path
+
+     _agent_dir = str(Path(__file__).parent.resolve())
+     if _agent_dir not in sys.path:
+         sys.path.insert(0, _agent_dir)
+     ```
    - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs (when defined in nodes).
    - `tools/*.py`: Tool definitions (e.g., Google Search, custom functions, MCP tools). Group tools logically by category/source. Use standard `logging.getLogger(__name__)`.
    - `server.py`: Production FastAPI server leveraging ADK's built-in FastAPI integration with OpenTelemetry exporters:
@@ -276,7 +285,8 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
        value       = google_cloud_run_v2_service.agent_service.uri
      }
      ```
-   - `README.md`: Architecture overview, local execution (`python main.py` and `python server.py`), CI/CD deployment guide, Pub/Sub Push setup, and Gemini Enterprise OpenAPI tool integration.
+    - `main.tf`: Terraform deployment file that will deploy Agent to GCP Cloud Run, this should deploy to existing project, but will include everything else required for the different triggers (event, topics, service accounts, enable apis, etc. )
+    - `README.md`: Architecture overview, local execution (`python main.py` and `python server.py`), CI/CD deployment guide, Pub/Sub Push setup, and Gemini Enterprise OpenAPI tool integration.
 
 ---
 

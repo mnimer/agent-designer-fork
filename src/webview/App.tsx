@@ -97,6 +97,9 @@ import { useExtensionSync } from './hooks/useExtensionSync';
 import {
   syncAgentSubAgents,
   computeTargetFolder,
+  resolveAgentOutputFolder,
+  normalizeLoadedNodes,
+  normalizeLoadedEdges,
 } from './utils/workflowSync';
 import { getLayoutedElements, layoutPatternAtDropPosition } from './utils/layout';
 import {
@@ -106,7 +109,7 @@ import {
 } from './data/patterns';
 
 // Re-export utility functions for existing test suites
-export { syncAgentSubAgents, computeTargetFolder } from './utils/workflowSync';
+export { syncAgentSubAgents, computeTargetFolder, resolveAgentOutputFolder } from './utils/workflowSync';
 
 // React Flow Component Registrations
 const nodeTypes = {
@@ -129,11 +132,39 @@ function FlowCanvas() {
   const { fitView, zoomOut, screenToFlowPosition } = useReactFlow();
   const reactFlowWrapper = useRef<HTMLDivElement | null>(null);
 
+  // Synchronous document pre-hydration from injected window.__INITIAL_AGENT_DOCUMENT__
+  const initialInjectedDoc: AgentWorkflowDocument | null =
+    typeof window !== 'undefined' && (window as any).__INITIAL_AGENT_DOCUMENT__
+      ? (window as any).__INITIAL_AGENT_DOCUMENT__
+      : null;
+  const initialInjectedFilePath: string =
+    typeof window !== 'undefined' && (window as any).__INITIAL_AGENT_FILE_PATH__
+      ? (window as any).__INITIAL_AGENT_FILE_PATH__
+      : '';
+  const initialInjectedFileName: string = initialInjectedFilePath
+    ? initialInjectedFilePath.split('/').filter(Boolean).pop() || initialInjectedFilePath
+    : initialInjectedDoc?.name
+    ? `${initialInjectedDoc.name}.agent`
+    : 'workflow.agent';
+
+  const initialOutputFolder: string = resolveAgentOutputFolder(
+    initialInjectedDoc?.deployment?.outputFolder || (initialInjectedDoc?.metadata as any)?.outputFolder,
+    initialInjectedFileName
+  );
+
   // ---------------------------------------------------------------------------
   // 1. React Flow Graph State & History Management
   // ---------------------------------------------------------------------------
-  const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
-  const [edges, setEdges, onEdgesChangeState] = useEdgesState(INITIAL_EDGES);
+  const [nodes, setNodes, onNodesChange] = useNodesState(
+    initialInjectedDoc && Array.isArray(initialInjectedDoc.nodes)
+      ? normalizeLoadedNodes(initialInjectedDoc.nodes)
+      : INITIAL_NODES
+  );
+  const [edges, setEdges, onEdgesChangeState] = useEdgesState(
+    initialInjectedDoc && Array.isArray(initialInjectedDoc.edges)
+      ? normalizeLoadedEdges(initialInjectedDoc.edges)
+      : INITIAL_EDGES
+  );
 
   const {
     canUndo,
@@ -183,13 +214,19 @@ function FlowCanvas() {
   // 3. Code Generation & Configuration State
   // ---------------------------------------------------------------------------
   const [config, setConfig] = useState<GenerationConfig>({
-    framework: (settings.defaultFramework as any) || 'google_adk',
-    language: (settings.defaultLanguage as any) || 'python',
-    outputFolder: './src/agents/',
-    deploymentTarget: 'agent_engine',
-    includeTests: true,
-    includeDocker: false,
-    useStreaming: settings.useStreamingByDefault ?? true,
+    framework: (initialInjectedDoc?.deployment?.framework === 'google-adk'
+      ? 'google_adk'
+      : (initialInjectedDoc?.deployment?.framework || (initialInjectedDoc?.framework === 'google-adk' ? 'google_adk' : initialInjectedDoc?.framework) || settings.defaultFramework || 'google_adk')) as any,
+    language: (initialInjectedDoc?.deployment?.language || initialInjectedDoc?.language || settings.defaultLanguage || 'python') as any,
+    outputFolder: initialOutputFolder,
+    deploymentTarget: (initialInjectedDoc?.deployment?.target || initialInjectedDoc?.deployment?.deploymentTarget || (initialInjectedDoc?.metadata as any)?.deploymentTarget || 'agent_engine') as any,
+    includeTests: typeof initialInjectedDoc?.deployment?.includeTests === 'boolean' ? initialInjectedDoc.deployment.includeTests : true,
+    includeDocker: typeof initialInjectedDoc?.deployment?.includeDocker === 'boolean' ? initialInjectedDoc.deployment.includeDocker : false,
+    useStreaming: typeof initialInjectedDoc?.deployment?.useStreaming === 'boolean' ? initialInjectedDoc.deployment.useStreaming : (settings.useStreamingByDefault ?? true),
+    deployedResourceId: initialInjectedDoc?.deployment?.deployedResourceId,
+    serviceUrl: initialInjectedDoc?.deployment?.serviceUrl,
+    consoleUrl: initialInjectedDoc?.deployment?.consoleUrl,
+    deployedAt: initialInjectedDoc?.deployment?.deployedAt,
   });
 
   const [generatedFiles, setGeneratedFiles] = useState<GeneratedFile[]>([]);
@@ -201,6 +238,7 @@ function FlowCanvas() {
   // ---------------------------------------------------------------------------
   const {
     fileTabs,
+    setFileTabs,
     activeTabId,
     handleOpenSampleInNewTab,
     handleCloseTab,
@@ -269,6 +307,7 @@ function FlowCanvas() {
     setHasGeneratedCode,
     setIsGenerating,
     recordSnapshot,
+    setFileTabs,
   });
 
   // ---------------------------------------------------------------------------
@@ -1113,8 +1152,38 @@ function FlowCanvas() {
         deploymentTarget: config.deploymentTarget || 'agent_engine',
         updatedAt: new Date().toISOString(),
       },
+      deployment: {
+        target: config.deploymentTarget || 'agent_engine',
+        deploymentTarget: config.deploymentTarget || 'agent_engine',
+        outputFolder: config.outputFolder,
+        framework: config.framework === 'google_adk' ? 'google-adk' : config.framework,
+        language: config.language,
+        includeTests: config.includeTests,
+        includeDocker: config.includeDocker,
+        useStreaming: config.useStreaming,
+        deployedResourceId: config.deployedResourceId,
+        serviceUrl: config.serviceUrl,
+        consoleUrl: config.consoleUrl,
+        deployedAt: config.deployedAt,
+      },
     };
-  }, [nodes, edges, config.framework, config.language, config.outputFolder, config.deploymentTarget, fileTabs, activeTabId]);
+  }, [
+    nodes,
+    edges,
+    config.framework,
+    config.language,
+    config.outputFolder,
+    config.deploymentTarget,
+    config.includeTests,
+    config.includeDocker,
+    config.useStreaming,
+    config.deployedResourceId,
+    config.serviceUrl,
+    config.consoleUrl,
+    config.deployedAt,
+    fileTabs,
+    activeTabId,
+  ]);
 
   const handleTriggerGenerate = useCallback(() => {
     if (!isPanelMaximized && panelContainerRef.current) {

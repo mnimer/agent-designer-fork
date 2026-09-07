@@ -102,6 +102,12 @@
         "title": "Refresh Deployments",
         "category": "Agent Designer",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "agentFlow.deployToAgentEngine",
+        "title": "Deploy to Vertex AI Agent Engine",
+        "category": "Agent Designer",
+        "icon": "$(cloud-upload)"
       }
     ],
     "menus": {
@@ -114,6 +120,9 @@
         },
         {
           "command": "agentFlow.runTests"
+        },
+        {
+          "command": "agentFlow.deployToAgentEngine"
         },
         {
           "command": "agentFlow.sidebar.newWorkflow"

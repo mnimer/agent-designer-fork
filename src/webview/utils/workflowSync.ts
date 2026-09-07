@@ -220,18 +220,36 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
   });
 }
 
+import { sanitizeFolderBaseName } from '../../shared/folderValidation';
+
 /**
  * Derives a target output folder relative to the .agent file,
  * where the folder name matches the file name without .agent extension.
- * e.g., "agents/scratch/scratch-agent.agent" -> "./scratch-agent/"
+ * e.g., "agents/scratch/scratch-agent.agent" -> "./scratch_agent/"
  * e.g., "sample_support.agent" -> "./sample_support/"
+ * e.g., ("scratch-flow.agent", "./src/agents/") -> "./src/agents/scratch_flow/"
+ *
+ * NOTE: Hyphens and non-alphanumeric characters are converted to underscores
+ * to ensure the folder matches Python identifier requirements (letters, digits, underscores)
+ * when deployed to Google Cloud Agent Engine.
+ *
+ * Logic Flow:
+ * 1. Normalize separators and extract basename without .agent extension.
+ * 2. Sanitize basename to a valid identifier via sanitizeFolderBaseName.
+ * 3. Prefix with baseDir (defaulting to './' for direct relative target, or e.g. './src/agents/').
  *
  * @param filePathOrName - File path or filename (e.g. agents/scratch/scratch-agent.agent)
- * @returns Derived relative target directory path (e.g. ./scratch-agent/)
+ * @param baseDir - Optional base directory prefix (defaults to './')
+ * @returns Derived relative target directory path ending in '/'
  */
-export const computeTargetFolder = (filePathOrName: string): string => {
+export const computeTargetFolder = (filePathOrName: string, baseDir: string = './'): string => {
+  let prefix = baseDir || './';
+  if (!prefix.endsWith('/')) {
+    prefix = `${prefix}/`;
+  }
+
   if (!filePathOrName) {
-    return './workflow/';
+    return `${prefix}workflow/`;
   }
   const normalized = filePathOrName.replace(/\\/g, '/');
   const filename = normalized.split('/').filter(Boolean).pop() || normalized;
@@ -239,5 +257,54 @@ export const computeTargetFolder = (filePathOrName: string): string => {
   if (!cleaned) {
     cleaned = 'workflow';
   }
-  return `./${cleaned}/`;
+  cleaned = sanitizeFolderBaseName(cleaned);
+  return `${prefix}${cleaned}/`;
 };
+
+/**
+ * Resolves the final target output folder for an agent workflow document.
+ *
+ * Logic Flow:
+ * 1. Check if an explicit folder is provided in deployment or metadata:
+ *    a. If explicitFolder is defined and is NOT a generic root directory
+ *       (e.g., './src/agents/', 'src/agents/', './agents/', 'agents/'),
+ *       return explicitFolder directly (ensuring trailing slash).
+ *    b. If explicitFolder is empty, undefined, or equals a generic root folder,
+ *       derive a dedicated subfolder using the sanitized agent filename:
+ *       e.g., "./src/agents/" + "scratch-flow.agent" -> "./src/agents/scratch_flow/".
+ * 2. Ensure the resulting path ends with a forward slash for directory consistency.
+ *
+ * @param explicitFolder - Configured output folder from deployment node or metadata
+ * @param filePathOrName - File path or name of the .agent document (e.g. "scratch-flow.agent")
+ * @param defaultBaseDir - Default base folder (defaults to './src/agents/')
+ * @returns Final resolved output folder string with trailing slash
+ */
+export const resolveAgentOutputFolder = (
+  explicitFolder?: string,
+  filePathOrName?: string,
+  defaultBaseDir: string = './src/agents/'
+): string => {
+  const trimmed = explicitFolder?.trim();
+
+  // Generic folders that represent the root collection rather than an agent-specific folder
+  const isGenericRoot =
+    !trimmed ||
+    trimmed === './src/agents/' ||
+    trimmed === './src/agents' ||
+    trimmed === 'src/agents/' ||
+    trimmed === 'src/agents' ||
+    trimmed === './agents/' ||
+    trimmed === './agents' ||
+    trimmed === 'agents/' ||
+    trimmed === 'agents';
+
+  if (!isGenericRoot && trimmed) {
+    // User or document explicitly specified a custom or agent-specific target folder (e.g. './scratch_flow/')
+    return trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
+  }
+
+  // Derive target folder using defaultBaseDir and sanitized agent file name
+  const effectiveBase = trimmed && isGenericRoot ? trimmed : defaultBaseDir;
+  return computeTargetFolder(filePathOrName || 'workflow.agent', effectiveBase);
+};
+

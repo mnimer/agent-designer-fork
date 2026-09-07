@@ -25,6 +25,9 @@
  *    and structured JSON payloads (key-value schema matching).
  * 6. Clean Process & Port Management: OS-specific port clearing (killPort) and graceful
  *    process termination on webview disposal.
+ * 7. Model Selection & Global Region Mandate: Gemini 1.x and 2.x models (including gemini-2.5-flash) are deprecated.
+ *     gemini-3.7-flash is the primary model for Vertex AI, but requires the global region (location='global' or
+ *     GOOGLE_CLOUD_LOCATION='global'). Regional endpoints return 404 NOT_FOUND for gemini-3.7-flash publisher models.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -41,6 +44,7 @@ import {
   TriggerTestScenario,
 } from '../shared/types';
 import { GeminiCodeGenEngine } from './GeminiCodeGenEngine';
+import { AgentEngineDeployer } from './AgentEngineDeployer';
 
 export interface RunTestOptions {
   document: AgentWorkflowDocument;
@@ -48,6 +52,8 @@ export interface RunTestOptions {
   targetDirectory?: string;
   port?: number;
   bridge: WebviewBridge;
+  executionTarget?: 'local' | 'remote';
+  deployedResourceId?: string;
 }
 
 export interface StartLocalRunnerOptions {
@@ -67,6 +73,7 @@ export class AgentRunnerManager {
   private runnerStatus: 'idle' | 'starting' | 'running' | 'stopped' | 'error' = 'idle';
   private pythonResolver: PythonEnvResolver;
   private codeGenEngine: GeminiCodeGenEngine;
+  private agentEngineDeployer?: AgentEngineDeployer;
 
   /**
    * Resolves or dynamically generates the test server entry point script.
@@ -101,6 +108,13 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 # Add current directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Load environment variables (.env) if python-dotenv is installed
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 agent_instance = None
 
 def get_agent():
@@ -108,16 +122,50 @@ def get_agent():
     if agent_instance is not None:
         return agent_instance
     try:
+        # 1. First inspect agent_runtime_app if present
+        try:
+            import agent_runtime_app
+            if hasattr(agent_runtime_app, 'agent_runtime'):
+                inst = getattr(agent_runtime_app, 'agent_runtime')
+                if hasattr(inst, 'set_up') and callable(getattr(inst, 'set_up')):
+                    try:
+                        inst.set_up()
+                    except Exception:
+                        pass
+                agent_instance = inst
+                return agent_instance
+        except Exception:
+            pass
+
+        # 2. Inspect agent.py for root_agent / pipeline instances
         import agent
-        for attr_name in ['AgentReasoningEngine', 'ReasoningEngine', 'AgentWorkflow', 'Agent', 'RootAgent', 'Workflow']:
+        for var_name in ['root_agent', 'agent_runtime', 'app', 'workflow', 'pipeline', 'agent_instance', 'agent']:
+            if hasattr(agent, var_name):
+                val = getattr(agent, var_name)
+                # Verify it is an instance, NOT an uninstantiated class or module
+                if not isinstance(val, type) and not isinstance(val, type(sys)):
+                    if hasattr(val, 'set_up') and callable(getattr(val, 'set_up')):
+                        try:
+                            val.set_up()
+                        except Exception:
+                            pass
+                    agent_instance = val
+                    return agent_instance
+
+        # 3. Check for standalone ReasoningEngine classes that accept default constructor
+        for attr_name in ['AgentReasoningEngine', 'ReasoningEngine', 'AgentWorkflow', 'RootAgent', 'Workflow']:
             if hasattr(agent, attr_name):
                 cls = getattr(agent, attr_name)
                 if isinstance(cls, type):
-                    inst = cls()
-                    if hasattr(inst, 'set_up') and callable(getattr(inst, 'set_up')):
-                        inst.set_up()
-                    agent_instance = inst
-                    return agent_instance
+                    try:
+                        inst = cls()
+                        if hasattr(inst, 'set_up') and callable(getattr(inst, 'set_up')):
+                            inst.set_up()
+                        agent_instance = inst
+                        return agent_instance
+                    except Exception:
+                        pass
+
         if hasattr(agent, 'query') and callable(getattr(agent, 'query')):
             agent_instance = agent
             return agent_instance
@@ -168,20 +216,68 @@ class TestHandler(BaseHTTPRequestHandler):
         try:
             ag = get_agent()
             if ag is None:
-                raise RuntimeError("Could not find AgentReasoningEngine or agent class in agent.py")
+                raise RuntimeError("Could not find agent instance in agent.py or agent_runtime_app.py")
 
-            if hasattr(ag, 'query') and callable(getattr(ag, 'query')):
-                res = ag.query(prompt=prompt)
-            elif hasattr(ag, 'generate') and callable(getattr(ag, 'generate')):
-                res = ag.generate(prompt=prompt)
-            elif hasattr(ag, 'invoke') and callable(getattr(ag, 'invoke')):
-                res = ag.invoke({"messages": [{"role": "user", "content": prompt}]})
-            elif hasattr(ag, 'run') and callable(getattr(ag, 'run')):
-                res = ag.run(prompt)
-            elif callable(ag):
-                res = ag(prompt)
-            else:
-                raise RuntimeError("Agent instance has no query, generate, invoke, or run method")
+            res = None
+
+            # 1. AdkApp stream_query support
+            if hasattr(ag, 'stream_query') and callable(getattr(ag, 'stream_query')):
+                accum = []
+                for evt in ag.stream_query(message=prompt, user_id="test_user"):
+                    if isinstance(evt, dict):
+                        txt = evt.get('content', {}).get('parts', [{}])[0].get('text', '') if isinstance(evt.get('content'), dict) else str(evt)
+                        accum.append(txt)
+                    elif hasattr(evt, 'content') and hasattr(evt.content, 'parts'):
+                        for p in evt.content.parts:
+                            if hasattr(p, 'text') and p.text:
+                                accum.append(p.text)
+                    elif isinstance(evt, str):
+                        accum.append(evt)
+                if accum:
+                    res = "".join(accum)
+
+            # 2. ADK Runner execution
+            if res is None:
+                try:
+                    import asyncio
+                    from google.adk.runners import Runner
+                    from google.adk.sessions import InMemorySessionService
+                    from google.genai import types
+                    session_service = InMemorySessionService()
+                    session = asyncio.run(session_service.create_session(app_name="vad_app", user_id="test_user"))
+                    runner = Runner(agent=ag, app_name="vad_app", session_service=session_service)
+                    events = runner.run(
+                        user_id="test_user",
+                        session_id=session.id,
+                        new_message=types.Content(role="user", parts=[types.Part.from_text(text=prompt)])
+                    )
+                    accum = []
+                    for evt in events:
+                        if hasattr(evt, 'content') and evt.content and hasattr(evt.content, 'parts'):
+                            for p in evt.content.parts:
+                                if hasattr(p, 'text') and p.text:
+                                    accum.append(p.text)
+                        elif hasattr(evt, 'text') and evt.text:
+                            accum.append(evt.text)
+                    if accum:
+                        res = "".join(accum)
+                except Exception as runner_err:
+                    sys.stderr.write(f"[ADK Runner Fallback] {runner_err}\\n")
+
+            # 3. Standard fallback invocation methods
+            if res is None:
+                if hasattr(ag, 'query') and callable(getattr(ag, 'query')):
+                    res = ag.query(prompt=prompt)
+                elif hasattr(ag, 'generate') and callable(getattr(ag, 'generate')):
+                    res = ag.generate(prompt=prompt)
+                elif hasattr(ag, 'invoke') and callable(getattr(ag, 'invoke')):
+                    res = ag.invoke({"messages": [{"role": "user", "content": prompt}]})
+                elif hasattr(ag, 'run') and callable(getattr(ag, 'run')):
+                    res = ag.run(prompt)
+                elif callable(ag):
+                    res = ag(prompt)
+                else:
+                    raise RuntimeError("Agent instance has no query, generate, invoke, or run method")
 
             if isinstance(res, dict):
                 content_str = json.dumps(res)
@@ -270,10 +366,25 @@ if __name__ == '__main__':
    *
    * @param extensionPath Extension root path for template resolution
    * @param workspaceRoot Optional workspace root path
+   * @param agentEngineDeployer Optional AgentEngineDeployer for remote execution testing
    */
-  constructor(extensionPath: string, workspaceRoot?: string) {
+  constructor(
+    extensionPath: string,
+    workspaceRoot?: string,
+    agentEngineDeployer?: AgentEngineDeployer
+  ) {
     this.pythonResolver = new PythonEnvResolver(workspaceRoot);
     this.codeGenEngine = new GeminiCodeGenEngine(extensionPath);
+    this.agentEngineDeployer = agentEngineDeployer;
+  }
+
+  /**
+   * Sets the AgentEngineDeployer reference for remote agent testing.
+   *
+   * @param deployer AgentEngineDeployer instance
+   */
+  public setAgentEngineDeployer(deployer: AgentEngineDeployer): void {
+    this.agentEngineDeployer = deployer;
   }
 
   /**
@@ -1033,7 +1144,7 @@ if __name__ == '__main__':
    * @returns Run ID string
    */
   public async runTests(options: RunTestOptions): Promise<string> {
-    const { document, scenarioIds, port, bridge } = options;
+    const { document, scenarioIds, port, bridge, executionTarget = 'local', deployedResourceId } = options;
     const runId = `run-${Date.now()}`;
     const startTime = Date.now();
     const targetPort = port || this.lastRunningPort || 8000;
@@ -1041,20 +1152,29 @@ if __name__ == '__main__':
     // 1. Extract test scenarios from Trigger nodes or test prompts
     const scenarios = this.extractScenarios(document, scenarioIds);
 
+    const activeResourceId =
+      deployedResourceId ||
+      (document as any)?.deployment?.deployedResourceId;
+
+    const targetDescription =
+      executionTarget === 'remote'
+        ? `Remote Reasoning Engine (${activeResourceId || 'deployed instance'})`
+        : `http://127.0.0.1:${targetPort}`;
+
     await bridge.postMessage({
       type: 'EXECUTION_LOG',
       payload: {
         runId,
         timestamp: new Date().toISOString(),
         level: 'info',
-        message: `Starting test execution run '${runId}' with ${scenarios.length} scenario(s) against http://127.0.0.1:${targetPort}...`,
+        message: `Starting test execution run '${runId}' with ${scenarios.length} scenario(s) against ${targetDescription}...`,
       },
     });
 
     let passedCount = 0;
     let failedCount = 0;
 
-    // 2. Execute each scenario sequentially directly via HTTP API
+    // 2. Execute each scenario sequentially directly via HTTP API or remote Reasoning Engine
     for (const scenario of scenarios) {
       const scenarioStart = Date.now();
 
@@ -1080,7 +1200,16 @@ if __name__ == '__main__':
       });
 
       try {
-        const result = await this.executeScenario(document, scenario, bridge, runId, targetPort);
+        const result = await this.executeScenario(
+          document,
+          scenario,
+          bridge,
+          runId,
+          targetPort,
+          executionTarget,
+          activeResourceId,
+          options.targetDirectory
+        );
         const duration = Date.now() - scenarioStart;
 
         if (result.passed) {
@@ -1173,7 +1302,7 @@ if __name__ == '__main__':
   }
 
   /**
-   * Executes a single test scenario against the OpenAI-compatible HTTP runner.
+   * Executes a single test scenario against either the OpenAI-compatible HTTP runner or the deployed remote Reasoning Engine.
    * Evaluates assertions using Gemini as an LLM judge for semantic and structured output validation.
    *
    * @param document Workflow document
@@ -1181,27 +1310,20 @@ if __name__ == '__main__':
    * @param bridge Webview bridge for streaming logs
    * @param runId Active execution run ID
    * @param port Active server port
+   * @param executionTarget 'local' or 'remote'
+   * @param deployedResourceId Remote Reasoning Engine ID
+   * @param targetDirectory Local workspace target directory
    */
   private async executeScenario(
     document: AgentWorkflowDocument,
     scenario: TriggerTestScenario,
     bridge: WebviewBridge,
     runId: string,
-    port: number
+    port: number,
+    executionTarget: 'local' | 'remote' = 'local',
+    deployedResourceId?: string,
+    targetDirectory?: string
   ): Promise<{ passed: boolean; output: string; error?: string }> {
-    const agentNodes = (document.nodes || []).filter(
-      (n) => n.type === 'agent' || (n as any).type === 'agentNode'
-    );
-    let modelName = (agentNodes[0]?.data as any)?.model || 'gemini-flash-latest';
-    if (
-      !modelName ||
-      modelName.includes('2.5') ||
-      modelName.includes('1.5') ||
-      modelName.includes('2.0')
-    ) {
-      modelName = 'gemini-flash-latest';
-    }
-
     const inputQuery = scenario.inputQuery || '';
     if (!inputQuery.trim()) {
       await bridge.postMessage({
@@ -1214,6 +1336,126 @@ if __name__ == '__main__':
           message: `[Test Scenario Warning]: Scenario input query is empty. The agent will receive an empty prompt.`,
         },
       });
+    }
+
+    // Branch 1: Remote Reasoning Engine execution
+    if (executionTarget === 'remote') {
+      await bridge.postMessage({
+        type: 'EXECUTION_LOG',
+        payload: {
+          runId,
+          scenarioId: scenario.id,
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          message: `[Remote Execution] Invoking Reasoning Engine: ${deployedResourceId || 'active instance'}...\nInput: "${inputQuery}"`,
+        },
+      });
+
+      let responseText = '';
+      try {
+        if (!this.agentEngineDeployer) {
+          throw new Error('Agent Engine deployer is not configured for remote test execution.');
+        }
+
+        const remoteResult = await this.agentEngineDeployer.testRemoteAgentRuntime({
+          targetDirectory: targetDirectory || (document as any)?._targetDirectory || '',
+          remoteRuntimeId: deployedResourceId || (document as any)?.deployment?.deployedResourceId,
+          serviceUrl: (document as any)?.deployment?.serviceUrl,
+          query: inputQuery,
+          bridge,
+        });
+
+        if (!remoteResult.success || !remoteResult.response) {
+          throw new Error(remoteResult.error || 'Remote agent returned an empty response.');
+        }
+
+        responseText = remoteResult.response;
+      } catch (err: any) {
+        const errMsg = err?.message || String(err);
+        await bridge.postMessage({
+          type: 'EXECUTION_LOG',
+          payload: {
+            runId,
+            scenarioId: scenario.id,
+            timestamp: new Date().toISOString(),
+            level: 'error',
+            message: `[Remote Execution Error]: ${errMsg}`,
+          },
+        });
+        return {
+          passed: false,
+          output: '',
+          error: errMsg,
+        };
+      }
+
+      await bridge.postMessage({
+        type: 'EXECUTION_LOG',
+        payload: {
+          runId,
+          scenarioId: scenario.id,
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          message: `[Remote Agent Response]:\n${responseText}`,
+        },
+      });
+
+      // Evaluate assertion using Gemini LLM Judge if expectedOutput is specified
+      if (scenario.expectedOutput && scenario.expectedOutput.trim().length > 0) {
+        await bridge.postMessage({
+          type: 'EXECUTION_LOG',
+          payload: {
+            runId,
+            scenarioId: scenario.id,
+            timestamp: new Date().toISOString(),
+            level: 'info',
+            message: `[Test Evaluator] Evaluating assertion criteria via Gemini Judge: "${scenario.expectedOutput}"...`,
+          },
+        });
+
+        const evalResult = await this.codeGenEngine.evaluateAssertion({
+          inputQuery: inputQuery,
+          expectedCriteria: scenario.expectedOutput,
+          actualOutput: responseText,
+          model: 'gemini-flash-latest',
+        });
+
+        await bridge.postMessage({
+          type: 'EXECUTION_LOG',
+          payload: {
+            runId,
+            scenarioId: scenario.id,
+            timestamp: new Date().toISOString(),
+            level: evalResult.passed ? 'info' : 'warn',
+            message: `[Test Evaluator Verdict]: ${evalResult.passed ? 'PASSED' : 'FAILED'} - ${evalResult.reason}`,
+          },
+        });
+
+        return {
+          passed: evalResult.passed,
+          output: responseText,
+          error: evalResult.passed ? undefined : evalResult.reason,
+        };
+      }
+
+      return {
+        passed: true,
+        output: responseText,
+      };
+    }
+
+    // Branch 2: Local HTTP server execution
+    const agentNodes = (document.nodes || []).filter(
+      (n) => n.type === 'agent' || (n as any).type === 'agentNode'
+    );
+    let modelName = (agentNodes[0]?.data as any)?.model || 'gemini-flash-latest';
+    if (
+      !modelName ||
+      modelName.includes('2.5') ||
+      modelName.includes('1.5') ||
+      modelName.includes('2.0')
+    ) {
+      modelName = 'gemini-flash-latest';
     }
 
     const requestPayload = {

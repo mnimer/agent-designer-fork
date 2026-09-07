@@ -18,15 +18,26 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 ### REQUIREMENTS & ARCHITECTURE:
 
 1. **Agent Harness & Agent Architecture**:
-   - You MUST implement agents using the official Google ADK SDK/Harness (`from google.adk.agents import Agent`).
+   - You MUST implement agents using the official Google ADK SDK/Harness (`from google.adk.agents import Agent, SequentialAgent, ParallelAgent, LoopAgent`).
    - Every agent node in the workflow canvas must correspond to a direct `Agent(...)` instance with `name`, `model`, `instruction`, `description` (critical for delegation), and optional `tools=[...]`.
+   - **CRITICAL IDENTIFIER RULE FOR NAMES**: Every `name` argument passed to `Agent`, `SequentialAgent`, `ParallelAgent`, or `LoopAgent` MUST BE A VALID PYTHON IDENTIFIER (lowercase snake_case with letters, digits, and underscores, e.g. `check_google_places`, `address_validator_agent`; NEVER spaces, hyphens, or special characters).
+   - **CRITICAL PARAMETER CONSTRAINTS**:
+     * Do NOT pass `temperature` directly as a kwarg to `Agent(...)` - `temperature` is not a permitted kwarg on `Agent` in Google ADK.
+     * Orchestrator agents (`SequentialAgent`, `ParallelAgent`, `LoopAgent`) do NOT take `instruction` or `temperature` kwargs! They accept `name`, `description`, `sub_agents`, and optional `max_iterations` (for `LoopAgent`).
    - Sub-agents defined in the workflow JSON MUST be declared as distinct `Agent` instances and wired into the parent agent using the `sub_agents=[...]` array.
    - **CRITICAL ANTI-PATTERN - NO AGENT SUBCLASSES**: Under NO circumstances should you create custom classes that subclass `Agent`, `BaseAgent`, or `SequentialAgent` (e.g. `class MyAgent(Agent):`). DO NOT override private framework methods like `_run_async_impl()`, `_run_impl()`, or `run_node_impl()`. All agents MUST be instantiated directly as top-level variables (`agent_1 = Agent(...)`, `root_agent = SequentialAgent(...)`).
 
-2. **CRITICAL: LLM MODEL CONSTRAINTS**:
-   - Under NO circumstances should any generated code (in `agent.py`, `tools/*.py`, etc.) reference deprecated Gemini models such as `gemini-2.0-flash`, `gemini-1.5-flash`, `gemini-1.5-pro`, or `gemini-flash-latest`.
-   - ALWAYS use modern Gemini 3.x models (`gemini-3.7-flash` or the configured node model) as the global default model across all agent definitions AND all custom tool helper implementations.
-   - DO NOT use `gemini-2.5-flash` unless explicitly specified in the node configuration in the workflow JSON. The default model MUST be `gemini-3.7-flash`.
+2. **CRITICAL: LLM MODEL CONSTRAINTS & GLOBAL REGION MANDATE**:
+   - Under NO circumstances should any generated code (in `agent.py`, `tools/*.py`, etc.) reference deprecated Gemini models such as `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.0-flash`, `gemini-1.5-flash`, `gemini-1.5-pro`, or `gemini-flash-latest`. Gemini 1.x and 2.x models are deprecated.
+   - ALWAYS use `gemini-3.7-flash` (or `gemini-3.5-flash` or the configured node model, or `gemini-pro-latest` if specified). The global default model across all agent definitions AND all custom tool helper implementations MUST be `gemini-3.7-flash`.
+   - **MANDATORY GLOBAL REGION CONFIGURATION**: In Vertex AI, `gemini-3.7-flash` is hosted under the `global` region (`location="global"`). Regional endpoints (such as `us-central1`) will reject `gemini-3.7-flash` with a `404 NOT_FOUND` publisher model error! Therefore, generated code MUST configure the Vertex AI client or environment for the global location:
+     ```python
+     os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "1")
+     os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+     ```
+   - If the node configuration in the workflow JSON specifies a model, use that model (mapping legacy aliases `gemini-flash-latest`, `gemini-1.5-flash`, `gemini-2.5-flash`, etc. to `gemini-3.7-flash`).
+   - **CRITICAL VERTEX AI CONSTRAINT - SEARCH TOOL & OUTPUT SCHEMA**:
+     Vertex AI Gemini DOES NOT support combining Google Search tools (`google_search`) with controlled generation (`output_schema` / response schema) on the SAME agent. If an agent uses the `google_search` tool, you MUST NOT attach `output_schema` to that agent! Instead, describe the expected output format in the agent's `instruction` text, save the response to `output_key`, and let a downstream synthesizer agent (which does not use `google_search`) produce the final `output_schema`.
    - Under NO circumstances should you generate mock response fallbacks, fake dummy data, hardcoded if/else string checks (e.g. `if "1600 Amphitheatre" in prompt: return ResponseSchema(...)`), or simulated client returns.
    - All code MUST execute real live inference using the official Google GenAI SDK (`google-genai` / `genai.Client()`) with Vertex AI (`genai.Client(vertexai=True)`).
    - If client initialization or API calls fail, the code MUST raise a clear runtime exception (`RuntimeError` or `ValueError`) rather than faking an answer or returning dummy data.
@@ -102,16 +113,104 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
      * In custom tool functions (`tools/*.py`), log progress using `logger.info(...)` or `logger.debug(...)` rather than `print()`.
 
 6. **File Structure to Generate**:
-   - `agent.py`: Official Google ADK Agent definitions and execution runner: Defines `root_agent` (`Agent`, `SequentialAgent`, `ParallelAgent`, `LoopAgent`, or `Workflow`), tools, sub-agents, and the `AdkReasoningEngine` runtime adapter.
+   - `agent.py`: Official Google ADK Agent definitions and execution runner: Defines `root_agent` (`Agent`, `SequentialAgent`, `ParallelAgent`, `LoopAgent`, or `Workflow`), tools, sub-agents.
+     * CRITICAL: To ensure seamless importing under Vertex AI Agent Engine container execution (where `adk api_server` loads the agent as a submodule `f"{agent_name}.agent"` without adding the agent subdirectory to `sys.path`), `agent.py` MUST prepend its own directory to `sys.path` before importing local modules (such as `pydantic_models` or `tools`):
+       ```python
+       import os
+       import sys
+       from pathlib import Path
+
+       _agent_dir = str(Path(__file__).parent.resolve())
+       if _agent_dir not in sys.path:
+           sys.path.insert(0, _agent_dir)
+       ```
+   - `agent_runtime_app.py`: Vertex AI Agent Engine entrypoint adapter:
+     ```python
+     import os
+     from dotenv import load_dotenv
+     from google.adk.artifacts import GcsArtifactService, InMemoryArtifactService
+     from vertexai.agent_engines.templates.adk import AdkApp
+
+     load_dotenv()
+
+     try:
+         from agent import root_agent
+     except ImportError:
+         from agent import app as root_agent
+
+     logs_bucket_name = os.environ.get("LOGS_BUCKET_NAME")
+
+     agent_runtime = AdkApp(
+         agent=root_agent,
+         artifact_service_builder=lambda: (
+             GcsArtifactService(bucket_name=logs_bucket_name)
+             if logs_bucket_name
+             else InMemoryArtifactService()
+         ),
+     )
+     ```
+   - `agents-cli-manifest.yaml`: Google ADK manifest configuring project name, `agent_directory: .`, `region: us-central1`, and `create_params: { deployment_target: "agent_runtime", is_a2a: false }` required for `agents-cli deploy`.
+   - `pyproject.toml`: Modern packaging metadata for `uv sync` and `agents-cli deploy`:
+     ```toml
+     [project]
+     name = "<project_name>"
+     version = "0.1.0"
+     description = "Vertex AI Agent Engine Service"
+     dependencies = [
+         "google-adk>=2.0.0",
+         "google-cloud-aiplatform[evaluation,agent-engines]>=1.150.0",
+         "google-genai>=1.0.0",
+         "fastapi>=0.110.0",
+         "uvicorn>=0.28.0",
+         "pydantic>=2.0.0",
+         "cloudpickle>=3.0.0",
+         "pytest>=8.0.0",
+         "pytest-asyncio>=0.23.0",
+         "python-dotenv>=1.0.0",
+     ]
+     requires-python = ">=3.11"
+
+     [build-system]
+     requires = ["hatchling"]
+     build-backend = "hatchling.build"
+
+     [tool.uv]
+     package = false
+     ```
+   - `fast_api_app.py`: Production FastAPI server mounting ADK HTTP routes (`/run_sse`, `/apps/...`), A2A endpoints (`/a2a/{app_name}`), and reasoning engine adapter routes (`/api/reasoning_engine`, `/api/stream_reasoning_engine`).
    - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs (when defined in nodes).
    - `tools/*.py`: Custom tools and functions passed to the agents. Group tools logically by category/source.
-   - `deploy.py`: Deployment script to register and deploy the agent to Vertex AI Agent Runtime / Agent Engine using `vertexai.preview.reasoning_engines.ReasoningEngine.create()`.
+   - `deploy.py`: Deployment script to register and deploy the agent to Vertex AI Agent Runtime / Agent Engine using `agentplatform.Client` / `client.agent_engines.create()` or `adk deploy agent_engine` (NOTE: `vertexai.Client` is deprecated in favor of `agentplatform.Client`).
+   - `cloudbuild.yaml`: Cloud Build pipeline configured with:
+     * Step 1: Run pytest unit tests (`pytest test_agent.py`) in `python:3.11-slim`.
+     * Step 2: Automatically run native container deployment (`adk deploy agent_engine --project ${_PROJECT_ID} --region ${_REGION}` or `python deploy.py`) targeting Vertex AI Agent Runtime with substitutions `_PROJECT_ID` and `_REGION: 'us-central1'`.
+   - `Dockerfile`: Multi-stage distroless Python 3.11 runtime container definition mounting `fast_api_app:app`.
+   - `.gcloudignore` and `.gitignore`: Package strictly necessary agent assets, excluding virtualenvs (`.venv/`), `__pycache__`, `.pytest_cache`, `.agent` diagram files, and local credentials.
    - `main.py`: Local CLI test runner allowing developers to test `run_agent()` and `root_agent` locally before deployment using ADK `Runner`.
    - `test_agent.py`: Comprehensive `pytest` test suite executing all test scenarios and assertions against `root_agent`.
    - `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios for Vertex AI Agent Evaluation. Do not add additional tests; you should only use tests defined by the user in the "Test Suite" node (attached to the root agent) in the workflow JSON.
    - `evaluate.py`: Vertex AI Agent Evaluation script utilizing the official `vertexai.evaluation` SDK and `EvalTask`.
-   - `requirements.txt`: Dependencies needed locally and for deployment: Must include `google-adk>=2.0.0`, `google-cloud-aiplatform[evaluation,reasoningengine]>=1.60.0`, `google-genai>=1.0.0`, `pydantic>=2.0.0`, `cloudpickle>=3.0.0`, `pytest>=8.0.0`, `pytest-asyncio>=0.23.0`, `python-dotenv>=1.0.0`.
-   - `README.md`: Architecture overview, local execution with `main.py`, deployment with `python deploy.py`, and invoking the deployed Agent Engine resource from Gemini Enterprise or Python SDK.
+   - `requirements.txt`: Dependencies needed locally and for deployment: Must include `google-adk>=2.0.0`, `google-cloud-agentplatform>=0.1.0`, `google-cloud-aiplatform[evaluation,reasoningengine]>=1.60.0`, `google-genai>=1.0.0`, `fastapi>=0.110.0`, `uvicorn>=0.28.0`, `pydantic>=2.0.0`, `cloudpickle>=3.0.0`, `pytest>=8.0.0`, `pytest-asyncio>=0.23.0`, `python-dotenv>=1.0.0`.
+   - `main.tf`: Terraform deployment file that will use the google_vertex_ai_reasoning_engine resource to deploy Agent to GCP Agent Engine, this should deploy to existing project, but will include everything else required for the different triggers (event, topics, service accounts, enable apis, etc.)
+   - `README.md`: Architecture overview, local execution with `main.py`, deployment with `python deploy.py` or Cloud Build, and invoking the deployed Agent Engine resource from Gemini Enterprise or Python SDK.
+
+7. **Containerization & Cloud Build Configuration**:
+   - `fast_api_app.py`:
+     * Instantiate FastAPI: `app = FastAPI(title="Vertex AI Agent Engine Service")`.
+     * Expose health check at `/` and `/healthz`.
+     * Mount ADK routes including `/run_sse`, `/apps/{app}/query`, and event-driven trigger endpoints.
+     * Mount Vertex AI Reasoning Engine adapter routes (`/api/reasoning_engine`, `/api/stream_reasoning_engine`) executing queries against `root_agent`.
+     * Expose Agent-to-Agent (A2A) protocol endpoint (`/a2a/{app_name}`).
+   - `cloudbuild.yaml`:
+     * Step 1 (`unit-tests`): In `python:3.11-slim`, installs requirements and executes `pytest test_agent.py -v`.
+     * Step 2 (`agent-engine-deploy`): Deploys the agent runtime using `agents-cli deploy --project ${_PROJECT_ID} --region ${_REGION} --no-confirm-project` (or `python deploy.py`).
+     * Substitutions: Declare `_PROJECT_ID: ''` and `_REGION: 'us-central1'`.
+   - `Dockerfile`:
+     * Multi-stage container build starting with `python:3.11-slim` as builder to compile wheels and dependencies.
+     * Runtime stage copying installed packages and application source code, setting `ENV PORT=8080` and `EXPOSE 8080`.
+     * Entrypoint: `uvicorn fast_api_app:app --host 0.0.0.0 --port 8080`.
+   - `.gcloudignore` & `.gitignore`:
+     * Exclude `.git`, `.github`, `.venv`, `venv`, `__pycache__`, `*.pyc`, `.pytest_cache`, `.agent`, `*.agent`, `.env`, and local caches.
 
 ---
 

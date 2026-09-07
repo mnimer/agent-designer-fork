@@ -36,6 +36,17 @@ export interface UseWebviewBridgeReturn {
         : undefined
     ) => void
   ) => () => void;
+  /**
+   * Alias for subscribe to listen to typed messages from Extension Host.
+   */
+  onMessage: <T extends ExtensionToWebviewMessage['type']>(
+    type: T,
+    listener: (
+      payload: Extract<ExtensionToWebviewMessage, { type: T }> extends { payload: infer P }
+        ? P
+        : undefined
+    ) => void
+  ) => () => void;
   sendRequestWithReply: <
     TReq extends WebviewToExtensionMessage,
     TResp extends ExtensionToWebviewMessage
@@ -211,6 +222,7 @@ export function useWebviewBridge(): UseWebviewBridgeReturn {
     () => ({
       postMessage,
       subscribe,
+      onMessage: subscribe,
       sendRequestWithReply,
       isMockMode,
     }),

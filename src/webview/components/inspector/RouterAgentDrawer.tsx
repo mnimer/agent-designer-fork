@@ -32,6 +32,8 @@ interface RouterAgentDrawerProps {
 }
 
 const SUPPORTED_MODELS = [
+  { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash (Recommended - Global Region)', desc: 'Next-gen hybrid reasoning intent classifier and JSON branch decision engine on Vertex AI' },
+  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', desc: 'Ultra-fast intent classifier and JSON branch decision engine on Vertex AI' },
   { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)', desc: 'Ultra-fast intent classifier and JSON branch decision engine' },
 ];
 

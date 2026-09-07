@@ -511,6 +511,43 @@ describe('AgentRunnerManager', () => {
     assert.ok(result.text.includes('isBusiness'));
     assert.equal(result.data.choices[0].message.content, '{"isBusiness": true}');
   });
+
+  it('should route test execution to remote reasoning engine when executionTarget is remote', async () => {
+    let remoteCalledWith: any = null;
+    const mockDeployer: any = {
+      testRemoteAgentRuntime: async (opts: any) => {
+        remoteCalledWith = opts;
+        return {
+          success: true,
+          response: 'We can issue a full refund for your account.',
+        };
+      },
+    };
+
+    const manager = new AgentRunnerManager('/mock/extension', undefined, mockDeployer);
+    const postedMessages: any[] = [];
+    const mockBridge: any = {
+      postMessage: async (msg: any) => {
+        postedMessages.push(msg);
+      },
+    };
+
+    const runId = await manager.runTests({
+      document: sampleDocument,
+      scenarioIds: ['scenario-1'],
+      executionTarget: 'remote',
+      deployedResourceId: 'projects/test-proj/locations/us-central1/reasoningEngines/12345678',
+      bridge: mockBridge,
+    });
+
+    assert.ok(runId.startsWith('run-'));
+    assert.ok(remoteCalledWith);
+    assert.equal(remoteCalledWith.query, 'Can I get a refund for my subscription?');
+
+    const updateMsg = postedMessages.find((m) => m.type === 'TEST_RESULT_UPDATE' && m.payload.status === 'passed');
+    assert.ok(updateMsg, 'Should post passed test result');
+    assert.equal(updateMsg.payload.output, 'We can issue a full refund for your account.');
+  });
 });
 
 

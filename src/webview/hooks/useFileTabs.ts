@@ -21,6 +21,7 @@ import { Node, Edge } from '@xyflow/react';
 import { AgentFileTab, GenerationConfig, SampleWorkflowDefinition, GeneratedFile } from '../types';
 import { INITIAL_NODES, INITIAL_EDGES } from '../data/initialGraph';
 import { generateCodeForGraph } from '../components/codegen/codeGenerators';
+import { resolveAgentOutputFolder, normalizeLoadedNodes, normalizeLoadedEdges } from '../utils/workflowSync';
 
 export interface UseFileTabsOptions {
   defaultFramework?: string;
@@ -79,22 +80,41 @@ export function useFileTabs(
     setActiveEditorTab,
   } = options;
 
-  // Initialize tabs with default workflow document
+  // Pre-hydration from injected initial document
+  const initialDoc =
+    typeof window !== 'undefined' && (window as any).__INITIAL_AGENT_DOCUMENT__
+      ? (window as any).__INITIAL_AGENT_DOCUMENT__
+      : null;
+  const initialFilePath =
+    typeof window !== 'undefined' && (window as any).__INITIAL_AGENT_FILE_PATH__
+      ? (window as any).__INITIAL_AGENT_FILE_PATH__
+      : '';
+  const initialFileName = initialFilePath
+    ? initialFilePath.split('/').filter(Boolean).pop() || initialFilePath
+    : initialDoc?.name
+    ? `${initialDoc.name}.agent`
+    : 'workflow.agent';
+  const initialOutputFolder = resolveAgentOutputFolder(
+    initialDoc?.deployment?.outputFolder || (initialDoc?.metadata as any)?.outputFolder,
+    initialFileName
+  );
+
+  // Initialize tabs with default or pre-hydrated workflow document
   const [fileTabs, setFileTabs] = useState<AgentFileTab[]>([
     {
       id: 'tab-main-workflow',
-      filename: 'workflow.agent',
-      title: 'workflow.agent',
-      nodes: INITIAL_NODES,
-      edges: INITIAL_EDGES,
+      filename: initialFileName,
+      title: initialFileName,
+      nodes: initialDoc && Array.isArray(initialDoc.nodes) ? normalizeLoadedNodes(initialDoc.nodes) : INITIAL_NODES,
+      edges: initialDoc && Array.isArray(initialDoc.edges) ? normalizeLoadedEdges(initialDoc.edges) : INITIAL_EDGES,
       config: {
-        framework: 'google_adk',
-        language: 'python',
-        outputFolder: './src/agents/',
-        deploymentTarget: 'agent_engine',
-        includeTests: true,
-        includeDocker: false,
-        useStreaming: true,
+        framework: (initialDoc?.deployment?.framework === 'google-adk' ? 'google_adk' : (initialDoc?.deployment?.framework || (initialDoc?.framework === 'google-adk' ? 'google_adk' : initialDoc?.framework) || defaultFramework || 'google_adk')) as any,
+        language: (initialDoc?.deployment?.language || initialDoc?.language || defaultLanguage || 'python') as any,
+        outputFolder: initialOutputFolder,
+        deploymentTarget: (initialDoc?.deployment?.target || initialDoc?.deployment?.deploymentTarget || (initialDoc?.metadata as any)?.deploymentTarget || 'agent_engine') as any,
+        includeTests: typeof initialDoc?.deployment?.includeTests === 'boolean' ? initialDoc.deployment.includeTests : true,
+        includeDocker: typeof initialDoc?.deployment?.includeDocker === 'boolean' ? initialDoc.deployment.includeDocker : false,
+        useStreaming: typeof initialDoc?.deployment?.useStreaming === 'boolean' ? initialDoc.deployment.useStreaming : (useStreamingByDefault ?? true),
       },
     },
   ]);

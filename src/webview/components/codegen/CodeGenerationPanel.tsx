@@ -23,12 +23,15 @@ import {
   Maximize2,
   Minimize2,
   Cloud,
-  Key
+  Key,
+  AlertCircle,
+  CheckCircle2,
 } from 'lucide-react';
 import { AgentData, FrameworkType, GeneratedFile, GenerationConfig, LanguageType, TestPrompt } from '../../types';
 import { AgentWorkflowDocument } from '../../../shared/types';
 import { DeploymentTab } from '../deployment/DeploymentTab';
 import { TestRunnerTab } from '../testing/TestRunnerTab';
+import { validateTargetFolder } from '../../../shared/folderValidation';
 
 interface CodeGenerationPanelProps {
   config: GenerationConfig;
@@ -79,6 +82,8 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   const [activeFileIndex, setActiveFileIndex] = useState<number>(0);
   const [copied, setCopied] = useState(false);
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
+
+  const folderValidation = validateTargetFolder(config.outputFolder || '');
 
   const sampleFolders = [
     './src/agents/',
@@ -345,7 +350,11 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                     value={config.outputFolder}
                     onChange={(e) => onChangeConfig({ outputFolder: e.target.value })}
                     placeholder="./src/agents/"
-                    className="flex-1 px-3 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-blue-500 rounded text-xs font-mono text-gray-300 focus:outline-none"
+                    className={`flex-1 px-3 py-1.5 bg-[#0d1117] border rounded text-xs font-mono text-gray-300 focus:outline-none ${
+                      !folderValidation.isValid
+                        ? 'border-amber-500/80 focus:border-amber-500'
+                        : 'border-[#30363d] focus:border-blue-500'
+                    }`}
                   />
                   <button
                     type="button"
@@ -356,6 +365,35 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                     <FolderOpen className="w-3.5 h-3.5" />
                   </button>
                 </div>
+
+                {/* Character Validation Message & Quick Fix */}
+                {!folderValidation.isValid ? (
+                  <div className="mt-2 p-2 bg-amber-950/40 border border-amber-600/40 rounded text-[11px] text-amber-200 space-y-2">
+                    <div className="flex items-start gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                      <div className="leading-tight">{folderValidation.error}</div>
+                    </div>
+                    {folderValidation.hasHyphens && (
+                      <div className="flex items-center justify-between pt-1 border-t border-amber-800/40">
+                        <span className="text-[10px] text-gray-300">
+                          Replace <code className="text-amber-300 font-mono">-</code> with <code className="text-emerald-300 font-mono">_</code>:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onChangeConfig({ outputFolder: folderValidation.sanitizedPath })}
+                          className="px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-[10px] font-medium transition-colors cursor-pointer"
+                        >
+                          Use '{folderValidation.sanitizedBase}'
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-400/90 font-mono">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span>Valid Python package name: {folderValidation.folderBase}</span>
+                  </div>
+                )}
 
                 {isFolderPickerOpen && (
                   <div className="p-1.5 rounded-lg bg-[#0d1117] border border-[#30363d] space-y-1 animate-in fade-in">
@@ -527,6 +565,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
           generatedFiles={generatedFiles}
           agents={agents}
           document={workflowDoc}
+          onUpdateGenerationConfig={onChangeConfig}
         />
       </div>
 

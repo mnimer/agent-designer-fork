@@ -9,6 +9,7 @@
  * 2. Streams real-time TEST_RESULT_UPDATE and EXECUTION_LOG events to display live execution traces.
  * 3. Supports running the entire test suite or targeting individual test prompts.
  * 4. Fallback mock simulation when running in standalone browser dev preview.
+ * 5. Multi-target execution harness supporting Local Agent Runner and Remote Agent Engine. Dynamic health checks, target readiness, and UI controls adapt automatically based on the active execution target.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -97,14 +98,78 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
   const activeRunIdRef = useRef<string | null>(null);
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
-  // Health check callback (invoked on tab open or on manual user refresh)
-  const checkRunnerHealth = useCallback(() => {
-    setIsCheckingHealth(true);
-    bridge.postMessage({ type: 'GET_LOCAL_RUNNER_STATUS' });
-    setTimeout(() => setIsCheckingHealth(false), 1200);
+  const [remoteEngineId, setRemoteEngineId] = useState<string | null>(null);
+
+  // Check propDocument, generation config, and discovered remote engine ID
+  const deployedResourceId =
+    (propDocument as any)?.deployment?.deployedResourceId ||
+    (config as any)?.deployedResourceId ||
+    remoteEngineId;
+  const isDeployed = Boolean(deployedResourceId);
+
+  const [executionTarget, setExecutionTarget] = useState<'local' | 'remote'>(() => {
+    return isDeployed ? 'remote' : 'local';
+  });
+
+  // Automatically select remote execution if deployed and local runner is offline
+  useEffect(() => {
+    if (isDeployed && localRunnerStatus !== 'running') {
+      setExecutionTarget('remote');
+    }
+  }, [isDeployed, localRunnerStatus]);
+
+  // Request Agent Engine deployment status to discover deployed instances from workspace metadata
+  useEffect(() => {
+    if (!bridge) return;
+    const targetDir = config?.outputFolder;
+    bridge.postMessage({
+      type: 'GET_AGENT_ENGINE_STATUS',
+      payload: { targetDirectory: targetDir },
+    });
+  }, [bridge, config?.outputFolder]);
+
+  // Subscribe to Agent Engine deployment status updates
+  useEffect(() => {
+    if (!bridge) return;
+    const unsubDeploy = bridge.subscribe('AGENT_ENGINE_DEPLOY_STATUS', (payload) => {
+      const discoveredId =
+        payload?.metadata?.remote_agent_runtime_id ||
+        payload?.remoteRuntimeId;
+      if (discoveredId) {
+        setRemoteEngineId(discoveredId);
+      } else if (payload?.status === 'idle') {
+        setRemoteEngineId(null);
+      }
+      setIsCheckingHealth(false);
+    });
+    return () => {
+      unsubDeploy();
+    };
   }, [bridge]);
 
-  // Check health once on tab mount (no repeating interval / loop)
+  /**
+   * Health check callback (invoked on tab open, target change, or manual user refresh).
+   * Dynamically queries GET_AGENT_ENGINE_STATUS when targeting remote Agent Engine,
+   * or GET_LOCAL_RUNNER_STATUS when targeting the local uvicorn runner.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
+   */
+  const checkRunnerHealth = useCallback(() => {
+    setIsCheckingHealth(true);
+    if (executionTarget === 'remote') {
+      const targetDir = config?.outputFolder;
+      bridge.postMessage({
+        type: 'GET_AGENT_ENGINE_STATUS',
+        payload: { targetDirectory: targetDir },
+      });
+      setTimeout(() => setIsCheckingHealth(false), 1500);
+    } else {
+      bridge.postMessage({ type: 'GET_LOCAL_RUNNER_STATUS' });
+      setTimeout(() => setIsCheckingHealth(false), 1500);
+    }
+  }, [bridge, executionTarget, config?.outputFolder]);
+
+  // Check health once on tab mount or whenever execution target changes
   useEffect(() => {
     checkRunnerHealth();
   }, [checkRunnerHealth]);
@@ -327,9 +392,14 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
         ];
       }
 
+      const baseDeploy = (propDocument as any)?.deployment || {};
       return {
         ...propDocument,
         nodes,
+        deployment: {
+          ...baseDeploy,
+          deployedResourceId: deployedResourceId || baseDeploy.deployedResourceId,
+        },
       };
     }
 
@@ -385,6 +455,8 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
         document: workflowDoc,
         testScenarioIds: [testId],
         targetDirectory: config.outputFolder,
+        executionTarget,
+        deployedResourceId: executionTarget === 'remote' ? deployedResourceId : undefined,
       },
     });
   };
@@ -415,6 +487,8 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
       payload: {
         document: workflowDoc,
         targetDirectory: config.outputFolder,
+        executionTarget,
+        deployedResourceId: executionTarget === 'remote' ? deployedResourceId : undefined,
       },
     });
   };
@@ -464,6 +538,10 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
   });
 
   const isServerRunning = localRunnerStatus === 'running';
+  // Target is ready if either:
+  // - local execution target and local runner is 'running'
+  // - remote execution target and remote agent is deployed
+  const isTargetReady = executionTarget === 'remote' ? isDeployed : isServerRunning;
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#0d1117] text-[#c9d1d9] overflow-hidden">
@@ -474,8 +552,16 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
           <button
             type="button"
             onClick={runAllTests}
-            disabled={!isServerRunning || isRunningAll || testPrompts.length === 0}
-            title={!isServerRunning ? 'Local agent is offline. Start the agent in the Deployment tab to run tests.' : 'Run all unit tests'}
+            disabled={!isTargetReady || isRunningAll || testPrompts.length === 0}
+            title={
+              !isTargetReady
+                ? executionTarget === 'remote'
+                  ? 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab to run tests.'
+                  : 'Local agent is offline. Start the agent in the Deployment tab to run tests.'
+                : executionTarget === 'remote'
+                ? 'Run all unit tests against remote Agent Engine'
+                : 'Run all unit tests'
+            }
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-pink-600 hover:bg-pink-500 disabled:opacity-40 disabled:hover:bg-pink-600 text-white font-bold text-xs shadow-md transition-all cursor-pointer disabled:cursor-not-allowed"
           >
             {isRunningAll ? (
@@ -497,6 +583,27 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
             </button>
           )}
 
+          {/* Execution Target Selector */}
+          <div className="flex items-center gap-1.5 bg-[#0d1117] px-2.5 py-1.5 rounded-lg border border-[#30363d] text-xs">
+            <span className="text-gray-400 font-medium shrink-0">Target:</span>
+            <select
+              value={executionTarget}
+              onChange={(e) => setExecutionTarget(e.target.value as 'local' | 'remote')}
+              className="bg-transparent text-white text-xs font-medium focus:outline-none cursor-pointer"
+            >
+              <option value="local" className="bg-[#161b22] text-white">
+                Local Runner ({isServerRunning ? `:${localRunnerPort}` : 'Offline'})
+              </option>
+              <option
+                value="remote"
+                disabled={!isDeployed}
+                className="bg-[#161b22] text-white disabled:text-gray-500"
+              >
+                Remote Agent {isDeployed ? `(${deployedResourceId?.split('/').pop()})` : '(Not Deployed)'}
+              </option>
+            </select>
+          </div>
+
           <button
             type="button"
             onClick={resetAllTests}
@@ -508,8 +615,36 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
             <span>Reset</span>
           </button>
 
-          {/* Server Status Indicator */}
-          {isServerRunning ? (
+          {/* Target Status Indicator */}
+          {executionTarget === 'remote' ? (
+            isDeployed ? (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-950/80 border border-indigo-500/40 text-indigo-300 text-xs font-mono font-medium ml-1">
+                <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
+                <span>Remote Agent Ready ({deployedResourceId?.split('/').pop()})</span>
+                <button
+                  type="button"
+                  onClick={checkRunnerHealth}
+                  className="ml-1 p-0.5 rounded hover:bg-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer"
+                  title="Check remote agent status"
+                >
+                  <RotateCcw className={`w-3 h-3 ${isCheckingHealth ? 'animate-spin text-indigo-400' : ''}`} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-950/70 border border-amber-500/40 text-amber-300 text-xs font-medium ml-1">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Remote Agent Not Deployed</span>
+                <button
+                  type="button"
+                  onClick={checkRunnerHealth}
+                  className="ml-1 p-0.5 rounded hover:bg-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer"
+                  title="Check remote agent status"
+                >
+                  <RotateCcw className={`w-3 h-3 ${isCheckingHealth ? 'animate-spin text-amber-400' : ''}`} />
+                </button>
+              </div>
+            )
+          ) : isServerRunning ? (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-medium ml-1">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               <span>Agent Online (:{localRunnerPort})</span>
@@ -522,7 +657,7 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                 type="button"
                 onClick={checkRunnerHealth}
                 className="ml-1 p-0.5 rounded hover:bg-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer"
-                title="Check agent health"
+                title="Check local agent health"
               >
                 <RotateCcw className={`w-3 h-3 ${isCheckingHealth ? 'animate-spin text-amber-400' : ''}`} />
               </button>
@@ -590,15 +725,25 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
 
       {/* Main Content Area: List of Test Cases */}
       <div className="flex-1 p-4 overflow-y-auto space-y-3.5">
-        {/* Offline Warning Banner */}
-        {!isServerRunning && (
+        {/* Offline / Not Deployed Warning Banner */}
+        {!isTargetReady && (
           <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-md">
             <div className="flex items-center gap-2.5">
               <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
               <div>
-                <span className="font-semibold text-white">Local Agent Server is Offline.</span>
+                <span className="font-semibold text-white">
+                  {executionTarget === 'remote' ? 'Remote Agent is Not Deployed.' : 'Local Agent Server is Offline.'}
+                </span>
                 <span className="text-amber-200/90 ml-1">
-                  Start the local agent on the <strong>Deployment</strong> tab to enable unit test execution.
+                  {executionTarget === 'remote' ? (
+                    <>
+                      Deploy the workflow to <strong>Agent Engine</strong> on the Deployment tab to enable remote unit test execution.
+                    </>
+                  ) : (
+                    <>
+                      Start the local agent on the <strong>Deployment</strong> tab to enable unit test execution.
+                    </>
+                  )}
                 </span>
               </div>
             </div>
@@ -707,8 +852,14 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                     <button
                       type="button"
                       onClick={() => runTest(tp.id)}
-                      disabled={!isServerRunning || isRunning || isRunningAll}
-                      title={!isServerRunning ? 'Local agent server is offline. Start the agent in the Deployment tab to run this test.' : 'Execute test scenario'}
+                      disabled={!isTargetReady || isRunning || isRunningAll}
+                      title={
+                        !isTargetReady
+                          ? executionTarget === 'remote'
+                            ? 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab to run this test.'
+                            : 'Local agent server is offline. Start the agent in the Deployment tab to run this test.'
+                          : `Execute test scenario against ${executionTarget === 'remote' ? 'remote Agent Engine' : 'local runner'}`
+                      }
                       className="px-2.5 py-1 rounded-md bg-[#0d1117] hover:bg-pink-600 border border-[#30363d] hover:border-pink-500 text-gray-300 hover:text-white text-[11px] font-medium transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:hover:bg-[#0d1117] disabled:hover:border-[#30363d] disabled:cursor-not-allowed"
                     >
                       <Play className="w-2.5 h-2.5 fill-current" />
@@ -900,23 +1051,45 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
         </div>
 
         {isConsoleOpen && (
-          <div className="h-36 overflow-y-auto p-3 font-mono text-[11px] space-y-1 bg-[#090d13] text-gray-300">
+          <div
+            className="h-40 overflow-y-auto p-4 font-mono text-[11px] space-y-1 bg-[#090d13] text-gray-300 select-text cursor-text"
+            style={{ userSelect: 'text' }}
+          >
             {logs.length === 0 ? (
-              <div className="text-gray-500 italic py-2 text-center">
-                No execution logs yet. Click "Run" or "Run All Scenarios" to start testing.
+              <div className="text-gray-500 italic py-2 text-center select-text">
+                No execution logs yet. Click "Run" or "Run All Unit Tests" to start testing.
               </div>
             ) : (
               logs.map((log) => (
-                <div key={log.id} className="flex items-start gap-2 leading-relaxed">
-                  <span className="text-gray-500 text-[10px] shrink-0">{log.timestamp}</span>
-                  <span className={`text-[10px] font-bold uppercase px-1 rounded shrink-0 ${
-                    log.level === 'error' ? 'bg-rose-950 text-rose-400' : log.level === 'warn' ? 'bg-amber-950 text-amber-400' : 'bg-sky-950 text-sky-400'
-                  }`}>
+                <div
+                  key={log.id}
+                  className="flex items-start gap-2 leading-relaxed select-text"
+                  style={{ userSelect: 'text' }}
+                >
+                  <span className="text-gray-500 text-[10px] shrink-0 select-text">
+                    {log.timestamp}
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold uppercase px-1 rounded shrink-0 select-text ${
+                      log.level === 'error'
+                        ? 'bg-rose-950 text-rose-400'
+                        : log.level === 'warn'
+                        ? 'bg-amber-950 text-amber-400'
+                        : 'bg-sky-950 text-sky-400'
+                    }`}
+                  >
                     {log.level}
                   </span>
-                  <span className={
-                    log.level === 'error' ? 'text-rose-300' : log.level === 'warn' ? 'text-amber-300' : 'text-gray-300'
-                  }>
+                  <span
+                    className={`select-text ${
+                      log.level === 'error'
+                        ? 'text-rose-300'
+                        : log.level === 'warn'
+                        ? 'text-amber-300'
+                        : 'text-gray-300'
+                    }`}
+                    style={{ userSelect: 'text' }}
+                  >
                     {log.message}
                   </span>
                 </div>

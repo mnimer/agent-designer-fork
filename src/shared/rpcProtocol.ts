@@ -143,6 +143,43 @@ export type WebviewToExtensionMessage =
         col?: number;
         stack?: string;
       };
+    }
+  | {
+      type: 'DEPLOY_TO_AGENT_ENGINE';
+      payload: {
+        document?: AgentWorkflowDocument;
+        targetDirectory?: string;
+        projectId: string;
+        region?: string;
+        serviceAccount?: string;
+        networkAttachment?: string;
+        stagingBucket?: string;
+        forceNew?: boolean;
+        envVars?: Record<string, string>;
+      };
+    }
+  | {
+      type: 'CANCEL_AGENT_ENGINE_DEPLOY';
+      payload?: {
+        targetDirectory?: string;
+      };
+    }
+  | {
+      type: 'GET_AGENT_ENGINE_STATUS';
+      payload?: {
+        targetDirectory?: string;
+      };
+    }
+  | {
+      type: 'TEST_REMOTE_AGENT_ENGINE';
+      payload: {
+        targetDirectory?: string;
+        query: string;
+        remoteRuntimeId?: string;
+        serviceUrl?: string;
+        location?: string;
+        projectId?: string;
+      };
     };
 
 // Extension Host -> Webview Events
@@ -270,5 +307,36 @@ export type ExtensionToWebviewMessage =
         exists: boolean;
         files?: string[];
         generatedFiles?: GeneratedFile[];
+      };
+    }
+  | {
+      type: 'AGENT_ENGINE_DEPLOY_LOG';
+      payload: {
+        text: string;
+        stream: 'stdout' | 'stderr' | 'system';
+        timestamp: string;
+      };
+    }
+  | {
+      type: 'AGENT_ENGINE_DEPLOY_STATUS';
+      payload: {
+        status: 'idle' | 'packaging' | 'building' | 'deploying' | 'success' | 'error';
+        remoteRuntimeId?: string;
+        serviceUrl?: string;
+        consoleUrl?: string;
+        error?: string;
+        logs?: string[];
+        isExistingDeployment?: boolean;
+        metadata?: any;
+      };
+    }
+  | {
+      type: 'AGENT_ENGINE_TEST_RESULT';
+      payload: {
+        success: boolean;
+        query: string;
+        response?: string;
+        durationMs: number;
+        error?: string;
       };
     };

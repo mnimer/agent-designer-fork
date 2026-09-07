@@ -389,6 +389,10 @@ export interface GenerationConfig {
   includeDocker: boolean;
   useStreaming: boolean;
   deploymentTarget?: 'cloud_run' | 'agent_engine';
+  deployedResourceId?: string;
+  serviceUrl?: string;
+  consoleUrl?: string;
+  deployedAt?: string;
 }
 
 export type DeploymentTarget = 'local' | 'agent_engine' | 'cloud_run';

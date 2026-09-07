@@ -42,20 +42,24 @@ interface TriggerDrawerProps {
   onReconnectToRoot?: (rootAgentId: string) => void;
 }
 
+/**
+ * Resolves trigger icon component.
+ * NOTE: All triggers use uniform orange styling (text-orange-400).
+ */
 const getTriggerIcon = (type: TriggerType) => {
   switch (type) {
     case 'chat':
-      return <MessageSquare className="w-4 h-4 text-emerald-400" />;
+      return <MessageSquare className="w-4 h-4 text-orange-400" />;
     case 'pubsub':
-      return <Radio className="w-4 h-4 text-amber-400" />;
+      return <Radio className="w-4 h-4 text-orange-400" />;
     case 'scheduled':
-      return <Clock className="w-4 h-4 text-sky-400" />;
+      return <Clock className="w-4 h-4 text-orange-400" />;
     case 'tester':
-      return <FlaskConical className="w-4 h-4 text-yellow-400" />;
+      return <FlaskConical className="w-4 h-4 text-orange-400" />;
     case 'eventarc':
-      return <Zap className="w-4 h-4 text-purple-400" />;
+      return <Zap className="w-4 h-4 text-orange-400" />;
     default:
-      return <Zap className="w-4 h-4 text-amber-400" />;
+      return <Zap className="w-4 h-4 text-orange-400" />;
   }
 };
 

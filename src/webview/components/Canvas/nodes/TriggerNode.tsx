@@ -33,68 +33,38 @@ import {
 import { TriggerData, TriggerType, TestPrompt } from '../../../types';
 import { DEFAULT_MOCK_TEST_PROMPTS } from '../../../data/triggerDefinitions';
 
+/**
+ * Resolves icon component for trigger type.
+ * NOTE: All triggers use uniform orange styling (text-orange-400).
+ */
 const getTriggerIcon = (type: TriggerType) => {
   switch (type) {
     case 'chat':
-      return <MessageSquare className="w-4 h-4 text-emerald-400" />;
+      return <MessageSquare className="w-4 h-4 text-orange-400" />;
     case 'pubsub':
-      return <Radio className="w-4 h-4 text-amber-400" />;
+      return <Radio className="w-4 h-4 text-orange-400" />;
     case 'scheduled':
-      return <Clock className="w-4 h-4 text-sky-400" />;
+      return <Clock className="w-4 h-4 text-orange-400" />;
     case 'tester':
-      return <FlaskConical className="w-4 h-4 text-yellow-400" />;
+      return <FlaskConical className="w-4 h-4 text-orange-400" />;
     case 'eventarc':
-      return <Zap className="w-4 h-4 text-purple-400" />;
+      return <Zap className="w-4 h-4 text-orange-400" />;
     default:
-      return <Zap className="w-4 h-4 text-amber-400" />;
+      return <Zap className="w-4 h-4 text-orange-400" />;
   }
 };
 
+/**
+ * Returns visual styling parameters for a trigger type.
+ * NOTE: Unified orange theme across all triggers per designer guidelines.
+ */
 const getTriggerTheme = (type: TriggerType) => {
-  switch (type) {
-    case 'chat':
-      return {
-        border: 'border-emerald-500/60 hover:border-emerald-400 shadow-emerald-950/30',
-        badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
-        accent: 'text-emerald-400',
-        glow: 'shadow-[0_0_15px_rgba(16,185,129,0.15)]',
-      };
-    case 'pubsub':
-      return {
-        border: 'border-amber-500/60 hover:border-amber-400 shadow-amber-950/30',
-        badge: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-        accent: 'text-amber-400',
-        glow: 'shadow-[0_0_15px_rgba(245,158,11,0.15)]',
-      };
-    case 'scheduled':
-      return {
-        border: 'border-sky-500/60 hover:border-sky-400 shadow-sky-950/30',
-        badge: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
-        accent: 'text-sky-400',
-        glow: 'shadow-[0_0_15px_rgba(14,165,233,0.15)]',
-      };
-    case 'tester':
-      return {
-        border: 'border-yellow-500/60 hover:border-yellow-400 shadow-yellow-950/30',
-        badge: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
-        accent: 'text-yellow-400',
-        glow: 'shadow-[0_0_15px_rgba(234,179,8,0.15)]',
-      };
-    case 'eventarc':
-      return {
-        border: 'border-purple-500/60 hover:border-purple-400 shadow-purple-950/30',
-        badge: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-        accent: 'text-purple-400',
-        glow: 'shadow-[0_0_15px_rgba(168,85,247,0.15)]',
-      };
-    default:
-      return {
-        border: 'border-amber-500/60 hover:border-amber-400 shadow-amber-950/30',
-        badge: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-        accent: 'text-amber-400',
-        glow: 'shadow-[0_0_15px_rgba(245,158,11,0.15)]',
-      };
-  }
+  return {
+    border: 'border-orange-500/60 hover:border-orange-400 shadow-orange-950/30',
+    badge: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+    accent: 'text-orange-400',
+    glow: 'shadow-[0_0_15px_rgba(249,115,22,0.15)]',
+  };
 };
 
 export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: TriggerData }) => {

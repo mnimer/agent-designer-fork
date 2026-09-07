@@ -41,9 +41,10 @@ describe('Extension Lifecycle', { concurrency: 1 }, () => {
     assert.ok(registeredCmds.includes('agentFlow.createWorkflow'));
     assert.ok(registeredCmds.includes('agentFlow.generateCode'));
     assert.ok(registeredCmds.includes('agentFlow.runTests'));
+    assert.ok(registeredCmds.includes('agentFlow.deployToAgentEngine'));
 
-    assert.equal(vscode.commands.registerCommand.calls.length >= 8, true);
-    assert.equal(mockContext.subscriptions.length >= 10, true);
+    assert.equal(vscode.commands.registerCommand.calls.length >= 9, true);
+    assert.equal(mockContext.subscriptions.length >= 11, true);
   });
 
   it('should execute createWorkflow command and invoke vscode.openWith', async () => {

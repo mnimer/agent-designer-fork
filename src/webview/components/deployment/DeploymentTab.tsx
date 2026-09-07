@@ -1,3 +1,13 @@
+/**
+ * DeploymentTab
+ *
+ * Webview component for deployment orchestration and local execution runner.
+ * Displays "Local Runner" (always) and the specific deployment target selected
+ * in the Code Generation tab (Vertex AI Agent Engine or Google Cloud Run).
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Laptop, 
@@ -30,12 +40,14 @@ import { AgentData, DeploymentConfig, DeploymentTarget, GeneratedFile, Generatio
 import { AgentWorkflowDocument } from '../../../shared/types';
 import { extractRuntimeSecrets, RuntimeSecret } from '../../utils/runtimeSecrets';
 import { useWebviewBridge } from '../../hooks/useWebviewBridge';
+import { AgentEngineDeployTab } from './AgentEngineDeployTab';
 
 interface DeploymentTabProps {
   generationConfig: GenerationConfig;
   generatedFiles: GeneratedFile[];
   agents?: AgentData[];
   document?: AgentWorkflowDocument;
+  onUpdateGenerationConfig?: (config: Partial<GenerationConfig>) => void;
 }
 
 export const DeploymentTab: React.FC<DeploymentTabProps> = ({
@@ -43,12 +55,25 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
   generatedFiles,
   agents = [],
   document: workflowDoc,
+  onUpdateGenerationConfig,
 }) => {
   const bridge = useWebviewBridge();
-  const cloudTarget: 'cloud_run' | 'agent_engine' = generationConfig.deploymentTarget || 'cloud_run';
+  const cloudTarget: 'cloud_run' | 'agent_engine' =
+    generationConfig.deploymentTarget === 'cloud_run' ||
+    workflowDoc?.deployment?.target === 'cloud_run' ||
+    workflowDoc?.deployment?.deploymentTarget === 'cloud_run'
+      ? 'cloud_run'
+      : 'agent_engine';
   
   // Selected target in the dropdown: either 'local' or the cloud target selected in the Code Generation tab
   const [selectedTarget, setSelectedTarget] = useState<'local' | 'cloud_run' | 'agent_engine'>('local');
+
+  // Keep selectedTarget synchronized if code generation target changes
+  useEffect(() => {
+    if (selectedTarget !== 'local' && selectedTarget !== cloudTarget) {
+      setSelectedTarget(cloudTarget);
+    }
+  }, [cloudTarget, selectedTarget]);
   const [copiedCmd, setCopiedCmd] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [deployStatus, setDeployStatus] = useState<'idle' | 'deploying' | 'success' | 'error'>('idle');
@@ -66,14 +91,37 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
     return extractRuntimeSecrets(nodeWrappers);
   }, [agents]);
 
+  // Shared GCP Project ID synchronized between targets and persisted to localStorage
+  const [sharedProjectId, setSharedProjectId] = useState<string>(() => {
+    return (
+      workflowDoc?.metadata?.settings?.customFields?.gcpProjectId ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('vad_gcp_project_id') : null) ||
+      'my-gcp-ai-agents'
+    );
+  });
+
+  const handleSharedProjectIdChange = (newProjectId: string) => {
+    setSharedProjectId(newProjectId);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('vad_gcp_project_id', newProjectId);
+      }
+    } catch {}
+    setDeployConfig((prev) => ({
+      ...prev,
+      agentEngineProject: newProjectId,
+      cloudRunProject: newProjectId,
+    }));
+  };
+
   const [deployConfig, setDeployConfig] = useState<DeploymentConfig>({
     target: 'local',
     localMode: 'cli',
     localPort: 8000,
-    agentEngineProject: 'my-gcp-ai-agents',
+    agentEngineProject: sharedProjectId,
     agentEngineRegion: 'us-central1',
     agentEngineRuntime: 'adk-python-3.11',
-    cloudRunProject: 'my-gcp-ai-agents',
+    cloudRunProject: sharedProjectId,
     cloudRunService: 'agent-flow-service',
     cloudRunRegion: 'us-central1',
     cloudRunCpu: '1',
@@ -219,45 +267,103 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
   const hasGeneratedCode = Boolean((generatedFiles && generatedFiles.length > 0) || diskFilesExist);
 
   return (
-    <div className="flex-1 p-4 flex gap-4 overflow-hidden bg-[#0d1117]">
-      {/* LEFT 1/3 CARD: Deployment Options & Config */}
-      <div className="w-1/3 min-w-[310px] max-w-[390px] bg-[#161b22] border border-[#30363d] rounded-xl p-4 shadow-xl flex flex-col min-h-0 overflow-hidden">
-        <div className="flex-1 overflow-y-auto pr-1 space-y-4 min-h-0">
-          {/* Target Header */}
-          <div className="flex items-center justify-between border-b border-[#30363d] pb-2">
-            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-white">
-              <Server className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Deployment & Runner</span>
-            </div>
-            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#0d1117] text-emerald-400 font-mono border border-[#30363d]">
-              Ready
-            </span>
-          </div>
-
-          {/* Deployment Target Dropdown (Local Runner vs Codegen Selected Target) */}
-          <div className="space-y-1.5">
-            <label className="text-[11px] text-gray-400 font-bold uppercase tracking-tight flex items-center justify-between">
-              <span>Target Environment</span>
-              <span className="text-[9px] text-gray-400 font-mono">
-                {isLocalSelected ? 'Local Machine' : 'Cloud Deployment'}
-              </span>
-            </label>
-            <select
-              value={selectedTarget}
-              onChange={(e) => {
-                setSelectedTarget(e.target.value as any);
-                setDeployStatus('idle');
+    <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
+      {/* Top Environment Switcher Bar */}
+      <div className="px-4 py-2 bg-[#161b22] border-b border-[#30363d] flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2">
+          <Server className="w-4 h-4 text-emerald-400" />
+          <span className="text-xs font-bold uppercase tracking-wide text-white">Target Environment</span>
+        </div>
+        <div className="flex items-center gap-1 bg-[#0d1117] p-1 rounded-lg border border-[#30363d]">
+          <button
+            onClick={() => {
+              setSelectedTarget('local');
+            }}
+            className={`px-3 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
+              selectedTarget === 'local' ? 'bg-[#238636] text-white shadow' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            🖥️ Local Runner
+          </button>
+          {cloudTarget === 'agent_engine' ? (
+            <button
+              onClick={() => {
+                setSelectedTarget('agent_engine');
               }}
-              className="w-full bg-[#0d1117] border border-[#30363d] text-xs text-white rounded-lg px-2.5 py-2 focus:outline-none focus:border-emerald-500 cursor-pointer font-medium"
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
+                selectedTarget === 'agent_engine' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-white'
+              }`}
             >
-              <option value="local">🖥️ Local Runner</option>
-              <option value={cloudTarget}>
-                {cloudTarget === 'agent_engine'
-                  ? '🧠 Google Agent Engine (Selected in Code Gen)'
-                  : '☁️ Google Cloud Run (Selected in Code Gen)'}
-              </option>
-            </select>
-          </div>
+              🧠 Vertex AI Agent Engine
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                setSelectedTarget('cloud_run');
+              }}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
+                selectedTarget === 'cloud_run' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              ☁️ Google Cloud Run
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Agent Engine View (Kept mounted with CSS hidden to preserve active background deployment, inputs, and logs) */}
+      <div className={selectedTarget === 'agent_engine' ? 'flex-1 flex flex-col h-full overflow-hidden' : 'hidden'}>
+        <AgentEngineDeployTab
+          document={workflowDoc}
+          generatedFiles={generatedFiles}
+          secrets={secretValues}
+          onSecretChange={(k, v) => setSecretValues((prev) => ({ ...prev, [k]: v }))}
+          targetDirectory={generationConfig.outputFolder || 'src/agents'}
+          onTargetDirectoryChange={(newFolder) => onUpdateGenerationConfig?.({ outputFolder: newFolder })}
+          sharedProjectId={sharedProjectId}
+          onProjectIdChange={handleSharedProjectIdChange}
+        />
+      </div>
+
+      {/* Local Runner and Cloud Run View (Kept mounted with CSS hidden to preserve running processes, inputs, and logs) */}
+      <div className={selectedTarget !== 'agent_engine' ? 'flex-1 p-4 flex gap-4 overflow-hidden bg-[#0d1117]' : 'hidden'}>
+        {/* LEFT 1/3 CARD: Deployment Options & Config */}
+        <div className="w-1/3 min-w-[310px] max-w-[390px] bg-[#161b22] border border-[#30363d] rounded-xl p-4 shadow-xl flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 overflow-y-auto pr-1 space-y-4 min-h-0">
+            {/* Target Header */}
+            <div className="flex items-center justify-between border-b border-[#30363d] pb-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-white">
+                <Server className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Deployment & Runner</span>
+              </div>
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#0d1117] text-emerald-400 font-mono border border-[#30363d]">
+                Ready
+              </span>
+            </div>
+
+            {/* Deployment Target Dropdown (Local Runner vs Codegen Selected Target) */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] text-gray-400 font-bold uppercase tracking-tight flex items-center justify-between">
+                <span>Target Environment</span>
+                <span className="text-[9px] text-gray-400 font-mono">
+                  {isLocalSelected ? 'Local Machine' : 'Cloud Deployment'}
+                </span>
+              </label>
+              <select
+                value={selectedTarget}
+                onChange={(e) => {
+                  setSelectedTarget(e.target.value as any);
+                }}
+                className="w-full bg-[#0d1117] border border-[#30363d] text-xs text-white rounded-lg px-2.5 py-2 focus:outline-none focus:border-emerald-500 cursor-pointer font-medium"
+              >
+                <option value="local">🖥️ Local Runner</option>
+                {cloudTarget === 'agent_engine' ? (
+                  <option value="agent_engine">🧠 Vertex AI Agent Engine</option>
+                ) : (
+                  <option value="cloud_run">☁️ Google Cloud Run</option>
+                )}
+              </select>
+            </div>
 
           {/* Target Specific Parameters Form */}
           {(selectedTarget === 'agent_engine' || selectedTarget === 'cloud_run') && (
@@ -278,10 +384,12 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                   <label className="text-[11px] text-gray-300 block mb-1">GCP Project ID</label>
                   <input
                     type="text"
-                    value={deployConfig.agentEngineProject}
-                    onChange={(e) =>
-                      setDeployConfig((prev) => ({ ...prev, agentEngineProject: e.target.value }))
-                    }
+                    value={sharedProjectId || deployConfig.agentEngineProject}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handleSharedProjectIdChange(val);
+                    }}
+                    placeholder="e.g. my-production-project"
                     className="w-full bg-[#161b22] border border-[#30363d] text-xs text-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-500 font-mono"
                   />
                 </div>
@@ -305,6 +413,19 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
 
             {selectedTarget === 'cloud_run' && (
               <div className="space-y-2">
+                <div>
+                  <label className="text-[11px] text-gray-300 block mb-1">GCP Project ID</label>
+                  <input
+                    type="text"
+                    value={sharedProjectId || deployConfig.cloudRunProject}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handleSharedProjectIdChange(val);
+                    }}
+                    placeholder="e.g. my-production-project"
+                    className="w-full bg-[#161b22] border border-[#30363d] text-xs text-gray-200 rounded px-2 py-1 focus:outline-none focus:border-purple-500 font-mono"
+                  />
+                </div>
                 <div>
                   <label className="text-[11px] text-gray-300 block mb-1">Service Name</label>
                   <input
@@ -622,5 +743,6 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 };

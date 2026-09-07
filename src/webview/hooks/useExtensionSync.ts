@@ -19,7 +19,7 @@
 import { useRef, useEffect } from 'react';
 import { Node, Edge } from '@xyflow/react';
 import { WebviewBridge } from './useWebviewBridge';
-import { normalizeLoadedNodes, normalizeLoadedEdges, computeTargetFolder } from '../utils/workflowSync';
+import { normalizeLoadedNodes, normalizeLoadedEdges, computeTargetFolder, resolveAgentOutputFolder } from '../utils/workflowSync';
 import { AgentFileTab, GenerationConfig, GeneratedFile } from '../types';
 import { WorkflowNode, WorkflowEdge, AgentWorkflowDocument } from '../../shared/types';
 
@@ -37,6 +37,7 @@ export interface UseExtensionSyncOptions {
   setHasGeneratedCode: (hasCode: boolean) => void;
   setIsGenerating: (generating: boolean) => void;
   recordSnapshot: (nodes: Node<any>[], edges: Edge[], options?: { description?: string }) => void;
+  setFileTabs?: React.Dispatch<React.SetStateAction<AgentFileTab[]>>;
 }
 
 /**
@@ -57,11 +58,17 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
     setHasGeneratedCode,
     setIsGenerating,
     recordSnapshot,
+    setFileTabs,
   } = options;
 
   const docVersionRef = useRef(1);
   const isLoadedRef = useRef(false);
   const lastSentJsonRef = useRef<string>('');
+
+  // NOTE: Announce webview readiness to the VS Code extension host on mount
+  useEffect(() => {
+    bridge.postMessage({ type: 'READY' });
+  }, [bridge]);
 
   // NOTE: Listen for messages from the VS Code extension host
   useEffect(() => {
@@ -73,12 +80,35 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
         docVersionRef.current = payload.docVersion;
       }
 
+      const docMetadata = doc.metadata || {};
+      const deploymentCfg = doc.deployment || {};
+      const targetFolder = resolveAgentOutputFolder(
+        deploymentCfg.outputFolder || (docMetadata as any).outputFolder,
+        payload.filePath || (doc.name ? doc.name + '.agent' : 'workflow.agent')
+      );
+      const restoredTarget = (deploymentCfg.target || deploymentCfg.deploymentTarget || (docMetadata as any).deploymentTarget || 'agent_engine') as 'cloud_run' | 'agent_engine';
+      const restoredFramework =
+        deploymentCfg.framework === 'google-adk'
+          ? 'google_adk'
+          : deploymentCfg.framework ||
+            (doc.framework === 'google-adk' ? 'google_adk' : (doc.framework as any)) ||
+            'google_adk';
+      const restoredLanguage = deploymentCfg.language || doc.language || 'python';
+
       if (Array.isArray(doc.nodes)) {
         const normNodes = normalizeLoadedNodes(doc.nodes);
         const normEdges = normalizeLoadedEdges(doc.edges || []);
         setNodes(normNodes);
         setEdges(normEdges);
         recordSnapshot(normNodes, normEdges, { description: 'Loaded document from disk' });
+
+        const loadedDeployment = doc.deployment || {
+          target: restoredTarget,
+          deploymentTarget: restoredTarget,
+          outputFolder: targetFolder,
+          framework: restoredFramework === 'google_adk' ? 'google-adk' : restoredFramework,
+          language: restoredLanguage,
+        };
 
         // Record initial loaded JSON to avoid immediately echoing a duplicate back
         const loadedJson = JSON.stringify({
@@ -104,22 +134,53 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
             data: e.data,
           })),
           metadata: doc.metadata || {},
+          deployment: loadedDeployment,
         });
         lastSentJsonRef.current = loadedJson;
       }
 
-      const docMetadata = doc.metadata || {};
-      const targetFolder =
-        (docMetadata as any).outputFolder ||
-        computeTargetFolder(payload.filePath || (doc.name ? doc.name + '.agent' : 'workflow.agent'));
-
       setConfig((prev) => ({
         ...prev,
-        framework: doc.framework === 'google-adk' ? 'google_adk' : (doc.framework as any) || prev.framework,
-        language: doc.language || prev.language,
+        framework: (restoredFramework as any) || prev.framework,
+        language: (restoredLanguage as any) || prev.language,
         outputFolder: targetFolder,
-        deploymentTarget: 'agent_engine',
+        deploymentTarget: restoredTarget,
+        includeTests: typeof deploymentCfg.includeTests === 'boolean' ? deploymentCfg.includeTests : prev.includeTests,
+        includeDocker: typeof deploymentCfg.includeDocker === 'boolean' ? deploymentCfg.includeDocker : prev.includeDocker,
+        useStreaming: typeof deploymentCfg.useStreaming === 'boolean' ? deploymentCfg.useStreaming : prev.useStreaming,
+        deployedResourceId: deploymentCfg.deployedResourceId ?? prev.deployedResourceId,
+        serviceUrl: deploymentCfg.serviceUrl ?? prev.serviceUrl,
+        consoleUrl: deploymentCfg.consoleUrl ?? prev.consoleUrl,
+        deployedAt: deploymentCfg.deployedAt ?? prev.deployedAt,
       }));
+
+      if (setFileTabs && activeTabId) {
+        const docFileName = payload.filePath
+          ? payload.filePath.split('/').filter(Boolean).pop() || payload.filePath
+          : (doc.name ? `${doc.name}.agent` : 'workflow.agent');
+        setFileTabs((prev) =>
+          prev.map((t) =>
+            t.id === activeTabId
+              ? {
+                  ...t,
+                  filename: docFileName,
+                  title: docFileName,
+                  config: {
+                    ...t.config,
+                    framework: (restoredFramework as any) || t.config.framework,
+                    language: (restoredLanguage as any) || t.config.language,
+                    outputFolder: targetFolder,
+                    deploymentTarget: restoredTarget,
+                    deployedResourceId: deploymentCfg.deployedResourceId ?? t.config.deployedResourceId,
+                    serviceUrl: deploymentCfg.serviceUrl ?? t.config.serviceUrl,
+                    consoleUrl: deploymentCfg.consoleUrl ?? t.config.consoleUrl,
+                    deployedAt: deploymentCfg.deployedAt ?? t.config.deployedAt,
+                  },
+                }
+              : t
+          )
+        );
+      }
 
       if (payload.generatedFiles && payload.generatedFiles.length > 0) {
         setGeneratedFiles(payload.generatedFiles);
@@ -204,6 +265,16 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
       metadata: {
         outputFolder: config.outputFolder,
         updatedAt: new Date().toISOString(),
+      },
+      deployment: {
+        target: config.deploymentTarget || 'agent_engine',
+        deploymentTarget: config.deploymentTarget || 'agent_engine',
+        outputFolder: config.outputFolder,
+        framework: config.framework === 'google_adk' ? 'google-adk' : config.framework,
+        language: config.language,
+        includeTests: config.includeTests,
+        includeDocker: config.includeDocker,
+        useStreaming: config.useStreaming,
       },
     };
 

@@ -261,6 +261,18 @@ export interface PluginSettings {
   [key: string]: any;
 }
 
+export interface WorkflowDeploymentConfig {
+  target: 'agent_engine' | 'cloud_run' | string;
+  deploymentTarget?: 'agent_engine' | 'cloud_run' | string;
+  outputFolder: string;
+  framework: FrameworkTarget | string;
+  language: LanguageTarget | string;
+  includeTests?: boolean;
+  includeDocker?: boolean;
+  useStreaming?: boolean;
+  [key: string]: any;
+}
+
 export interface AgentWorkflowDocument {
   version: string;
   name: string;
@@ -271,4 +283,5 @@ export interface AgentWorkflowDocument {
   edges: WorkflowEdge[];
   viewport?: ViewportState;
   metadata?: WorkflowMetadata;
+  deployment?: WorkflowDeploymentConfig;
 }
