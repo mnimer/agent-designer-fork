@@ -463,6 +463,38 @@ create_params:
 
       assert.equal(fs.readFileSync(runtimeAppPath, 'utf8'), customContent);
     });
+
+    it('should fail fast if agent code uses A2A but requirements.txt is missing', () => {
+      const agentPyPath = path.join(tempDir, 'agent.py');
+      fs.writeFileSync(agentPyPath, 'from a2a.types import AgentCard\n', 'utf8');
+
+      assert.throws(
+        () => {
+          deployer.ensurePyProjectToml(tempDir, {
+            targetDirectory: tempDir,
+            projectId: 'test-proj',
+          });
+        },
+        /\[Deployment Validation Error\] A2A protocol detected in agent code, but 'requirements\.txt' is missing/
+      );
+    });
+
+    it('should fail fast if agent code uses A2A but requirements.txt is missing A2A packages', () => {
+      const agentPyPath = path.join(tempDir, 'agent.py');
+      fs.writeFileSync(agentPyPath, 'from google.adk.agents.remote_a2a_agent import RemoteA2aAgent\n', 'utf8');
+      const reqPath = path.join(tempDir, 'requirements.txt');
+      fs.writeFileSync(reqPath, 'google-adk>=2.0.0\nfastapi>=0.110.0\n', 'utf8');
+
+      assert.throws(
+        () => {
+          deployer.ensurePyProjectToml(tempDir, {
+            targetDirectory: tempDir,
+            projectId: 'test-proj',
+          });
+        },
+        /\[Deployment Validation Error\] A2A protocol detected in agent code, but 'requirements\.txt' is missing required A2A dependencies/
+      );
+    });
   });
 
   describe('Extended Environment & PATH Resolution', () => {

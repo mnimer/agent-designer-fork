@@ -30,17 +30,22 @@
  * 8. Model Selection & Global Region Mandate: Gemini 1.x and 2.x models (including gemini-2.5-flash) are deprecated.
  *     gemini-3.7-flash is the primary model for Vertex AI, but requires the global region (location='global' or
  *     GOOGLE_CLOUD_LOCATION='global'). Regional endpoints return 404 NOT_FOUND for gemini-3.7-flash publisher models.
- * 9. Turn Session Isolation: Every test prompt is executed with a unique sessionId
+ * 9. Async Execution Lifecycle in Ephemeral Runner: Uses a single unified asyncio event loop with `runner.run_async`
+ *     rather than nested `asyncio.run()` calls to ensure background connection pools (like `httpx` in A2A agents)
+ *     are not bound to closed event loops.
+ * 10. Robust Error Reporting in Adapter: Formats exceptions with traceback and class names in the ephemeral HTTP runner
+ *     to prevent single-token AttributeError or Pydantic ValidationError masking.
+ * 11. Turn Session Isolation: Every test prompt is executed with a unique sessionId
  *     (session_id, thread_id, and X-Session-ID header) to guarantee complete state isolation
  *     across sequential test executions.
- * 10. In-Flight Request Cancellation: Tracks activeAbortControllers per runId, enabling instantaneous
+ * 12. In-Flight Request Cancellation: Tracks activeAbortControllers per runId, enabling instantaneous
  *     cancellation of active HTTP scenario requests upon user cancellation.
- * 11. Tool Call & Trace Step Extraction: Inspects completion responses for tool_calls and reasoning
+ * 13. Tool Call & Trace Step Extraction: Inspects completion responses for tool_calls and reasoning
  *     traces, streaming animated agent execution steps with latency breakdowns to the webview.
- * 12. ADK Built-in Tools Import Compatibility Shims: Injects sys.modules aliases in _agent_test_runner.py
+ * 14. ADK Built-in Tools Import Compatibility Shims: Injects sys.modules aliases in _agent_test_runner.py
  *     to handle LLM-generated import variations (e.g. 'google.adk.tools.google_search' -> 'google.adk.tools.google_search_tool')
  *     so agents run reliably without ModuleNotFoundError.
- * 13. ADK App Extra Parameter Sanitization: Shims App.__init__ to filter out extra forbidden
+ * 15. ADK App Extra Parameter Sanitization: Shims App.__init__ to filter out extra forbidden
  *     keyword arguments (such as 'description') so Pydantic extra='forbid' doesn't crash local runs.
  * 14. Robust Local Adapter Event Streaming & Traceback Logging: Provides _extract_text_from_event()
  *     with defensive checks against None content, empty part arrays, and transfer tool events. Employs
@@ -50,6 +55,7 @@
  *     upon receiving 'data: [DONE]' or finish_reason 'stop' to prevent indefinite hangs in reader.read(), sends
  *     'Connection: close' and close_connection=True in _agent_test_runner.py, and sets OTEL_SDK_DISABLED='true' to
  *     silence remote telemetry export 400 Bad Request spam in local environments.
+>>>>>>> origin/develop
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -139,6 +145,9 @@ export class AgentRunnerManager {
 import os
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
+
+# Disable OpenTelemetry exporter loops during local testing to avoid 400 Bad Request export spam
+os.environ.setdefault("OTEL_SDK_DISABLED", "true")
 
 # Add current directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -343,26 +352,48 @@ class TestHandler(BaseHTTPRequestHandler):
                     from google.adk.sessions import InMemorySessionService
                     from google.genai import types
                     from google.adk.apps import App
-                    session_service = InMemorySessionService()
-                    session = asyncio.run(session_service.create_session(app_name="vad_app", user_id="test_user"))
-                    if isinstance(ag, App):
-                        runner = Runner(app=ag, session_service=session_service)
-                    elif hasattr(ag, 'root_agent') and isinstance(getattr(ag, 'root_agent'), App):
-                        runner = Runner(app=getattr(ag, 'root_agent'), session_service=session_service)
-                    else:
-                        runner = Runner(agent=ag, app_name="vad_app", session_service=session_service)
-                    events = runner.run(
-                        user_id="test_user",
-                        session_id=session.id,
-                        new_message=types.Content(role="user", parts=[types.Part.from_text(text=prompt)])
-                    )
-                    accum = []
-                    for evt in events:
-                        txt = _extract_text_from_event(evt)
-                        if txt:
-                            accum.append(txt)
-                    if accum:
-                        res = "".join(accum)
+
+                    async def _run_adk_runner():
+                        session_service = InMemorySessionService()
+                        session = await session_service.create_session(app_name="vad_app", user_id="test_user")
+                        if isinstance(ag, App):
+                            runner = Runner(app=ag, session_service=session_service)
+                        elif hasattr(ag, 'root_agent') and isinstance(getattr(ag, 'root_agent'), App):
+                            runner = Runner(app=getattr(ag, 'root_agent'), session_service=session_service)
+                        else:
+                            runner = Runner(agent=ag, app_name="vad_app", session_service=session_service)
+
+                        final_texts = []
+                        accum_texts = []
+                        error_messages = []
+                        async for evt in runner.run_async(
+                            user_id="test_user",
+                            session_id=session.id,
+                            new_message=types.Content(role="user", parts=[types.Part.from_text(text=prompt)])
+                        ):
+                            if hasattr(evt, 'error_message') and evt.error_message:
+                                error_messages.append(str(evt.error_message))
+
+                            is_final = False
+                            if hasattr(evt, 'is_final_response') and callable(getattr(evt, 'is_final_response')):
+                                is_final = evt.is_final_response()
+
+                            txt = _extract_text_from_event(evt)
+                            if txt:
+                                if is_final:
+                                    final_texts.append(txt)
+                                else:
+                                    accum_texts.append(txt)
+
+                        if final_texts:
+                            return "".join(final_texts)
+                        if accum_texts:
+                            return "".join(accum_texts)
+                        if error_messages:
+                            raise RuntimeError("; ".join(error_messages))
+                        return None
+
+                    res = asyncio.run(_run_adk_runner())
                 except Exception as runner_err:
                     sys.stderr.write(f"[ADK Runner Fallback] {runner_err}\\n")
                     sys.stderr.flush()
@@ -438,11 +469,15 @@ class TestHandler(BaseHTTPRequestHandler):
             self.wfile.write(resp_bytes)
         except Exception as err:
             import traceback
-            sys.stderr.write(f"[Agent Test Adapter Error] {err}\\n{traceback.format_exc()}\\n")
+            tb = traceback.format_exc()
+            sys.stderr.write(f"[Agent Test Adapter Error] {err}\\n{tb}\\n")
             sys.stderr.flush()
+            err_type = type(err).__name__
+            err_str = str(err)
+            err_msg = err_type + ": " + err_str if err_str else err_type
             err_payload = {
                 "error": {
-                    "message": str(err),
+                    "message": err_msg,
                     "type": "agent_execution_error"
                 }
             }
@@ -593,6 +628,7 @@ if __name__ == '__main__':
       ...process.env,
       ...extraVars,
       PYTHONUNBUFFERED: '1',
+      OTEL_SDK_DISABLED: 'true',
     };
 
     // If GEMINI_API_KEY is empty or not provided, remove it so google-genai activates Vertex AI / ADC
@@ -1657,7 +1693,7 @@ if __name__ == '__main__':
           inputQuery: inputQuery,
           expectedCriteria: scenario.expectedOutput,
           actualOutput: responseText,
-          model: 'gemini-flash-latest',
+          model: 'gemini-3.7-flash',
         });
         const evalLatencyMs = Date.now() - evalStartTime;
 
@@ -1702,14 +1738,14 @@ if __name__ == '__main__':
     const agentNodes = (document.nodes || []).filter(
       (n) => n.type === 'agent' || (n as any).type === 'agentNode'
     );
-    let modelName = (agentNodes[0]?.data as any)?.model || 'gemini-flash-latest';
+    let modelName = (agentNodes[0]?.data as any)?.model || 'gemini-3.7-flash';
     if (
       !modelName ||
       modelName.includes('2.5') ||
       modelName.includes('1.5') ||
       modelName.includes('2.0')
     ) {
-      modelName = 'gemini-flash-latest';
+      modelName = 'gemini-3.7-flash';
     }
 
     // NOTE: Generate fresh unique session ID for complete turn session isolation

@@ -147,7 +147,7 @@ export class ToolAdapterCompiler {
         if (domainFilters.length > 0) {
           importSet.add('from google.adk.tools.google_search_tool import GoogleSearchTool');
           const domainsStr = JSON.stringify(domainFilters);
-          definitions.push(`${varName} = GoogleSearchTool(domain_filters=${domainsStr})`);
+          definitions.push(`${varName} = GoogleSearchTool(bypass_multi_tools_limit=True, domain_filters=${domainsStr})`);
           bindings.push(varName);
         } else {
           // NOTE: In Google ADK, google_search is exported as a pre-instantiated singleton from google.adk.tools
@@ -175,6 +175,7 @@ export class ToolAdapterCompiler {
           `    project=${project},\n` +
           `    location="${location}",\n` +
           `    max_results=${maxResults},\n` +
+          `    bypass_multi_tools_limit=True,\n` +
           `)`
         );
         bindings.push(varName);

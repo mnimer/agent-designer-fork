@@ -34,10 +34,13 @@
  *    files ensuring large artifacts (such as local `.venv/` virtual environments, build caches, and
  *    temporary files) are never packaged during deployment. This prevents deployments from exceeding
  *    the strict 8 MiB (8388608 bytes) Vertex AI API request payload ceiling.
- * 8. Resilient Session State & Background Execution: Subprocesses run asynchronously in the extension host
+ * 8. A2A Dependency Inclusion: Verifies and injects A2A protocol dependencies (`google-adk[a2a]` and
+ *    `a2a-sdk[http-server]`) into pyproject.toml and requirements.txt prior to packaging and deploying
+ *    to Vertex AI Agent Engine.
+ * 9. Resilient Session State & Background Execution: Subprocesses run asynchronously in the extension host
  *    Node process. An in-memory `activeDeployments` registry persists lifecycle status and full log
  *    history across webview tab switches and reloads, seamlessly replaying buffered logs.
- * 9. Python Identifier Direct In-Place Validation: Python ADK strictly mandates valid Python identifiers
+ * 10. Python Identifier Direct In-Place Validation: Python ADK strictly mandates valid Python identifiers
  *    (matching `^[a-zA-Z_][a-zA-Z0-9_]*$`) for agent directory names when generating `--gemini_enterprise_app_name`
  *    and executing `load_agent`. The deployer validates that the target folder adheres to valid Python identifier naming
  *    and deploys in place without creating duplicate sibling directories, preventing repository clutter.
@@ -541,6 +544,40 @@ create_params:
     const projectName = path.basename(targetDirectory).replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase() || 'adk_agent';
     const requirementsPath = path.join(targetDirectory, 'requirements.txt');
     const dependencies: string[] = [];
+
+    // Check if A2A protocol support is required
+    let isA2A = false;
+    const agentPyPath = path.join(targetDirectory, 'agent.py');
+    try {
+      if (fs.existsSync(requirementsPath) && fs.readFileSync(requirementsPath, 'utf8').includes('a2a')) {
+        isA2A = true;
+      } else if (fs.existsSync(agentPyPath)) {
+        const agentContent = fs.readFileSync(agentPyPath, 'utf8');
+        if (
+          agentContent.includes('RemoteA2aAgent') ||
+          agentContent.includes('import a2a') ||
+          agentContent.includes('from a2a') ||
+          agentContent.includes('to_a2a')
+        ) {
+          isA2A = true;
+        }
+      }
+    } catch {}
+
+    if (isA2A) {
+      if (!fs.existsSync(requirementsPath)) {
+        throw new Error(
+          `[Deployment Validation Error] A2A protocol detected in agent code, but 'requirements.txt' is missing in ${targetDirectory}. All A2A deployments require requirements.txt declaring 'google-adk[a2a]' and 'a2a-sdk[http-server]'.`
+        );
+      }
+
+      const reqContent = fs.readFileSync(requirementsPath, 'utf8');
+      if (!reqContent.includes('google-adk[a2a]') && !reqContent.includes('a2a-sdk')) {
+        throw new Error(
+          `[Deployment Validation Error] A2A protocol detected in agent code, but 'requirements.txt' is missing required A2A dependencies ('google-adk[a2a]' and 'a2a-sdk[http-server]'). Failing fast before deployment.`
+        );
+      }
+    }
 
     if (fs.existsSync(requirementsPath)) {
       try {

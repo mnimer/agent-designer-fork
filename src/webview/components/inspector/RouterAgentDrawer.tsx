@@ -1,3 +1,17 @@
+/**
+ * RouterAgentDrawer Component
+ *
+ * Inspector drawer for Router (if/else) nodes, supporting boolean expression
+ * evaluation, LLM classification, quality threshold gating, and multi-branch execution.
+ * Includes bidirectional agent kind switching across Standard, A2A, and Router nodes.
+ *
+ * Architectural Decisions:
+ * 1. Unified Kind Selector: Enables instant conversion of any node into a Router, Standard, or A2A node.
+ * 2. Visual Branch Management: Dynamic rule-based routing with fallback handling.
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
+
 import React, { useState } from 'react';
 import { 
   GitBranch, 

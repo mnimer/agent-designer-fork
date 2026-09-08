@@ -62,6 +62,7 @@ describe('Tool Adapter Compiler', () => {
       assert.ok(result.imports.some((i) => i.includes('from google.adk.tools.google_search_tool import GoogleSearchTool')));
       assert.ok(result.toolDefinitions.some((inst) => 
         inst.includes("GoogleSearchTool(") &&
+        inst.includes("bypass_multi_tools_limit=True") &&
         inst.includes('cloud.google.com') &&
         inst.includes('ai.google.dev')
       ));

@@ -321,12 +321,9 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       const config = vscode.workspace.getConfiguration('agentFlow');
       const apiKey = config.get<string>('geminiApiKey') || process.env.GEMINI_API_KEY || '';
 
-      // 1. Resolve target directory and clean existing files BEFORE generation
+      // 1. Resolve target directory
       const targetDirPath = this.resolveTargetDirectory(document, payload.outputFolder);
       const targetDir = vscode.Uri.file(targetDirPath);
-
-      // Clean old generated source files and venv (preserving active .agent document, .git, and config files)
-      await this.cleanTargetDirectory(targetDirPath, document);
 
       // 2. Synthesize new codebase with Gemini LLM
       const deploymentTarget =
@@ -340,11 +337,14 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         language: payload.targetLanguage,
         deploymentTarget: deploymentTarget,
         apiKey: apiKey,
-        model: 'gemini-flash-latest',
+        model: 'gemini-3.7-flash',
       });
 
       if (result.success && result.files.length > 0) {
         try {
+          // Clean old generated source files ONLY when generation succeeds and passes validation
+          await this.cleanTargetDirectory(targetDirPath, document);
+
           // Write all generated files to disk
           for (const file of result.files) {
             const fileUri = vscode.Uri.joinPath(targetDir, file.path);
@@ -889,7 +889,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
             description: 'Core LLM agent',
             agentKind: 'standard',
             standardConfig: {
-              model: 'gemini-flash-latest',
+              model: 'gemini-3.7-flash',
               systemInstruction:
                 'You are a helpful, expert AI engineering assistant. Provide direct, grounded, and concise answers.',
               temperature: 0.7,

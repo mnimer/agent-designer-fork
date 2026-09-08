@@ -15,7 +15,7 @@
 
 import React, { useState } from 'react';
 import { 
-  Share2, 
+  Globe2, 
   X, 
   Globe, 
   Sparkles, 
@@ -39,8 +39,6 @@ import {
   Cpu,
   Layers3,
   Play,
-  Bot,
-  GitBranch,
   Scale
 } from 'lucide-react';
 import { 
@@ -49,6 +47,7 @@ import {
   SubAgentRef, 
   A2AConfig, 
   A2AAuthType, 
+  A2AAgentSkill,
   AgentKind, 
   StructuredOutputSchema, 
   DebateConfig, 
@@ -57,6 +56,7 @@ import {
   ADK_DELEGATION_PATTERNS 
 } from '../../types';
 import { StructuredOutputBuilder } from './StructuredOutputBuilder';
+import { parseA2AAgentCard } from '../../../shared/a2aCardParser';
 import { validateAgentIdentifier, sanitizeAgentIdentifier } from '../../../shared/identifierValidation';
 
 interface A2AAgentDrawerProps {
@@ -178,6 +178,9 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
     timeoutSeconds: agent.a2aConfig?.timeoutSeconds || 30,
     maxRetries: agent.a2aConfig?.maxRetries || 3,
     capabilities: agent.a2aConfig?.capabilities || ['schema_negotiation', 'task_handoff', 'streaming_artifacts'],
+    skills: agent.a2aConfig?.skills || [],
+    iconUrl: agent.a2aConfig?.iconUrl,
+    preferredTransport: agent.a2aConfig?.preferredTransport || 'INTERNAL_HTTP+JSON',
   };
 
   const descriptionValue = agent.systemPrompt ?? '';
@@ -234,6 +237,19 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
     });
   };
 
+  const handlePrefillFromSkills = () => {
+    if (a2aConfig.rawJsonPack) {
+      try {
+        const parsed = parseA2AAgentCard(a2aConfig.rawJsonPack);
+        if (parsed.suggestedDelegationPrompt) {
+          handleDescriptionChange(parsed.suggestedDelegationPrompt);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+  };
+
   const handleToggleCapability = (cap: string) => {
     const currentCaps = a2aConfig.capabilities || [];
     const updated = currentCaps.includes(cap)
@@ -271,32 +287,37 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
     setJsonError(null);
     setJsonSuccess(false);
     try {
-      const parsed = JSON.parse(a2aConfig.rawJsonPack || '{}');
+      if (!a2aConfig.rawJsonPack || !a2aConfig.rawJsonPack.trim()) {
+        throw new Error('Please paste an agent-card.json manifest into the box.');
+      }
+      const parsed = parseA2AAgentCard(a2aConfig.rawJsonPack);
       
       const newLabel = parsed.name || agent.label;
       const newEndpoint = parsed.endpoint || a2aConfig.endpoint;
-      const newProtocol = parsed.protocol?.version || a2aConfig.protocolVersion;
-      const newCaps = Array.isArray(parsed.capabilities) ? parsed.capabilities : a2aConfig.capabilities;
+      const newProtocol = parsed.protocolVersion || a2aConfig.protocolVersion;
+      const newCaps = parsed.capabilities.length > 0 ? parsed.capabilities : a2aConfig.capabilities;
       const newDescription = parsed.description || descriptionValue;
-      const newAuthType: A2AAuthType = parsed.authentication?.type || a2aConfig.authType;
-      const newSecret = parsed.authentication?.token_env || a2aConfig.authTokenSecret;
+      const newAuthType: A2AAuthType = parsed.authType || a2aConfig.authType;
 
       onUpdateAgent({
         label: newLabel,
-        systemPrompt: newDescription,
-        role: newDescription.split('\n')[0],
+        systemPrompt: parsed.suggestedDelegationPrompt || newDescription,
+        role: (parsed.description ? parsed.description.split('\n')[0] : agent.role) || 'A2A Protocol Autonomous Agent',
         a2aConfig: {
           ...a2aConfig,
           endpoint: newEndpoint,
           protocolVersion: newProtocol,
           capabilities: newCaps,
+          skills: parsed.skills,
+          iconUrl: parsed.iconUrl || a2aConfig.iconUrl,
+          preferredTransport: parsed.transport,
           authType: newAuthType,
-          authTokenSecret: newSecret,
+          rawJsonPack: a2aConfig.rawJsonPack,
         },
       });
 
       setJsonSuccess(true);
-      setTimeout(() => setJsonSuccess(false), 3000);
+      setTimeout(() => setJsonSuccess(false), 4000);
     } catch (err: any) {
       setJsonError(err?.message || 'Invalid JSON syntax. Please check formatting.');
     }
@@ -336,15 +357,21 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3.5 bg-[#161b22] border-b border-[#30363d] shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="p-1.5 rounded-lg bg-[#0d1117] border border-cyan-500/40 text-cyan-400 shrink-0 shadow-xs">
-            <Share2 className="w-4 h-4" />
+          <div className="p-1.5 rounded-lg bg-[#0d1117] border border-cyan-500/40 text-cyan-400 shrink-0 shadow-xs flex items-center justify-center w-8 h-8">
+            {a2aConfig.iconUrl ? (
+              <img src={a2aConfig.iconUrl} alt="A2A Icon" className="w-5 h-5 object-contain" />
+            ) : (
+              <Globe2 className="w-4 h-4" />
+            )}
           </div>
           <div className="min-w-0">
             <h3 className="text-xs font-bold text-white truncate max-w-[200px]">
               {agent.label}
             </h3>
             <span className="text-[10px] text-cyan-400 font-mono flex items-center gap-1">
-              A2A Protocol Node Properties
+              {a2aConfig.skills && a2aConfig.skills.length > 0 
+                ? `${a2aConfig.skills.length} Published Skill${a2aConfig.skills.length > 1 ? 's' : ''}` 
+                : 'A2A Protocol Node Properties'}
             </span>
           </div>
         </div>
@@ -403,32 +430,168 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
           </div>
         </div>
 
-        {/* Agent Description (Published Capability / Intent Description for Parent Agent) */}
+        {/* SECTION 1: Import Agent Card (JSON Spec) */}
+        <div className="p-3 bg-[#0d1117] rounded-lg border border-cyan-500/40 space-y-2.5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-xs">
+              <FileJson className="w-4 h-4 text-cyan-400" />
+              <span>Import Agent Card (JSON Spec)</span>
+            </div>
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950/70 text-cyan-300 font-mono border border-cyan-500/30">
+              GDA & A2A v1.0
+            </span>
+          </div>
+
+          <p className="text-[10px] text-gray-400 leading-normal">
+            Paste the published <code className="text-cyan-300">agent-card.json</code> manifest from BigQuery CA, Google Data Analytics, or an A2A peer agent to auto-configure this node.
+          </p>
+
+          <textarea
+            rows={7}
+            value={a2aConfig.rawJsonPack || ''}
+            onChange={(e) => {
+              handleUpdateConfig({ rawJsonPack: e.target.value });
+              setJsonError(null);
+            }}
+            placeholder={`{\n  "protocolVersion": "1.0",\n  "name": "stock agent",\n  "url": "https://geminidataanalytics...",\n  "skills": [...]\n}`}
+            className="w-full px-2.5 py-2 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded font-mono text-[10px] text-cyan-200 focus:outline-none resize-y leading-tight"
+          />
+
+          {jsonError && (
+            <div className="flex items-center gap-1 text-[10px] text-rose-400 bg-rose-950/40 p-1.5 rounded border border-rose-500/30">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{jsonError}</span>
+            </div>
+          )}
+
+          {jsonSuccess && (
+            <div className="text-[10px] text-emerald-300 bg-emerald-950/40 p-2 rounded border border-emerald-500/30 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-emerald-400">
+                <Check className="w-3.5 h-3.5 shrink-0" />
+                <span>Agent Card Successfully Applied!</span>
+              </div>
+              <div className="text-[9px] text-gray-300 font-mono">
+                • {agent.label} • {a2aConfig.endpoint ? 'Endpoint configured' : 'No endpoint'}
+                {a2aConfig.skills && a2aConfig.skills.length > 0 && ` • ${a2aConfig.skills.length} skills`}
+                {a2aConfig.capabilities && a2aConfig.capabilities.length > 0 && ` • ${a2aConfig.capabilities.length} capabilities`}
+                {a2aConfig.authType === 'google_iam' && ' • Google Cloud IAM active'}
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleParseAndApplyJsonPack}
+              className="flex-1 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+            >
+              <FileJson className="w-3.5 h-3.5" />
+              <span>Parse & Apply Agent Card</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleSyncFromFormToJson}
+              title="Regenerate JSON from current form settings"
+              className="px-2.5 py-1.5 bg-[#161b22] hover:bg-[#21262d] border border-[#30363d] text-gray-300 hover:text-white rounded text-xs flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <RefreshCw className="w-3 h-3 text-cyan-400" />
+              <span>Export</span>
+            </button>
+          </div>
+        </div>
+
+        {/* SECTION 2: Caller Delegation Prompt & Task Instructions */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <label className="text-[11px] font-bold uppercase tracking-tight text-cyan-300 flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Agent Description</span>
+              <span>Caller Delegation Prompt & Task Instructions</span>
             </label>
             <span className="text-[10px] text-gray-400 font-mono">
               {descriptionValue.length} chars • {descriptionValue.split(/\s+/).filter(Boolean).length} words
             </span>
           </div>
 
+          <p className="text-[10px] text-gray-400 leading-normal">
+            Instructs orchestrator / caller agents on <strong className="text-gray-200">when and how</strong> to delegate queries to this A2A agent, and provides prompt context sent with requests. <em>(The remote agent runs its own internal model in the cloud).</em>
+          </p>
+
           <div className="relative group">
             <textarea
               rows={5}
               value={descriptionValue}
               onChange={(e) => handleDescriptionChange(e.target.value)}
-              placeholder="Add agent instructions"
-              className="w-full min-h-[120px] max-h-[380px] px-3 py-2 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded-lg text-xs text-gray-200 focus:outline-none resize-y font-mono leading-relaxed selection:bg-cyan-900 selection:text-white"
+              placeholder="e.g. BigQuery CA agent answering questions about attached data. Provides data analysis assistance. Example query: What is the total sales for the last 3 months?"
+              className="w-full min-h-[100px] max-h-[300px] px-3 py-2 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded-lg text-xs text-gray-200 focus:outline-none resize-y font-mono leading-relaxed selection:bg-cyan-900 selection:text-white"
             />
             <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
-              <span>Published capability description used by parent agent / router to invoke this agent</span>
-              <span className="text-[9px] font-mono text-gray-400">↕ Drag corner to expand</span>
+              <span>Delegation guidance used by parent orchestrator / router to invoke this tool</span>
+              <span className="text-[9px] font-mono text-gray-400">↕ Expand</span>
             </div>
           </div>
+
+          {a2aConfig.skills && a2aConfig.skills.length > 0 && (
+            <div className="flex items-center justify-between pt-0.5">
+              <span className="text-[9px] text-gray-400 font-mono">Skills detected in agent card</span>
+              <button
+                type="button"
+                onClick={handlePrefillFromSkills}
+                className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-mono cursor-pointer"
+              >
+                <Sparkles className="w-2.5 h-2.5" />
+                Prefill from Skills & Examples
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* Published Skills Overview (when parsed) */}
+        {a2aConfig.skills && a2aConfig.skills.length > 0 && (
+          <div className="p-3 bg-[#0d1117] rounded-lg border border-cyan-500/30 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-cyan-300 font-bold text-xs">
+                <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Published Agent Skills ({a2aConfig.skills.length})</span>
+              </div>
+              <span className="text-[9px] font-mono text-cyan-400 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-500/20">
+                Remote Capabilities
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {a2aConfig.skills.map((skill) => (
+                <div key={skill.id} className="p-2 bg-[#161b22] rounded border border-[#30363d] space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-white text-[11px]">{skill.name}</span>
+                    <span className="text-[9px] text-cyan-400 font-mono">{skill.id}</span>
+                  </div>
+                  {skill.description && (
+                    <p className="text-[10px] text-gray-300">{skill.description}</p>
+                  )}
+                  {skill.examples && skill.examples.length > 0 && (
+                    <div className="pt-1">
+                      <span className="text-[9px] text-gray-400 uppercase font-mono tracking-wider block">Sample Queries:</span>
+                      <ul className="list-disc list-inside text-[9.5px] text-cyan-200/90 font-mono space-y-0.5">
+                        {skill.examples.map((ex, i) => (
+                          <li key={i} className="truncate">{ex}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {skill.tags && skill.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {skill.tags.map((tag) => (
+                        <span key={tag} className="px-1.5 py-0.2 rounded bg-[#0d1117] text-gray-400 border border-[#30363d] text-[8.5px] font-mono">
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* STRUCTURED OUTPUT SCHEMA BUILDER */}
         <StructuredOutputBuilder
@@ -461,138 +624,71 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
           </select>
         </div>
 
-        {/* SECTION 1: A2A Connection Method (URL vs. JSON Agent Card Pack) */}
+        {/* SECTION 3: A2A Connection Details */}
         <div className="p-3 bg-[#0d1117] rounded-lg border border-cyan-500/30 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-xs">
               <Globe className="w-3.5 h-3.5" />
               <span>A2A Connection Details</span>
             </div>
-            <div className="flex items-center bg-[#161b22] p-0.5 rounded-md border border-[#30363d] text-[10px]">
-              <button
-                type="button"
-                onClick={() => handleUpdateConfig({ connectionMode: 'url' })}
-                className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
-                  a2aConfig.connectionMode === 'url'
-                    ? 'bg-cyan-600 text-white font-bold'
-                    : 'text-gray-400 hover:text-gray-200'
-                }`}
-              >
-                Endpoint URL
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  handleSyncFromFormToJson();
-                  handleUpdateConfig({ connectionMode: 'json_pack' });
-                }}
-                className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
-                  a2aConfig.connectionMode === 'json_pack'
-                    ? 'bg-cyan-600 text-white font-bold'
-                    : 'text-gray-400 hover:text-gray-200'
-                }`}
-              >
-                JSON Card Pack
-              </button>
-            </div>
+            {a2aConfig.endpoint.includes('googleapis.com') && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-950/70 text-blue-300 font-mono border border-blue-500/30">
+                Google Cloud Service
+              </span>
+            )}
           </div>
 
-          {/* Mode A: Direct URL Connection Mode */}
-          {a2aConfig.connectionMode === 'url' ? (
-            <div className="space-y-2.5">
-              {/* RPC Endpoint URL */}
+          <div className="space-y-2.5">
+            {/* RPC Endpoint URL */}
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center justify-between">
+                <span>RPC Endpoint URL (Agent Service)</span>
+                <span className="text-[9px] text-cyan-400 font-mono">POST / JSON-RPC</span>
+              </label>
+              <input
+                type="text"
+                value={a2aConfig.endpoint}
+                onChange={(e) => handleUpdateConfig({ endpoint: e.target.value })}
+                placeholder="https://geminidataanalytics.us.rep.googleapis.com/..."
+                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-300 focus:outline-none"
+              />
+            </div>
+
+            {/* Protocol Version & Agent Card Discovery URL */}
+            <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center justify-between">
-                  <span>RPC Endpoint URL (Agent Service)</span>
-                  <span className="text-[9px] text-cyan-400 font-mono">POST / JSON-RPC</span>
+                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                  Protocol Spec
                 </label>
                 <input
                   type="text"
-                  value={a2aConfig.endpoint}
-                  onChange={(e) => handleUpdateConfig({ endpoint: e.target.value })}
-                  placeholder="https://api.agent-network.internal/a2a/v1"
-                  className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-300 focus:outline-none"
+                  value={a2aConfig.protocolVersion}
+                  onChange={(e) => handleUpdateConfig({ protocolVersion: e.target.value })}
+                  className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
                 />
               </div>
 
-              {/* Protocol Version & Agent Card Discovery URL */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-                    Protocol Spec
-                  </label>
-                  <input
-                    type="text"
-                    value={a2aConfig.protocolVersion}
-                    onChange={(e) => handleUpdateConfig({ protocolVersion: e.target.value })}
-                    className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-                    Discovery URL
-                  </label>
-                  <input
-                    type="text"
-                    value={a2aConfig.agentCardUrl}
-                    onChange={(e) => handleUpdateConfig({ agentCardUrl: e.target.value })}
-                    placeholder="/.well-known/agent-card.json"
-                    className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
-                  />
-                </div>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                  Discovery URL
+                </label>
+                <input
+                  type="text"
+                  value={a2aConfig.agentCardUrl}
+                  onChange={(e) => handleUpdateConfig({ agentCardUrl: e.target.value })}
+                  placeholder="/.well-known/agent-card.json"
+                  className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
+                />
               </div>
             </div>
-          ) : (
-            /* Mode B: Paste / Import Raw JSON Pack Mode */
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-[10px] text-gray-400">
-                <span>Paste A2A Agent Card Pack (JSON)</span>
-                <button
-                  type="button"
-                  onClick={handleSyncFromFormToJson}
-                  className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-mono cursor-pointer"
-                >
-                  <RefreshCw className="w-2.5 h-2.5" />
-                  Regenerate from current form
-                </button>
+
+            {a2aConfig.preferredTransport && (
+              <div className="text-[10px] text-gray-400 flex items-center justify-between pt-0.5">
+                <span className="font-mono">Preferred Transport:</span>
+                <span className="font-mono text-cyan-300">{a2aConfig.preferredTransport}</span>
               </div>
-
-              <textarea
-                rows={8}
-                value={a2aConfig.rawJsonPack || ''}
-                onChange={(e) => {
-                  handleUpdateConfig({ rawJsonPack: e.target.value });
-                  setJsonError(null);
-                }}
-                placeholder="Paste agent-card.json pack..."
-                className="w-full px-2.5 py-2 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded font-mono text-[10px] text-cyan-200 focus:outline-none resize-y leading-tight"
-              />
-
-              {jsonError && (
-                <div className="flex items-center gap-1 text-[10px] text-rose-400 bg-rose-950/40 p-1.5 rounded border border-rose-500/30">
-                  <AlertCircle className="w-3 h-3 shrink-0" />
-                  <span>{jsonError}</span>
-                </div>
-              )}
-
-              {jsonSuccess && (
-                <div className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-950/40 p-1.5 rounded border border-emerald-500/30">
-                  <Check className="w-3 h-3 shrink-0" />
-                  <span>Agent properties successfully parsed and applied!</span>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleParseAndApplyJsonPack}
-                className="w-full py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-              >
-                <FileJson className="w-3.5 h-3.5" />
-                <span>Parse & Apply JSON Card Pack</span>
-              </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* SECTION 2: Sub-Agent Authentication & Security Configuration */}
