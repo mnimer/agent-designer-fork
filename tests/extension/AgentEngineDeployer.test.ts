@@ -1245,6 +1245,108 @@ create_params:
       deployer.deployAgentEngine = originalDeploy;
     });
   });
+
+  describe('Error Formatting, Access Token Caching & Stream Resilience', () => {
+    it('should format generic Error instances cleanly', () => {
+      const err = new Error('Connection refused');
+      assert.equal(deployer.formatErrorMessage(err), 'Connection refused');
+    });
+
+    it('should unpack AggregateError inner errors into a readable semicolon-separated string', () => {
+      const inner1 = new Error('ECONNREFUSED ::1:8000');
+      const inner2 = new Error('ECONNREFUSED 127.0.0.1:8000');
+      const aggErr = new AggregateError([inner1, inner2], '');
+
+      const formatted = deployer.formatErrorMessage(aggErr);
+      assert.ok(formatted.includes('ECONNREFUSED ::1:8000'));
+      assert.ok(formatted.includes('ECONNREFUSED 127.0.0.1:8000'));
+    });
+
+    it('should handle AggregateError with non-empty error message and inner errors', () => {
+      const inner = new Error('Socket timeout');
+      const aggErr = new AggregateError([inner], 'Network connection failure');
+
+      const formatted = deployer.formatErrorMessage(aggErr);
+      assert.ok(formatted.startsWith('Network connection failure: Socket timeout'));
+    });
+
+    it('should handle falsy errors gracefully', () => {
+      assert.equal(deployer.formatErrorMessage(null), 'Unknown error');
+      assert.equal(deployer.formatErrorMessage(undefined), 'Unknown error');
+      assert.equal(deployer.formatErrorMessage(''), 'Unknown error');
+    });
+
+    it('should return cached token if unexpired without re-executing command', async () => {
+      (deployer as any).cachedAccessToken = 'cached-token-xyz';
+      (deployer as any).cachedAccessTokenExpiresAt = Date.now() + 600000;
+
+      const header = await deployer.getAccessTokenHeader();
+      assert.equal(header, 'Bearer cached-token-xyz');
+    });
+
+    it('should resolve canonical reasoning engine URL if serviceUrl is not provided', async () => {
+      const originalPerformHttp = (deployer as any).performHttpQuery;
+      let requestedUrl = '';
+      (deployer as any).performHttpQuery = async (url: string) => {
+        requestedUrl = url;
+        return 'Mock reasoning engine output';
+      };
+
+      try {
+        const result = await deployer.testRemoteAgentRuntime({
+          targetDirectory: tempDir,
+          remoteRuntimeId: 'projects/argolis-playground/locations/us-central1/reasoningEngines/4497395633010769920',
+          query: 'Test query',
+        });
+
+        assert.equal(result.success, true);
+        assert.equal(
+          requestedUrl,
+          'https://us-central1-aiplatform.googleapis.com/v1/projects/argolis-playground/locations/us-central1/reasoningEngines/4497395633010769920:streamQuery?alt=sse'
+        );
+      } finally {
+        (deployer as any).performHttpQuery = originalPerformHttp;
+      }
+    });
+
+    it('should ignore localhost in metadata and resolve canonical reasoning engine URL', async () => {
+      const meta: DeploymentMetadataRecord = {
+        remote_agent_runtime_id: 'projects/proj/locations/us-central1/reasoningEngines/12345',
+        deployment_target: 'agent_runtime',
+        is_a2a: true,
+        agent_directory: tempDir,
+        deployment_timestamp: new Date().toISOString(),
+        service_url: 'http://localhost:8000',
+        console_url: 'https://console',
+        project_id: 'proj',
+        region: 'us-central1',
+        status: 'ACTIVE',
+      };
+      deployer.writeDeploymentMetadata(tempDir, meta);
+
+      const originalPerformHttp = (deployer as any).performHttpQuery;
+      let requestedUrl = '';
+      (deployer as any).performHttpQuery = async (url: string) => {
+        requestedUrl = url;
+        return 'Mock output';
+      };
+
+      try {
+        const result = await deployer.testRemoteAgentRuntime({
+          targetDirectory: tempDir,
+          query: 'Hello world',
+        });
+
+        assert.equal(result.success, true);
+        assert.equal(
+          requestedUrl,
+          'https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/reasoningEngines/12345:streamQuery?alt=sse'
+        );
+      } finally {
+        (deployer as any).performHttpQuery = originalPerformHttp;
+      }
+    });
+  });
 });
 
 

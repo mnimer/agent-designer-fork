@@ -240,7 +240,9 @@
   3. Connect TestRunnerTab in webview to trigger RUN_TESTS RPC and display live animated execution traces, latency metrics, and assertion results.
   ```
 * **Verification**:
-  - Clicking "Run All Unit Tests" runs tests against real Python subprocess and reports results.
+  - Clicking "Run All Unit Tests" runs tests against live Python subprocess or Reasoning Engine and reports results.
+  - Turn session isolation, tool call extraction, reasoning trace streaming, AbortController in-flight cancellation, and latency metrics verified with 100% unit test coverage.
+* **Status**: **Complete**
 
 ---
 

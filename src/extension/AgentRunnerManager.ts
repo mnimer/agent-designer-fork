@@ -14,9 +14,9 @@
  * Architectural Decisions:
  * 1. Single Universal HTTP Harness: Tests are executed strictly against the agent's
  *    standardized HTTP server endpoint (POST /v1/chat/completions) on localhost.
- * 2. Automatic Server Startup: If the local server is offline when tests are initiated,
- *    AgentRunnerManager automatically launches the server process in the background and
- *    polls /health until ready before executing scenarios.
+ * 2. User-Managed Runner Lifecycle: The local agent runner process is started and stopped
+ *    by the user in the Deployment tab. The Test Runner tab monitors runner readiness via
+ *    WebviewBridge and enables suite execution when online.
  * 3. Pure Decoupling: The VS Code extension host operates purely as an HTTP client during
  *    test runs, eliminating nested Python interpreters, AST manipulations, and buffer crashes.
  * 4. Multi-Framework Portability: Any agent framework (ADK, LangGraph, OpenAI Swarm, Claude MCP)
@@ -30,16 +30,23 @@
  * 8. Model Selection & Global Region Mandate: Gemini 1.x and 2.x models (including gemini-2.5-flash) are deprecated.
  *     gemini-3.7-flash is the primary model for Vertex AI, but requires the global region (location='global' or
  *     GOOGLE_CLOUD_LOCATION='global'). Regional endpoints return 404 NOT_FOUND for gemini-3.7-flash publisher models.
- * 9. ADK Built-in Tools Import Compatibility Shims: Injects sys.modules aliases in _agent_test_runner.py
+ * 9. Turn Session Isolation: Every test prompt is executed with a unique sessionId
+ *     (session_id, thread_id, and X-Session-ID header) to guarantee complete state isolation
+ *     across sequential test executions.
+ * 10. In-Flight Request Cancellation: Tracks activeAbortControllers per runId, enabling instantaneous
+ *     cancellation of active HTTP scenario requests upon user cancellation.
+ * 11. Tool Call & Trace Step Extraction: Inspects completion responses for tool_calls and reasoning
+ *     traces, streaming animated agent execution steps with latency breakdowns to the webview.
+ * 12. ADK Built-in Tools Import Compatibility Shims: Injects sys.modules aliases in _agent_test_runner.py
  *     to handle LLM-generated import variations (e.g. 'google.adk.tools.google_search' -> 'google.adk.tools.google_search_tool')
  *     so agents run reliably without ModuleNotFoundError.
- * 10. ADK App Extra Parameter Sanitization: Shims App.__init__ to filter out extra forbidden
+ * 13. ADK App Extra Parameter Sanitization: Shims App.__init__ to filter out extra forbidden
  *     keyword arguments (such as 'description') so Pydantic extra='forbid' doesn't crash local runs.
- * 11. Robust Local Adapter Event Streaming & Traceback Logging: Provides _extract_text_from_event()
+ * 14. Robust Local Adapter Event Streaming & Traceback Logging: Provides _extract_text_from_event()
  *     with defensive checks against None content, empty part arrays, and transfer tool events. Employs
  *     AdkApp.async_stream_query() to prevent deprecation warnings and prints full stack traces on test adapter
  *     exceptions to stderr for immediate diagnostic visibility in the runner console.
- * 12. Clean SSE Stream Termination & Telemetry Silencing in Local Runner: Breaks client read loop immediately
+ * 15. Clean SSE Stream Termination & Telemetry Silencing in Local Runner: Breaks client read loop immediately
  *     upon receiving 'data: [DONE]' or finish_reason 'stop' to prevent indefinite hangs in reader.read(), sends
  *     'Connection: close' and close_connection=True in _agent_test_runner.py, and sets OTEL_SDK_DISABLED='true' to
  *     silence remote telemetry export 400 Bad Request spam in local environments.
@@ -97,6 +104,7 @@ export class AgentRunnerManager {
   private lastRunningPort: number = 8000;
   private runnerLogs: string[] = [];
   private runnerStatus: 'idle' | 'starting' | 'running' | 'stopped' | 'error' = 'idle';
+  private activeAbortControllers: Map<string, AbortController> = new Map();
   private pythonResolver: PythonEnvResolver;
   private codeGenEngine: GeminiCodeGenEngine;
   private chatSessions: Map<string, Array<{ role: 'user' | 'assistant'; content: string }>> = new Map();
@@ -1081,12 +1089,18 @@ if __name__ == '__main__':
    * @param pathStr Path to post to (e.g. /v1/chat/completions)
    * @param body JSON request payload
    * @param timeoutMs Request timeout in ms (default 60s)
+   * @param externalSignal Optional abort signal to cancel in-flight requests immediately
+   * @param extraHeaders Optional custom headers (e.g. turn session IDs)
+   * @returns Promise resolving to response status, parsed JSON data, and raw text
+   * @author Mike Nimer <mikenimer@google.com>
    */
   public async httpPostJson(
     port: number,
     pathStr: string,
     body: any,
-    timeoutMs = 60000
+    timeoutMs = 60000,
+    externalSignal?: AbortSignal,
+    extraHeaders?: Record<string, string>
   ): Promise<{ ok: boolean; status: number; data: any; text: string }> {
     const jsonBody = JSON.stringify(body);
     const candidateUrls = [
@@ -1096,19 +1110,32 @@ if __name__ == '__main__':
 
     let lastCandidateResult: { ok: boolean; status: number; data: any; text: string } | null = null;
 
+    // NOTE: Check if external abort signal was already triggered before starting
+    if (externalSignal?.aborted) {
+      throw new Error('HTTP request was aborted by user.');
+    }
+
     // 1. Primary: Use global fetch for standardized HTTP/1.1 parsing and stream decompression
     for (const targetUrl of candidateUrls) {
       try {
         if (typeof fetch === 'function') {
+          // Combine timeout signal with external cancellation signal if available
+          const timeoutSignal = AbortSignal.timeout(timeoutMs);
+          const activeSignal =
+            typeof (AbortSignal as any).any === 'function' && externalSignal
+              ? (AbortSignal as any).any([timeoutSignal, externalSignal])
+              : (externalSignal || timeoutSignal);
+
           const response = await fetch(targetUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'Accept': 'application/json, text/plain, */*',
               'Accept-Encoding': 'identity, gzip, deflate, br',
+              ...(extraHeaders || {}),
             },
             body: jsonBody,
-            signal: AbortSignal.timeout(timeoutMs),
+            signal: activeSignal,
           });
 
           const resText = await response.text();
@@ -1132,7 +1159,11 @@ if __name__ == '__main__':
           // Keep as fallback in case all candidates return empty body
           lastCandidateResult = currentResult;
         }
-      } catch {
+      } catch (err: any) {
+        // If aborted by user, rethrow immediately to prevent unnecessary retries
+        if (externalSignal?.aborted || err?.name === 'AbortError') {
+          throw new Error('HTTP request was aborted by user.');
+        }
         // Continue to next candidate URL
       }
     }
@@ -1159,10 +1190,14 @@ if __name__ == '__main__':
                   'Content-Length': Buffer.byteLength(jsonBody),
                   'Accept': 'application/json, text/plain, */*',
                   'Accept-Encoding': 'identity',
+                  ...(extraHeaders || {}),
                 },
                 timeout: timeoutMs,
               },
               (res) => {
+                res.on('error', (resErr) => {
+                  reject(resErr);
+                });
                 let resData = '';
                 res.setEncoding('utf8');
                 res.on('data', (chunk) => {
@@ -1184,6 +1219,19 @@ if __name__ == '__main__':
                 });
               }
             );
+
+            // Wire external abort signal to socket destruction
+            if (externalSignal) {
+              const onAbort = () => {
+                req.destroy();
+                reject(new Error('HTTP request was aborted by user.'));
+              };
+              if (externalSignal.aborted) {
+                onAbort();
+                return;
+              }
+              externalSignal.addEventListener('abort', onAbort, { once: true });
+            }
 
             req.on('timeout', () => {
               req.destroy();
@@ -1264,15 +1312,21 @@ if __name__ == '__main__':
   /**
    * Executes test scenarios for the specified workflow document using the universal HTTP API harness.
    * Directly invokes POST /v1/chat/completions against the target runner port without auto-starting logic.
+   * Tracks in-flight AbortController so runs can be immediately cancelled upon user request.
    *
    * @param options RunTestOptions specifying document, scenario IDs, port, and bridge
    * @returns Run ID string
+   * @author Mike Nimer <mikenimer@google.com>
    */
   public async runTests(options: RunTestOptions): Promise<string> {
     const { document, scenarioIds, port, bridge, executionTarget = 'local', deployedResourceId } = options;
     const runId = `run-${Date.now()}`;
     const startTime = Date.now();
     const targetPort = port || this.lastRunningPort || 8000;
+
+    // NOTE: Register in-flight AbortController for instantaneous cancellation
+    const abortController = new AbortController();
+    this.activeAbortControllers.set(runId, abortController);
 
     // 1. Extract test scenarios from Trigger nodes or test prompts
     const scenarios = this.extractScenarios(document, scenarioIds);
@@ -1299,68 +1353,110 @@ if __name__ == '__main__':
     let passedCount = 0;
     let failedCount = 0;
 
-    // 2. Execute each scenario sequentially directly via HTTP API or remote Reasoning Engine
-    for (const scenario of scenarios) {
-      const scenarioStart = Date.now();
-
-      await bridge.postMessage({
-        type: 'TEST_RESULT_UPDATE',
-        payload: {
-          runId,
-          scenarioId: scenario.id,
-          status: 'running',
-          durationMs: 0,
-        },
-      });
-
-      await bridge.postMessage({
-        type: 'EXECUTION_LOG',
-        payload: {
-          runId,
-          scenarioId: scenario.id,
-          timestamp: new Date().toISOString(),
-          level: 'info',
-          message: `[${scenario.name}] Executing input query: "${scenario.inputQuery}"`,
-        },
-      });
-
-      try {
-        const result = await this.executeScenario(
-          document,
-          scenario,
-          bridge,
-          runId,
-          targetPort,
-          executionTarget,
-          activeResourceId,
-          options.targetDirectory
-        );
-        const duration = Date.now() - scenarioStart;
-
-        if (result.passed) {
-          passedCount++;
-          await bridge.postMessage({
-            type: 'TEST_RESULT_UPDATE',
-            payload: {
-              runId,
-              scenarioId: scenario.id,
-              status: 'passed',
-              durationMs: duration,
-              output: result.output,
-            },
-          });
+    try {
+      // 2. Execute each scenario sequentially directly via HTTP API or remote Reasoning Engine
+      for (const scenario of scenarios) {
+        // NOTE: Check if user cancelled run before initiating next scenario
+        if (abortController.signal.aborted) {
           await bridge.postMessage({
             type: 'EXECUTION_LOG',
             payload: {
               runId,
               scenarioId: scenario.id,
               timestamp: new Date().toISOString(),
-              level: 'info',
-              message: `[${scenario.name}] PASSED in ${duration}ms`,
+              level: 'warn',
+              message: `[${scenario.name}] Execution skipped due to user cancellation.`,
             },
           });
-        } else {
+          break;
+        }
+
+        const scenarioStart = Date.now();
+
+        await bridge.postMessage({
+          type: 'TEST_RESULT_UPDATE',
+          payload: {
+            runId,
+            scenarioId: scenario.id,
+            status: 'running',
+            durationMs: 0,
+          },
+        });
+
+        await bridge.postMessage({
+          type: 'EXECUTION_LOG',
+          payload: {
+            runId,
+            scenarioId: scenario.id,
+            timestamp: new Date().toISOString(),
+            level: 'info',
+            message: `[${scenario.name}] Executing input query: "${scenario.inputQuery}"`,
+          },
+        });
+
+        try {
+          const result = await this.executeScenario(
+            document,
+            scenario,
+            bridge,
+            runId,
+            targetPort,
+            executionTarget,
+            activeResourceId,
+            options.targetDirectory,
+            abortController.signal
+          );
+          const duration = Date.now() - scenarioStart;
+
+          if (result.passed) {
+            passedCount++;
+            await bridge.postMessage({
+              type: 'TEST_RESULT_UPDATE',
+              payload: {
+                runId,
+                scenarioId: scenario.id,
+                status: 'passed',
+                durationMs: duration,
+                output: result.output,
+              },
+            });
+            await bridge.postMessage({
+              type: 'EXECUTION_LOG',
+              payload: {
+                runId,
+                scenarioId: scenario.id,
+                timestamp: new Date().toISOString(),
+                level: 'info',
+                message: `[${scenario.name}] PASSED in ${duration}ms`,
+              },
+            });
+          } else {
+            failedCount++;
+            await bridge.postMessage({
+              type: 'TEST_RESULT_UPDATE',
+              payload: {
+                runId,
+                scenarioId: scenario.id,
+                status: 'failed',
+                durationMs: duration,
+                output: result.output,
+                error: result.error,
+              },
+            });
+            await bridge.postMessage({
+              type: 'EXECUTION_LOG',
+              payload: {
+                runId,
+                scenarioId: scenario.id,
+                timestamp: new Date().toISOString(),
+                level: 'error',
+                message: `[${scenario.name}] FAILED: ${result.error || 'Unknown error'}`,
+              },
+            });
+          }
+        } catch (err: any) {
           failedCount++;
+          const duration = Date.now() - scenarioStart;
           await bridge.postMessage({
             type: 'TEST_RESULT_UPDATE',
             payload: {
@@ -1368,36 +1464,15 @@ if __name__ == '__main__':
               scenarioId: scenario.id,
               status: 'failed',
               durationMs: duration,
-              output: result.output,
-              error: result.error,
-            },
-          });
-          await bridge.postMessage({
-            type: 'EXECUTION_LOG',
-            payload: {
-              runId,
-              scenarioId: scenario.id,
-              timestamp: new Date().toISOString(),
-              level: 'error',
-              message: `[${scenario.name}] FAILED: ${result.error || 'Unknown error'}`,
+              output: '',
+              error: err.message || 'Execution failed',
             },
           });
         }
-      } catch (err: any) {
-        failedCount++;
-        const duration = Date.now() - scenarioStart;
-        await bridge.postMessage({
-          type: 'TEST_RESULT_UPDATE',
-          payload: {
-            runId,
-            scenarioId: scenario.id,
-            status: 'failed',
-            durationMs: duration,
-            output: '',
-            error: err.message || 'Execution failed',
-          },
-        });
       }
+    } finally {
+      // NOTE: Always clean up active AbortController on completion
+      this.activeAbortControllers.delete(runId);
     }
 
     const totalDuration = Date.now() - startTime;
@@ -1427,6 +1502,23 @@ if __name__ == '__main__':
   }
 
   /**
+   * Formats an error into a human-readable diagnostic string, unpacking inner errors
+   * for Node.js `AggregateError` instances (such as network or connect failures).
+   *
+   * @param err Error or exception value
+   * @returns Formatted error string
+   * @author Mike Nimer <mikenimer@google.com>
+   */
+  public formatErrorMessage(err: any): string {
+    if (!err) return 'Unknown error';
+    if (Array.isArray(err.errors) && err.errors.length > 0) {
+      const details = err.errors.map((e: any) => e?.message || String(e)).filter(Boolean).join('; ');
+      return err.message && err.message.trim().length > 0 ? `${err.message}: ${details}` : details;
+    }
+    return err.message || String(err);
+  }
+
+  /**
    * Executes a single test scenario against either the OpenAI-compatible HTTP runner or the deployed remote Reasoning Engine.
    * Evaluates assertions using Gemini as an LLM judge for semantic and structured output validation.
    *
@@ -1438,6 +1530,8 @@ if __name__ == '__main__':
    * @param executionTarget 'local' or 'remote'
    * @param deployedResourceId Remote Reasoning Engine ID
    * @param targetDirectory Local workspace target directory
+   * @param abortSignal Optional AbortSignal for user-initiated cancellation
+   * @author Mike Nimer <mikenimer@google.com>
    */
   private async executeScenario(
     document: AgentWorkflowDocument,
@@ -1447,8 +1541,18 @@ if __name__ == '__main__':
     port: number,
     executionTarget: 'local' | 'remote' = 'local',
     deployedResourceId?: string,
-    targetDirectory?: string
-  ): Promise<{ passed: boolean; output: string; error?: string }> {
+    targetDirectory?: string,
+    abortSignal?: AbortSignal
+  ): Promise<{ passed: boolean; output: string; error?: string; durationMs?: number }> {
+    // NOTE: Check if user cancelled run before initiating scenario
+    if (abortSignal?.aborted) {
+      return {
+        passed: false,
+        output: '',
+        error: 'Execution cancelled by user.',
+      };
+    }
+
     const inputQuery = scenario.inputQuery || '';
     if (!inputQuery.trim()) {
       await bridge.postMessage({
@@ -1477,17 +1581,26 @@ if __name__ == '__main__':
       });
 
       let responseText = '';
+      const remoteStartTime = Date.now();
       try {
         if (!this.agentEngineDeployer) {
           throw new Error('Agent Engine deployer is not configured for remote test execution.');
         }
 
+        // Sanitize serviceUrl: do not pass localhost / 127.0.0.1 URLs when executing remotely
+        const rawServiceUrl = (document as any)?.deployment?.serviceUrl;
+        const sanitizedServiceUrl =
+          rawServiceUrl && !rawServiceUrl.includes('localhost') && !rawServiceUrl.includes('127.0.0.1')
+            ? rawServiceUrl
+            : undefined;
+
         const remoteResult = await this.agentEngineDeployer.testRemoteAgentRuntime({
           targetDirectory: targetDirectory || (document as any)?._targetDirectory || '',
           remoteRuntimeId: deployedResourceId || (document as any)?.deployment?.deployedResourceId,
-          serviceUrl: (document as any)?.deployment?.serviceUrl,
+          serviceUrl: sanitizedServiceUrl,
           query: inputQuery,
           bridge,
+          abortSignal,
         });
 
         if (!remoteResult.success || !remoteResult.response) {
@@ -1496,7 +1609,7 @@ if __name__ == '__main__':
 
         responseText = remoteResult.response;
       } catch (err: any) {
-        const errMsg = err?.message || String(err);
+        const errMsg = this.formatErrorMessage(err);
         await bridge.postMessage({
           type: 'EXECUTION_LOG',
           payload: {
@@ -1513,6 +1626,7 @@ if __name__ == '__main__':
           error: errMsg,
         };
       }
+      const remoteLatencyMs = Date.now() - remoteStartTime;
 
       await bridge.postMessage({
         type: 'EXECUTION_LOG',
@@ -1538,12 +1652,14 @@ if __name__ == '__main__':
           },
         });
 
+        const evalStartTime = Date.now();
         const evalResult = await this.codeGenEngine.evaluateAssertion({
           inputQuery: inputQuery,
           expectedCriteria: scenario.expectedOutput,
           actualOutput: responseText,
           model: 'gemini-flash-latest',
         });
+        const evalLatencyMs = Date.now() - evalStartTime;
 
         await bridge.postMessage({
           type: 'EXECUTION_LOG',
@@ -1556,16 +1672,29 @@ if __name__ == '__main__':
           },
         });
 
+        await bridge.postMessage({
+          type: 'EXECUTION_LOG',
+          payload: {
+            runId,
+            scenarioId: scenario.id,
+            timestamp: new Date().toISOString(),
+            level: 'info',
+            message: `[Latency Metrics] Remote invocation: ${remoteLatencyMs}ms, Assertion evaluation: ${evalLatencyMs}ms (Total: ${remoteLatencyMs + evalLatencyMs}ms)`,
+          },
+        });
+
         return {
           passed: evalResult.passed,
           output: responseText,
           error: evalResult.passed ? undefined : evalResult.reason,
+          durationMs: remoteLatencyMs + evalLatencyMs,
         };
       }
 
       return {
         passed: true,
         output: responseText,
+        durationMs: remoteLatencyMs,
       };
     }
 
@@ -1583,10 +1712,32 @@ if __name__ == '__main__':
       modelName = 'gemini-flash-latest';
     }
 
-    const requestPayload = {
+    // NOTE: Generate fresh unique session ID for complete turn session isolation
+    // across sequential test executions and conversational agents.
+    const sessionId = `test-session-${scenario.id}-${Date.now()}`;
+    const sessionHeaders: Record<string, string> = {
+      'X-Session-ID': sessionId,
+      'X-Thread-ID': sessionId,
+    };
+
+    const requestPayload: any = {
       model: modelName,
       messages: [{ role: 'user', content: inputQuery }],
+      session_id: sessionId,
+      thread_id: sessionId,
+      user_id: 'test-runner',
     };
+
+    await bridge.postMessage({
+      type: 'EXECUTION_LOG',
+      payload: {
+        runId,
+        scenarioId: scenario.id,
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        message: `[Turn Session Isolated] Initialized fresh test session: ${sessionId}`,
+      },
+    });
 
     await bridge.postMessage({
       type: 'EXECUTION_LOG',
@@ -1600,12 +1751,16 @@ if __name__ == '__main__':
     });
 
     try {
+      const networkStartTime = Date.now();
       let httpResult = await this.httpPostJson(
         port,
         '/v1/chat/completions',
         requestPayload,
-        30000
+        30000,
+        abortSignal,
+        sessionHeaders
       );
+      let networkLatencyMs = Date.now() - networkStartTime;
 
       // If rejected due to unsupported model, fallback to gemini-flash-latest
       if (
@@ -1616,12 +1771,16 @@ if __name__ == '__main__':
       ) {
         modelName = 'gemini-flash-latest';
         requestPayload.model = modelName;
+        const retryStart = Date.now();
         httpResult = await this.httpPostJson(
           port,
           '/v1/chat/completions',
           requestPayload,
-          30000
+          30000,
+          abortSignal,
+          sessionHeaders
         );
+        networkLatencyMs += Date.now() - retryStart;
       }
 
       // Fallback 1: If 404 or empty 200, attempt with trailing slash /v1/chat/completions/
@@ -1631,7 +1790,9 @@ if __name__ == '__main__':
             port,
             '/v1/chat/completions/',
             requestPayload,
-            15000
+            15000,
+            abortSignal,
+            sessionHeaders
           );
           if (slashResult.ok && slashResult.text && slashResult.text.trim().length > 0) {
             httpResult = slashResult;
@@ -1646,12 +1807,16 @@ if __name__ == '__main__':
             prompt: inputQuery,
             message: inputQuery,
             messages: [{ role: 'user', content: inputQuery }],
+            session_id: sessionId,
+            thread_id: sessionId,
           };
           const convResult = await this.httpPostJson(
             port,
             '/conversation',
             convPayload,
-            15000
+            15000,
+            abortSignal,
+            sessionHeaders
           );
           if (convResult.ok && convResult.text && convResult.text.trim().length > 0) {
             httpResult = convResult;
@@ -1674,6 +1839,63 @@ if __name__ == '__main__':
       if (httpResult.ok) {
         const data = httpResult.data;
         let responseText = '';
+
+        // NOTE: Extract tool calls or reasoning traces to populate animated trace accordion in TestRunnerTab
+        const choices = data?.choices;
+        const messageObj = choices?.[0]?.message;
+        const toolCalls = messageObj?.tool_calls;
+        const defaultAgentLabel = (agentNodes[0]?.data as any)?.label || agentNodes[0]?.id || 'Agent';
+
+        if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+          for (const tc of toolCalls) {
+            const fnName = tc.function?.name || tc.name || 'tool';
+            const fnArgs = tc.function?.arguments || tc.arguments || '';
+            await bridge.postMessage({
+              type: 'EXECUTION_LOG',
+              payload: {
+                runId,
+                scenarioId: scenario.id,
+                timestamp: new Date().toISOString(),
+                level: 'info',
+                message: `[Tool Call] ${fnName}(${typeof fnArgs === 'object' ? JSON.stringify(fnArgs) : fnArgs})`,
+                agentId: defaultAgentLabel,
+                stepId: tc.id || `step-${Date.now()}`,
+              },
+            });
+          }
+        }
+
+        if (messageObj?.reasoning_content) {
+          await bridge.postMessage({
+            type: 'EXECUTION_LOG',
+            payload: {
+              runId,
+              scenarioId: scenario.id,
+              timestamp: new Date().toISOString(),
+              level: 'info',
+              message: `[Reasoning Step] ${messageObj.reasoning_content}`,
+              agentId: defaultAgentLabel,
+            },
+          });
+        }
+
+        if (Array.isArray(data?.traces)) {
+          for (const tr of data.traces) {
+            const traceMsg = typeof tr === 'string' ? tr : tr.message || JSON.stringify(tr);
+            await bridge.postMessage({
+              type: 'EXECUTION_LOG',
+              payload: {
+                runId,
+                scenarioId: scenario.id,
+                timestamp: new Date().toISOString(),
+                level: 'info',
+                message: `[Agent Trace] ${traceMsg}`,
+                agentId: tr.agentId || defaultAgentLabel,
+                stepId: tr.stepId,
+              },
+            });
+          }
+        }
 
         if (typeof data?.choices?.[0]?.message?.content === 'string') {
           responseText = data.choices[0].message.content;
@@ -1727,6 +1949,7 @@ if __name__ == '__main__':
         });
 
         // Evaluate assertion using Gemini LLM Judge if expectedOutput is specified
+        let evalLatencyMs = 0;
         if (scenario.expectedOutput && scenario.expectedOutput.trim().length > 0) {
           await bridge.postMessage({
             type: 'EXECUTION_LOG',
@@ -1739,12 +1962,14 @@ if __name__ == '__main__':
             },
           });
 
+          const evalStartTime = Date.now();
           const evalResult = await this.codeGenEngine.evaluateAssertion({
             inputQuery: inputQuery,
             expectedCriteria: scenario.expectedOutput,
             actualOutput: responseText,
             model: 'gemini-flash-latest',
           });
+          evalLatencyMs = Date.now() - evalStartTime;
 
           await bridge.postMessage({
             type: 'EXECUTION_LOG',
@@ -1757,18 +1982,42 @@ if __name__ == '__main__':
             },
           });
 
+          await bridge.postMessage({
+            type: 'EXECUTION_LOG',
+            payload: {
+              runId,
+              scenarioId: scenario.id,
+              timestamp: new Date().toISOString(),
+              level: 'info',
+              message: `[Latency Metrics] Agent response: ${networkLatencyMs}ms, Assertion evaluation: ${evalLatencyMs}ms (Total: ${networkLatencyMs + evalLatencyMs}ms)`,
+            },
+          });
+
           if (!evalResult.passed) {
             return {
               passed: false,
               output: responseText,
               error: evalResult.reason,
+              durationMs: networkLatencyMs + evalLatencyMs,
             };
           }
+        } else {
+          await bridge.postMessage({
+            type: 'EXECUTION_LOG',
+            payload: {
+              runId,
+              scenarioId: scenario.id,
+              timestamp: new Date().toISOString(),
+              level: 'info',
+              message: `[Latency Metrics] Agent response: ${networkLatencyMs}ms`,
+            },
+          });
         }
 
         return {
           passed: true,
           output: responseText,
+          durationMs: networkLatencyMs + evalLatencyMs,
         };
       } else {
         const errorMsg =
@@ -1779,9 +2028,17 @@ if __name__ == '__main__':
           passed: false,
           output: httpResult.text || '',
           error: errorMsg,
+          durationMs: networkLatencyMs,
         };
       }
     } catch (err: any) {
+      if (abortSignal?.aborted || err.message?.includes('aborted')) {
+        return {
+          passed: false,
+          output: '',
+          error: 'Execution cancelled by user.',
+        };
+      }
       return {
         passed: false,
         output: '',
@@ -2071,10 +2328,21 @@ if __name__ == '__main__':
 
   /**
    * Cancels an active test run if currently executing.
+   * Aborts any in-flight HTTP scenario requests and terminates any active child processes.
    *
    * @param runId Target run identifier
+   * @author Mike Nimer <mikenimer@google.com>
    */
   public cancelRun(runId: string): void {
+    // Abort active in-flight HTTP request
+    const controller = this.activeAbortControllers.get(runId);
+    if (controller) {
+      try {
+        controller.abort();
+      } catch {}
+      this.activeAbortControllers.delete(runId);
+    }
+
     const childProc = this.activeProcesses.get(runId);
     if (childProc && childProc.pid && childProc.pid !== process.pid) {
       try {
@@ -2085,9 +2353,18 @@ if __name__ == '__main__':
   }
 
   /**
-   * Cancels all currently running test subprocesses and clears active references.
+   * Cancels all currently running test subprocesses and aborts in-flight HTTP requests.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
    */
   public cancelAll(): void {
+    for (const [runId, controller] of this.activeAbortControllers.entries()) {
+      try {
+        controller.abort();
+      } catch {}
+      this.activeAbortControllers.delete(runId);
+    }
+
     for (const [runId, child] of this.activeProcesses.entries()) {
       try {
         if (child.pid && child.pid !== process.pid) {

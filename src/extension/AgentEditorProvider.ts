@@ -492,17 +492,29 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     bridge.onMessage('RUN_TESTS', async (payload) => {
       if (!payload?.document) return;
 
-      const targetDir = this.resolveTargetDirectory(document, payload.targetDirectory);
+      try {
+        const targetDir = this.resolveTargetDirectory(document, payload.targetDirectory);
 
-      await this.runnerManager.runTests({
-        document: payload.document,
-        scenarioIds: payload.testScenarioIds,
-        targetDirectory: targetDir,
-        port: payload.port,
-        executionTarget: payload.executionTarget,
-        deployedResourceId: payload.deployedResourceId,
-        bridge,
-      });
+        await this.runnerManager.runTests({
+          document: payload.document,
+          scenarioIds: payload.testScenarioIds,
+          targetDirectory: targetDir,
+          port: payload.port,
+          executionTarget: payload.executionTarget,
+          deployedResourceId: payload.deployedResourceId,
+          bridge,
+        });
+      } catch (err: any) {
+        bridge.postMessage({
+          type: 'EXECUTION_LOG',
+          payload: {
+            runId: `run-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            level: 'error',
+            message: `[Test Runner Error]: ${err?.message || String(err)}`,
+          },
+        });
+      }
     });
 
     bridge.onMessage('START_LOCAL_RUNNER', async (payload) => {

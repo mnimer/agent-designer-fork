@@ -139,9 +139,12 @@ export interface AgentEngineDeployResult {
  * Options for `AgentEngineDeployer.testRemoteAgentRuntime()`.
  */
 export interface AgentEngineTestOptions {
-  targetDirectory: string;
+  targetDirectory?: string;
   query: string;
+  serviceUrl?: string;
+  remoteRuntimeId?: string;
   bridge?: WebviewBridge;
+  abortSignal?: AbortSignal;
 }
 
 /**
@@ -160,6 +163,8 @@ export class AgentEngineDeployer implements vscode.Disposable {
   private activeDeployments: Map<string, ActiveDeploymentRecord> = new Map();
   private cancelledDirectories: Set<string> = new Set();
   private pythonResolver: PythonEnvResolver;
+  private cachedAccessToken: string | null = null;
+  private cachedAccessTokenExpiresAt = 0;
 
   /**
    * Initializes the AgentEngineDeployer.
@@ -1520,10 +1525,82 @@ if _agent_dir not in sys.path:
   }
 
   /**
+   * Formats an error into a human-readable diagnostic string, unpacking inner errors
+   * for Node.js `AggregateError` instances (such as network or connect failures).
+   *
+   * @param err Error or exception value
+   * @returns Formatted error string
+   * @author Mike Nimer <mikenimer@google.com>
+   */
+  public formatErrorMessage(err: any): string {
+    if (!err) return 'Unknown error';
+    if (Array.isArray(err.errors) && err.errors.length > 0) {
+      const details = err.errors.map((e: any) => e?.message || String(e)).filter(Boolean).join('; ');
+      return err.message && err.message.trim().length > 0 ? `${err.message}: ${details}` : details;
+    }
+    return err.message || String(err);
+  }
+
+  /**
+   * Retrieves an active Google Cloud ADC access token using gcloud CLI with caching.
+   * Leverages extended PATH resolution to discover gcloud reliably across operating systems.
+   *
+   * @returns Promise resolving to Bearer auth header string, or empty string
+   * @author Mike Nimer <mikenimer@google.com>
+   */
+  public async getAccessTokenHeader(): Promise<string> {
+    const now = Date.now();
+    // Cache token for 10 minutes (access tokens typically expire in 60 minutes)
+    if (this.cachedAccessToken && this.cachedAccessTokenExpiresAt > now) {
+      return `Bearer ${this.cachedAccessToken}`;
+    }
+
+    try {
+      const extendedEnv = this.getExtendedEnv();
+      const token = await new Promise<string>((resolve, reject) => {
+        const cp = spawn('gcloud', ['auth', 'print-access-token'], {
+          env: extendedEnv,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        let stdout = '';
+        cp.stdout.on('data', (d) => {
+          stdout += d.toString();
+        });
+        cp.on('error', reject);
+        cp.on('close', (code) => {
+          if (code === 0) {
+            resolve(stdout.trim());
+          } else {
+            reject(new Error(`gcloud auth print-access-token exited with code ${code}`));
+          }
+        });
+        // Timeout after 4000ms
+        const timer = setTimeout(() => {
+          try {
+            cp.kill('SIGTERM');
+          } catch {}
+          reject(new Error('gcloud token retrieval timed out'));
+        }, 4000);
+        cp.on('close', () => clearTimeout(timer));
+      });
+
+      if (token && token.length > 0) {
+        this.cachedAccessToken = token;
+        this.cachedAccessTokenExpiresAt = now + 10 * 60 * 1000; // 10 minutes
+        return `Bearer ${token}`;
+      }
+    } catch {
+      // NOTE: Fall back cleanly if gcloud CLI is not configured or times out
+    }
+    return '';
+  }
+
+  /**
    * Executes a live test query against the deployed remote Agent Runtime via the HTTP passthrough.
    *
    * @param options Remote query configuration options
    * @returns Promise resolving to the test result
+   * @author Mike Nimer <mikenimer@google.com>
    */
   public async testRemoteAgentRuntime(options: AgentEngineTestOptions): Promise<AgentEngineTestResult> {
     const { targetDirectory, query, bridge } = options;
@@ -1536,7 +1613,9 @@ if _agent_dir not in sys.path:
     if ((!serviceUrl || !remoteRuntimeId) && targetDirectory) {
       const meta = this.readDeploymentMetadata(targetDirectory);
       if (meta) {
-        serviceUrl = serviceUrl || meta.service_url;
+        if (!serviceUrl && meta.service_url && !meta.service_url.includes('localhost') && !meta.service_url.includes('127.0.0.1')) {
+          serviceUrl = meta.service_url;
+        }
         remoteRuntimeId = remoteRuntimeId || meta.remote_agent_runtime_id;
       }
     }
@@ -1581,7 +1660,7 @@ if _agent_dir not in sys.path:
     try {
       this.logToBridge(bridge, `[Test] Sending query to ${serviceUrl}...`, 'system');
 
-      const responseText = await this.performHttpQuery(serviceUrl, query);
+      const responseText = await this.performHttpQuery(serviceUrl, query, options.abortSignal);
       const durationMs = Date.now() - startTime;
 
       if (bridge) {
@@ -1604,7 +1683,7 @@ if _agent_dir not in sys.path:
       };
     } catch (err: any) {
       const durationMs = Date.now() - startTime;
-      let errMsg = err?.message || String(err);
+      let errMsg = this.formatErrorMessage(err);
       if (this.isReasoningEngineNotFoundError(errMsg)) {
         errMsg = `Reasoning Engine was not found on Vertex AI (404 NOT_FOUND). The instance may have been deleted in Google Cloud Console. Please click Deploy to automatically create a new instance.`;
       }
@@ -1637,12 +1716,22 @@ if _agent_dir not in sys.path:
    *
    * @param queryUrl The reasoningEngine :query endpoint URL
    * @param authHeader Authorization header (e.g. Bearer token)
+   * @param abortSignal Optional AbortSignal to cancel session creation
    * @returns Promise resolving to the created session ID, or undefined
    * @author Mike Nimer <mikenimer@google.com>
    */
-  private createReasoningEngineSession(queryUrl: string, authHeader: string): Promise<string | undefined> {
+  private createReasoningEngineSession(
+    queryUrl: string,
+    authHeader: string,
+    abortSignal?: AbortSignal
+  ): Promise<string | undefined> {
     return new Promise((resolve) => {
       try {
+        if (abortSignal?.aborted) {
+          resolve(undefined);
+          return;
+        }
+
         // 1. Prepare HTTP request for async_create_session
         const urlObj = new URL(queryUrl);
         const client = urlObj.protocol === 'https:' ? https : http;
@@ -1668,6 +1757,9 @@ if _agent_dir not in sys.path:
             timeout: 10000,
           },
           (res) => {
+            // Guard against unhandled stream errors on response
+            res.on('error', () => resolve(undefined));
+
             let resData = '';
             res.on('data', (c) => {
               resData += c;
@@ -1687,6 +1779,26 @@ if _agent_dir not in sys.path:
         );
 
         req.on('error', () => resolve(undefined));
+        req.on('timeout', () => {
+          try {
+            req.destroy();
+          } catch {}
+          resolve(undefined);
+        });
+
+        if (abortSignal) {
+          abortSignal.addEventListener(
+            'abort',
+            () => {
+              try {
+                req.destroy();
+              } catch {}
+              resolve(undefined);
+            },
+            { once: true }
+          );
+        }
+
         req.write(body);
         req.end();
       } catch {
@@ -1701,10 +1813,11 @@ if _agent_dir not in sys.path:
    *
    * @param serviceUrl Destination service URL
    * @param query User prompt query
+   * @param abortSignal Optional AbortSignal to cancel query execution
    * @returns Promise resolving to response text
    * @author Mike Nimer <mikenimer@google.com>
    */
-  private async performHttpQuery(serviceUrl: string, query: string): Promise<string> {
+  private async performHttpQuery(serviceUrl: string, query: string, abortSignal?: AbortSignal): Promise<string> {
     let normalizedUrl = serviceUrl;
     if (normalizedUrl.includes('/api/run_sse')) {
       try {
@@ -1732,13 +1845,7 @@ if _agent_dir not in sys.path:
     // Retrieve ADC access token if available
     let authHeader = '';
     try {
-      const token = require('child_process')
-        .execSync('gcloud auth print-access-token', { timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] })
-        .toString()
-        .trim();
-      if (token) {
-        authHeader = `Bearer ${token}`;
-      }
+      authHeader = await this.getAccessTokenHeader();
     } catch {
       // NOTE: Token retrieval failed; proceeding without explicit auth header (e.g. mock or local proxy)
     }
@@ -1748,7 +1855,7 @@ if _agent_dir not in sys.path:
     if (isAgentEngine) {
       try {
         const sessionUrl = normalizedUrl.replace(/:streamQuery.*$/, ':query');
-        sessionId = await this.createReasoningEngineSession(sessionUrl, authHeader);
+        sessionId = await this.createReasoningEngineSession(sessionUrl, authHeader, abortSignal);
       } catch {
         // Fall back if session service is not configured
       }
@@ -1775,6 +1882,10 @@ if _agent_dir not in sys.path:
 
     return new Promise<string>((resolve, reject) => {
       try {
+        if (abortSignal?.aborted) {
+          reject(new Error('Remote request was cancelled by user.'));
+          return;
+        }
 
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
@@ -1793,6 +1904,11 @@ if _agent_dir not in sys.path:
             timeout: 60000,
           },
           (res) => {
+            // Guard against unhandled stream errors on response
+            res.on('error', (resErr) => {
+              reject(resErr);
+            });
+
             let body = '';
             res.on('data', (chunk) => {
               body += chunk;
@@ -1838,43 +1954,32 @@ if _agent_dir not in sys.path:
                         }
                       } else if (evt.output) {
                         accumulatedText +=
-                          (typeof evt.output === 'string' ? evt.output : JSON.stringify(evt.output, null, 2)) + '\n';
-                      } else if (evt.response) {
-                        accumulatedText +=
-                          (typeof evt.response === 'string' ? evt.response : JSON.stringify(evt.response, null, 2)) + '\n';
-                      } else if (typeof evt.content === 'string') {
-                        accumulatedText += evt.content;
-                      } else if (typeof evt.text === 'string') {
-                        accumulatedText += evt.text;
+                          typeof evt.output === 'string' ? evt.output : JSON.stringify(evt.output);
                       }
                     } catch {
-                      // Not a JSON event line
+                      // Line was not JSON; fallback to raw line
                     }
                   }
 
                   if (hasParsedEvents && accumulatedText.trim().length > 0) {
                     resolve(accumulatedText.trim());
-                    return;
-                  }
-
-                  const parsed = JSON.parse(body);
-                  if (parsed.error) {
-                    let errMsg = parsed.error.message || JSON.stringify(parsed.error);
-                    if (errMsg.includes('Invalid agent name')) {
-                      errMsg += ' (Redeploy the agent to automatically apply valid Python identifier naming).';
+                  } else {
+                    const fallbackParsed = JSON.parse(body);
+                    const finalOutput =
+                      fallbackParsed.output ||
+                      fallbackParsed.response ||
+                      fallbackParsed.choices?.[0]?.message?.content ||
+                      fallbackParsed.text;
+                    if (finalOutput) {
+                      resolve(typeof finalOutput === 'string' ? finalOutput : JSON.stringify(finalOutput));
+                    } else if (body.trim().length > 0) {
+                      resolve(body.trim());
+                    } else {
+                      reject(new Error('Remote Reasoning Engine returned an empty response.'));
                     }
-                    reject(new Error(errMsg));
-                    return;
                   }
-                  const output = parsed.output || parsed.response || parsed.result || body;
-                  const finalOutput = typeof output === 'string' ? output.trim() : JSON.stringify(output, null, 2);
-                  if (!finalOutput) {
-                    reject(new Error('Remote Reasoning Engine returned an empty response string.'));
-                    return;
-                  }
-                  resolve(finalOutput);
                 } catch {
-                  if (body && body.trim().length > 0) {
+                  if (body.trim().length > 0) {
                     resolve(body.trim());
                   } else {
                     reject(new Error('Remote Reasoning Engine returned an empty response.'));
@@ -1899,12 +2004,28 @@ if _agent_dir not in sys.path:
           }
         );
 
+        let cleanupAbort: (() => void) | undefined;
+        if (abortSignal) {
+          const onAbort = () => {
+            req.destroy(new Error('Remote request was cancelled by user.'));
+            reject(new Error('Remote request was cancelled by user.'));
+          };
+          abortSignal.addEventListener('abort', onAbort, { once: true });
+          cleanupAbort = () => abortSignal.removeEventListener('abort', onAbort);
+        }
+
         req.on('error', (err) => {
+          if (cleanupAbort) cleanupAbort();
           reject(err);
         });
 
         req.on('timeout', () => {
+          if (cleanupAbort) cleanupAbort();
           req.destroy(new Error('Connection timed out after 60 seconds'));
+        });
+
+        req.on('close', () => {
+          if (cleanupAbort) cleanupAbort();
         });
 
         req.write(payload);
