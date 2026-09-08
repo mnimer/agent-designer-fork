@@ -11,6 +11,8 @@
  * 3. Multi-Credential Support: Authenticates via `GEMINI_API_KEY` (settings/env) or falls back to Google Application Default Credentials (ADC).
  * 4. Structured Output Parsing: Robustly parses multi-file JSON arrays conforming to `{ path, description, content }`.
  * 5. Standalone Merged Prompts: Self-contained prompt templates in `resource/prompts/` provide complete framework, workflow, and deployment instructions without external file appending.
+ * 6. Automated Post-Generation Import Normalization: Automatically inspects and corrects known LLM import errors
+ *    for Google ADK tools (such as mapping invalid `google.adk.tools.google_search` to `google.adk.tools`) before persisting.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -19,6 +21,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { GeneratedFile, CodeGenRequest, CodeGenResult } from '../shared/codegen/types';
+import { sanitizeAgentIdentifier } from '../shared/identifierValidation';
 
 export interface AssertionEvaluationRequest {
   inputQuery: string;
@@ -57,15 +60,45 @@ export class GeminiCodeGenEngine {
     try {
       // 1. Load prompt template from resource/prompts directory
       const promptTemplate = this.loadPromptTemplate(framework, language, target);
-      const workflowJson = JSON.stringify(doc, null, 2);
+
+      // Sanitize agent nodes to guarantee valid Python identifier names
+      const sanitizedDoc = {
+        ...doc,
+        nodes: (doc.nodes || []).map((node: any) => {
+          const isTrigger =
+            node.type === 'trigger' ||
+            node.type === 'triggerNode' ||
+            node.type === 'tester' ||
+            node.type === 'chat' ||
+            node.id?.includes('trigger') ||
+            node.id?.includes('tester');
+
+          if (!isTrigger) {
+            const data = node.data || {};
+            const cleanName = sanitizeAgentIdentifier(data.name || data.label || node.id);
+            return {
+              ...node,
+              data: {
+                ...data,
+                name: cleanName,
+              },
+            };
+          }
+          return node;
+        }),
+      };
+
+      const workflowJson = JSON.stringify(sanitizedDoc, null, 2);
       const interpolatedPrompt = promptTemplate.replace('{{WORKFLOW_JSON}}', workflowJson);
 
-      // 2. Invoke Gemini LLM with credentials (API Key or ADC)
-      const generatedFiles = await this.callGeminiApi(interpolatedPrompt, apiKey, model);
+      const rawGeneratedFiles = await this.callGeminiApi(interpolatedPrompt, apiKey, model);
 
-      if (!generatedFiles || generatedFiles.length === 0) {
+      if (!rawGeneratedFiles || rawGeneratedFiles.length === 0) {
         throw new Error('Gemini returned an empty file list. Please verify the prompt and model output.');
       }
+
+      // 3. Post-process and sanitize generated code (e.g. normalize framework tool imports)
+      const generatedFiles = this.postProcessGeneratedFiles(rawGeneratedFiles);
 
       return {
         success: true,
@@ -83,6 +116,78 @@ export class GeminiCodeGenEngine {
         timestamp: new Date().toISOString(),
       };
     }
+  }
+
+  /**
+   * Post-processes generated code files to automatically sanitize and normalize
+   * common LLM import variations for Google ADK and framework modules.
+   *
+   * Normalizations:
+   * 1. Replaces 'from google.adk.tools.google_search import google_search'
+   *    or 'from google.adk.tools.google_search import GoogleSearchTool'
+   *    with valid Google ADK exports ('from google.adk.tools import google_search' or 'from google.adk.tools.google_search_tool import GoogleSearchTool').
+   * 2. Normalizes 'import google.adk.tools.google_search' -> 'from google.adk.tools import google_search'
+   * 3. Normalizes 'from google.adk.tools.vertex_ai_search import ...' -> 'from google.adk.tools import VertexAiSearchTool'
+   *
+   * @param files List of generated files
+   * @returns Sanitized generated files
+   */
+  public postProcessGeneratedFiles(files: GeneratedFile[]): GeneratedFile[] {
+    return files.map((file) => {
+      if (!file.path.endsWith('.py')) {
+        return file;
+      }
+
+      let content = file.content;
+
+      // NOTE: Fix invalid google.adk.tools.google_search submodule imports
+      // 1. from google.adk.tools.google_search import google_search -> from google.adk.tools import google_search
+      content = content.replace(
+        /from\s+google\.adk\.tools\.google_search\s+import\s+google_search/g,
+        'from google.adk.tools import google_search'
+      );
+
+      // 2. from google.adk.tools.google_search import GoogleSearchTool -> from google.adk.tools.google_search_tool import GoogleSearchTool
+      content = content.replace(
+        /from\s+google\.adk\.tools\.google_search\s+import\s+GoogleSearchTool/g,
+        'from google.adk.tools.google_search_tool import GoogleSearchTool'
+      );
+
+      // 3. import google.adk.tools.google_search -> from google.adk.tools import google_search
+      content = content.replace(
+        /import\s+google\.adk\.tools\.google_search\b/g,
+        'from google.adk.tools import google_search'
+      );
+
+      // 4. from google.adk.tools.vertex_ai_search import VertexAiSearchTool -> from google.adk.tools import VertexAiSearchTool
+      content = content.replace(
+        /from\s+google\.adk\.tools\.vertex_ai_search\s+import\s+VertexAiSearchTool/g,
+        'from google.adk.tools import VertexAiSearchTool'
+      );
+
+      // 5. enable_cloud_metrics=True and enable_cloud_tracing=True
+      // -> bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("K_SERVICE"))
+      // NOTE: Google Cloud's telemetry.googleapis.com requires a deployed Reasoning Engine resource ID
+      // and returns 400 Bad Request when metrics or traces are exported from an undeployed local runner.
+      content = content.replace(
+        /enable_cloud_metrics\s*=\s*True/g,
+        'enable_cloud_metrics=bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("K_SERVICE"))'
+      );
+      content = content.replace(
+        /enable_cloud_tracing\s*=\s*True/g,
+        'enable_cloud_tracing=bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("K_SERVICE"))'
+      );
+
+      // 6. Strip forbidden description parameter from App(...)
+      // In google.adk.apps.App, Pydantic strict mode is active (extra='forbid') and App does not accept a description argument.
+      content = content.replace(/(\bApp\s*\([^)]*?),\s*description\s*=\s*(?:'[^']*'|"[^"]*")/g, '$1');
+      content = content.replace(/(\bApp\s*\(\s*)description\s*=\s*(?:'[^']*'|"[^"]*"),?\s*/g, '$1');
+
+      return {
+        ...file,
+        content,
+      };
+    });
   }
 
   /**

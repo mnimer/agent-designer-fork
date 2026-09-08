@@ -125,7 +125,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       {showMiniMap && (
         <MiniMap
           nodeColor={(n) => {
-            if (n.type === 'triggerNode') return '#f59e0b';
+            if (n.type === 'triggerNode' || n.type === 'trigger') return '#f59e0b';
             const data = n.data as AgentData;
             if (data?.isStartNode) return '#3b82f6';
             if (data?.isEvaluator) return '#a855f7';

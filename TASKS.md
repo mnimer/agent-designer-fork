@@ -19,10 +19,10 @@
 | **TASK-104** | v1.0.0 | Tools | Google Search Grounding Built-in Tool | **Complete** | TASK-103 |
 | **TASK-105** | v1.0.0 | Triggers | Test Suite Trigger Node & Test Prompts Editor | **Complete** | TASK-103 |
 | **TASK-106** | v1.0.0 | Codegen | Gemini Prompt-Driven Python ADK Repository Generator | **Complete** | TASK-103, TASK-104, TASK-105 |
-| **TASK-107** | v1.0.0 | Runner | Managed Agent Subprocess Runner & Test Execution Engine | **Not Completed (Not started)** | TASK-101, TASK-106 |
+| **TASK-107** | v1.0.0 | Runner | Managed Agent Subprocess Runner & Test Execution Engine | **Complete** | TASK-101, TASK-106 |
 | **TASK-108** | v1.0.0 | History & Sync | Undo/Redo Engine, Auto-Layout & Document Disk Sync | **Complete** | TASK-101, TASK-103 |
-| **TASK-109** | v1.0.0 | Quality | End-to-End Test Suite & 100% Coverage Suite | **In Progress** | TASK-100 to TASK-108 |
-| **TASK-110** | v1.0.1 | Triggers | Chat Trigger Node & Interactive Chat Runner Panel | **Not Started** | TASK-107 |
+| **TASK-109** | v1.0.0 | Quality | End-to-End Test Suite & 100% Coverage Suite | **Complete** | TASK-100 to TASK-108 |
+| **TASK-110** | v1.0.1 | Triggers | Chat Trigger Node & Interactive Chat Runner Panel | **Complete** | TASK-107 |
 | **TASK-111** | v1.0.1 | Deployment | Cloud Infrastructure IaC Panel (Cloud Run & Shared GCP Resources) | **Not Started** | TASK-106 |
 | **TASK-112** | v1.0.2 | Canvas | Multi-Agent Wiring, Sockets & Connection Validation | **Not Started** | TASK-103 |
 | **TASK-113** | v1.0.2 | Patterns | Sequential Pipeline & Parallel Fan-Out Patterns | **Not Started** | TASK-112 |

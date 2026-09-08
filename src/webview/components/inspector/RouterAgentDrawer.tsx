@@ -15,7 +15,8 @@ import {
   Split,
   CornerDownRight,
   Sparkles,
-  Cpu
+  Cpu,
+  AlertCircle
 } from 'lucide-react';
 import { 
   AgentData, 
@@ -23,6 +24,7 @@ import {
   RouterEvaluationMode, 
   RouterBranchCondition 
 } from '../../types';
+import { validateAgentIdentifier, sanitizeAgentIdentifier } from '../../../shared/identifierValidation';
 
 interface RouterAgentDrawerProps {
   agent: AgentData;
@@ -108,6 +110,23 @@ export const RouterAgentDrawer: React.FC<RouterAgentDrawerProps> = ({
 
   const otherAgents = allAgents.filter((a) => a.id !== agent.id);
 
+  const currentIdentifier = agent.name ?? sanitizeAgentIdentifier(agent.label || agent.id, 'router');
+  const identifierValidation = validateAgentIdentifier(currentIdentifier, 'router');
+
+  const handleLabelChange = (newLabel: string) => {
+    const oldSanitized = sanitizeAgentIdentifier(agent.label || agent.id, 'router');
+    const updates: Partial<AgentData> = { label: newLabel };
+    if (!agent.name || agent.name === oldSanitized) {
+      updates.name = sanitizeAgentIdentifier(newLabel, 'router');
+    }
+    onUpdateAgent(updates);
+  };
+
+  const handleIdentifierChange = (rawName: string) => {
+    const noSpaces = rawName.replace(/\s+/g, '_');
+    onUpdateAgent({ name: noSpaces });
+  };
+
   const handleUpdateRouterConfig = (updates: Partial<RouterConfig>) => {
     const newConfig = { ...routerConfig, ...updates };
     onUpdateAgent({ routerConfig: newConfig });
@@ -165,16 +184,47 @@ export const RouterAgentDrawer: React.FC<RouterAgentDrawerProps> = ({
 
       {/* Body Form */}
       <div className="flex-1 p-4 space-y-4 overflow-y-auto text-xs text-gray-300">
-        {/* Router Display Name */}
-        <div className="space-y-1">
-          <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400">Router Node Label</label>
-          <input
-            type="text"
-            value={agent.label}
-            onChange={(e) => onUpdateAgent({ label: e.target.value })}
-            placeholder="e.g. Quality Gate Router, Intent Classifier"
-            className="w-full px-3 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-purple-500 rounded-lg text-xs text-white focus:outline-none"
-          />
+        {/* Router Display Name & Python Identifier */}
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400">Router Node Label</label>
+            <input
+              type="text"
+              value={agent.label}
+              onChange={(e) => handleLabelChange(e.target.value)}
+              placeholder="e.g. Quality Gate Router, Intent Classifier"
+              className="w-full px-3 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-purple-500 rounded-lg text-xs text-white focus:outline-none"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400">
+                Router Identifier (Python ID)
+              </label>
+              <span className="text-[10px] text-gray-400 font-mono">ADK node name</span>
+            </div>
+            <input
+              type="text"
+              value={currentIdentifier}
+              onChange={(e) => handleIdentifierChange(e.target.value)}
+              placeholder="e.g. quality_gate_router"
+              className={`w-full px-3 py-1.5 bg-[#0d1117] border rounded-lg text-xs font-mono text-white focus:outline-none ${
+                identifierValidation.isValid
+                  ? 'border-[#30363d] focus:border-purple-500'
+                  : 'border-red-500 focus:border-red-500 bg-red-950/20'
+              }`}
+            />
+            {!identifierValidation.isValid && (
+              <div className="flex items-center gap-1.5 text-[11px] text-red-400 mt-1">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{identifierValidation.error}</span>
+              </div>
+            )}
+            <div className="text-[10px] text-gray-400">
+              Must be a valid Python identifier (letters, digits, underscores; no spaces or hyphens).
+            </div>
+          </div>
         </div>
 
         {/* DECISION & EVALUATION STRATEGY */}

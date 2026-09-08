@@ -59,13 +59,27 @@ describe('Tool Adapter Compiler', () => {
       };
 
       const result = compileTools([searchTool], 'google-adk');
-      assert.ok(result.imports.some((i) => i.includes('from google.adk.tools import GoogleSearchTool')));
+      assert.ok(result.imports.some((i) => i.includes('from google.adk.tools.google_search_tool import GoogleSearchTool')));
       assert.ok(result.toolDefinitions.some((inst) => 
         inst.includes("GoogleSearchTool(") &&
         inst.includes('cloud.google.com') &&
         inst.includes('ai.google.dev')
       ));
       assert.ok(result.toolBindings.includes('google_search_grounding_tool'));
+    });
+
+    it('should compile Google Search singleton when domain filters are omitted', () => {
+      const searchTool: ToolDefinition = {
+        id: 'search_default',
+        name: 'Google Search',
+        type: 'search',
+        builtinType: 'google_search',
+      };
+
+      const result = compileTools([searchTool], 'google-adk');
+      assert.ok(result.imports.some((i) => i.includes('from google.adk.tools import google_search')));
+      assert.ok(result.toolDefinitions.some((d) => d.includes('google_search_tool = google_search')));
+      assert.ok(result.toolBindings.includes('google_search_tool'));
     });
 
     it('should compile Vertex AI Search with dataStoreId, project, location="global", and maxResults', () => {
@@ -230,7 +244,7 @@ describe('Tool Adapter Compiler', () => {
       const result = compileTools(BUILTIN_ADK_TOOLS, 'google-adk');
       assert.ok(result.fullCodeSnippet.includes('# --- Google ADK Tool Imports ---'));
       assert.ok(result.fullCodeSnippet.includes('tools = ['));
-      assert.ok(result.fullCodeSnippet.includes('GoogleSearchTool('));
+      assert.ok(result.fullCodeSnippet.includes('google_search'));
       assert.ok(result.fullCodeSnippet.includes('VertexAiSearchTool('));
     });
   });

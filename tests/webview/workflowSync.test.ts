@@ -83,13 +83,40 @@ describe('workflowSync Domain Utilities', () => {
       assert.equal(normalized[0].type, 'agentNode');
       assert.deepEqual(normalized[0].position, { x: 250, y: 350 });
       assert.equal(normalized[0].data.label, 'Custom Agent');
+      assert.equal(normalized[0].data.name, 'custom_agent');
       assert.equal(normalized[0].data.model, 'gemini-pro-latest');
 
       assert.equal(normalized[1].id, 'agent-2');
       assert.equal(normalized[1].type, 'agentNode');
       assert.deepEqual(normalized[1].position, { x: 100, y: 100 });
       assert.equal(normalized[1].data.label, 'Agent');
+      assert.equal(normalized[1].data.name, 'agent');
       assert.equal(normalized[1].data.model, 'gemini-flash-latest');
+    });
+
+    it('should sanitize agent names with spaces into valid Python identifiers (e.g. Cat Agent -> cat_agent)', () => {
+      const rawNodes = [
+        {
+          id: 'agent-cat',
+          type: 'agentNode',
+          data: {
+            label: 'Cat Agent',
+          },
+        },
+        {
+          id: 'agent-support',
+          type: 'agent',
+          data: {
+            label: 'Customer Support / Triage Specialist',
+            name: 'Customer Support / Triage Specialist',
+          },
+        },
+      ];
+
+      const normalized = normalizeLoadedNodes(rawNodes);
+      assert.equal(normalized[0].data.label, 'Cat Agent');
+      assert.equal(normalized[0].data.name, 'cat_agent');
+      assert.equal(normalized[1].data.name, 'customer_support_triage_specialist');
     });
 
     it('should sanitize deprecated mock tools when loading agent nodes', () => {
@@ -154,6 +181,60 @@ describe('workflowSync Domain Utilities', () => {
 
       // Pink color converted to amber #f59e0b
       assert.equal(normalized[2].style?.stroke, '#f59e0b');
+    });
+
+    it('should recognize trigger edges when source node id contains trigger or tester', () => {
+      const rawEdges = [
+        {
+          id: 'edge-1',
+          source: 'node-trigger-1',
+          target: 'node-agent-1',
+        },
+        {
+          id: 'edge-2',
+          source: 'tester-node-99',
+          target: 'node-agent-1',
+        },
+      ];
+
+      const normalized = normalizeLoadedEdges(rawEdges);
+      assert.equal(normalized.length, 2);
+      assert.equal(normalized[0].style?.stroke, '#f59e0b');
+      assert.equal(normalized[0].style?.strokeDasharray, '5 5');
+      assert.equal(normalized[1].style?.stroke, '#f59e0b');
+      assert.equal(normalized[1].style?.strokeDasharray, '5 5');
+    });
+
+    it('should normalize chat trigger edges to amber #f59e0b while preserving non-trigger styles', () => {
+      const rawEdges = [
+        {
+          id: 'e_chat_root',
+          source: 'chat-trigger-1',
+          target: 'root-agent',
+        },
+        {
+          id: 'e_agent_to_agent',
+          source: 'agent-1',
+          target: 'root-agent',
+          style: { stroke: '#10b981' },
+        },
+        {
+          id: 'e_legacy_trigger_green',
+          source: 'trigger-pubsub-1',
+          target: 'root-agent',
+          sourceHandle: 'trigger_out_bottom',
+          style: { stroke: '#10b981' },
+        },
+      ];
+
+      const normalized = normalizeLoadedEdges(rawEdges);
+      assert.equal(normalized.length, 3);
+      assert.equal(normalized[0].style?.stroke, '#f59e0b');
+      assert.equal(normalized[0].style?.strokeDasharray, '5 5');
+      assert.equal(normalized[1].style?.stroke, '#10b981');
+      assert.equal(normalized[1].style?.strokeDasharray, undefined);
+      assert.equal(normalized[2].style?.stroke, '#f59e0b');
+      assert.equal(normalized[2].style?.strokeDasharray, '5 5');
     });
   });
 

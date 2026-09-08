@@ -229,4 +229,85 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
       (engine as any).callGeminiApi = originalCall;
     }
   });
+
+  describe('postProcessGeneratedFiles', () => {
+    it('should sanitize invalid google.adk.tools.google_search submodule imports in Python files', () => {
+      const rawFiles = [
+        {
+          path: 'agent.py',
+          description: 'Main agent',
+          content: [
+            'from google.adk.agents import Agent',
+            'from google.adk.tools.google_search import google_search',
+            'from google.adk.tools.vertex_ai_search import VertexAiSearchTool',
+            'root_agent = Agent(name="root_agent", tools=[google_search])',
+          ].join('\n'),
+        },
+        {
+          path: 'config.json',
+          description: 'Config',
+          content: '{"import": "google.adk.tools.google_search"}',
+        },
+      ];
+
+      const processed = engine.postProcessGeneratedFiles(rawFiles);
+      assert.equal(processed.length, 2);
+
+      // Verify Python file had invalid imports corrected
+      const agentPy = processed[0].content;
+      assert.ok(agentPy.includes('from google.adk.tools import google_search'));
+      assert.ok(!agentPy.includes('from google.adk.tools.google_search import google_search'));
+      assert.ok(agentPy.includes('from google.adk.tools import VertexAiSearchTool'));
+
+      // Verify non-Python file was untouched
+      assert.equal(processed[1].content, '{"import": "google.adk.tools.google_search"}');
+    });
+
+    it('should normalize GoogleSearchTool and bare import statements', () => {
+      const rawFiles = [
+        {
+          path: 'agent.py',
+          description: 'Agent file',
+          content: [
+            'import google.adk.tools.google_search',
+            'from google.adk.tools.google_search import GoogleSearchTool',
+          ].join('\n'),
+        },
+      ];
+
+      const processed = engine.postProcessGeneratedFiles(rawFiles);
+      const content = processed[0].content;
+      assert.ok(content.includes('from google.adk.tools import google_search'));
+      assert.ok(content.includes('from google.adk.tools.google_search_tool import GoogleSearchTool'));
+      assert.ok(!content.includes('import google.adk.tools.google_search'));
+    });
+
+    it('should normalize enable_cloud_metrics=True and enable_cloud_tracing=True to conditional check', () => {
+      const rawFiles = [
+        {
+          path: 'agent.py',
+          description: 'Agent file',
+          content: 'gcp_exporters = get_gcp_exporters(enable_cloud_tracing=True, enable_cloud_metrics=True)',
+        },
+      ];
+
+      const processed = engine.postProcessGeneratedFiles(rawFiles);
+      assert.ok(processed[0].content.includes('enable_cloud_metrics=bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("K_SERVICE"))'));
+      assert.ok(processed[0].content.includes('enable_cloud_tracing=bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("K_SERVICE"))'));
+    });
+
+    it('should strip forbidden description parameter from App(...)', () => {
+      const rawFiles = [
+        {
+          path: 'agent.py',
+          description: 'Agent file',
+          content: 'app = App(name=animal_expert.name, root_agent=animal_expert, description="Animal Expert Agent Workflow")',
+        },
+      ];
+
+      const processed = engine.postProcessGeneratedFiles(rawFiles);
+      assert.ok(!processed[0].content.includes('description='));
+      assert.ok(processed[0].content.includes('app = App(name=animal_expert.name, root_agent=animal_expert)'));
+    });
+  });
 });

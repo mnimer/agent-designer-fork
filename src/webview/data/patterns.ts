@@ -3,6 +3,7 @@ import { AgentData, PatternDefinition, PatternType, AgentKind, TriggerData, Trig
 import { AVAILABLE_TOOLS } from './defaultTools';
 import { TRIGGER_CATALOG } from './triggerDefinitions';
 import { getLayoutedElements } from '../utils/layout';
+import { sanitizeAgentIdentifier } from '../../shared/identifierValidation';
 
 export const PATTERN_DEFINITIONS: PatternDefinition[] = [
   {
@@ -83,7 +84,9 @@ export function createSingleAgentNode(
   defaults?: Partial<AgentData>
 ): Node<AgentData> {
   const id = getNextId(agentKind === 'a2a' ? 'a2a_agent' : agentKind === 'router' ? 'router_node' : 'agent');
-  
+  const agentLabel = customLabel || (agentKind === 'router' ? `Router (if/else) ${++idCounter}` : agentKind === 'a2a' ? `A2A Agent ${++idCounter}` : `Agent ${++idCounter}`);
+  const agentName = sanitizeAgentIdentifier(defaults?.name || customLabel || id);
+
   if (agentKind === 'router') {
     return {
       id,
@@ -91,7 +94,8 @@ export function createSingleAgentNode(
       position: { x, y },
       data: {
         id,
-        label: customLabel || `Router (if/else) ${++idCounter}`,
+        label: agentLabel,
+        name: agentName,
         role: customRole || 'Conditional router evaluating workflow branching logic (if/else)',
         model: defaults?.model || 'gemini-flash-latest',
         systemPrompt: 'You evaluate the execution context and state variables to route execution flow to the appropriate downstream agent branch.',
@@ -141,7 +145,8 @@ export function createSingleAgentNode(
       position: { x, y },
       data: {
         id,
-        label: customLabel || `A2A Agent ${++idCounter}`,
+        label: agentLabel,
+        name: agentName,
         role: customRole || 'Exposes A2A Agent Card & standard JSON-RPC protocol endpoint for decentralized agent communication.',
         model: defaults?.model || 'gemini-flash-latest',
         systemPrompt: 'You are an interoperable Agent-to-Agent (A2A) protocol node. You negotiate structured task schemas, accept authenticated RPC delegations, and return verified result artifacts.',
@@ -175,7 +180,8 @@ export function createSingleAgentNode(
     position: { x, y },
     data: {
       id,
-      label: customLabel || `Agent ${++idCounter}`,
+      label: agentLabel,
+      name: agentName,
       role: customRole || 'Specialized AI Assistant',
       model: defaults?.model || 'gemini-flash-latest',
       systemPrompt: defaults?.systemPrompt || '',

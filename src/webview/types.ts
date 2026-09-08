@@ -315,6 +315,7 @@ export interface DebateConfig {
 export interface AgentData extends Record<string, unknown> {
   id: string;
   label: string;
+  name?: string;
   role: string;
   model: string;
   systemPrompt: string;

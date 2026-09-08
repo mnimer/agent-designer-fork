@@ -2,16 +2,15 @@
  * PaletteCard Component
  *
  * Purpose:
- * Provides the slide-out catalog drawer for adding Agents, Tools, Workflow Triggers,
- * and Sample Workflows to the Visual Agent Designer canvas.
+ * Provides the slide-out catalog drawer for adding Agents, Tools, Workflow Triggers (Conversational Chat,
+ * Test Suite QA, and Cloud/Event triggers), and Sample Workflows to the Visual Agent Designer canvas.
  *
  * Architectural Decisions:
  * - Author: Mike Nimer <mikenimer@google.com>
  * - Decision 1: All triggers in the Triggers tab panel are rendered with a unified
  *   orange color scheme (orange-400/orange-500) to distinguish triggers from blue agent nodes.
- * - Decision 2: PubSub and Scheduled triggers are explicitly disabled with visual
- *   dimming, disabled badges, and non-draggable cards until their backend runtime integrations
- *   are implemented.
+ * - Decision 2: Supports Conversational Chat and Test Suite QA as active triggers, while PubSub and
+ *   Scheduled triggers are explicitly marked as disabled until their backend runtime integrations are implemented.
  * - Decision 3: Spacing and layout follow the strict 8pt grid system.
  */
 
@@ -642,12 +641,63 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
       {activeTab === 'triggers' && (
         <div className="p-3 space-y-3.5 overflow-y-auto flex-1">
           {(() => {
+            const chatTrigger = TRIGGER_CATALOG.find((t) => t.type === 'chat');
             const testSuiteTrigger = TRIGGER_CATALOG.find((t) => t.type === 'tester');
-            const otherTriggers = TRIGGER_CATALOG.filter((t) => t.type !== 'tester');
+            const workflowTriggers = TRIGGER_CATALOG.filter((t) => t.type !== 'tester' && t.type !== 'chat');
 
             return (
               <>
-                {/* SECTION 1: Test Suite & QA Triggers */}
+                {/* 1. Conversational Chat Trigger */}
+                {chatTrigger && (
+                  <div>
+                    <div className="text-[11px] font-semibold text-orange-400 mb-2 uppercase tracking-wide flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <MessageSquare className="w-3.5 h-3.5 text-orange-400" />
+                        Conversational Chat
+                      </span>
+                      <span className="text-[9px] text-orange-300/90 bg-orange-950/50 px-1.5 py-0.2 rounded border border-orange-500/40 font-mono">
+                        Interactive
+                      </span>
+                    </div>
+
+                    <div
+                      draggable
+                      onDragStart={(e) => handleDragStartTrigger(e, chatTrigger)}
+                      className="group relative flex items-start justify-between p-2.5 bg-[#21262d] border border-orange-500/40 rounded-lg cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-orange-400 shadow-sm transition-all shadow-orange-950/20"
+                    >
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-orange-400 shrink-0 mt-1" />
+                        <div className="p-1.5 rounded-md bg-[#0d1117] border border-orange-500/30 shrink-0 mt-0.5 shadow-xs">
+                          <MessageSquare className="w-4 h-4 text-orange-400" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-xs text-white truncate max-w-[130px]">
+                              {chatTrigger.name}
+                            </span>
+                            <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
+                              {chatTrigger.badge}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                            {chatTrigger.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => onAddTrigger(chatTrigger.type)}
+                        title="Add Chat Trigger to Root Agent"
+                        className="p-1.5 rounded bg-[#0d1117] hover:bg-orange-600 border border-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer shrink-0 ml-1 mt-0.5"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. Test Suite & Validation */}
                 {testSuiteTrigger && (
                   <div>
                     <div className="text-[11px] font-semibold text-orange-400 mb-2 uppercase tracking-wide flex items-center justify-between">
@@ -697,12 +747,12 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                   </div>
                 )}
 
-                {/* SECTION 2: Workflow Triggers */}
+                {/* 3. Workflow Triggers */}
                 <div className="border-t border-[#30363d] pt-3">
                   <div className="text-[11px] font-semibold text-orange-400 mb-2 uppercase tracking-wide flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <Zap className="w-3.5 h-3.5 text-orange-400" />
-                      Workflow Triggers
+                      Workflow Triggers ({workflowTriggers.length})
                     </span>
                     <span className="text-[9px] text-orange-300/80 bg-orange-950/40 px-1.5 py-0.2 rounded border border-orange-500/30">
                       Root Only
@@ -710,7 +760,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                   </div>
 
                   <div className="space-y-1.5 max-h-[calc(66vh-240px)] overflow-y-auto pr-1">
-                    {otherTriggers.map((trigger) => {
+                    {workflowTriggers.map((trigger) => {
                       const isDisabled = trigger.type === 'pubsub' || trigger.type === 'scheduled';
 
                       return (

@@ -23,11 +23,19 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
    - Core ADK imports:
      * Single Agent or Coordinator: `from google.adk.agents import Agent`
      * Graph Workflows: `from google.adk.workflow import Workflow`
-     * Built-in Tools: `from google.adk.tools import GoogleSearchTool` (or custom Python functions)
+     * Built-in Tools: `from google.adk.tools import google_search` (or custom Python functions)
      * Local Runner & CLI: `from google.adk.runner import Runner`
    - Agent Definition Convention:
      * Every ADK agent module must export a top-level `root_agent` object in `agent.py`.
-        - **NO Custom Agent Subclasses**: Under NO circumstances should you subclass `Agent`, `BaseAgent`, or `SequentialAgent`. Never override internal methods like `_run_async_impl()`. All agents must be instantiated directly as variables.
+         - **CRITICAL IDENTIFIER RULE FOR NAMES**: Every `name` argument passed to `Agent`, `LlmAgent`, `SequentialAgent`, `ParallelAgent`, or `LoopAgent` MUST BE A VALID PYTHON IDENTIFIER (lowercase snake_case with letters, digits, and underscores, e.g. `cat_agent`, `check_google_places`, `address_validator_agent`).
+           * NEVER pass a display label with spaces (e.g. NEVER `name="Cat Agent"`; instead use `name="cat_agent"` or the node's `data.name` identifier).
+           * Google ADK runs Pydantic validation on node names requiring `str.isidentifier()`. Any name containing spaces or hyphens immediately triggers `Value error, Node name '...' must be a valid Python identifier` and fails the local test runner with an HTTP 500 error.
+         - **CRITICAL IMPORT RULE FOR BUILT-IN TOOLS (`google_search`)**:
+           * For Google Search Grounding: ALWAYS import `google_search` directly from `google.adk.tools`:
+             `from google.adk.tools import google_search`
+           * **FATAL ERROR TO AVOID**: NEVER import via `from google.adk.tools.google_search import google_search` or `import google.adk.tools.google_search`. There is NO module named `google_search` inside `google.adk.tools` (the tool is exported as a pre-instantiated singleton `google_search` from `google.adk.tools`). Attempting `from google.adk.tools.google_search import ...` causes a fatal `ModuleNotFoundError: No module named 'google.adk.tools.google_search'` crash at runtime!
+           * Wire into agent using `tools=[google_search]`.
+         - **NO Custom Agent Subclasses**: Under NO circumstances should you subclass `Agent`, `BaseAgent`, or `SequentialAgent`. Never override internal methods like `_run_async_impl()`. All agents must be instantiated directly as variables.
         - **Hierarchical Parent Authority Rule (CRITICAL & MANDATORY)**:
           In any workflow or agent hierarchy (whether 2, 3, 4, or 5+ layers deep):
           1. **The Parent's `subAgentPattern` Exclusively Governs Its Immediate Children**:
@@ -123,8 +131,8 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
      # Wire OpenTelemetry to Google Cloud Logging, Cloud Trace, and Cloud Monitoring
      gcp_exporters = get_gcp_exporters(
          enable_cloud_logging=True,
-         enable_cloud_tracing=True,
-         enable_cloud_metrics=True,
+         enable_cloud_tracing=bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("K_SERVICE")),
+         enable_cloud_metrics=bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("K_SERVICE")),
      )
      maybe_set_otel_providers([gcp_exporters])
 
@@ -1016,6 +1024,8 @@ app = App(name="app", root_agent=root_agent)
 # WRONG — causes eval failures
 app = App(name="my_custom_agent", root_agent=root_agent)
 ```
+
+**CRITICAL: `App` Keyword Arguments**: In `google.adk.apps.App`, strict Pydantic validation is enabled (`extra='forbid'`). `App(...)` only accepts `name`, `root_agent`, `root_node`, and config objects (`plugins`, `resumability_config`, etc.). NEVER pass `description="..."` to `App(...)` (unlike `Agent`, `App` does NOT have a `description` field and doing so causes immediate Pydantic validation crashes).
 
 ---
 

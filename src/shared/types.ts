@@ -127,6 +127,7 @@ export interface A2AAgentConfig {
 
 export interface AgentNodeData {
   label: string;
+  name?: string;
   description?: string;
   agentKind?: AgentKind;
   model?: string;

@@ -1,3 +1,17 @@
+/**
+ * TriggerDrawer - Property Inspector Drawer for Workflow Triggers & QA Suites
+ *
+ * Purpose:
+ * Slide-out inspector drawer allowing users to inspect and configure parameters for all
+ * workflow triggers (Conversational Chat, Pub/Sub, Cloud Scheduler, Eventarc, and Test Suite QA).
+ *
+ * Architectural Decisions:
+ * 1. Author: Mike Nimer <mikenimer@google.com>
+ * 2. Visual Alignment: Unified orange/amber styling across all trigger types to match canvas nodes and palette cards.
+ * 3. Reactive State Updates: Form changes notify parent container via onUpdateTrigger callback on every edit.
+ * 4. Root Reconnection: Direct actions to associate the trigger with the primary workflow root agent.
+ */
+
 import React, { useState, useEffect } from 'react';
 import { 
   X, 
@@ -224,14 +238,14 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
 
         {/* 1. CHAT TRIGGER (Informational - Do Nothing / Standard Interactive) */}
         {formData.triggerType === 'chat' && (
-          <div className="space-y-3 bg-[#0d1117] p-3 rounded-lg border border-emerald-500/30">
-            <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-xs">
+          <div className="space-y-3 bg-[#0d1117] p-3 rounded-lg border border-amber-500/30">
+            <div className="flex items-center gap-1.5 text-amber-400 font-bold text-xs">
               <MessageSquare className="w-3.5 h-3.5" />
               <span>Chat Trigger Properties</span>
             </div>
 
             <div className="p-2.5 bg-[#161b22] rounded-lg border border-[#30363d] text-[11px] text-gray-300 space-y-1.5">
-              <div className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+              <div className="flex items-center gap-1.5 text-amber-400 font-semibold">
                 <Info className="w-3.5 h-3.5" />
                 <span>Standard Interactive Chat Interface</span>
               </div>
@@ -249,7 +263,7 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
                 value={formData.config.initialMessage || ''}
                 onChange={(e) => handleConfigChange({ initialMessage: e.target.value })}
                 placeholder="Hello! I am your AI agent assistant. How can I help you today?"
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-emerald-400 rounded text-xs text-gray-200 focus:outline-none"
+                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-amber-400 rounded text-xs text-gray-200 focus:outline-none"
               />
             </div>
 
@@ -259,7 +273,7 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
                 type="checkbox"
                 checked={formData.config.streaming ?? true}
                 onChange={(e) => handleConfigChange({ streaming: e.target.checked })}
-                className="rounded bg-[#161b22] border-[#30363d] text-emerald-500 focus:ring-0 cursor-pointer"
+                className="rounded bg-[#161b22] border-[#30363d] text-amber-500 focus:ring-0 cursor-pointer"
               />
             </div>
           </div>

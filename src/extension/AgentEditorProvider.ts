@@ -18,7 +18,8 @@
  * 5. Uses WebviewBridge for typed RPC message dispatching and handler registration.
  * 6. Integrates GeminiCodeGenEngine to synthesize full Python/LangGraph/TypeScript codebases.
  * 7. Provider and panel lifecycle integration: Shuts down local runner subprocesses and releases local ports on panel disposal or extension deactivation, while background cloud deployments (e.g. Vertex AI Agent Engine) persist across tab navigation until completion or explicit cancellation.
- * 8. Model Selection & Global Region Mandate: Gemini 1.x and 2.x models (including gemini-2.5-flash) are deprecated.
+ * 8. Interactive Chat Session Dispatching: Routes interactive chat messages and reset commands to AgentRunnerManager.
+ * 9. Model Selection & Global Region Mandate: Gemini 1.x and 2.x models (including gemini-2.5-flash) are deprecated.
  *    gemini-3.7-flash is the primary model for Vertex AI, but requires the global region (location='global' or
  *    GOOGLE_CLOUD_LOCATION='global'). Regional endpoints return 404 NOT_FOUND for gemini-3.7-flash publisher models.
  *
@@ -555,6 +556,21 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       this.runnerManager.cancelRun(payload.runId);
     });
 
+    bridge.onMessage('SEND_CHAT_MESSAGE', async (payload) => {
+      if (!payload?.message) return;
+      const targetDir = this.resolveTargetDirectory(document, payload.targetDirectory);
+      await this.runnerManager.sendChatMessage({
+        sessionId: payload.sessionId || 'default-session',
+        message: payload.message,
+        document: payload.document,
+        targetDirectory: targetDir,
+        port: payload.port,
+        streaming: payload.streaming ?? true,
+        history: payload.history,
+        bridge,
+      });
+    });
+
     // Native Agent Engine deployment and lifecycle handlers
     bridge.onMessage('DEPLOY_TO_AGENT_ENGINE', async (payload: any) => {
       const targetDir = this.resolveTargetDirectory(document, payload?.targetDirectory);
@@ -641,6 +657,9 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       });
     });
 
+    bridge.onMessage('RESET_CHAT_SESSION', async (payload) => {
+      this.runnerManager.resetChatSession(payload?.sessionId);
+    });
     // Register external message delegates
     this.messageHandlers.forEach((handler, type) => {
       bridge.onMessage(type as any, async (payload) => {

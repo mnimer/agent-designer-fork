@@ -19,9 +19,15 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 
 1. **Agent Harness & Agent Architecture**:
    - You MUST implement agents using the official Google ADK SDK/Harness (`from google.adk.agents import Agent, SequentialAgent, ParallelAgent, LoopAgent`).
-   - Every agent node in the workflow canvas must correspond to a direct `Agent(...)` instance with `name`, `model`, `instruction`, `description` (critical for delegation), and optional `tools=[...]`.
-   - **CRITICAL IDENTIFIER RULE FOR NAMES**: Every `name` argument passed to `Agent`, `SequentialAgent`, `ParallelAgent`, or `LoopAgent` MUST BE A VALID PYTHON IDENTIFIER (lowercase snake_case with letters, digits, and underscores, e.g. `check_google_places`, `address_validator_agent`; NEVER spaces, hyphens, or special characters).
-   - **CRITICAL PARAMETER CONSTRAINTS**:
+    - **CRITICAL IDENTIFIER RULE FOR NAMES**: Every `name` argument passed to `Agent`, `LlmAgent`, `SequentialAgent`, `ParallelAgent`, or `LoopAgent` MUST BE A VALID PYTHON IDENTIFIER (lowercase snake_case with letters, digits, and underscores, e.g. `cat_agent`, `check_google_places`, `address_validator_agent`).
+      * NEVER pass a display label with spaces (e.g. NEVER `name="Cat Agent"`; instead use `name="cat_agent"` or the node's `data.name` identifier).
+      * Google ADK runs Pydantic validation on node names requiring `str.isidentifier()`. Any name containing spaces or hyphens immediately triggers `Value error, Node name '...' must be a valid Python identifier` and fails the local test runner with an HTTP 500 error.
+    - **CRITICAL IMPORT RULE FOR BUILT-IN TOOLS (`google_search`)**:
+      * For Google Search Grounding: ALWAYS import `google_search` directly from `google.adk.tools`:
+        `from google.adk.tools import google_search`
+      * **FATAL ERROR TO AVOID**: NEVER import via `from google.adk.tools.google_search import google_search` or `import google.adk.tools.google_search`. There is NO module named `google_search` inside `google.adk.tools` (the tool is exported as a pre-instantiated singleton `google_search` from `google.adk.tools`). Attempting `from google.adk.tools.google_search import ...` causes a fatal `ModuleNotFoundError: No module named 'google.adk.tools.google_search'` crash at runtime!
+      * Wire into agent using `tools=[google_search]`.
+    - **CRITICAL PARAMETER CONSTRAINTS**:
      * Do NOT pass `temperature` directly as a kwarg to `Agent(...)` - `temperature` is not a permitted kwarg on `Agent` in Google ADK.
      * Orchestrator agents (`SequentialAgent`, `ParallelAgent`, `LoopAgent`) do NOT take `instruction` or `temperature` kwargs! They accept `name`, `description`, `sub_agents`, and optional `max_iterations` (for `LoopAgent`).
    - Sub-agents defined in the workflow JSON MUST be declared as distinct `Agent` instances and wired into the parent agent using the `sub_agents=[...]` array.
@@ -103,8 +109,8 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
        os.environ.setdefault("OTEL_SERVICE_NAME", "adk-agent-service")
        gcp_exporters = get_gcp_exporters(
            enable_cloud_logging=True,
-           enable_cloud_tracing=True,
-           enable_cloud_metrics=True,
+           enable_cloud_tracing=bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID")),
+           enable_cloud_metrics=bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID")),
        )
        maybe_set_otel_providers([gcp_exporters])
        ```
@@ -140,14 +146,26 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 
      logs_bucket_name = os.environ.get("LOGS_BUCKET_NAME")
 
-     agent_runtime = AdkApp(
-         agent=root_agent,
-         artifact_service_builder=lambda: (
-             GcsArtifactService(bucket_name=logs_bucket_name)
-             if logs_bucket_name
-             else InMemoryArtifactService()
-         ),
-     )
+     # Check if root_agent is an App instance or a BaseAgent instance
+     from google.adk.apps import App
+     if isinstance(root_agent, App):
+         agent_runtime = AdkApp(
+             app=root_agent,
+             artifact_service_builder=lambda: (
+                 GcsArtifactService(bucket_name=logs_bucket_name)
+                 if logs_bucket_name
+                 else InMemoryArtifactService()
+             ),
+         )
+     else:
+         agent_runtime = AdkApp(
+             agent=root_agent,
+             artifact_service_builder=lambda: (
+                 GcsArtifactService(bucket_name=logs_bucket_name)
+                 if logs_bucket_name
+                 else InMemoryArtifactService()
+             ),
+         )
      ```
    - `agents-cli-manifest.yaml`: Google ADK manifest configuring project name, `agent_directory: .`, `region: us-central1`, and `create_params: { deployment_target: "agent_runtime", is_a2a: false }` required for `agents-cli deploy`.
    - `pyproject.toml`: Modern packaging metadata for `uv sync` and `agents-cli deploy`:
@@ -935,6 +953,8 @@ app = App(name="app", root_agent=root_agent)
 # WRONG — causes eval failures
 app = App(name="my_custom_agent", root_agent=root_agent)
 ```
+
+**CRITICAL: `App` Keyword Arguments**: In `google.adk.apps.App`, strict Pydantic validation is enabled (`extra='forbid'`). `App(...)` only accepts `name`, `root_agent`, `root_node`, and config objects (`plugins`, `resumability_config`, etc.). NEVER pass `description="..."` to `App(...)` (unlike `Agent`, `App` does NOT have a `description` field and doing so causes immediate Pydantic validation crashes).
 
 ---
 

@@ -285,6 +285,16 @@ describe('AgentRunnerManager', () => {
     const adapterPath = manager.resolveRunnerScript(tmpDir);
     assert.equal(adapterPath, path.join(tmpDir, '_agent_test_runner.py'));
     assert.ok(fs.existsSync(adapterPath!));
+    const adapterContent = fs.readFileSync(adapterPath!, 'utf-8');
+    assert.ok(adapterContent.includes("sys.modules.setdefault('google.adk.tools.google_search'"));
+    assert.ok(adapterContent.includes("sys.modules.setdefault('google.adk.tools.vertex_ai_search'"));
+    assert.ok(adapterContent.includes("from google.adk.apps import App as _AdkApp"));
+    assert.ok(adapterContent.includes("def _extract_text_from_event(evt):"));
+    assert.ok(adapterContent.includes("async_stream_query"));
+    assert.ok(adapterContent.includes("traceback.format_exc()"));
+    assert.ok(adapterContent.includes("OTEL_SDK_DISABLED"));
+    assert.ok(adapterContent.includes("'Connection', 'close'"));
+    assert.ok(adapterContent.includes("close_connection = True"));
 
     // 4. server.py (Cloud Run FastAPI) -> takes priority
     fs.writeFileSync(path.join(tmpDir, 'server.py'), 'print("server")', 'utf-8');

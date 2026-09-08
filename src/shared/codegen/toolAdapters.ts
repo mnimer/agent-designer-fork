@@ -140,17 +140,21 @@ export class ToolAdapterCompiler {
 
       // 6. Google Search Grounding
       if (builtinType === 'google_search' || toolId === 'builtin_google_search' || toolId === 'tool_google_search' || tool.category === 'grounding' || tool.type === 'search') {
-        importSet.add('from google.adk.tools import GoogleSearchTool');
-        const varName = `${sanitizePythonIdentifier(tool.name || 'google_search')}_tool`;
         const domainFilters = tool.googleSearchConfig?.domainFilters || [];
 
+        const varName = `${sanitizePythonIdentifier(tool.name || 'google_search')}_tool`;
+
         if (domainFilters.length > 0) {
+          importSet.add('from google.adk.tools.google_search_tool import GoogleSearchTool');
           const domainsStr = JSON.stringify(domainFilters);
           definitions.push(`${varName} = GoogleSearchTool(domain_filters=${domainsStr})`);
+          bindings.push(varName);
         } else {
-          definitions.push(`${varName} = GoogleSearchTool()`);
+          // NOTE: In Google ADK, google_search is exported as a pre-instantiated singleton from google.adk.tools
+          importSet.add('from google.adk.tools import google_search');
+          definitions.push(`${varName} = google_search`);
+          bindings.push(varName);
         }
-        bindings.push(varName);
         continue;
       }
 

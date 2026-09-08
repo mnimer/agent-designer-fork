@@ -25,9 +25,24 @@
  *    and structured JSON payloads (key-value schema matching).
  * 6. Clean Process & Port Management: OS-specific port clearing (killPort) and graceful
  *    process termination on webview disposal.
- * 7. Model Selection & Global Region Mandate: Gemini 1.x and 2.x models (including gemini-2.5-flash) are deprecated.
+ * 7. Interactive Streaming Chat Harness: Streams turn-by-turn conversational tokens
+ *    directly to the Webview over RPC with session history retention and SSE/JSON fallback.
+ * 8. Model Selection & Global Region Mandate: Gemini 1.x and 2.x models (including gemini-2.5-flash) are deprecated.
  *     gemini-3.7-flash is the primary model for Vertex AI, but requires the global region (location='global' or
  *     GOOGLE_CLOUD_LOCATION='global'). Regional endpoints return 404 NOT_FOUND for gemini-3.7-flash publisher models.
+ * 9. ADK Built-in Tools Import Compatibility Shims: Injects sys.modules aliases in _agent_test_runner.py
+ *     to handle LLM-generated import variations (e.g. 'google.adk.tools.google_search' -> 'google.adk.tools.google_search_tool')
+ *     so agents run reliably without ModuleNotFoundError.
+ * 10. ADK App Extra Parameter Sanitization: Shims App.__init__ to filter out extra forbidden
+ *     keyword arguments (such as 'description') so Pydantic extra='forbid' doesn't crash local runs.
+ * 11. Robust Local Adapter Event Streaming & Traceback Logging: Provides _extract_text_from_event()
+ *     with defensive checks against None content, empty part arrays, and transfer tool events. Employs
+ *     AdkApp.async_stream_query() to prevent deprecation warnings and prints full stack traces on test adapter
+ *     exceptions to stderr for immediate diagnostic visibility in the runner console.
+ * 12. Clean SSE Stream Termination & Telemetry Silencing in Local Runner: Breaks client read loop immediately
+ *     upon receiving 'data: [DONE]' or finish_reason 'stop' to prevent indefinite hangs in reader.read(), sends
+ *     'Connection: close' and close_connection=True in _agent_test_runner.py, and sets OTEL_SDK_DISABLED='true' to
+ *     silence remote telemetry export 400 Bad Request spam in local environments.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -64,6 +79,17 @@ export interface StartLocalRunnerOptions {
   bridge: WebviewBridge;
 }
 
+export interface SendChatMessageOptions {
+  sessionId: string;
+  message: string;
+  streaming?: boolean;
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  document?: AgentWorkflowDocument;
+  targetDirectory?: string;
+  port?: number;
+  bridge: WebviewBridge;
+}
+
 export class AgentRunnerManager {
   private activeProcesses: Map<string, ChildProcess> = new Map();
   private activeLocalRunners: Map<string, ChildProcess> = new Map();
@@ -73,6 +99,7 @@ export class AgentRunnerManager {
   private runnerStatus: 'idle' | 'starting' | 'running' | 'stopped' | 'error' = 'idle';
   private pythonResolver: PythonEnvResolver;
   private codeGenEngine: GeminiCodeGenEngine;
+  private chatSessions: Map<string, Array<{ role: 'user' | 'assistant'; content: string }>> = new Map();
   private agentEngineDeployer?: AgentEngineDeployer;
 
   /**
@@ -108,10 +135,38 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 # Add current directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Disable OpenTelemetry remote export in local test runner
+# Google Cloud telemetry requires deployed Agent Engine / Cloud Run and returns 400 Bad Request locally
+os.environ.setdefault("OTEL_SDK_DISABLED", "true")
+
 # Load environment variables (.env) if python-dotenv is installed
 try:
     from dotenv import load_dotenv
     load_dotenv()
+except Exception:
+    pass
+
+# Shim common import discrepancies from LLM code generation for Google ADK built-in tools
+try:
+    import google.adk.tools.google_search_tool
+    sys.modules.setdefault('google.adk.tools.google_search', google.adk.tools.google_search_tool)
+except Exception:
+    pass
+try:
+    import google.adk.tools.vertex_ai_search_tool
+    sys.modules.setdefault('google.adk.tools.vertex_ai_search', google.adk.tools.vertex_ai_search_tool)
+except Exception:
+    pass
+
+# Shim google.adk.apps.App.__init__ to filter out extra forbidden keyword arguments (such as description)
+try:
+    from google.adk.apps import App as _AdkApp
+    _orig_app_init = _AdkApp.__init__
+    def _safe_app_init(self, *args, **kwargs):
+        allowed_fields = {'name', 'root_agent', 'root_node', 'plugins', 'events_compaction_config', 'context_cache_config', 'resumability_config'}
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        _orig_app_init(self, *args, **filtered_kwargs)
+    _AdkApp.__init__ = _safe_app_init
 except Exception:
     pass
 
@@ -220,21 +275,57 @@ class TestHandler(BaseHTTPRequestHandler):
 
             res = None
 
-            # 1. AdkApp stream_query support
-            if hasattr(ag, 'stream_query') and callable(getattr(ag, 'stream_query')):
-                accum = []
-                for evt in ag.stream_query(message=prompt, user_id="test_user"):
-                    if isinstance(evt, dict):
-                        txt = evt.get('content', {}).get('parts', [{}])[0].get('text', '') if isinstance(evt.get('content'), dict) else str(evt)
-                        accum.append(txt)
-                    elif hasattr(evt, 'content') and hasattr(evt.content, 'parts'):
-                        for p in evt.content.parts:
-                            if hasattr(p, 'text') and p.text:
-                                accum.append(p.text)
-                    elif isinstance(evt, str):
-                        accum.append(evt)
-                if accum:
-                    res = "".join(accum)
+            def _extract_text_from_event(evt):
+                if isinstance(evt, dict):
+                    content = evt.get('content') or {}
+                    parts = content.get('parts') or []
+                    texts = []
+                    for p in parts:
+                        if isinstance(p, dict) and p.get('text'):
+                            texts.append(p['text'])
+                    return "".join(texts)
+                elif hasattr(evt, 'content') and evt.content:
+                    parts = getattr(evt.content, 'parts', []) or []
+                    texts = []
+                    for p in parts:
+                        if hasattr(p, 'text') and p.text:
+                            texts.append(p.text)
+                    return "".join(texts)
+                elif hasattr(evt, 'text') and evt.text:
+                    return evt.text
+                elif isinstance(evt, str):
+                    return evt
+                return ""
+
+            # 1. AdkApp async_stream_query / stream_query support
+            if hasattr(ag, 'async_stream_query') and callable(getattr(ag, 'async_stream_query')):
+                try:
+                    import asyncio
+                    accum = []
+                    async def _run_async_stream():
+                        async for evt in ag.async_stream_query(message=prompt, user_id="test_user"):
+                            txt = _extract_text_from_event(evt)
+                            if txt:
+                                accum.append(txt)
+                    asyncio.run(_run_async_stream())
+                    if accum:
+                        res = "".join(accum)
+                except Exception as stream_err:
+                    sys.stderr.write(f"[AdkApp async_stream_query Fallback] {stream_err}\\n")
+                    sys.stderr.flush()
+
+            if res is None and hasattr(ag, 'stream_query') and callable(getattr(ag, 'stream_query')):
+                try:
+                    accum = []
+                    for evt in ag.stream_query(message=prompt, user_id="test_user"):
+                        txt = _extract_text_from_event(evt)
+                        if txt:
+                            accum.append(txt)
+                    if accum:
+                        res = "".join(accum)
+                except Exception as stream_err:
+                    sys.stderr.write(f"[AdkApp stream_query Fallback] {stream_err}\\n")
+                    sys.stderr.flush()
 
             # 2. ADK Runner execution
             if res is None:
@@ -243,9 +334,15 @@ class TestHandler(BaseHTTPRequestHandler):
                     from google.adk.runners import Runner
                     from google.adk.sessions import InMemorySessionService
                     from google.genai import types
+                    from google.adk.apps import App
                     session_service = InMemorySessionService()
                     session = asyncio.run(session_service.create_session(app_name="vad_app", user_id="test_user"))
-                    runner = Runner(agent=ag, app_name="vad_app", session_service=session_service)
+                    if isinstance(ag, App):
+                        runner = Runner(app=ag, session_service=session_service)
+                    elif hasattr(ag, 'root_agent') and isinstance(getattr(ag, 'root_agent'), App):
+                        runner = Runner(app=getattr(ag, 'root_agent'), session_service=session_service)
+                    else:
+                        runner = Runner(agent=ag, app_name="vad_app", session_service=session_service)
                     events = runner.run(
                         user_id="test_user",
                         session_id=session.id,
@@ -253,16 +350,14 @@ class TestHandler(BaseHTTPRequestHandler):
                     )
                     accum = []
                     for evt in events:
-                        if hasattr(evt, 'content') and evt.content and hasattr(evt.content, 'parts'):
-                            for p in evt.content.parts:
-                                if hasattr(p, 'text') and p.text:
-                                    accum.append(p.text)
-                        elif hasattr(evt, 'text') and evt.text:
-                            accum.append(evt.text)
+                        txt = _extract_text_from_event(evt)
+                        if txt:
+                            accum.append(txt)
                     if accum:
                         res = "".join(accum)
                 except Exception as runner_err:
                     sys.stderr.write(f"[ADK Runner Fallback] {runner_err}\\n")
+                    sys.stderr.flush()
 
             # 3. Standard fallback invocation methods
             if res is None:
@@ -279,10 +374,37 @@ class TestHandler(BaseHTTPRequestHandler):
                 else:
                     raise RuntimeError("Agent instance has no query, generate, invoke, or run method")
 
+            if res is None:
+                raise RuntimeError("Agent returned no response. Ensure your model and prompt instructions are valid.")
+
             if isinstance(res, dict):
                 content_str = json.dumps(res)
             else:
                 content_str = str(res)
+
+            if data.get('stream'):
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream')
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('Connection', 'close')
+                self.end_headers()
+                chunks = content_str.split(' ')
+                for i, c in enumerate(chunks):
+                    token = c + (' ' if i < len(chunks) - 1 else '')
+                    is_last = (i == len(chunks) - 1)
+                    chunk_obj = {
+                        "id": "chatcmpl-test",
+                        "object": "chat.completion.chunk",
+                        "created": 1234567890,
+                        "model": data.get("model", "gemini-flash"),
+                        "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": "stop" if is_last else None}]
+                    }
+                    self.wfile.write(f"data: {json.dumps(chunk_obj)}\\n\\n".encode('utf-8'))
+                    self.wfile.flush()
+                self.wfile.write(b"data: [DONE]\\n\\n")
+                self.wfile.flush()
+                self.close_connection = True
+                return
 
             resp_payload = {
                 "id": "chatcmpl-test",
@@ -307,6 +429,9 @@ class TestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(resp_bytes)
         except Exception as err:
+            import traceback
+            sys.stderr.write(f"[Agent Test Adapter Error] {err}\\n{traceback.format_exc()}\\n")
+            sys.stderr.flush()
             err_payload = {
                 "error": {
                     "message": str(err),
@@ -1663,6 +1788,285 @@ if __name__ == '__main__':
         error: `Agent server is offline on http://127.0.0.1:${port}. Please start the local runner in the Deployment tab. (${err.message})`,
       };
     }
+  }
+
+  /**
+   * Sends an interactive conversational turn to the agent runtime and streams tokens
+   * back to the Webview over the WebviewBridge in real time.
+   *
+   * Flow:
+   * 1. Resolves session turn history and appends the user prompt.
+   * 2. Detects or auto-starts the local server runner on localhost if offline.
+   * 3. Dispatches HTTP POST to /v1/chat/completions with stream=true.
+   * 4. Consumes SSE chunks or JSON payloads and posts CHAT_STREAM_CHUNK to Webview.
+   * 5. Saves assistant response to session history and signals turn completion.
+   *
+   * @param options Execution parameters for the chat turn
+   */
+  public async sendChatMessage(options: SendChatMessageOptions): Promise<void> {
+    const { sessionId, message, bridge, document, targetDirectory } = options;
+    const streaming = options.streaming !== false;
+
+    // NOTE: Maintain in-memory turn history for the active session
+    let history = this.chatSessions.get(sessionId) || [];
+    if (options.history && options.history.length > 0) {
+      history = [...options.history];
+    }
+    history.push({ role: 'user', content: message });
+    this.chatSessions.set(sessionId, history);
+
+    // NOTE: Step 1 - Check if local runner is active or attempt auto-start
+    let port = options.port || (await this.detectLiveRunnerPort());
+    if (!port && targetDirectory) {
+      try {
+        await bridge.postMessage({
+          type: 'LOCAL_RUNNER_LOG',
+          payload: {
+            text: `[Chat Runner] Local server offline. Starting agent runner on port 8000...`,
+            stream: 'system',
+            timestamp: new Date().toISOString(),
+          },
+        });
+        await this.startLocalRunner({
+          document,
+          targetDirectory,
+          port: 8000,
+          bridge,
+        });
+        const ready = await this.waitForServerReady(8000, 12000);
+        if (ready) {
+          port = 8000;
+        }
+      } catch (err: any) {
+        // NOTE: Continue and allow error reporting below if port remains unresolved
+      }
+    }
+
+    if (!port) {
+      await bridge.postMessage({
+        type: 'CHAT_STREAM_CHUNK',
+        payload: {
+          sessionId,
+          chunk: '',
+          done: true,
+          error: 'Agent server is offline. Please generate code and click "Start Local Runner" in the bottom panel.',
+        },
+      });
+      return;
+    }
+
+    // NOTE: Step 2 - Extract agent configuration and model
+    const agentNodes = (document?.nodes || []).filter(
+      (n) => n.type === 'agent' || (n as any).type === 'agentNode'
+    );
+    let modelName = (agentNodes[0]?.data as any)?.model || 'gemini-flash-latest';
+    if (!modelName || modelName.includes('2.5') || modelName.includes('1.5') || modelName.includes('2.0')) {
+      modelName = 'gemini-flash-latest';
+    }
+
+    const payload = {
+      model: modelName,
+      messages: history.map((h) => ({ role: h.role, content: h.content })),
+      stream: streaming,
+    };
+
+    // NOTE: Step 3 - Send request to runner endpoint (/v1/chat/completions)
+    let assistantReply = '';
+    const candidateUrls = [
+      `http://localhost:${port}/v1/chat/completions`,
+      `http://127.0.0.1:${port}/v1/chat/completions`,
+    ];
+
+    try {
+      let response: any = null;
+      let lastErr: any = null;
+
+      for (const targetUrl of candidateUrls) {
+        try {
+          if (typeof fetch === 'function') {
+            response = await fetch(targetUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream, application/json, text/plain, */*',
+              },
+              body: JSON.stringify(payload),
+            });
+            if (response.ok) break;
+          }
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+
+      if (!response || !response.ok) {
+        // Fallback: If 404 or connection error, check secondary paths
+        const fallbackRes = await this.httpPostJson(port, '/v1/chat/completions', payload, 30000);
+        if (fallbackRes.ok && fallbackRes.data) {
+          const content = fallbackRes.data?.choices?.[0]?.message?.content || fallbackRes.text;
+          assistantReply = content;
+          await bridge.postMessage({
+            type: 'CHAT_STREAM_CHUNK',
+            payload: {
+              sessionId,
+              chunk: content,
+              done: false,
+            },
+          });
+        } else {
+          throw new Error(lastErr ? lastErr.message : `Runner endpoint returned status ${response?.status || fallbackRes.status}`);
+        }
+      } else {
+        const contentType = response.headers.get('content-type') || '';
+        if (streaming && contentType.includes('text/event-stream') && response.body) {
+          // SSE streaming parser
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let isStreamDone = false;
+
+          try {
+            while (!isStreamDone) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith(':')) continue;
+                // NOTE: Standard OpenAI-compatible SSE completion marker
+                if (trimmed === 'data: [DONE]') {
+                  isStreamDone = true;
+                  break;
+                }
+                if (trimmed.startsWith('data: ')) {
+                  const dataStr = trimmed.slice(6);
+                  try {
+                    const parsed = JSON.parse(dataStr);
+                    const delta = parsed.choices?.[0]?.delta?.content || parsed.content || '';
+                    if (delta) {
+                      assistantReply += delta;
+                      await bridge.postMessage({
+                        type: 'CHAT_STREAM_CHUNK',
+                        payload: {
+                          sessionId,
+                          chunk: delta,
+                          done: false,
+                        },
+                      });
+                    }
+                    if (parsed.choices?.[0]?.finish_reason === 'stop') {
+                      isStreamDone = true;
+                      break;
+                    }
+                  } catch {
+                    if (dataStr) {
+                      assistantReply += dataStr;
+                      await bridge.postMessage({
+                        type: 'CHAT_STREAM_CHUNK',
+                        payload: {
+                          sessionId,
+                          chunk: dataStr,
+                          done: false,
+                        },
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          } finally {
+            try {
+              await reader.cancel();
+            } catch {}
+          }
+        } else {
+          // Plain JSON or non-SSE response
+          const text = await response.text();
+          let replyContent = text;
+          try {
+            const json = JSON.parse(text);
+            replyContent = json.choices?.[0]?.message?.content || json.response || json.output || text;
+          } catch {}
+
+          assistantReply = replyContent;
+
+          // NOTE: Emit simulated smooth chunking if streaming was requested
+          if (streaming && replyContent.length > 50) {
+            const words = replyContent.split(' ');
+            for (let i = 0; i < words.length; i++) {
+              const token = words[i] + (i < words.length - 1 ? ' ' : '');
+              await bridge.postMessage({
+                type: 'CHAT_STREAM_CHUNK',
+                payload: {
+                  sessionId,
+                  chunk: token,
+                  done: false,
+                },
+              });
+              await new Promise((r) => setTimeout(r, 12));
+            }
+          } else {
+            await bridge.postMessage({
+              type: 'CHAT_STREAM_CHUNK',
+              payload: {
+                sessionId,
+                chunk: replyContent,
+                done: false,
+              },
+            });
+          }
+        }
+      }
+
+      // NOTE: Step 4 - Commit turn into session memory and send final done packet
+      history.push({ role: 'assistant', content: assistantReply });
+      this.chatSessions.set(sessionId, history);
+
+      await bridge.postMessage({
+        type: 'CHAT_STREAM_CHUNK',
+        payload: {
+          sessionId,
+          chunk: '',
+          done: true,
+        },
+      });
+    } catch (err: any) {
+      await bridge.postMessage({
+        type: 'CHAT_STREAM_CHUNK',
+        payload: {
+          sessionId,
+          chunk: '',
+          done: true,
+          error: `Chat execution failed: ${err.message || 'Unknown error'}`,
+        },
+      });
+    }
+  }
+
+  /**
+   * Resets conversational memory for a given session.
+   *
+   * @param sessionId Session identifier or all sessions if omitted
+   */
+  public resetChatSession(sessionId?: string): void {
+    if (sessionId) {
+      this.chatSessions.delete(sessionId);
+    } else {
+      this.chatSessions.clear();
+    }
+  }
+
+  /**
+   * Retrieves current conversation turn history for a session.
+   *
+   * @param sessionId Target session ID
+   * @returns Array of chat turns
+   */
+  public getChatHistory(sessionId: string): Array<{ role: 'user' | 'assistant'; content: string }> {
+    return this.chatSessions.get(sessionId) || [];
   }
 
   /**

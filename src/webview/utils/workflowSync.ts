@@ -20,6 +20,7 @@
 import { Node, Edge } from '@xyflow/react';
 import { AgentData, SubAgentRef, TriggerData } from '../types';
 import { sanitizeToolList } from '../data/builtinTools';
+import { sanitizeAgentIdentifier } from '../../shared/identifierValidation';
 
 /**
  * Normalizes raw nodes loaded from a document into typed ReactFlow Canvas nodes.
@@ -35,7 +36,14 @@ export function normalizeLoadedNodes(loadedNodes: any[]): Node<any>[] {
 
   return loadedNodes.map((n) => {
     // Determine whether node is a trigger or agent
-    const isTrigger = n.type === 'trigger' || n.type === 'triggerNode';
+    const isTrigger =
+      n.type === 'trigger' ||
+      n.type === 'triggerNode' ||
+      n.type === 'tester' ||
+      n.type === 'chat' ||
+      n.id?.includes('trigger') ||
+      n.id?.includes('tester') ||
+      Boolean(n.data?.triggerType || n.data?.triggerKind || n.data?.testConfig || n.data?.chatConfig);
     const type = isTrigger ? 'triggerNode' : 'agentNode';
 
     let data = { ...(n.data || {}) };
@@ -54,10 +62,12 @@ export function normalizeLoadedNodes(loadedNodes: any[]): Node<any>[] {
       };
     } else {
       // Normalize agent types, model defaults, and tool assignments
+      const agentLabel = data.label || 'Agent';
       data = {
         ...data,
         id: n.id,
-        label: data.label || 'Agent',
+        label: agentLabel,
+        name: sanitizeAgentIdentifier(data.name || agentLabel || n.id),
         agentKind: data.agentKind || 'standard',
         model: data.model || data.standardConfig?.model || 'gemini-flash-latest',
         description: data.description || '',
@@ -92,8 +102,12 @@ export function normalizeLoadedEdges(loadedEdges: any[]): Edge[] {
 
   return loadedEdges.map((e) => {
     const isTrigger =
+      e.id?.includes('chat') ||
       e.id?.includes('tester') ||
       e.id?.includes('trigger') ||
+      e.source?.includes('trigger') ||
+      e.source?.includes('tester') ||
+      e.source?.includes('chat') ||
       e.sourceHandle === 'trigger_out_right' ||
       e.sourceHandle === 'trigger_out_bottom';
 

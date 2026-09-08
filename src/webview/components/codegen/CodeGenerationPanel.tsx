@@ -24,6 +24,7 @@ import {
   Minimize2,
   Cloud,
   Key,
+  MessageSquare,
   AlertCircle,
   CheckCircle2,
 } from 'lucide-react';
@@ -31,6 +32,7 @@ import { AgentData, FrameworkType, GeneratedFile, GenerationConfig, LanguageType
 import { AgentWorkflowDocument } from '../../../shared/types';
 import { DeploymentTab } from '../deployment/DeploymentTab';
 import { TestRunnerTab } from '../testing/TestRunnerTab';
+import { ChatRunnerTab } from '../chat/ChatRunnerTab';
 import { validateTargetFolder } from '../../../shared/folderValidation';
 
 interface CodeGenerationPanelProps {
@@ -43,10 +45,15 @@ interface CodeGenerationPanelProps {
   hasTestSuite?: boolean;
   hasGeneratedCode?: boolean;
   testPrompts?: TestPrompt[];
-  agents?: AgentData[];
   isMaximized?: boolean;
   onToggleMaximize?: () => void;
   document?: AgentWorkflowDocument;
+  hasChatTrigger?: boolean;
+  chatConfig?: {
+    initialMessage?: string;
+    streaming?: boolean;
+    sessionMemory?: string;
+  };
 }
 
 /**
@@ -60,6 +67,7 @@ interface CodeGenerationPanelProps {
  * - LangGraph and TypeScript options are currently disabled in this version.
  * - Generate Code button is disabled.
  * - Mocked file tabs are hidden when no generated files are present.
+ * - Supports Interactive Chat Runner tab when a Chat Trigger node is present on canvas.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -77,8 +85,10 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   isMaximized = false,
   onToggleMaximize,
   document: workflowDoc,
+  hasChatTrigger = false,
+  chatConfig,
 }) => {
-  const [activeTab, setActiveTab] = useState<'codegen' | 'deployment' | 'test_runner'>('codegen');
+  const [activeTab, setActiveTab] = useState<'codegen' | 'deployment' | 'test_runner' | 'chat'>('codegen');
   const [activeFileIndex, setActiveFileIndex] = useState<number>(0);
   const [copied, setCopied] = useState(false);
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
@@ -199,6 +209,26 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                 </div>
               )}
             </div>
+          )}
+
+          {/* 4th TAB: Interactive Chat Runner (shown if a Chat Trigger is attached) */}
+          {hasChatTrigger && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('chat')}
+              title="Interactive live streaming chat runner"
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+                activeTab === 'chat'
+                  ? 'border-emerald-500 text-emerald-400 bg-[#0d1117]/60'
+                  : 'border-transparent text-gray-400 hover:text-emerald-300'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Interactive Chat</span>
+              <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Live
+              </span>
+            </button>
           )}
         </div>
 
@@ -576,6 +606,17 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
           agents={agents}
           config={config}
           document={workflowDoc}
+          onNavigateToDeployment={() => setActiveTab('deployment')}
+        />
+      </div>
+
+      {/* Interactive Chat Tab */}
+      <div className={activeTab === 'chat' ? 'flex-1 flex flex-col h-full overflow-hidden' : 'hidden'}>
+        <ChatRunnerTab
+          document={workflowDoc}
+          config={config}
+          chatConfig={chatConfig}
+          agents={agents}
           onNavigateToDeployment={() => setActiveTab('deployment')}
         />
       </div>

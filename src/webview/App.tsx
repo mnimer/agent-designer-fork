@@ -115,6 +115,8 @@ export { syncAgentSubAgents, computeTargetFolder, resolveAgentOutputFolder } fro
 const nodeTypes = {
   agentNode: AgentNode,
   triggerNode: TriggerNode,
+  agent: AgentNode,
+  trigger: TriggerNode,
 };
 
 const edgeTypes = {
@@ -122,6 +124,7 @@ const edgeTypes = {
   workflow: CustomWorkflowEdge,
   workflowEdge: CustomWorkflowEdge,
 };
+
 /**
  * FlowCanvas - Inner interactive graph workspace component.
  * Must be rendered inside a <ReactFlowProvider> context.
@@ -302,12 +305,13 @@ function FlowCanvas() {
     activeTabId,
     setNodes,
     setEdges,
+    setFileTabs,
+    fitView,
     setConfig,
     setGeneratedFiles,
     setHasGeneratedCode,
     setIsGenerating,
     recordSnapshot,
-    setFileTabs,
   });
 
   // ---------------------------------------------------------------------------
@@ -661,13 +665,15 @@ function FlowCanvas() {
       const triggerNodes = nodes.filter((n) => n.type === 'triggerNode');
 
       const newTriggerEdges = triggerNodes.map((tn) => {
-        const isTester = (tn.data as TriggerData)?.triggerType === 'tester';
+        const trigType = (tn.data as TriggerData)?.triggerType;
+        const isTester = trigType === 'tester';
+        const isChat = trigType === 'chat';
         return {
           id: `e_trigger_${tn.id}_${rootAgentId}`,
           source: tn.id,
-          sourceHandle: isTester ? 'trigger_out_right' : 'trigger_out_bottom',
+          sourceHandle: isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom',
           target: rootAgentId,
-          targetHandle: isTester ? 'input_left' : 'input',
+          targetHandle: isTester || isChat ? 'input_left' : 'input',
           animated: true,
           style: {
             stroke: '#f59e0b',
@@ -750,14 +756,17 @@ function FlowCanvas() {
           return;
         }
 
-        const isTester = (sourceNode.data as TriggerData)?.triggerType === 'tester';
+        // Trigger can connect to this root agent
+        const trigType = (sourceNode.data as TriggerData)?.triggerType;
+        const isTester = trigType === 'tester';
+        const isChat = trigType === 'chat';
         const newTriggerEdge: Edge = {
           ...connection,
           id: `e_trigger_${connection.source}_${connection.target}`,
           source: connection.source!,
-          sourceHandle: connection.sourceHandle || (isTester ? 'trigger_out_right' : 'trigger_out_bottom'),
+          sourceHandle: connection.sourceHandle || (isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom'),
           target: connection.target,
-          targetHandle: connection.targetHandle || (isTester ? 'input_left' : 'input'),
+          targetHandle: connection.targetHandle || (isTester || isChat ? 'input_left' : 'input'),
           animated: true,
           style: {
             stroke: '#f59e0b',
@@ -914,13 +923,15 @@ function FlowCanvas() {
         let nextEdges = [...edges];
 
         if (rootAgent) {
-          const isTester = (triggerType || 'chat') === 'tester';
+          const effectiveTriggerType = triggerType || 'chat';
+          const isTester = effectiveTriggerType === 'tester';
+          const isChat = effectiveTriggerType === 'chat';
           const triggerEdge: Edge = {
             id: `e_trigger_${newTriggerNode.id}_${rootAgent.id}`,
             source: newTriggerNode.id,
-            sourceHandle: isTester ? 'trigger_out_right' : 'trigger_out_bottom',
+            sourceHandle: isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom',
             target: rootAgent.id,
-            targetHandle: isTester ? 'input_left' : 'input',
+            targetHandle: isTester || isChat ? 'input_left' : 'input',
             animated: true,
             style: {
               stroke: '#f59e0b',
@@ -1069,11 +1080,12 @@ function FlowCanvas() {
         nodes.find((n) => n.type === 'agentNode');
 
       const isTester = triggerType === 'tester';
-      const posX = rootAgent
-        ? (isTester ? rootAgent.position.x - 380 : rootAgent.position.x + 10)
+      const isChat = triggerType === 'chat';
+      const posX = rootAgent 
+        ? (isTester || isChat ? rootAgent.position.x - 380 : rootAgent.position.x + 10) 
         : 80;
-      const posY = rootAgent
-        ? (isTester ? rootAgent.position.y : Math.max(20, rootAgent.position.y - 280))
+      const posY = rootAgent 
+        ? (isTester ? rootAgent.position.y : isChat ? rootAgent.position.y - 120 : Math.max(20, rootAgent.position.y - 280)) 
         : 40;
 
       const newTriggerNode = createSingleTriggerNode(posX, posY, triggerType, rootAgent?.id);
@@ -1084,9 +1096,9 @@ function FlowCanvas() {
         const triggerEdge: Edge = {
           id: `e_trigger_${newTriggerNode.id}_${rootAgent.id}`,
           source: newTriggerNode.id,
-          sourceHandle: isTester ? 'trigger_out_right' : 'trigger_out_bottom',
+          sourceHandle: isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom',
           target: rootAgent.id,
-          targetHandle: isTester ? 'input_left' : 'input',
+          targetHandle: isTester || isChat ? 'input_left' : 'input',
           animated: true,
           style: {
             stroke: '#f59e0b',
@@ -1304,6 +1316,16 @@ function FlowCanvas() {
       ? cfg.testPrompts
       : DEFAULT_MOCK_TEST_PROMPTS;
   }, [testSuiteNode]);
+
+  // Chat Trigger detection & configuration
+  const chatTriggerNode = nodes.find(
+    (n) => n.type === 'triggerNode' && (n.data as TriggerData).triggerType === 'chat'
+  );
+  const hasChatTrigger = !!chatTriggerNode;
+  const chatTriggerConfig = useMemo(() => {
+    if (!chatTriggerNode) return undefined;
+    return (chatTriggerNode.data as TriggerData).config;
+  }, [chatTriggerNode]);
 
   const agentNodes = useMemo(() =>
     nodes.filter((n) => n.type === 'agentNode').map((n) => n.data as AgentData),
@@ -1529,6 +1551,8 @@ function FlowCanvas() {
               isMaximized={isPanelMaximized}
               onToggleMaximize={handleToggleMaximizePanel}
               document={currentWorkflowDocument}
+              hasChatTrigger={hasChatTrigger}
+              chatConfig={chatTriggerConfig}
             />
           </div>
         </div>

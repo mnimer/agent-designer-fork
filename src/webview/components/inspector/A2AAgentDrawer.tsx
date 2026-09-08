@@ -57,6 +57,7 @@ import {
   ADK_DELEGATION_PATTERNS 
 } from '../../types';
 import { StructuredOutputBuilder } from './StructuredOutputBuilder';
+import { validateAgentIdentifier, sanitizeAgentIdentifier } from '../../../shared/identifierValidation';
 
 interface A2AAgentDrawerProps {
   agent: AgentData;
@@ -132,6 +133,23 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
 
   const subAgents = agent.subAgents || [];
   const currentPattern: DelegationPattern = agent.subAgentPattern || 'parallel';
+
+  const currentIdentifier = agent.name ?? sanitizeAgentIdentifier(agent.label || agent.id, 'a2a_agent');
+  const identifierValidation = validateAgentIdentifier(currentIdentifier, 'a2a_agent');
+
+  const handleLabelChange = (newLabel: string) => {
+    const oldSanitized = sanitizeAgentIdentifier(agent.label || agent.id, 'a2a_agent');
+    const updates: Partial<AgentData> = { label: newLabel };
+    if (!agent.name || agent.name === oldSanitized) {
+      updates.name = sanitizeAgentIdentifier(newLabel, 'a2a_agent');
+    }
+    onUpdateAgent(updates);
+  };
+
+  const handleIdentifierChange = (rawName: string) => {
+    const noSpaces = rawName.replace(/\s+/g, '_');
+    onUpdateAgent({ name: noSpaces });
+  };
   
   const a2aConfig: A2AConfig = {
     connectionMode: agent.a2aConfig?.connectionMode || 'url',
@@ -340,17 +358,49 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
 
       {/* Form Body */}
       <div className="flex-1 p-4 space-y-4 overflow-y-auto text-xs text-gray-300">
-        {/* Node Label / Identifier */}
-        <div className="space-y-1">
-          <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400">
-            A2A Agent Display Name
-          </label>
-          <input
-            type="text"
-            value={agent.label}
-            onChange={(e) => onUpdateAgent({ label: e.target.value })}
-            className="w-full px-3 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded-lg text-xs text-white focus:outline-none"
-          />
+        {/* Agent Display Name & Python Identifier */}
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400">
+              A2A Agent Display Name
+            </label>
+            <input
+              type="text"
+              value={agent.label}
+              onChange={(e) => handleLabelChange(e.target.value)}
+              placeholder="e.g. Data Analysis Peer Agent"
+              className="w-full px-3 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded-lg text-xs text-white focus:outline-none"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400">
+                Agent Identifier (Python ID)
+              </label>
+              <span className="text-[10px] text-gray-400 font-mono">ADK peer name</span>
+            </div>
+            <input
+              type="text"
+              value={currentIdentifier}
+              onChange={(e) => handleIdentifierChange(e.target.value)}
+              placeholder="e.g. data_analysis_agent"
+              className={`w-full px-3 py-1.5 bg-[#0d1117] border rounded-lg text-xs font-mono text-white focus:outline-none ${
+                identifierValidation.isValid
+                  ? 'border-[#30363d] focus:border-cyan-400'
+                  : 'border-red-500 focus:border-red-500 bg-red-950/20'
+              }`}
+            />
+            {!identifierValidation.isValid && (
+              <div className="flex items-center gap-1.5 text-[11px] text-red-400 mt-1">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{identifierValidation.error}</span>
+              </div>
+            )}
+            <div className="text-[10px] text-gray-400">
+              Must be a valid Python identifier (letters, digits, underscores; no spaces or hyphens).
+            </div>
+          </div>
         </div>
 
         {/* Agent Description (Published Capability / Intent Description for Parent Agent) */}

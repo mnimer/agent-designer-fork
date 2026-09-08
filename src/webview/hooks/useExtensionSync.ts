@@ -32,6 +32,8 @@ export interface UseExtensionSyncOptions {
   activeTabId: string;
   setNodes: (nodes: Node<any>[]) => void;
   setEdges: (edges: Edge[]) => void;
+  setFileTabs?: React.Dispatch<React.SetStateAction<AgentFileTab[]>>;
+  fitView?: (options?: { padding?: number; duration?: number }) => void;
   setConfig: React.Dispatch<React.SetStateAction<GenerationConfig>>;
   setGeneratedFiles: React.Dispatch<React.SetStateAction<GeneratedFile[]>>;
   setHasGeneratedCode: (hasCode: boolean) => void;
@@ -42,6 +44,8 @@ export interface UseExtensionSyncOptions {
 
 /**
  * Custom hook to manage synchronization between the Webview and VS Code Extension Host.
+ *
+ * @param options Configuration options including graph state, tabs, bridge, and dispatch setters.
  */
 export function useExtensionSync(options: UseExtensionSyncOptions): void {
   const {
@@ -53,21 +57,36 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
     activeTabId,
     setNodes,
     setEdges,
+    setFileTabs,
+    fitView,
     setConfig,
     setGeneratedFiles,
     setHasGeneratedCode,
     setIsGenerating,
     recordSnapshot,
-    setFileTabs,
   } = options;
 
   const docVersionRef = useRef(1);
   const isLoadedRef = useRef(false);
   const lastSentJsonRef = useRef<string>('');
+  const docNameRef = useRef<string>('');
+  const docDescriptionRef = useRef<string>('');
 
-  // NOTE: Announce webview readiness to the VS Code extension host on mount
+  // NOTE: Signal to the VS Code extension host that the webview is mounted and ready to receive the document
   useEffect(() => {
+    // Primary READY handshake signal
     bridge.postMessage({ type: 'READY' });
+
+    // Defensive retry: if document has not loaded after 500ms, retry READY signal
+    const retryTimer = setTimeout(() => {
+      if (!isLoadedRef.current) {
+        bridge.postMessage({ type: 'READY' });
+      }
+    }, 500);
+
+    return () => {
+      clearTimeout(retryTimer);
+    };
   }, [bridge]);
 
   // NOTE: Listen for messages from the VS Code extension host
@@ -78,6 +97,12 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
       const doc = payload.document;
       if (payload.docVersion) {
         docVersionRef.current = payload.docVersion;
+      }
+      if (doc.name) {
+        docNameRef.current = doc.name;
+      }
+      if (doc.description) {
+        docDescriptionRef.current = doc.description;
       }
 
       const docMetadata = doc.metadata || {};
@@ -109,6 +134,39 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
           framework: restoredFramework === 'google_adk' ? 'google-adk' : restoredFramework,
           language: restoredLanguage,
         };
+
+        // Update active file tab with loaded document metadata
+        if (setFileTabs) {
+          const filename = payload.filePath
+            ? payload.filePath.split(/[/\\]/).filter(Boolean).pop() || (doc.name ? `${doc.name}.agent` : 'workflow.agent')
+            : (doc.name ? `${doc.name}.agent` : 'workflow.agent');
+          const title = doc.name || filename;
+
+          setFileTabs((prev) =>
+            prev.map((t) =>
+              t.id === activeTabId
+                ? {
+                    ...t,
+                    filename,
+                    title,
+                    nodes: normNodes,
+                    edges: normEdges,
+                    config: {
+                      ...t.config,
+                      framework: doc.framework === 'google-adk' ? 'google_adk' : (doc.framework as any) || t.config.framework,
+                      language: doc.language || t.config.language,
+                      outputFolder: targetFolder,
+                    },
+                  }
+                : t
+            )
+          );
+        }
+
+        // Center and fit canvas viewport to loaded nodes
+        setTimeout(() => {
+          fitView?.({ padding: 0.2, duration: 400 });
+        }, 50);
 
         // Record initial loaded JSON to avoid immediately echoing a duplicate back
         const loadedJson = JSON.stringify({
@@ -216,7 +274,7 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
       unsubCodeGenerated();
       unsubFilesExist();
     };
-  }, [bridge, setNodes, setEdges, setConfig, setGeneratedFiles, setHasGeneratedCode, setIsGenerating, recordSnapshot]);
+  }, [bridge, activeTabId, setNodes, setEdges, setFileTabs, fitView, setConfig, setGeneratedFiles, setHasGeneratedCode, setIsGenerating, recordSnapshot]);
 
   // Check filesystem for existing generated code when target output folder changes
   useEffect(() => {
@@ -254,10 +312,18 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
 
     const currentActiveFile = fileTabs.find((t) => t.id === activeTabId) || fileTabs[0];
 
+    const docName =
+      docNameRef.current ||
+      (currentActiveFile?.title && currentActiveFile.title !== 'workflow.agent' && currentActiveFile.title !== 'Untitled'
+        ? currentActiveFile.title
+        : currentActiveFile?.filename
+        ? currentActiveFile.filename.replace(/\.agent$/, '')
+        : 'agent_workflow');
+
     const updatedDoc: AgentWorkflowDocument = {
       version: '1.0.0',
-      name: currentActiveFile?.filename ? currentActiveFile.filename.replace(/\.agent$/, '') : 'agent_workflow',
-      description: 'Agent Workflow Document',
+      name: docName,
+      description: docDescriptionRef.current || 'Agent Workflow Document',
       framework: config.framework === 'google_adk' ? 'google-adk' : (config.framework as any) || 'google-adk',
       language: config.language || 'python',
       nodes: documentNodes,

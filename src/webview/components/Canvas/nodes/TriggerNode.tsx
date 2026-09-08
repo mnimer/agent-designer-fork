@@ -58,7 +58,7 @@ const getTriggerIcon = (type: TriggerType) => {
  * Returns visual styling parameters for a trigger type.
  * NOTE: Unified orange theme across all triggers per designer guidelines.
  */
-const getTriggerTheme = (type: TriggerType) => {
+const getTriggerTheme = (_type: TriggerType) => {
   return {
     border: 'border-orange-500/60 hover:border-orange-400 shadow-orange-950/30',
     badge: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
@@ -96,7 +96,7 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
   const getSummary = () => {
     switch (data.triggerType) {
       case 'chat':
-        return 'Interactive Chat Session';
+        return data.config?.streaming !== false ? 'Interactive Chat (Streaming)' : 'Interactive Chat (Static)';
       case 'pubsub':
         return data.config?.topic ? `Topic: ${data.config.topic.split('/').pop()}` : 'PubSub Event Queue';
       case 'scheduled':
@@ -113,11 +113,7 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
   };
 
   const handleCardClick = (e: React.MouseEvent) => {
-    // For chat trigger: user requested do nothing
-    if (isChat) {
-      return;
-    }
-    // For other triggers, trigger configuration edit
+    // NOTE: Open TriggerDrawer configuration inspector on click
     data.onEdit?.(id);
   };
 
@@ -126,10 +122,10 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
       id={`node-trigger-${id}`}
       onClick={handleCardClick}
       className={`group relative ${
-        isTester ? 'min-w-[310px] max-w-[350px]' : isEventArc ? 'min-w-[270px] max-w-[300px]' : 'min-w-[240px] max-w-[270px]'
+        isTester ? 'min-w-[310px] max-w-[350px]' : isEventArc ? 'min-w-[270px] max-w-[300px]' : isChat ? 'min-w-[260px] max-w-[290px]' : 'min-w-[240px] max-w-[270px]'
       } rounded-xl backdrop-blur-md bg-[#161b22]/95 border transition-all duration-200 shadow-2xl ${theme.glow} ${
-        selected ? (isTester ? 'ring-2 ring-yellow-400 border-yellow-400 shadow-yellow-500/30 scale-[1.02]' : 'ring-2 ring-amber-400 border-transparent shadow-amber-500/30 scale-[1.02]') : theme.border
-      } ${!isChat ? 'cursor-pointer' : 'cursor-default'}`}
+        selected ? 'ring-2 ring-amber-400 border-amber-400 shadow-amber-500/30 scale-[1.02]' : theme.border
+      } cursor-pointer`}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5 rounded-t-xl bg-[#161b22] border-b border-[#30363d]">
@@ -154,7 +150,7 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
 
         {/* Action icons */}
         <div className="flex items-center gap-1 shrink-0 ml-1">
-          {data.onEdit && !isChat && (
+          {data.onEdit && (
             <button
               type="button"
               onClick={(e) => {
@@ -189,11 +185,11 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
         {isTester && (
           <div className="space-y-1.5 bg-[#0d1117] p-2 rounded-lg border border-[#30363d]">
             <div className="flex items-center justify-between pb-1 border-b border-[#21262d]">
-              <div className="flex items-center gap-1 text-[10px] font-bold text-yellow-400 uppercase tracking-wider">
-                <ListChecks className="w-3 h-3 text-yellow-400" />
+              <div className="flex items-center gap-1 text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+                <ListChecks className="w-3 h-3 text-amber-400" />
                 <span>Test Prompts ({testPrompts.length})</span>
               </div>
-              <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-[#161b22] text-yellow-300 border border-yellow-500/30">
+              <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-[#161b22] text-amber-300 border border-amber-500/30">
                 QA Suite
               </span>
             </div>
@@ -215,17 +211,45 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
                   
                   {/* Prompt Text */}
                   <div className="text-[9.5px] leading-tight text-gray-300 font-mono bg-[#0d1117] p-1 rounded border border-[#21262d] line-clamp-2">
-                    <span className="text-yellow-400 font-bold">Prompt: </span>
+                    <span className="text-amber-400 font-bold">Prompt: </span>
                     <span>{tp.prompt}</span>
                   </div>
 
                   {/* Expected Output */}
                   <div className="text-[9.5px] leading-tight text-gray-400 font-mono bg-[#0d1117] p-1 rounded border border-[#21262d] line-clamp-2">
-                    <span className="text-emerald-400 font-bold">Expected: </span>
+                    <span className="text-amber-400 font-bold">Expected: </span>
                     <span>{tp.expectedOutput}</span>
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Chat Configuration Section (for Chat Trigger) */}
+        {isChat && (
+          <div className="space-y-1.5 bg-[#0d1117] p-2 rounded-lg border border-amber-500/30">
+            <div className="flex items-center justify-between pb-1 border-b border-[#21262d]">
+              <div className="flex items-center gap-1 text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+                <MessageSquare className="w-3 h-3 text-amber-400" />
+                <span>Chat Configuration</span>
+              </div>
+              <span className={`text-[8px] font-mono px-1.5 py-0.2 rounded border ${
+                data.config?.streaming !== false
+                  ? 'bg-amber-950/50 text-amber-300 border-amber-500/40'
+                  : 'bg-[#161b22] text-gray-400 border-[#30363d]'
+              }`}>
+                {data.config?.streaming !== false ? 'Streaming Active' : 'Static Output'}
+              </span>
+            </div>
+
+            <div className="p-1.5 rounded-md bg-[#161b22] border border-[#30363d]/80 text-[10px] space-y-1">
+              <span className="text-[9px] font-semibold text-gray-400 uppercase tracking-tight block">
+                Welcome Message:
+              </span>
+              <p className="text-[9.5px] leading-tight text-gray-300 italic line-clamp-2 bg-[#0d1117] p-1 rounded border border-[#21262d]">
+                "{data.config?.initialMessage || 'Hello! I am your AI agent assistant. How can I help you today?'}"
+              </p>
             </div>
           </div>
         )}

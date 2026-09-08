@@ -66,6 +66,24 @@ export type WebviewToExtensionMessage =
       };
     }
   | {
+      type: 'SEND_CHAT_MESSAGE';
+      payload: {
+        sessionId: string;
+        message: string;
+        streaming?: boolean;
+        history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+        document?: AgentWorkflowDocument;
+        targetDirectory?: string;
+        port?: number;
+      };
+    }
+  | {
+      type: 'RESET_CHAT_SESSION';
+      payload?: {
+        sessionId?: string;
+      };
+    }
+  | {
       type: 'START_LOCAL_RUNNER';
       payload: {
         document?: AgentWorkflowDocument;
@@ -307,6 +325,20 @@ export type ExtensionToWebviewMessage =
         exists: boolean;
         files?: string[];
         generatedFiles?: GeneratedFile[];
+      };
+    }
+  | {
+      type: 'CHAT_STREAM_CHUNK';
+      payload: {
+        sessionId: string;
+        chunk: string;
+        done: boolean;
+        error?: string;
+        trace?: Array<{
+          agentName: string;
+          step: string;
+          durationMs: number;
+        }>;
       };
     }
   | {
