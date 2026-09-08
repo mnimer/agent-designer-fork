@@ -1,3 +1,20 @@
+/**
+ * AgentNode - Canvas Component for AI Agents in Workflow Graph
+ * 
+ * Purpose:
+ * Renders individual Agent nodes on the visual workflow canvas, displaying agent
+ * roles, LLM models, configured tools, sub-agent delegations, and router branches.
+ * 
+ * Architectural Decisions:
+ * - Author: Mike Nimer <mikenimer@google.com>
+ * - Clean Handle Architecture: In/out floating labels removed for a streamlined canvas visual design.
+ * - Triggers Connect Orange to Orange: The Root agent (`isStartNode: true`) features Top (`input`)
+ *   and Left (`input_left`) handles styled in the triggers orange/amber palette (!bg-amber-500 ring-2 ring-amber-400/50).
+ * - Non-root Agent Nodes: Feature only a Top (`input`) handle in blue (!bg-blue-500).
+ * - Right and Left handles are removed on all non-root agent nodes.
+ * - Outgoing Flows: Bottom handles (main output, subagent, router branches) connect to child agents.
+ */
+
 import React, { memo, useState } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import { 
@@ -11,6 +28,7 @@ import {
   Sparkles, 
   Trash2, 
   Globe, 
+  Globe2,
   Terminal, 
   Database, 
   FileText, 
@@ -40,7 +58,15 @@ import {
   Scale,
   Braces
 } from 'lucide-react';
-import { AgentData, ToolDefinition, DelegationPattern, SubAgentRef, AgentMemoryConfig, AgentMemoryType } from '../../../types';
+import { 
+  AgentData, 
+  ToolDefinition, 
+  DelegationPattern, 
+  SubAgentRef, 
+  AgentMemoryConfig, 
+  AgentMemoryType,
+  ADK_DELEGATION_PATTERNS 
+} from '../../../types';
 import { getMemoryOption } from '../../../data/memoryOptions';
 
 const getMemoryIcon = (type?: AgentMemoryType) => {
@@ -118,20 +144,11 @@ const getToolIcon = (type: ToolDefinition['type']) => {
   }
 };
 
-const getThemeStyles = (theme?: string, isA2A?: boolean, isRouter?: boolean) => {
-  if (isRouter) {
-    return {
-      border: 'border-purple-500/60 hover:border-purple-400 shadow-purple-950/40',
-      header: 'bg-[#161b22] text-purple-300 border-[#30363d]',
-      badge: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-      accent: 'text-purple-400',
-      dot: 'bg-purple-500',
-    };
-  }
-
+const getThemeStyles = (colorTheme?: string, isA2A?: boolean, isRouter?: boolean) => {
+  // NOTE: A2A nodes use the cyan palette with Globe2 iconography per TASK-116
   if (isA2A) {
     return {
-      border: 'border-cyan-500/60 hover:border-cyan-400 shadow-cyan-950/40',
+      border: 'border-cyan-500/50 hover:border-cyan-400 shadow-cyan-950/30',
       header: 'bg-[#161b22] text-cyan-300 border-[#30363d]',
       badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
       accent: 'text-cyan-400',
@@ -139,15 +156,18 @@ const getThemeStyles = (theme?: string, isA2A?: boolean, isRouter?: boolean) => 
     };
   }
 
-  switch (theme) {
-    case 'emerald':
-      return {
-        border: 'border-emerald-500/50 hover:border-emerald-400 shadow-emerald-950/30',
-        header: 'bg-[#161b22] text-emerald-300 border-[#30363d]',
-        badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
-        accent: 'text-emerald-400',
-        dot: 'bg-emerald-500',
-      };
+  // NOTE: Router nodes use the neon purple palette with branching iconography per TASK-117
+  if (isRouter) {
+    return {
+      border: 'border-purple-500/50 hover:border-purple-400 shadow-purple-950/30',
+      header: 'bg-[#161b22] text-purple-300 border-[#30363d]',
+      badge: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+      accent: 'text-purple-400',
+      dot: 'bg-purple-500',
+    };
+  }
+
+  switch (colorTheme) {
     case 'purple':
       return {
         border: 'border-purple-500/50 hover:border-purple-400 shadow-purple-950/30',
@@ -155,6 +175,14 @@ const getThemeStyles = (theme?: string, isA2A?: boolean, isRouter?: boolean) => 
         badge: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
         accent: 'text-purple-400',
         dot: 'bg-purple-500',
+      };
+    case 'green':
+      return {
+        border: 'border-emerald-500/50 hover:border-emerald-400 shadow-emerald-950/30',
+        header: 'bg-[#161b22] text-emerald-300 border-[#30363d]',
+        badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+        accent: 'text-emerald-400',
+        dot: 'bg-emerald-500',
       };
     case 'amber':
       return {
@@ -164,14 +192,6 @@ const getThemeStyles = (theme?: string, isA2A?: boolean, isRouter?: boolean) => 
         accent: 'text-amber-400',
         dot: 'bg-amber-500',
       };
-    case 'cyan':
-      return {
-        border: 'border-cyan-500/50 hover:border-cyan-400 shadow-cyan-950/30',
-        header: 'bg-[#161b22] text-cyan-300 border-[#30363d]',
-        badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
-        accent: 'text-cyan-400',
-        dot: 'bg-cyan-500',
-      };
     case 'rose':
       return {
         border: 'border-rose-500/50 hover:border-rose-400 shadow-rose-950/30',
@@ -180,6 +200,7 @@ const getThemeStyles = (theme?: string, isA2A?: boolean, isRouter?: boolean) => 
         accent: 'text-rose-400',
         dot: 'bg-rose-500',
       };
+    case 'blue':
     default:
       return {
         border: 'border-blue-500/50 hover:border-blue-400 shadow-blue-950/30',
@@ -191,16 +212,7 @@ const getThemeStyles = (theme?: string, isA2A?: boolean, isRouter?: boolean) => 
   }
 };
 
-const PATTERN_OPTIONS: { id: DelegationPattern; label: string }[] = [
-  { id: 'sequential', label: 'Sequential' },
-  { id: 'parallel', label: 'Parallel' },
-  { id: 'router', label: 'Router' },
-  { id: 'loop', label: 'Loop' },
-  { id: 'review_critique', label: 'Review & Critique' },
-  { id: 'iterative_refinement', label: 'Iterative Refinement' },
-  { id: 'coordinator', label: 'Coordinator' },
-  { id: 'hierarchical_decomposition', label: 'Hierarchical' },
-];
+const PATTERN_OPTIONS = ADK_DELEGATION_PATTERNS;
 
 export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: AgentData }) => {
   const isA2A = data.agentKind === 'a2a';
@@ -303,20 +315,28 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
           <span className="text-[10px] text-green-300">Release to add</span>
         </div>
       )}
-      {/* Target Connection Handle (Top) */}
+      {/* Target Connection Handle (Top - In) */}
       <Handle
         type="target"
         position={Position.Top}
         id="input"
-        className="!bg-blue-500 !w-3.5 !h-3.5 !-top-1.5 border-2 border-[#0d1117]"
+        className={`!w-3.5 !h-3.5 !-top-1.5 border-2 border-[#0d1117] hover:scale-125 transition-transform z-20 cursor-crosshair ${
+          data.isStartNode
+            ? '!bg-amber-500 ring-2 ring-amber-400/50'
+            : '!bg-blue-500'
+        }`}
+        title={data.isStartNode ? 'Root Agent Inbound (Top Handle - Triggers)' : 'Agent Input (Top Handle)'}
       />
-      {/* Target Connection Handle (Left) - ONLY rendered on Root Node for Test Suite connection */}
+
+      {/* Target Connection Handle (Left - In) - Root Agent Only (Triggers connect Orange to Orange) */}
       {data.isStartNode && (
         <Handle
           type="target"
           position={Position.Left}
           id="input_left"
-          className="!bg-blue-500 !w-3 !h-3 !-left-1.5 border-2 border-[#0d1117]"
+          style={{ top: '50%' }}
+          className="!bg-amber-500 ring-2 ring-amber-400/50 !w-3.5 !h-3.5 !-left-1.5 border-2 border-[#0d1117] hover:scale-125 transition-transform z-20 cursor-crosshair"
+          title="Root Agent Inbound (Left Handle - Triggers)"
         />
       )}
 
@@ -329,7 +349,11 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
             {isRouter ? (
               <GitBranch className="w-4 h-4 text-purple-400" />
             ) : isA2A ? (
-              <Share2 className="w-4 h-4 text-cyan-400" />
+              data.a2aConfig?.iconUrl ? (
+                <img src={data.a2aConfig.iconUrl} alt="A2A Icon" className="w-4 h-4 object-contain" />
+              ) : (
+                <Globe2 className="w-4 h-4 text-cyan-400" />
+              )
             ) : (
               <Bot className={`w-4 h-4 ${theme.accent}`} />
             )}
@@ -367,6 +391,11 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                       ? `Score ≥ ${data.routerConfig?.thresholdValue ?? 0.8}`
                       : 'Conditional Router'}
                   </span>
+                </>
+              ) : isA2A ? (
+                <>
+                  <Globe2 className="w-2.5 h-2.5 shrink-0 text-cyan-400" />
+                  <span className="truncate font-mono">{data.a2aConfig?.endpoint || 'https://api.agent-network.internal/a2a/v1'}</span>
                 </>
               ) : (
                 <>
@@ -501,15 +530,81 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
         ) : (
           /* Standard / A2A Agent Body */
           <>
+            {/* A2A Dedicated Endpoint Status Badge & Protocol Card */}
+            {isA2A && (
+              <div 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  data.onEdit?.(id);
+                }}
+                className="bg-[#0d1117] p-2.5 rounded-lg border border-cyan-500/40 hover:border-cyan-400/70 transition-all cursor-pointer group/a2a space-y-2"
+                title="Click to configure A2A endpoint parameters"
+              >
+                {/* Endpoint Status Badge Header */}
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-cyan-300">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-500/50" />
+                    <span>A2A Endpoint</span>
+                  </span>
+                  <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono text-[9px] font-semibold">
+                    {data.a2aConfig?.protocolVersion || '1.0.0-a2a'}
+                  </span>
+                </div>
+
+                {/* Endpoint URL Pill */}
+                <div className="font-mono text-[10px] text-gray-200 bg-[#161b22] px-2 py-1 rounded border border-[#30363d] group-hover/a2a:border-cyan-500/40 truncate flex items-center gap-1.5 transition-colors">
+                  <Globe2 className="w-3 h-3 text-cyan-400 shrink-0" />
+                  <span className="truncate">{data.a2aConfig?.endpoint || 'https://api.agent-network.internal/a2a/v1'}</span>
+                </div>
+
+                {/* Agent Card Discovery Path & Auth Type Badge */}
+                <div className="flex items-center justify-between text-[9px] text-gray-400 pt-0.5">
+                  <span className="flex items-center gap-1 truncate max-w-[170px]">
+                    <span className="text-gray-500 font-mono">Card:</span>
+                    <span className="font-mono text-cyan-300 truncate">
+                      {data.a2aConfig?.agentCardUrl || '/.well-known/agent-card.json'}
+                    </span>
+                  </span>
+                  <span className="px-1.5 py-0.2 rounded bg-[#161b22] border border-[#30363d] uppercase font-mono text-[8px] text-cyan-400 font-bold">
+                    {data.a2aConfig?.authType || 'bearer'}
+                  </span>
+                </div>
+
+                {/* Published Skills Preview */}
+                {data.a2aConfig?.skills && data.a2aConfig.skills.length > 0 && (
+                  <div className="flex items-center gap-1 text-[9px] text-cyan-300 font-mono bg-cyan-950/40 px-1.5 py-0.5 rounded border border-cyan-500/20 truncate">
+                    <span className="text-cyan-400 font-bold">★ Skill:</span>
+                    <span className="truncate">{data.a2aConfig.skills.map((s: any) => s.name || s.id).join(', ')}</span>
+                  </div>
+                )}
+
+                {/* Capability Negotiation Chips */}
+                {data.a2aConfig?.capabilities && data.a2aConfig.capabilities.length > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-0.5">
+                    {data.a2aConfig.capabilities.slice(0, 3).map((cap) => (
+                      <span key={cap} className="px-1.5 py-0.2 rounded bg-cyan-950/40 text-cyan-300 border border-cyan-500/20 text-[8.5px] font-mono">
+                        {cap}
+                      </span>
+                    ))}
+                    {data.a2aConfig.capabilities.length > 3 && (
+                      <span className="text-[8.5px] text-cyan-400/80 font-mono self-center">
+                        +{data.a2aConfig.capabilities.length - 3} more
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Agent Prompt / Description preview */}
             <div className="bg-[#0d1117] p-2.5 rounded-lg border border-[#30363d]">
               <div className="text-[10px] uppercase font-bold tracking-wider text-gray-400 mb-0.5 flex items-center justify-between">
                 <span className="flex items-center gap-1">
                   <Sparkles className={`w-2.5 h-2.5 ${isA2A ? 'text-cyan-400' : 'text-amber-400'}`} />
-                  {isA2A ? 'Agent Description' : 'Agent Prompt'}
+                  {isA2A ? 'Published Capability' : 'Agent Prompt'}
                 </span>
                 {isA2A && (
-                  <span className="text-[9px] text-cyan-400 font-mono">Published Capability</span>
+                  <span className="text-[9px] text-cyan-400 font-mono">Peer Intent</span>
                 )}
               </div>
               <p className={`text-[11px] line-clamp-2 leading-relaxed ${data.systemPrompt ? 'text-gray-300' : 'text-gray-500 italic'}`}>
@@ -652,37 +747,60 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
               </div>
             </div>
 
-            {/* Sub-Agents Section with Pattern Dropdown Above the Orderable List */}
-            <div className="space-y-2 pt-1 border-t border-[#30363d]">
-              {/* Header & Pattern Dropdown above the sub-agent list */}
-              <div className="flex items-center justify-between gap-1.5">
-                <div className="flex items-center gap-1 text-[10px] font-bold tracking-wider text-gray-400 uppercase shrink-0">
-                  <Users className="w-3 h-3 text-purple-400" />
-                  <span>Sub-Agents ({subAgents.length})</span>
+            {/* Sub-Agents Section with Pattern Dropdown Above the Orderable List (only rendered if child agents are connected) */}
+            {subAgents.length > 0 && (
+              <div className="space-y-2 pt-1 border-t border-[#30363d]">
+                {/* Header & Pattern Dropdown above the sub-agent list */}
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-1 text-[10px] font-bold tracking-wider text-gray-400 uppercase shrink-0">
+                    <Users className="w-3 h-3 text-purple-400" />
+                    <span>Sub-Agents ({subAgents.length})</span>
+                  </div>
+
+                  {/* Pattern Dropdown above the list */}
+                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                    <select
+                      value={currentPattern}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        data.onUpdateSubAgentPattern?.(id, e.target.value as DelegationPattern);
+                      }}
+                      className="text-[10px] bg-[#0d1117] text-purple-300 border border-purple-500/30 rounded px-1.5 py-0.5 focus:outline-none focus:border-purple-400 font-medium cursor-pointer hover:border-purple-500/60"
+                      title="Select delegation pattern for sub-agents"
+                    >
+                      {PATTERN_OPTIONS.map((opt) => (
+                        <option key={opt.id} value={opt.id} className="bg-[#161b22] text-gray-200">
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                {/* Pattern Dropdown above the list */}
-                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                  <select
-                    value={currentPattern}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      data.onUpdateSubAgentPattern?.(id, e.target.value as DelegationPattern);
-                    }}
-                    className="text-[10px] bg-[#0d1117] text-purple-300 border border-purple-500/30 rounded px-1.5 py-0.5 focus:outline-none focus:border-purple-400 font-medium cursor-pointer hover:border-purple-500/60"
-                    title="Select delegation pattern for sub-agents"
+                {/* When Loop pattern is selected, show Max Iterations number input (default 3) */}
+                {currentPattern === 'loop' && (
+                  <div 
+                    className="flex items-center justify-between px-2 py-1 rounded bg-[#0d1117] border border-purple-500/30 text-[10px]"
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    {PATTERN_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id} className="bg-[#161b22] text-gray-200">
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+                    <span className="text-purple-300 font-medium">Max Iterations:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={data.maxIterations ?? 3}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        const val = parseInt(e.target.value, 10);
+                        data.onUpdateMaxIterations?.(id, isNaN(val) ? 3 : Math.max(1, val));
+                      }}
+                      className="w-12 text-center bg-[#161b22] text-purple-200 font-mono font-bold rounded border border-purple-500/40 px-1 py-0.5 focus:outline-none focus:border-purple-400 cursor-text"
+                      title="Maximum number of loop iterations"
+                    />
+                  </div>
+                )}
 
-              {/* Drag & Drop Orderable Sub-Agents List without individual pattern badges */}
-              {subAgents.length > 0 ? (
+                {/* Drag & Drop Orderable Sub-Agents List without individual pattern badges */}
                 <div className="space-y-1">
                   {subAgents.map((sub, idx) => (
                     <div
@@ -730,12 +848,8 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                     </div>
                   ))}
                 </div>
-              ) : (
-                <div className="text-[10px] text-gray-400 italic py-0.5">
-                  Drag from purple handle below to link sub-agents...
-                </div>
-              )}
-            </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -752,41 +866,43 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
           const handleId = branch.id || `branch_${idx}`;
 
           return (
-            <Handle
-              key={handleId}
-              type="source"
-              position={Position.Bottom}
-              id={handleId}
-              style={{ left: `${leftPercent}%` }}
-              className={`!w-4 !h-4 !-bottom-2 border-2 border-[#0d1117] transition-all cursor-crosshair z-20 hover:scale-125 ${
-                isConnected
-                  ? '!bg-purple-500 ring-2 ring-purple-400/80 shadow-md shadow-purple-500/50'
-                  : '!bg-[#21262d] !border-purple-400 hover:!bg-purple-500'
-              }`}
-              title={`Branch #${idx + 1}: ${branch.label} (${branch.conditionExpression || 'default'})${
-                branch.targetAgentId ? ' (Connected)' : ' → Drag to connect target agent'
-              }`}
-            />
+            <React.Fragment key={handleId}>
+              <Handle
+                type="source"
+                position={Position.Bottom}
+                id={handleId}
+                style={{ left: `${leftPercent}%` }}
+                className={`!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-all cursor-crosshair z-20 hover:scale-125 ${
+                  isConnected
+                    ? '!bg-blue-500 ring-2 ring-blue-400/80 shadow-md shadow-blue-500/50'
+                    : '!bg-[#21262d] !border-blue-400 hover:!bg-blue-500'
+                }`}
+                title={`Branch #${idx + 1}: ${branch.label} (${branch.conditionExpression || 'default'})${
+                  branch.targetAgentId ? ' (Connected)' : ' → Drag to connect target agent'
+                }`}
+              />
+            </React.Fragment>
           );
         })
       ) : (
         <>
-          {/* Main Flow Output Handle (Bottom Center Left) */}
+          {/* Main Flow Output Handle (Bottom Center) */}
           <Handle
             type="source"
             position={Position.Bottom}
             id="output"
-            className="!w-3.5 !h-3.5 !-bottom-1.5 left-1/3 border-2 border-[#0d1117] !bg-emerald-500"
-            title="Sequential Next Agent Output"
+            style={{ left: '50%' }}
+            className="!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] !bg-blue-500 hover:scale-125 transition-transform z-20 cursor-crosshair"
+            title="Agent Output"
           />
-
-          {/* Sub-Agent Delegation / Branch 2 Handle (Bottom Center Right - Purple) */}
+          {/* Fallback Subagent Handle (Stacked transparently for backward compatibility) */}
           <Handle
             type="source"
             position={Position.Bottom}
             id="subagent"
-            className="!bg-purple-500 !w-3.5 !h-3.5 !-bottom-1.5 left-2/3 border-2 border-[#0d1117] ring-2 ring-purple-500/40"
-            title="Sub-Agent Delegation Link (Drag to sub-agent input)"
+            style={{ left: '50%', opacity: 0, pointerEvents: 'none' }}
+            className="!w-3.5 !h-3.5 !-bottom-1.5"
+            title="Subagent Handle"
           />
         </>
       )}

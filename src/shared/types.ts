@@ -10,14 +10,60 @@ export type AgentKind = 'standard' | 'router' | 'a2a';
 export type TriggerKind = 'test' | 'chat' | 'pubsub' | 'scheduled' | 'eventarc' | 'manual' | 'webhook' | 'cron';
 export type FrameworkTarget = 'google-adk' | 'langgraph';
 export type LanguageTarget = 'python' | 'typescript';
-export type MemoryType = 'none' | 'buffer' | 'firestore' | 'redis' | 'postgres' | 'sqlite' | 'vector_rag';
+export type MemoryType = 'none' | 'buffer' | 'firestore' | 'redis' | 'postgres' | 'sqlite' | 'vector_rag' | 'langgraph_in_memory' | string;
+
+export type ToolCategory = 'grounding' | 'enterprise_search' | 'system' | 'custom' | 'mcp' | 'api' | 'db' | 'code' | 'rag' | 'builtin';
+
+export type AdkBuiltinToolType = 
+  | 'google_search' 
+  | 'vertex_ai_search' 
+  | 'load_web_page' 
+  | 'request_input' 
+  | 'preload_memory' 
+  | 'code_execution' 
+  | 'agent_as_tool';
+
+export interface VertexAiSearchConfig {
+  dataStoreId?: string;
+  location?: string;
+  project?: string;
+  engineId?: string;
+  maxResults?: number;
+}
+
+export interface GoogleSearchConfig {
+  domainFilters?: string[];
+  dynamicThreshold?: number;
+}
+
+export interface RequestInputConfig {
+  prompt?: string;
+  timeoutSeconds?: number;
+}
+
+export interface AgentAsToolConfig {
+  subAgentId?: string;
+  subAgentName?: string;
+  subAgentDescription?: string;
+}
 
 export interface ToolDefinition {
   id: string;
   name: string;
   description: string;
-  type: 'builtin' | 'rest' | 'mcp' | 'code' | 'custom' | 'database';
+  type: 'builtin' | 'rest' | 'mcp' | 'code' | 'custom' | 'database' | 'search' | 'api' | 'db' | 'rag' | string;
+  category?: ToolCategory | string;
+  builtinType?: AdkBuiltinToolType;
   config?: Record<string, unknown>;
+  vertexAiSearchConfig?: VertexAiSearchConfig;
+  googleSearchConfig?: GoogleSearchConfig;
+  requestInputConfig?: RequestInputConfig;
+  agentAsToolConfig?: AgentAsToolConfig;
+  parameters?: Record<string, string>;
+  codePrompt?: string;
+  endpointUrl?: string;
+  authKeyEnv?: string;
+  enabled?: boolean;
 }
 
 export type AgentToolConfig = ToolDefinition;
@@ -69,6 +115,16 @@ export interface RouterAgentConfig {
   branches: RouterBranch[];
 }
 
+export interface A2AAgentSkill {
+  id: string;
+  name: string;
+  description: string;
+  tags?: string[];
+  examples?: string[];
+  inputModes?: string[];
+  outputModes?: string[];
+}
+
 export interface A2AAgentConfig {
   protocolVersion: string;
   endpointUrl: string;
@@ -77,10 +133,15 @@ export interface A2AAgentConfig {
   authSecretKey?: string;
   iamTargetAudience?: string;
   capabilities: string[];
+  skills?: A2AAgentSkill[];
+  iconUrl?: string;
+  preferredTransport?: string;
+  delegationPrompt?: string;
 }
 
 export interface AgentNodeData {
   label: string;
+  name?: string;
   description?: string;
   agentKind?: AgentKind;
   model?: string;
@@ -97,6 +158,7 @@ export interface AgentNodeData {
   onDelete?: (id: string) => void;
   onAddTool?: (agentId: string) => void;
   onRemoveTool?: (agentId: string, toolId: string) => void;
+  [key: string]: any;
 }
 
 export interface TestSuiteScenario {
@@ -104,10 +166,23 @@ export interface TestSuiteScenario {
   name: string;
   inputQuery: string;
   expectedOutputPattern?: string;
+  expectedOutput?: string;
+  [key: string]: any;
+}
+
+export type TriggerTestScenario = TestSuiteScenario;
+
+export interface TestPrompt {
+  id: string;
+  name?: string;
+  prompt?: string;
+  text?: string;
+  [key: string]: any;
 }
 
 export interface TestSuiteTriggerConfig {
   testScenarios: TestSuiteScenario[];
+  testPrompts?: TestPrompt[];
 }
 
 export interface ChatTriggerConfig {
@@ -135,7 +210,8 @@ export interface EventarcTriggerConfig {
 export interface TriggerNodeData {
   label: string;
   description?: string;
-  triggerKind: TriggerKind;
+  triggerKind?: TriggerKind;
+  triggerType?: string;
   config?: Record<string, any>;
   testConfig?: TestSuiteTriggerConfig;
   chatConfig?: ChatTriggerConfig;
@@ -144,16 +220,17 @@ export interface TriggerNodeData {
   eventarcConfig?: EventarcTriggerConfig;
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
+  [key: string]: any;
 }
 
 export interface WorkflowNode {
   id: string;
-  type: 'agent' | 'trigger';
+  type: 'agent' | 'trigger' | string;
   position: {
     x: number;
     y: number;
   };
-  data: AgentNodeData | TriggerNodeData;
+  data: AgentNodeData | TriggerNodeData | any;
   selected?: boolean;
 }
 
@@ -170,6 +247,7 @@ export interface WorkflowEdge {
   data?: {
     branchId?: string;
     conditionExpression?: string;
+    [key: string]: any;
   };
 }
 
@@ -185,6 +263,29 @@ export interface WorkflowMetadata {
   createdAt?: string;
   updatedAt?: string;
   author?: string;
+  outputFolder?: string;
+  [key: string]: any;
+}
+
+export interface PluginSettings {
+  defaultAgentTheme?: string;
+  useStreamingByDefault?: boolean;
+  geminiApiKey?: string;
+  targetFramework?: FrameworkTarget;
+  targetLanguage?: LanguageTarget;
+  [key: string]: any;
+}
+
+export interface WorkflowDeploymentConfig {
+  target: 'agent_engine' | 'cloud_run' | string;
+  deploymentTarget?: 'agent_engine' | 'cloud_run' | string;
+  outputFolder: string;
+  framework: FrameworkTarget | string;
+  language: LanguageTarget | string;
+  includeTests?: boolean;
+  includeDocker?: boolean;
+  useStreaming?: boolean;
+  [key: string]: any;
 }
 
 export interface AgentWorkflowDocument {
@@ -197,4 +298,5 @@ export interface AgentWorkflowDocument {
   edges: WorkflowEdge[];
   viewport?: ViewportState;
   metadata?: WorkflowMetadata;
+  deployment?: WorkflowDeploymentConfig;
 }

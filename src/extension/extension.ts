@@ -15,6 +15,14 @@
  
 import * as vscode from 'vscode';
 import { AgentEditorProvider } from './AgentEditorProvider';
+import {
+  WorkflowExplorerTreeProvider,
+  WorkflowTreeItem,
+} from './views/WorkflowExplorerTreeProvider';
+import {
+  AgentEngineDeploymentsTreeProvider,
+  DeploymentTreeItem,
+} from './views/AgentEngineDeploymentsTreeProvider';
 
 export let outputChannel: vscode.OutputChannel;
 
@@ -24,16 +32,68 @@ export let outputChannel: vscode.OutputChannel;
  * @param context VS Code Extension Context
  */
 export function activate(context: vscode.ExtensionContext): void {
-  // Create shared OutputChannel for extension logging & diagnostics
+  // 1. Create shared OutputChannel for extension logging & diagnostics
   outputChannel = vscode.window.createOutputChannel('Agent Flow Builder');
   context.subscriptions.push(outputChannel);
 
-  // Register Custom Editor Provider for *.agent visual topology files
+  // 2. Register Custom Editor Provider for *.agent visual topology files
   const providerRegistration = AgentEditorProvider.register(context, outputChannel);
   context.subscriptions.push(providerRegistration);
   outputChannel?.appendLine('[Agent Flow Builder] Custom editor registered for *.agent files.');
 
-  // 2. Command: Create New Workflow File
+  // 3. Register Sidebar Views & Tree Data Providers
+  const workflowExplorerProvider = new WorkflowExplorerTreeProvider();
+  const deploymentsProvider = new AgentEngineDeploymentsTreeProvider();
+
+  context.subscriptions.push(
+    workflowExplorerProvider,
+    deploymentsProvider,
+    vscode.window.registerTreeDataProvider('agentFlow.views.workflows', workflowExplorerProvider),
+    vscode.window.registerTreeDataProvider('agentFlow.views.deployments', deploymentsProvider)
+  );
+
+  // 4. Register Sidebar Commands
+  const newWorkflowCmd = vscode.commands.registerCommand(
+    'agentFlow.sidebar.newWorkflow',
+    async (folderUri?: any) => {
+      await workflowExplorerProvider.newWorkflow(folderUri);
+    }
+  );
+  context.subscriptions.push(newWorkflowCmd);
+
+  const refreshWorkflowsCmd = vscode.commands.registerCommand(
+    'agentFlow.sidebar.refreshWorkflows',
+    () => {
+      workflowExplorerProvider.refresh();
+    }
+  );
+  context.subscriptions.push(refreshWorkflowsCmd);
+
+  const duplicateWorkflowCmd = vscode.commands.registerCommand(
+    'agentFlow.sidebar.duplicateWorkflow',
+    async (item?: any) => {
+      await workflowExplorerProvider.duplicateWorkflow(item);
+    }
+  );
+  context.subscriptions.push(duplicateWorkflowCmd);
+
+  const deleteWorkflowCmd = vscode.commands.registerCommand(
+    'agentFlow.sidebar.deleteWorkflow',
+    async (item?: any) => {
+      await workflowExplorerProvider.deleteWorkflow(item);
+    }
+  );
+  context.subscriptions.push(deleteWorkflowCmd);
+
+  const refreshDeploymentsCmd = vscode.commands.registerCommand(
+    'agentFlow.sidebar.refreshDeployments',
+    () => {
+      deploymentsProvider.refresh();
+    }
+  );
+  context.subscriptions.push(refreshDeploymentsCmd);
+
+  // 5. Command: Create New Workflow File (command palette)
   const createWorkflowCmd = vscode.commands.registerCommand(
     'agentFlow.createWorkflow',
     async () => {
@@ -83,7 +143,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   context.subscriptions.push(createWorkflowCmd);
 
-  // 3. Command: Generate Code
+  // 6. Command: Generate Code
   const generateCodeCmd = vscode.commands.registerCommand(
     'agentFlow.generateCode',
     async () => {
@@ -94,7 +154,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   context.subscriptions.push(generateCodeCmd);
 
-  // 4. Command: Run Test Suite
+  // 7. Command: Run Test Suite
   const runTestsCmd = vscode.commands.registerCommand(
     'agentFlow.runTests',
     async () => {
@@ -104,6 +164,17 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   );
   context.subscriptions.push(runTestsCmd);
+
+  // 8. Command: Deploy to Agent Engine
+  const deployAgentEngineCmd = vscode.commands.registerCommand(
+    'agentFlow.deployToAgentEngine',
+    async () => {
+      vscode.window.showInformationMessage(
+        'Agent Flow: Open the Deployment tab in the Agent Designer to configure and deploy to Vertex AI Agent Engine.'
+      );
+    }
+  );
+  context.subscriptions.push(deployAgentEngineCmd);
 }
 
 /**

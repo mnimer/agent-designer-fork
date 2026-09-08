@@ -10,7 +10,7 @@ import * as vscode from 'vscode';
 import { activate, deactivate } from '../../src/extension/extension';
 import { AgentEditorProvider } from '../../src/extension/AgentEditorProvider';
 
-describe('Extension Lifecycle', () => {
+describe('Extension Lifecycle', { concurrency: 1 }, () => {
   beforeEach(() => {
     vscode.resetAllMocks();
   });
@@ -24,8 +24,27 @@ describe('Extension Lifecycle', () => {
     activate(mockContext);
 
     assert.equal(vscode.window.registerCustomEditorProvider.calls.length > 0, true);
-    assert.equal(vscode.commands.registerCommand.calls.length >= 3, true);
-    assert.equal(mockContext.subscriptions.length >= 4, true);
+    assert.equal(vscode.window.registerTreeDataProvider.calls.length, 2);
+
+    // Verify view IDs registered
+    const registeredViews = vscode.window.registerTreeDataProvider.calls.map((c: any[]) => c[0]);
+    assert.ok(registeredViews.includes('agentFlow.views.workflows'));
+    assert.ok(registeredViews.includes('agentFlow.views.deployments'));
+
+    // Verify sidebar commands registered
+    const registeredCmds = vscode.commands.registerCommand.calls.map((c: any[]) => c[0]);
+    assert.ok(registeredCmds.includes('agentFlow.sidebar.newWorkflow'));
+    assert.ok(registeredCmds.includes('agentFlow.sidebar.refreshWorkflows'));
+    assert.ok(registeredCmds.includes('agentFlow.sidebar.duplicateWorkflow'));
+    assert.ok(registeredCmds.includes('agentFlow.sidebar.deleteWorkflow'));
+    assert.ok(registeredCmds.includes('agentFlow.sidebar.refreshDeployments'));
+    assert.ok(registeredCmds.includes('agentFlow.createWorkflow'));
+    assert.ok(registeredCmds.includes('agentFlow.generateCode'));
+    assert.ok(registeredCmds.includes('agentFlow.runTests'));
+    assert.ok(registeredCmds.includes('agentFlow.deployToAgentEngine'));
+
+    assert.equal(vscode.commands.registerCommand.calls.length >= 9, true);
+    assert.equal(mockContext.subscriptions.length >= 11, true);
   });
 
   it('should execute createWorkflow command and invoke vscode.openWith', async () => {

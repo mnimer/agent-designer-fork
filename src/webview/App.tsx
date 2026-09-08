@@ -1,586 +1,416 @@
 /**
- * @license
- * SPDX-License-Identifier: Apache-2.0
+ * App.tsx - Visual Agent Designer Root Canvas & Webview Entrypoint
+ *
+ * Purpose:
+ * Top-level application shell for the Visual Agent Designer webview in VS Code.
+ * Orchestrates the React Flow graph canvas, node/edge state transitions, tool configurations,
+ * multi-tab document management, bottom split panel resizing, and bidirectional synchronization
+ * with the VS Code extension host.
+ *
+ * Architectural Decisions:
+ * - Author: Mike Nimer <mikenimer@google.com>
+ * - Modular Decomposition: Business logic is decoupled into focused custom hooks (`useFileTabs`,
+ *   `useToolsManager`, `useResizablePanel`, `useCanvasKeyboardShortcuts`, `useExtensionSync`)
+ *   and modular canvas widgets (`CanvasToolbar`, `CanvasEmptyState`, `ValidationToast`, `PanelDivider`).
+ * - Backwards-Compatibility Exports: Re-exports `syncAgentSubAgents` and `computeTargetFolder`
+ *   to ensure existing integration and unit test suites continue passing without breakage.
+ * - Scoped Tool Configuration: Tools attached to agents maintain independent deep-copied instances
+ *   in `node.data.tools`. Modifying a tool from an AgentDrawer updates only that specific agent's JSON.
+ *   Modifying a tool from the global palette/Tools menu updates the global designer template without
+ *   mutating existing agent-scoped tool instances.
+ * - Reactive "Props In, Events Up": State is centralized at the `FlowCanvas` container level and
+ *   passed down to child panels and inspectors via typed callbacks.
+ * - 8pt Grid System Compliance: Layout spacing, paddings, and control dimensions strictly follow
+ *   multiples of 8px (Tailwind units: 1 = 4px, 2 = 8px, 4 = 16px, etc.).
+ *
+ * Instructions for Next Model Session:
+ * - When adding new node types or edge connections, extend `nodeTypes` at the top
+ *   of this file and ensure custom node components are registered in `../components/Canvas/nodes/`.
+ * - To modify document synchronization or serialization formats, update `workflowSync.ts` and
+ *   `useExtensionSync.ts` rather than embedding custom IPC logic directly in `App.tsx`.
  */
 
-import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
-  addEdge,
   useNodesState,
   useEdgesState,
-  Background,
-  MiniMap,
+  addEdge,
   Connection,
   Edge,
   Node,
   useReactFlow,
-  BackgroundVariant,
 } from '@xyflow/react';
 
-import { 
-  AgentData, 
-  GenerationConfig, 
-  ToolDefinition, 
-  TriggerData, 
-  TriggerType,
+// Context Providers
+import { ThemeProvider } from './context/ThemeContext';
+import { BridgeProvider, useBridgeContext } from './context/BridgeContext';
+import { SettingsProvider, usePluginSettings } from './context/SettingsContext';
+
+// Types & Data Contracts
+import {
+  AgentData,
+  TriggerData,
+  GenerationConfig,
+  GeneratedFile,
   AgentKind,
+  TriggerType,
+  SubAgentRef,
+  ToolDefinition,
   PatternType,
-  AgentFileTab,
-  SampleWorkflowDefinition
 } from './types';
+import { AgentWorkflowDocument } from '../shared/types';
 import { INITIAL_NODES, INITIAL_EDGES } from './data/initialGraph';
-import { 
-  createSingleAgentNode, 
-  createPatternNodesAndEdges,
-  createSingleTriggerNode
-} from './data/patterns';
-import { AVAILABLE_TOOLS } from './data/defaultTools';
-import { TRIGGER_CATALOG, DEFAULT_MOCK_TEST_PROMPTS } from './data/triggerDefinitions';
+import { DEFAULT_MOCK_TEST_PROMPTS } from './data/triggerDefinitions';
+
+// Custom Canvas Nodes & Edges
 import { AgentNode } from './components/Canvas/nodes/AgentNode';
 import { TriggerNode } from './components/Canvas/nodes/TriggerNode';
+import { WorkflowEdge as CustomWorkflowEdge } from './components/Canvas/edges/WorkflowEdge';
+
+// UI Panels & Drawers
 import { PaletteCard } from './components/Canvas/PaletteCard';
-import { getLayoutedElements, layoutPatternAtDropPosition } from './utils/layout';
-import { CodeGenerationPanel } from './components/codegen/CodeGenerationPanel';
 import { AgentDrawer } from './components/inspector/AgentDrawer';
 import { TriggerDrawer } from './components/inspector/TriggerDrawer';
-import { AddToolModal } from './components/inspector/AddToolModal';
 import { ToolPropertyDrawer } from './components/inspector/ToolPropertyDrawer';
+import { AddToolModal } from './components/inspector/AddToolModal';
 import { MissingFeaturesModal } from './components/insights/MissingFeaturesModal';
-import { VSCodeChrome } from './components/vscode/VSCodeChrome';
-import { ThemeProvider } from './context/ThemeContext';
-import { SettingsProvider, usePluginSettings } from './context/SettingsContext';
-import { BridgeProvider, useBridgeContext } from './context/BridgeContext';
+import { CodeGenerationPanel } from './components/codegen/CodeGenerationPanel';
 import { SettingsPage } from './components/settings/SettingsPage';
-import { SAMPLES_CATALOG } from './data/sampleWorkflows';
-import { AlertTriangle, X, Bot, Sparkles, Zap, Undo2, Redo2, LayoutGrid, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
-import { useDiagramHistory } from './hooks/useDiagramHistory';
-import { AgentWorkflowDocument, WorkflowNode, WorkflowEdge } from '../shared/types';
 
+// Modular Canvas Widgets
+import { CanvasToolbar } from './components/Canvas/CanvasToolbar';
+import { CanvasEmptyState } from './components/Canvas/CanvasEmptyState';
+import { ValidationToast } from './components/Canvas/ValidationToast';
+import { PanelDivider } from './components/Canvas/PanelDivider';
+
+// Custom Hooks
+import { useDiagramHistory } from './hooks/useDiagramHistory';
+import { useFileTabs } from './hooks/useFileTabs';
+import { useToolsManager } from './hooks/useToolsManager';
+import { useResizablePanel } from './hooks/useResizablePanel';
+import { useCanvasKeyboardShortcuts } from './hooks/useCanvasKeyboardShortcuts';
+import { useExtensionSync } from './hooks/useExtensionSync';
+
+// Domain Utilities & Layout
+import {
+  syncAgentSubAgents,
+  computeTargetFolder,
+  resolveAgentOutputFolder,
+  normalizeLoadedNodes,
+  normalizeLoadedEdges,
+} from './utils/workflowSync';
+import { getLayoutedElements, layoutPatternAtDropPosition } from './utils/layout';
+import {
+  createSingleAgentNode,
+  createSingleTriggerNode,
+  createPatternNodesAndEdges,
+} from './data/patterns';
+
+// Re-export utility functions for existing test suites
+export { syncAgentSubAgents, computeTargetFolder, resolveAgentOutputFolder } from './utils/workflowSync';
+
+// React Flow Component Registrations
 const nodeTypes = {
   agentNode: AgentNode,
   triggerNode: TriggerNode,
+  agent: AgentNode,
+  trigger: TriggerNode,
 };
 
-const STORAGE_TOOLS_KEY = 'ais_agent_studio_tools_v1';
-
-function normalizeLoadedNodes(loadedNodes: any[]): Node<any>[] {
-  if (!Array.isArray(loadedNodes)) return [];
-  return loadedNodes.map((n) => {
-    const isTrigger = n.type === 'trigger' || n.type === 'triggerNode';
-    const type = isTrigger ? 'triggerNode' : 'agentNode';
-
-    let data = { ...(n.data || {}) };
-    if (isTrigger) {
-      const triggerType = data.triggerType || data.triggerKind || 'tester';
-      const normalizedTriggerType = triggerType === 'test' ? 'tester' : triggerType;
-      data = {
-        id: n.id,
-        label: data.label || (normalizedTriggerType === 'tester' ? 'Test Suite Trigger' : 'Workflow Trigger'),
-        triggerType: normalizedTriggerType,
-        description: data.description || 'Workflow Trigger',
-        config: data.config || data.testConfig || data.chatConfig || data.pubsubConfig || data.scheduledConfig || data.eventarcConfig || {},
-        ...data,
-      };
-    } else {
-      data = {
-        id: n.id,
-        label: data.label || 'Agent',
-        agentKind: data.agentKind || 'standard',
-        model: data.model || data.standardConfig?.model || 'gemini-flash-latest',
-        description: data.description || '',
-        systemPrompt: data.systemPrompt || data.standardConfig?.systemInstruction || '',
-        tools: data.tools || data.standardConfig?.tools || [],
-        memoryType: data.memoryType || data.standardConfig?.memory || 'none',
-        ...data,
-      };
-    }
-
-    return {
-      id: n.id,
-      type: type,
-      position: n.position && typeof n.position.x === 'number' && typeof n.position.y === 'number'
-        ? n.position
-        : { x: 100, y: 100 },
-      data: data,
-    };
-  });
-}
-
-function normalizeLoadedEdges(loadedEdges: any[]): Edge[] {
-  if (!Array.isArray(loadedEdges)) return [];
-  return loadedEdges.map((e) => ({
-    id: e.id || `e_${e.source}_${e.target}`,
-    source: e.source,
-    target: e.target,
-    sourceHandle: e.sourceHandle || null,
-    targetHandle: e.targetHandle || null,
-    label: typeof e.label === 'string' ? e.label : undefined,
-    animated: e.animated !== undefined ? e.animated : true,
-    style: e.style || (e.source.includes('trigger') ? { stroke: '#f59e0b', strokeWidth: 2 } : { stroke: '#3b82f6', strokeWidth: 2 }),
-  }));
-}
+const edgeTypes = {
+  default: CustomWorkflowEdge,
+  workflow: CustomWorkflowEdge,
+  workflowEdge: CustomWorkflowEdge,
+};
 
 /**
- * Mike Nimer <mikenimer@google.com>
- * Computes the target output folder from the .agent file path or filename.
- * It produces a subfolder with the same root name as the .agent file.
- * e.g., 'test/agents/myagent.agent' -> 'test/agents/myagent/'
-/**
- * Derives a target output folder relative to the .agent file,
- * where the folder name matches the file name without .agent extension.
- * e.g., "agents/scratch/scratch-agent.agent" -> "./scratch-agent/"
- * e.g., "sample_support.agent" -> "./sample_support/"
- *
- * @param filePathOrName - File path or filename (e.g. agents/scratch/scratch-agent.agent)
- * @returns Derived relative target directory path (e.g. ./scratch-agent/)
+ * FlowCanvas - Inner interactive graph workspace component.
+ * Must be rendered inside a <ReactFlowProvider> context.
  */
-export const computeTargetFolder = (filePathOrName: string): string => {
-  if (!filePathOrName) return './workflow/';
-  const normalized = filePathOrName.replace(/\\/g, '/');
-  const filename = normalized.split('/').filter(Boolean).pop() || normalized;
-  let cleaned = filename.replace(/\.agent$/i, '');
-  if (!cleaned) cleaned = 'workflow';
-  return `./${cleaned}/`;
-};
-
 function FlowCanvas() {
-  const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition, zoomIn, zoomOut, fitView } = useReactFlow();
-  const { settings, activeEditorTab, openSettings, openFlow, setActiveEditorTab } = usePluginSettings();
   const bridge = useBridgeContext();
+  const { settings, activeEditorTab, setActiveEditorTab } = usePluginSettings();
+  const { fitView, zoomOut, screenToFlowPosition } = useReactFlow();
+  const reactFlowWrapper = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    bridge.postMessage({ type: 'READY' });
-  }, [bridge]);
+  // Synchronous document pre-hydration from injected window.__INITIAL_AGENT_DOCUMENT__
+  const initialInjectedDoc: AgentWorkflowDocument | null =
+    typeof window !== 'undefined' && (window as any).__INITIAL_AGENT_DOCUMENT__
+      ? (window as any).__INITIAL_AGENT_DOCUMENT__
+      : null;
+  const initialInjectedFilePath: string =
+    typeof window !== 'undefined' && (window as any).__INITIAL_AGENT_FILE_PATH__
+      ? (window as any).__INITIAL_AGENT_FILE_PATH__
+      : '';
+  const initialInjectedFileName: string = initialInjectedFilePath
+    ? initialInjectedFilePath.split('/').filter(Boolean).pop() || initialInjectedFilePath
+    : initialInjectedDoc?.name
+    ? `${initialInjectedDoc.name}.agent`
+    : 'workflow.agent';
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<any>>(INITIAL_NODES);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(INITIAL_EDGES);
+  const initialOutputFolder: string = resolveAgentOutputFolder(
+    initialInjectedDoc?.deployment?.outputFolder || (initialInjectedDoc?.metadata as any)?.outputFolder,
+    initialInjectedFileName
+  );
 
-  // Multi-tab .agent file tabs state
-  const [fileTabs, setFileTabs] = useState<AgentFileTab[]>([
-    {
-      id: 'tab-main-workflow',
-      filename: 'workflow.agent',
-      title: 'workflow.agent',
-      nodes: INITIAL_NODES,
-      edges: INITIAL_EDGES,
-      config: {
-        framework: 'google_adk',
-        language: 'python',
-        outputFolder: './src/agents/',
-        deploymentTarget: 'agent_engine',
-        includeTests: true,
-        includeDocker: false,
-        useStreaming: true,
-      },
-    },
-  ]);
-  const [activeTabId, setActiveTabId] = useState<string>('tab-main-workflow');
-  const [newTabCounter, setNewTabCounter] = useState<number>(1);
+  // ---------------------------------------------------------------------------
+  // 1. React Flow Graph State & History Management
+  // ---------------------------------------------------------------------------
+  const [nodes, setNodes, onNodesChange] = useNodesState(
+    initialInjectedDoc && Array.isArray(initialInjectedDoc.nodes)
+      ? normalizeLoadedNodes(initialInjectedDoc.nodes)
+      : INITIAL_NODES
+  );
+  const [edges, setEdges, onEdgesChangeState] = useEdgesState(
+    initialInjectedDoc && Array.isArray(initialInjectedDoc.edges)
+      ? normalizeLoadedEdges(initialInjectedDoc.edges)
+      : INITIAL_EDGES
+  );
 
-  // Undo / Redo diagram history manager (isolated per active tab)
   const {
     canUndo,
     canRedo,
-    undo,
-    redo,
+    handleUndo,
+    handleRedo,
     recordSnapshot,
     initializeTabHistory,
-  } = useDiagramHistory(INITIAL_NODES, INITIAL_EDGES, {
-    activeTabId,
-    maxHistory: 50,
-  });
+  } = useDiagramHistory(nodes, edges, setNodes, setEdges);
 
-  // Tools library state (customizable tools catalog)
-  const [tools, setTools] = useState<ToolDefinition[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_TOOLS_KEY);
-      if (saved) {
-        return JSON.parse(saved);
+  // Synchronize parent subAgents when edges are deleted
+  const onEdgesChange = useCallback(
+    (changes: any) => {
+      onEdgesChangeState(changes);
+      const isRemoval = changes.some((c: any) => c.type === 'remove');
+      if (isRemoval) {
+        setTimeout(() => {
+          setEdges((currentEdges) => {
+            setNodes((currentNodes) => syncAgentSubAgents(currentNodes, currentEdges));
+            return currentEdges;
+          });
+        }, 10);
       }
-    } catch (e) {
-      console.warn('Failed to load saved tools from localStorage:', e);
-    }
-    return AVAILABLE_TOOLS;
-  });
+    },
+    [onEdgesChangeState, setEdges, setNodes]
+  );
 
-  // Save tools to local storage on change
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_TOOLS_KEY, JSON.stringify(tools));
-    } catch (e) {
-      console.warn('Failed to persist tools:', e);
-    }
-  }, [tools]);
-
-  // Inspector & modal states
+  // ---------------------------------------------------------------------------
+  // 2. Inspector, Selection & Modal States
+  // ---------------------------------------------------------------------------
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedTriggerId, setSelectedTriggerId] = useState<string | null>(null);
   const [isTriggerDrawerOpen, setIsTriggerDrawerOpen] = useState<boolean>(false);
   const [toolModalAgentId, setToolModalAgentId] = useState<string | null>(null);
   const [isAdvisorOpen, setIsAdvisorOpen] = useState<boolean>(false);
-  const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [validationWarning, setValidationWarning] = useState<string | null>(null);
 
-  // Auto-dismiss validation warning after 5 seconds
+  // Auto-dismiss validation warnings after 6 seconds
   useEffect(() => {
     if (validationWarning) {
-      const timer = setTimeout(() => setValidationWarning(null), 5000);
+      const timer = setTimeout(() => setValidationWarning(null), 6000);
       return () => clearTimeout(timer);
     }
   }, [validationWarning]);
 
-  // Tool Property Drawer state
-  const [editingTool, setEditingTool] = useState<ToolDefinition | null>(null);
-  const [isToolDrawerOpen, setIsToolDrawerOpen] = useState<boolean>(false);
-
-  // Resizable bottom panel state (Divider between diagram & bottom tabs)
-  // Default is null to strictly maintain the 2/3 diagram (66.66%) and 1/3 tabs (33.33%) layout
-  const [bottomPanelHeight, setBottomPanelHeight] = useState<number | null>(null);
-  const [isPanelMaximized, setIsPanelMaximized] = useState<boolean>(false);
-  const [isDraggingDivider, setIsDraggingDivider] = useState<boolean>(false);
-  const panelContainerRef = useRef<HTMLDivElement | null>(null);
-
-  const handleToggleMaximizePanel = useCallback(() => {
-    setIsPanelMaximized((prev) => !prev);
-  }, []);
-
-  // Drag handler for panel divider
-  const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsPanelMaximized(false);
-    if (panelContainerRef.current && bottomPanelHeight === null) {
-      const rect = panelContainerRef.current.getBoundingClientRect();
-      setBottomPanelHeight(rect.height * (1 / 3));
-    }
-    setIsDraggingDivider(true);
-  }, [bottomPanelHeight]);
-
-  useEffect(() => {
-    if (!isDraggingDivider) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!panelContainerRef.current) return;
-      const rect = panelContainerRef.current.getBoundingClientRect();
-      const newHeight = rect.bottom - e.clientY;
-      // Clamp between min 100px and max (containerHeight - 120px)
-      const minHeight = 100;
-      const maxHeight = rect.height - 130;
-      const clampedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
-      setBottomPanelHeight(clampedHeight);
-    };
-
-    const handleMouseUp = () => {
-      setIsDraggingDivider(false);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDraggingDivider]);
-
-  // Code Generation state
-  const [hasGeneratedCode, setHasGeneratedCode] = useState<boolean>(false);
+  // ---------------------------------------------------------------------------
+  // 3. Code Generation & Configuration State
+  // ---------------------------------------------------------------------------
   const [config, setConfig] = useState<GenerationConfig>({
-    framework: 'google_adk',
-    language: 'python',
-    outputFolder: './src/agents/',
-    deploymentTarget: 'agent_engine',
-    includeTests: true,
-    includeDocker: false,
-    useStreaming: true,
+    framework: (initialInjectedDoc?.deployment?.framework === 'google-adk'
+      ? 'google_adk'
+      : (initialInjectedDoc?.deployment?.framework || (initialInjectedDoc?.framework === 'google-adk' ? 'google_adk' : initialInjectedDoc?.framework) || settings.defaultFramework || 'google_adk')) as any,
+    language: (initialInjectedDoc?.deployment?.language || initialInjectedDoc?.language || settings.defaultLanguage || 'python') as any,
+    outputFolder: initialOutputFolder,
+    deploymentTarget: (initialInjectedDoc?.deployment?.target || initialInjectedDoc?.deployment?.deploymentTarget || (initialInjectedDoc?.metadata as any)?.deploymentTarget || 'agent_engine') as any,
+    includeTests: typeof initialInjectedDoc?.deployment?.includeTests === 'boolean' ? initialInjectedDoc.deployment.includeTests : true,
+    includeDocker: typeof initialInjectedDoc?.deployment?.includeDocker === 'boolean' ? initialInjectedDoc.deployment.includeDocker : false,
+    useStreaming: typeof initialInjectedDoc?.deployment?.useStreaming === 'boolean' ? initialInjectedDoc.deployment.useStreaming : (settings.useStreamingByDefault ?? true),
+    deployedResourceId: initialInjectedDoc?.deployment?.deployedResourceId,
+    serviceUrl: initialInjectedDoc?.deployment?.serviceUrl,
+    consoleUrl: initialInjectedDoc?.deployment?.consoleUrl,
+    deployedAt: initialInjectedDoc?.deployment?.deployedAt,
   });
 
   const [generatedFiles, setGeneratedFiles] = useState<GeneratedFile[]>([]);
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [hasGeneratedCode, setHasGeneratedCode] = useState<boolean>(false);
 
-  // Synchronize active tab in fileTabs state whenever nodes, edges, or config change
-  useEffect(() => {
-    setFileTabs((prev) =>
-      prev.map((t) => (t.id === activeTabId ? { ...t, nodes, edges, config } : t))
-    );
-  }, [nodes, edges, config, activeTabId]);
+  // ---------------------------------------------------------------------------
+  // 4. Custom Hooks (Tabs, Tools, Resizing, Shortcuts, Extension Sync)
+  // ---------------------------------------------------------------------------
+  const {
+    fileTabs,
+    setFileTabs,
+    activeTabId,
+    handleOpenSampleInNewTab,
+    handleCloseTab,
+  } = useFileTabs(nodes, edges, config, {
+    defaultFramework: settings.defaultFramework,
+    defaultLanguage: settings.defaultLanguage,
+    useStreamingByDefault: settings.useStreamingByDefault,
+    fitView,
+    initializeTabHistory,
+    setNodes,
+    setEdges,
+    setConfig,
+    setGeneratedFiles,
+    setSelectedAgentId,
+    setSelectedTriggerId,
+    setIsTriggerDrawerOpen,
+    setIsToolDrawerOpen: () => {},
+    setToolModalAgentId,
+    setActiveEditorTab,
+  });
 
-  // Tab switching handler
-  const handleSelectTab = useCallback(
-    (tabId: string) => {
-      if (tabId === activeTabId) return;
+  const {
+    tools,
+    editingTool,
+    editingToolScope,
+    setEditingToolScope,
+    isToolDrawerOpen,
+    setIsToolDrawerOpen,
+    handleOpenEditTool,
+    handleOpenEditAgentTool,
+    handleCreateCustomTool,
+    handleCreateMcpTool,
+    handleSaveTool,
+    handleDeleteTool,
+  } = useToolsManager({
+    nodes,
+    edges,
+    setNodes,
+    recordSnapshot,
+    setSelectedAgentId,
+    setSelectedTriggerId,
+    setIsTriggerDrawerOpen,
+  });
 
-      const targetTab = fileTabs.find((t) => t.id === tabId);
-      if (targetTab) {
-        setActiveTabId(tabId);
-        setNodes(targetTab.nodes);
-        setEdges(targetTab.edges);
-        setConfig(targetTab.config);
-        setSelectedAgentId(targetTab.selectedAgentId || null);
-        setSelectedTriggerId(targetTab.selectedTriggerId || null);
-        setIsTriggerDrawerOpen(false);
-        setIsToolDrawerOpen(false);
-        setToolModalAgentId(null);
+  const {
+    bottomPanelHeight,
+    setBottomPanelHeight,
+    isPanelMaximized,
+    isDraggingDivider,
+    panelContainerRef,
+    handleToggleMaximizePanel,
+    handleDividerMouseDown,
+  } = useResizablePanel();
 
-        // Regenerate code for graph
-        setGeneratedFiles(generateCodeForGraph(targetTab.nodes, targetTab.edges, targetTab.config));
+  useExtensionSync({
+    bridge,
+    nodes,
+    edges,
+    config,
+    fileTabs,
+    activeTabId,
+    setNodes,
+    setEdges,
+    setFileTabs,
+    fitView,
+    setConfig,
+    setGeneratedFiles,
+    setHasGeneratedCode,
+    setIsGenerating,
+    recordSnapshot,
+  });
 
-        setTimeout(() => {
-          fitView({ padding: 0.2, duration: 400 });
-        }, 60);
-      }
-    },
-    [activeTabId, fileTabs, setNodes, setEdges, fitView]
-  );
-
-  // Open a sample workflow in a new .agent tab
-  const handleOpenSampleInNewTab = useCallback(
-    (sample: SampleWorkflowDefinition) => {
-      const newTabId = `tab-${sample.id}-${Date.now()}`;
-      const sampleConfig: GenerationConfig = {
-        framework: sample.config?.framework || 'google_adk',
-        language: sample.config?.language || 'python',
-        outputFolder: sample.config?.outputFolder || `./src/${sample.id}_agent/`,
-        includeTests: sample.config?.includeTests ?? true,
-        includeDocker: sample.config?.includeDocker ?? true,
-        useStreaming: sample.config?.useStreaming ?? true,
-      };
-
-      const newTab: AgentFileTab = {
-        id: newTabId,
-        filename: sample.filename,
-        title: sample.name,
-        nodes: sample.nodes,
-        edges: sample.edges,
-        config: sampleConfig,
-        sampleId: sample.id,
-      };
-
-      setFileTabs((prev) => [...prev, newTab]);
-      setActiveTabId(newTabId);
-      setNodes(sample.nodes);
-      setEdges(sample.edges);
-      setConfig(sampleConfig);
-      setSelectedAgentId(null);
-      setSelectedTriggerId(null);
-      setIsTriggerDrawerOpen(false);
-      setIsToolDrawerOpen(false);
-      setToolModalAgentId(null);
-      setActiveEditorTab('flow');
-
-      setGeneratedFiles(generateCodeForGraph(sample.nodes, sample.edges, sampleConfig));
-      initializeTabHistory(newTabId, sample.nodes, sample.edges);
-
-      setTimeout(() => {
-        fitView({ padding: 0.2, duration: 500 });
-      }, 100);
-    },
-    [setNodes, setEdges, setActiveEditorTab, fitView, initializeTabHistory]
-  );
-
-  // Create a new completely blank .agent file tab
-  const handleNewTab = useCallback(() => {
-    const num = newTabCounter;
-    setNewTabCounter((c) => c + 1);
-    const newTabId = `tab-untitled-${Date.now()}`;
-    const defaultTabConfig: GenerationConfig = {
-      framework: settings.defaultFramework || 'google_adk',
-      language: settings.defaultLanguage || 'python',
-      outputFolder: `./src/agents/agent_${num}/`,
-      includeTests: true,
-      includeDocker: false,
-      useStreaming: settings.useStreamingByDefault ?? true,
-    };
-
-    // Blank diagram: empty nodes and edges
-    const newNodes: Node<any>[] = [];
-    const newEdges: Edge[] = [];
-
-    const newTab: AgentFileTab = {
-      id: newTabId,
-      filename: `untitled-${num}.agent`,
-      title: `untitled-${num}.agent`,
-      nodes: newNodes,
-      edges: newEdges,
-      config: defaultTabConfig,
-    };
-
-    setFileTabs((prev) => [...prev, newTab]);
-    setActiveTabId(newTabId);
-    setNodes(newNodes);
-    setEdges(newEdges);
-    setConfig(defaultTabConfig);
-    setSelectedAgentId(null);
-    setSelectedTriggerId(null);
-    setIsTriggerDrawerOpen(false);
-    setIsToolDrawerOpen(false);
-    setToolModalAgentId(null);
-    setActiveEditorTab('flow');
-
-    initializeTabHistory(newTabId, newNodes, newEdges);
-    setGeneratedFiles(generateCodeForGraph(newNodes, newEdges, defaultTabConfig));
-
-    setTimeout(() => {
-      fitView({ padding: 0.2, duration: 400 });
-    }, 100);
-  }, [newTabCounter, settings, setNodes, setEdges, setActiveEditorTab, fitView, initializeTabHistory]);
-
-  // Undo diagram state
-  const handleUndo = useCallback(() => {
-    const prevState = undo();
-    if (prevState) {
-      setNodes(prevState.nodes);
-      setEdges(prevState.edges);
-      setSelectedAgentId(prevState.selectedAgentId || null);
-      setSelectedTriggerId(prevState.selectedTriggerId || null);
-      setGeneratedFiles(generateCodeForGraph(prevState.nodes, prevState.edges, config));
-    }
-  }, [undo, config, setNodes, setEdges]);
-
-  // Redo diagram state
-  const handleRedo = useCallback(() => {
-    const nextState = redo();
-    if (nextState) {
-      setNodes(nextState.nodes);
-      setEdges(nextState.edges);
-      setSelectedAgentId(nextState.selectedAgentId || null);
-      setSelectedTriggerId(nextState.selectedTriggerId || null);
-      setGeneratedFiles(generateCodeForGraph(nextState.nodes, nextState.edges, config));
-    }
-  }, [redo, config, setNodes, setEdges]);
-
-  // Global keyboard shortcuts for Undo / Redo (Ctrl+Z / Cmd+Z, Ctrl+Y / Cmd+Shift+Z)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Avoid hijacking undo/redo inside input/textarea/contenteditable
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-
-      const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
-      const isCmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
-
-      if (isCmdOrCtrl && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          handleRedo();
-        } else {
-          handleUndo();
-        }
-      } else if (isCmdOrCtrl && e.key.toLowerCase() === 'y') {
-        e.preventDefault();
-        handleRedo();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo]);
-
-  // Close an open tab
-  const handleCloseTab = useCallback(
-    (tabId: string) => {
-      const index = fileTabs.findIndex((t) => t.id === tabId);
-      if (index === -1) return;
-
-      const newTabs = fileTabs.filter((t) => t.id !== tabId);
-
-      if (tabId === activeTabId) {
-        if (newTabs.length > 0) {
-          const nextTab = index > 0 ? newTabs[index - 1] : newTabs[0];
-          setActiveTabId(nextTab.id);
-          setNodes(nextTab.nodes);
-          setEdges(nextTab.edges);
-          setConfig(nextTab.config);
-          setSelectedAgentId(nextTab.selectedAgentId || null);
-          setSelectedTriggerId(nextTab.selectedTriggerId || null);
-          setGeneratedFiles(generateCodeForGraph(nextTab.nodes, nextTab.edges, nextTab.config));
-        } else {
-          // Reset to default fresh workflow.agent
-          const defaultTab: AgentFileTab = {
-            id: `tab-workflow-${Date.now()}`,
-            filename: 'workflow.agent',
-            title: 'workflow.agent',
-            nodes: INITIAL_NODES,
-            edges: INITIAL_EDGES,
-            config: {
-              framework: 'google_adk',
-              language: 'python',
-              outputFolder: './src/agents/',
-              includeTests: true,
-              includeDocker: false,
-              useStreaming: true,
-            },
-          };
-          newTabs.push(defaultTab);
-          setActiveTabId(defaultTab.id);
-          setNodes(INITIAL_NODES);
-          setEdges(INITIAL_EDGES);
-          setConfig(defaultTab.config);
-          setGeneratedFiles(generateCodeForGraph(INITIAL_NODES, INITIAL_EDGES, defaultTab.config));
-        }
-      }
-
-      setFileTabs(newTabs);
-    },
-    [fileTabs, activeTabId, setNodes, setEdges]
-  );
-
-  // Agent node handlers
+  // ---------------------------------------------------------------------------
+  // 5. Node / Trigger Mutation Handlers
+  // ---------------------------------------------------------------------------
   const handleEditAgent = useCallback((id: string) => {
     setSelectedAgentId(id);
     setSelectedTriggerId(null);
     setIsTriggerDrawerOpen(false);
     setIsToolDrawerOpen(false);
-  }, []);
+  }, [setIsToolDrawerOpen]);
 
   const handleDeleteAgent = useCallback(
     (id: string) => {
       const nextNodes = nodes.filter((n) => n.id !== id);
       const nextEdges = edges.filter((e) => e.source !== id && e.target !== id);
-      setNodes(nextNodes);
+      const cleanedNodes = syncAgentSubAgents(nextNodes, nextEdges);
+
+      setNodes(cleanedNodes);
       setEdges(nextEdges);
-      if (selectedAgentId === id) setSelectedAgentId(null);
-      recordSnapshot(nextNodes, nextEdges, { description: 'Delete agent' });
+      recordSnapshot(cleanedNodes, nextEdges, { description: 'Delete agent' });
+
+      if (selectedAgentId === id) {
+        setSelectedAgentId(null);
+      }
     },
-    [selectedAgentId, nodes, edges, setNodes, setEdges, recordSnapshot]
+    [nodes, edges, selectedAgentId, setNodes, setEdges, recordSnapshot]
   );
 
-  const handleOpenAddTool = useCallback((id: string) => {
-    setToolModalAgentId(id);
+  const handleEditTrigger = useCallback((id: string) => {
+    setSelectedTriggerId(id);
+    setIsTriggerDrawerOpen(true);
+    setSelectedAgentId(null);
+    setIsToolDrawerOpen(false);
+  }, [setIsToolDrawerOpen]);
+
+  const handleDeleteTrigger = useCallback(
+    (id: string) => {
+      const nextNodes = nodes.filter((n) => n.id !== id);
+      const nextEdges = edges.filter((e) => e.source !== id && e.target !== id);
+
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      recordSnapshot(nextNodes, nextEdges, { description: 'Delete trigger' });
+
+      if (selectedTriggerId === id) {
+        setSelectedTriggerId(null);
+        setIsTriggerDrawerOpen(false);
+      }
+    },
+    [nodes, edges, selectedTriggerId, setNodes, setEdges, recordSnapshot]
+  );
+
+  const handleNodesDelete = useCallback(
+    (nodesToDelete: Node[]) => {
+      nodesToDelete.forEach((n) => {
+        if (n.type === 'triggerNode') {
+          handleDeleteTrigger(n.id);
+        } else {
+          handleDeleteAgent(n.id);
+        }
+      });
+    },
+    [handleDeleteTrigger, handleDeleteAgent]
+  );
+
+  useCanvasKeyboardShortcuts({
+    onUndo: handleUndo,
+    onRedo: handleRedo,
+    selectedAgentId,
+    selectedTriggerId,
+    nodes,
+    onDeleteAgent: handleDeleteAgent,
+    onDeleteTrigger: handleDeleteTrigger,
+  });
+
+  const handleOpenAddTool = useCallback((agentId: string) => {
+    setToolModalAgentId(agentId);
   }, []);
 
   const handleAddSpecificTool = useCallback(
     (agentId: string, tool: ToolDefinition) => {
-      let updated = false;
+      const toolInstance: ToolDefinition = JSON.parse(JSON.stringify(tool));
       const nextNodes = nodes.map((n) => {
         if (n.id === agentId && n.type === 'agentNode') {
-          const currentTools = (n.data as AgentData).tools || [];
-          if (!currentTools.some((t) => t.id === tool.id)) {
-            updated = true;
-            return {
-              ...n,
-              data: {
-                ...n.data,
-                tools: [...currentTools, tool],
-              },
-            };
-          }
+          const currentTools: ToolDefinition[] = (n.data as AgentData).tools || [];
+          if (currentTools.some((t) => t.id === toolInstance.id)) return n;
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              tools: [...currentTools, toolInstance],
+            },
+          };
         }
         return n;
       });
-      if (updated) {
-        setNodes(nextNodes);
-        recordSnapshot(nextNodes, edges, { description: `Attach ${tool.name}` });
-      }
+      setNodes(nextNodes);
+      recordSnapshot(nextNodes, edges, { description: `Add tool: ${toolInstance.name}` });
     },
     [nodes, edges, setNodes, recordSnapshot]
   );
@@ -606,7 +436,31 @@ function FlowCanvas() {
   );
 
   const handleReorderSubAgents = useCallback(
-    (agentId: string, newOrder: any[]) => {
+    (agentId: string, startIndexOrNewOrder: number | any[], endIndex?: number) => {
+      const targetNode = nodes.find((n) => n.id === agentId);
+      if (!targetNode || targetNode.type !== 'agentNode') return;
+
+      const currentSubAgents: SubAgentRef[] = (targetNode.data as AgentData).subAgents || [];
+      let newOrder: SubAgentRef[];
+
+      if (typeof startIndexOrNewOrder === 'number' && typeof endIndex === 'number') {
+        if (
+          startIndexOrNewOrder < 0 ||
+          startIndexOrNewOrder >= currentSubAgents.length ||
+          endIndex < 0 ||
+          endIndex >= currentSubAgents.length
+        ) {
+          return;
+        }
+        newOrder = [...currentSubAgents];
+        const [moved] = newOrder.splice(startIndexOrNewOrder, 1);
+        newOrder.splice(endIndex, 0, moved);
+      } else if (Array.isArray(startIndexOrNewOrder)) {
+        newOrder = startIndexOrNewOrder;
+      } else {
+        return;
+      }
+
       const nextNodes = nodes.map((n) => {
         if (n.id === agentId && n.type === 'agentNode') {
           return {
@@ -626,7 +480,16 @@ function FlowCanvas() {
   );
 
   const handleUpdateSubAgentPattern = useCallback(
-    (agentId: string, pattern: any) => {
+    (agentId: string, pattern: 'sequential' | 'hierarchical' | 'parallel' | 'loop') => {
+      const targetNode = nodes.find((n) => n.id === agentId);
+      if (!targetNode || targetNode.type !== 'agentNode') return;
+
+      const currentSubAgents: SubAgentRef[] = (targetNode.data as AgentData).subAgents || [];
+      const updatedSubAgents = currentSubAgents.map((sub) => ({
+        ...sub,
+        delegationType: pattern,
+      }));
+
       const nextNodes = nodes.map((n) => {
         if (n.id === agentId && n.type === 'agentNode') {
           return {
@@ -634,236 +497,37 @@ function FlowCanvas() {
             data: {
               ...n.data,
               subAgentPattern: pattern,
+              subAgents: updatedSubAgents,
+              maxIterations: pattern === 'loop' ? (n.data as AgentData).maxIterations || 3 : (n.data as AgentData).maxIterations,
             },
           };
         }
         return n;
       });
       setNodes(nextNodes);
-      recordSnapshot(nextNodes, edges, { description: 'Update sub-agent pattern' });
+      recordSnapshot(nextNodes, edges, { description: `Update sub-agent pattern: ${pattern}` });
     },
     [nodes, edges, setNodes, recordSnapshot]
   );
 
-  // Trigger Node handlers
-  const handleEditTrigger = useCallback((triggerId: string) => {
-    setSelectedTriggerId(triggerId);
-    setIsTriggerDrawerOpen(true);
-    setSelectedAgentId(null);
-    setIsToolDrawerOpen(false);
-  }, []);
-
-  const handleDeleteTrigger = useCallback((triggerId: string) => {
-    const nextNodes = nodes.filter((n) => n.id !== triggerId);
-    const nextEdges = edges.filter((e) => e.source !== triggerId && e.target !== triggerId);
-    setNodes(nextNodes);
-    setEdges(nextEdges);
-    if (selectedTriggerId === triggerId) {
-      setSelectedTriggerId(null);
-      setIsTriggerDrawerOpen(false);
-    }
-    recordSnapshot(nextNodes, nextEdges, { description: 'Delete trigger' });
-  }, [selectedTriggerId, nodes, edges, setNodes, setEdges, recordSnapshot]);
-
-  const docVersionRef = useRef(1);
-  const isLoadedRef = useRef(false);
-  const lastSentJsonRef = useRef<string>('');
-
-  // Synchronize document from extension host when file is opened
-  useEffect(() => {
-    const unsub = bridge.subscribe('LOAD_DOCUMENT', (payload) => {
-      if (!payload?.document) return;
-
-      const doc = payload.document;
-      if (payload.docVersion) {
-        docVersionRef.current = payload.docVersion;
-      }
-
-      if (Array.isArray(doc.nodes)) {
-        const normNodes = normalizeLoadedNodes(doc.nodes);
-        const normEdges = normalizeLoadedEdges(doc.edges || []);
-        setNodes(normNodes);
-        setEdges(normEdges);
-        recordSnapshot(normNodes, normEdges, { description: 'Loaded document from disk' });
-
-        // Record initial loaded JSON to prevent immediately sending a duplicate back
-        const loadedJson = JSON.stringify({
-          version: doc.version || '1.0.0',
-          name: doc.name || 'agent_workflow',
-          description: doc.description || 'Agent Workflow Document',
-          framework: doc.framework || 'google-adk',
-          language: doc.language || 'python',
-          nodes: normNodes.map((n) => ({ id: n.id, type: n.type, position: { x: Math.round(n.position.x), y: Math.round(n.position.y) }, data: { ...n.data } })),
-          edges: normEdges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle, type: e.type, animated: e.animated, data: e.data })),
-          metadata: doc.metadata || {},
-        });
-        lastSentJsonRef.current = loadedJson;
-      }
-
-      const docMetadata = doc.metadata || {};
-      const targetFolder = (docMetadata as any).outputFolder || computeTargetFolder(payload.filePath || (doc.name ? doc.name + '.agent' : 'workflow.agent'));
-      setConfig((prev) => ({
-        ...prev,
-        framework: doc.framework === 'google-adk' ? 'google_adk' : (doc.framework as any) || prev.framework,
-        language: doc.language || prev.language,
-        outputFolder: targetFolder,
-        deploymentTarget: 'agent_engine',
-      }));
-
-      if (payload.generatedFiles && payload.generatedFiles.length > 0) {
-        setGeneratedFiles(payload.generatedFiles);
-        setHasGeneratedCode(true);
-      }
-
-      // Enable real-time document synchronization to VS Code text buffer after initial load
-      setTimeout(() => {
-        isLoadedRef.current = true;
-      }, 100);
-    });
-
-    const unsubCodeGenerated = bridge.subscribe('CODE_GENERATED', (payload) => {
-      setIsGenerating(false);
-      if (payload.success && payload.files && payload.files.length > 0) {
-        setGeneratedFiles(payload.files);
-        setHasGeneratedCode(true);
-      } else {
-        setGeneratedFiles([]);
-        setHasGeneratedCode(false);
-      }
-    });
-
-    const unsubFilesExist = bridge.subscribe('FILES_EXIST_RESPONSE', (payload) => {
-      if (payload?.generatedFiles && payload.generatedFiles.length > 0) {
-        setGeneratedFiles(payload.generatedFiles);
-        setHasGeneratedCode(true);
-      }
-    });
-
-    return () => {
-      unsub();
-      unsubCodeGenerated();
-      unsubFilesExist();
-    };
-  }, [bridge, setNodes, setEdges, recordSnapshot]);
-
-  // Check filesystem for generated code when target folder changes
-  useEffect(() => {
-    if (config.outputFolder) {
-      bridge.postMessage({
-        type: 'CHECK_FILES_EXIST',
-        payload: {
-          targetDirectory: config.outputFolder,
-        },
-      });
-    }
-  }, [config.outputFolder, bridge]);
-
-  // Real-time synchronization of nodes/edges/config back to VS Code text buffer via DOCUMENT_UPDATED
-  useEffect(() => {
-    if (!isLoadedRef.current) return;
-
-    const documentNodes: WorkflowNode[] = nodes.map((node) => ({
-      id: node.id,
-      type: node.type as any,
-      position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
-      data: { ...node.data },
-    }));
-
-    const documentEdges: WorkflowEdge[] = edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      sourceHandle: edge.sourceHandle || undefined,
-      targetHandle: edge.targetHandle || undefined,
-      type: edge.type,
-      animated: edge.animated,
-      data: edge.data ? { ...edge.data } : undefined,
-    }));
-
-    const currentActiveFile = fileTabs.find((t) => t.id === activeTabId) || fileTabs[0];
-
-    const updatedDoc: AgentWorkflowDocument = {
-      version: '1.0.0',
-      name: currentActiveFile?.filename ? currentActiveFile.filename.replace(/\.agent$/, '') : 'agent_workflow',
-      description: 'Agent Workflow Document',
-      framework: config.framework === 'google_adk' ? 'google-adk' : (config.framework as any) || 'google-adk',
-      language: config.language || 'python',
-      nodes: documentNodes,
-      edges: documentEdges,
-      metadata: {
-        outputFolder: config.outputFolder,
-        updatedAt: new Date().toISOString(),
-      },
-    };
-
-    const jsonString = JSON.stringify(updatedDoc);
-    if (jsonString === lastSentJsonRef.current) {
-      return;
-    }
-    lastSentJsonRef.current = jsonString;
-
-    docVersionRef.current += 1;
-    bridge.postMessage({
-      type: 'DOCUMENT_UPDATED',
-      payload: {
-        document: updatedDoc,
-        docVersion: docVersionRef.current,
-      },
-    });
-  }, [nodes, edges, config, bridge, fileTabs, activeTabId]);
-
-  // Keyboard shortcut listener to delete selected node(s) with Delete or Backspace
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedAgentId) {
-          e.preventDefault();
-          handleDeleteAgent(selectedAgentId);
-        } else if (selectedTriggerId) {
-          e.preventDefault();
-          handleDeleteTrigger(selectedTriggerId);
-        } else {
-          const selectedNodes = nodes.filter((n) => n.selected);
-          if (selectedNodes.length > 0) {
-            e.preventDefault();
-            selectedNodes.forEach((node) => {
-              if (node.type === 'triggerNode') {
-                handleDeleteTrigger(node.id);
-              } else {
-                handleDeleteAgent(node.id);
-              }
-            });
-          }
+  const handleUpdateMaxIterations = useCallback(
+    (agentId: string, maxIterations: number) => {
+      const nextNodes = nodes.map((n) => {
+        if (n.id === agentId && n.type === 'agentNode') {
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              maxIterations,
+            },
+          };
         }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedAgentId, selectedTriggerId, nodes, handleDeleteAgent, handleDeleteTrigger]);
-
-  const handleNodesDelete = useCallback(
-    (nodesToDelete: Node[]) => {
-      nodesToDelete.forEach((n) => {
-        if (n.type === 'triggerNode') {
-          handleDeleteTrigger(n.id);
-        } else {
-          handleDeleteAgent(n.id);
-        }
+        return n;
       });
+      setNodes(nextNodes);
+      recordSnapshot(nextNodes, edges, { description: `Update loop iterations: ${maxIterations}` });
     },
-    [handleDeleteTrigger, handleDeleteAgent]
+    [nodes, edges, setNodes, recordSnapshot]
   );
 
   const handleUpdateTriggerData = useCallback((triggerId: string, partial: Partial<TriggerData>) => {
@@ -883,7 +547,7 @@ function FlowCanvas() {
     recordSnapshot(nextNodes, edges, { description: 'Update trigger data' });
   }, [nodes, edges, setNodes, recordSnapshot]);
 
-  // Calculate the current single root agent ID based on existing connected triggers
+  // Derive target agent ID from trigger connections
   const triggerTargetAgentId = useMemo(() => {
     const triggerNodes = nodes.filter((n) => n.type === 'triggerNode');
     const triggerEdges = edges.filter((e) => triggerNodes.some((tn) => tn.id === e.source));
@@ -896,18 +560,16 @@ function FlowCanvas() {
 
   // Synchronize isStartNode on agent nodes whenever trigger connections change
   useEffect(() => {
-    setNodes((nds) => {
+    setNodes((nds: any[]) => {
       let hasChanges = false;
       const targetId = triggerTargetAgentId;
 
-      const agentNodes = nds.filter((n) => n.type === 'agentNode');
-      const hasAnyStart = agentNodes.some((n) => (n.data as AgentData).isStartNode);
+      const agentNodes = nds.filter((n: any) => n.type === 'agentNode');
+      const hasAnyStart = agentNodes.some((n: any) => (n.data as AgentData).isStartNode);
       const defaultStartId = targetId || (hasAnyStart ? null : agentNodes[0]?.id);
 
-      const updated = nds.map((n) => {
+      const updated = nds.map((n: any) => {
         if (n.type === 'agentNode') {
-          // If triggers are attached, only the targeted agent is start node
-          // If no triggers are attached to any agent, preserve current or default first agent as start
           const shouldBeStart = targetId
             ? n.id === targetId
             : (hasAnyStart ? n.data.isStartNode : n.id === defaultStartId);
@@ -930,47 +592,39 @@ function FlowCanvas() {
     });
   }, [triggerTargetAgentId, setNodes]);
 
-  // React Flow Connection Validation:
-  // Once a node has a trigger attached, you cannot add triggers to any other agents
+  // ---------------------------------------------------------------------------
+  // 6. Graph Connection & Validation Logic
+  // ---------------------------------------------------------------------------
   const isValidConnection = useCallback(
     (connection: Connection | Edge) => {
       if (!connection.source || !connection.target) return false;
+      if (connection.source === connection.target) return false;
+
       const sourceNode = nodes.find((n) => n.id === connection.source);
       const targetNode = nodes.find((n) => n.id === connection.target);
 
-      // Agent-to-Agent connectors should ONLY connect bottom to top (target handle must be 'input')
-      if (sourceNode?.type === 'agentNode' && targetNode?.type === 'agentNode') {
-        if (connection.targetHandle === 'input_left') {
+      // Target agent nodes accept connections on Top ('input') or Left ('input_left' on Root agent only)
+      if (targetNode?.type === 'agentNode') {
+        const isRoot = (targetNode.data as AgentData)?.isStartNode;
+        const validInHandles = isRoot ? ['input', 'input_left'] : ['input'];
+        if (connection.targetHandle && !validInHandles.includes(connection.targetHandle)) {
           return false;
         }
       }
 
-      // If source is a trigger node
+      if (sourceNode?.type === 'agentNode') {
+        if (targetNode?.type !== 'agentNode') return false;
+      }
+
       if (sourceNode?.type === 'triggerNode') {
-        // Triggers can only connect to Agent nodes
         if (targetNode?.type !== 'agentNode') return false;
 
-        const triggerKind = (sourceNode.data as any)?.kind || (sourceNode.data as any)?.triggerType;
-        const isTester = triggerKind === 'test_suite' || triggerKind === 'test' || triggerKind === 'qa' || triggerKind === 'tester';
-
-        // Test Suite triggers can ONLY connect to the Root node (isStartNode === true)
-        if (isTester && !(targetNode.data as AgentData)?.isStartNode) {
-          return false;
-        }
-
-        // Non-test suite triggers can ONLY connect bottom to top (target handle must be 'input')
-        if (!isTester && connection.targetHandle === 'input_left') {
-          return false;
-        }
-
-        // Check if triggers are ALREADY attached to a DIFFERENT agent node
         const triggerNodes = nodes.filter((n) => n.type === 'triggerNode');
-        const existingTriggerEdges = edges.filter(
+        const otherTriggerEdges = edges.filter(
           (e) => triggerNodes.some((tn) => tn.id === e.source) && e.source !== connection.source
         );
-        const existingRootTargets = Array.from(new Set(existingTriggerEdges.map((e) => e.target)));
+        const existingRootTargets = Array.from(new Set(otherTriggerEdges.map((e) => e.target)));
 
-        // If another agent already has triggers, disallow connecting to this different agent
         if (existingRootTargets.length > 0 && !existingRootTargets.includes(connection.target)) {
           return false;
         }
@@ -981,11 +635,9 @@ function FlowCanvas() {
     [nodes, edges]
   );
 
-  // Reconnect all triggers to a designated root agent
   const reconnectTriggersToRoot = useCallback((rootAgentId: string) => {
-    // 1. Update all agent nodes so only rootAgentId is start node
-    setNodes((nds) =>
-      nds.map((n) => {
+    setNodes((nds: any[]) =>
+      nds.map((n: any) => {
         if (n.type === 'agentNode') {
           return {
             ...n,
@@ -1008,24 +660,23 @@ function FlowCanvas() {
       })
     );
 
-    // 2. Update edges: remove old trigger edges, create clean ones to new root
-    setEdges((eds) => {
-      // Find all current trigger node IDs
+    setEdges((eds: any[]) => {
+      const nonTriggerEdges = eds.filter((e) => !nodes.some((n) => n.type === 'triggerNode' && n.id === e.source));
       const triggerNodes = nodes.filter((n) => n.type === 'triggerNode');
-      const nonTriggerEdges = eds.filter((e) => !triggerNodes.some((tn) => tn.id === e.source));
-      
-      const newTriggerEdges: Edge[] = triggerNodes.map((tn) => {
-        const isTester = (tn.data as TriggerData)?.triggerType === 'tester';
+
+      const newTriggerEdges = triggerNodes.map((tn) => {
+        const trigType = (tn.data as TriggerData)?.triggerType;
+        const isTester = trigType === 'tester';
+        const isChat = trigType === 'chat';
         return {
           id: `e_trigger_${tn.id}_${rootAgentId}`,
           source: tn.id,
-          sourceHandle: isTester ? 'trigger_out_right' : 'trigger_out_bottom',
+          sourceHandle: isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom',
           target: rootAgentId,
-          targetHandle: isTester ? 'input_left' : 'input',
+          targetHandle: isTester || isChat ? 'input_left' : 'input',
           animated: true,
-          label: isTester ? 'Test Suite Inbound' : 'Trigger Invocation',
           style: {
-            stroke: isTester ? '#ec4899' : '#f59e0b',
+            stroke: '#f59e0b',
             strokeWidth: 2,
             strokeDasharray: '5 5',
           },
@@ -1036,7 +687,7 @@ function FlowCanvas() {
     });
   }, [nodes, setNodes, setEdges]);
 
-  // Bind node action callbacks
+  // Bind callback methods directly to node data payloads
   const enrichedNodes = useMemo(() => {
     return nodes.map((node) => {
       if (node.type === 'triggerNode') {
@@ -1060,23 +711,24 @@ function FlowCanvas() {
           onRemoveTool: handleRemoveTool,
           onReorderSubAgents: handleReorderSubAgents,
           onUpdateSubAgentPattern: handleUpdateSubAgentPattern,
+          onUpdateMaxIterations: handleUpdateMaxIterations,
         },
       };
     });
   }, [
-    nodes, 
-    handleEditAgent, 
-    handleDeleteAgent, 
-    handleOpenAddTool, 
-    handleAddSpecificTool, 
-    handleRemoveTool, 
-    handleReorderSubAgents, 
+    nodes,
+    handleEditAgent,
+    handleDeleteAgent,
+    handleOpenAddTool,
+    handleAddSpecificTool,
+    handleRemoveTool,
+    handleReorderSubAgents,
     handleUpdateSubAgentPattern,
+    handleUpdateMaxIterations,
     handleEditTrigger,
-    handleDeleteTrigger
+    handleDeleteTrigger,
   ]);
 
-  // On edge connect
   const onConnect = useCallback(
     (connection: Connection) => {
       const sourceNode = nodes.find((n) => n.id === connection.source);
@@ -1089,7 +741,6 @@ function FlowCanvas() {
         const targetAgent = nodes.find((n) => n.id === connection.target);
         if (!targetAgent || targetAgent.type !== 'agentNode') return;
 
-        // Validation: Check if another agent node already has triggers attached
         const triggerNodes = nodes.filter((n) => n.type === 'triggerNode');
         const otherTriggerEdges = edges.filter(
           (e) => triggerNodes.some((tn) => tn.id === e.source) && e.source !== connection.source
@@ -1106,18 +757,19 @@ function FlowCanvas() {
         }
 
         // Trigger can connect to this root agent
-        const isTester = (sourceNode.data as TriggerData)?.triggerType === 'tester';
+        const trigType = (sourceNode.data as TriggerData)?.triggerType;
+        const isTester = trigType === 'tester';
+        const isChat = trigType === 'chat';
         const newTriggerEdge: Edge = {
           ...connection,
           id: `e_trigger_${connection.source}_${connection.target}`,
           source: connection.source!,
-          sourceHandle: connection.sourceHandle || (isTester ? 'trigger_out_right' : 'trigger_out_bottom'),
+          sourceHandle: connection.sourceHandle || (isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom'),
           target: connection.target,
-          targetHandle: connection.targetHandle || (isTester ? 'input_left' : 'input'),
+          targetHandle: connection.targetHandle || (isTester || isChat ? 'input_left' : 'input'),
           animated: true,
-          label: isTester ? 'Test Suite Inbound' : 'Trigger Invocation',
           style: {
-            stroke: isTester ? '#ec4899' : '#f59e0b',
+            stroke: '#f59e0b',
             strokeWidth: 2,
             strokeDasharray: '5 5',
           },
@@ -1125,7 +777,31 @@ function FlowCanvas() {
 
         const nextEdges = [...edges.filter((e) => e.source !== connection.source), newTriggerEdge];
         setEdges(nextEdges);
-        recordSnapshot(nodes, nextEdges, { description: 'Connect trigger' });
+
+        const nextNodes = nodes.map((n) => {
+          if (n.id === connection.target && n.type === 'agentNode') {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                isStartNode: true,
+              },
+            };
+          }
+          if (n.id === connection.source && n.type === 'triggerNode') {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                targetRootAgentId: connection.target,
+              },
+            };
+          }
+          return n;
+        });
+        setNodes(nextNodes);
+
+        recordSnapshot(nextNodes, nextEdges, { description: 'Connect trigger' });
         return;
       }
 
@@ -1138,19 +814,16 @@ function FlowCanvas() {
           ...connection,
           id: `e_router_${connection.source}_${connection.sourceHandle}_${connection.target}`,
           animated: true,
-          label: matchingBranch?.label ? `Route: ${matchingBranch.label}` : `Branch Route #${matchingBranchIdx + 1}`,
-          style: { stroke: '#a855f7', strokeWidth: 2 },
+          style: { stroke: '#3b82f6', strokeWidth: 2 },
           targetHandle: connection.targetHandle || 'input',
         } as Edge;
 
-        // Replace any existing edge from this specific router branch handle
         const nextEdges = [
           ...edges.filter((e) => !(e.source === connection.source && e.sourceHandle === connection.sourceHandle)),
           newEdge,
         ];
         setEdges(nextEdges);
 
-        // Update the router node's branch to record targetAgentId
         let nextNodes = nodes;
         if (matchingBranch) {
           const updatedBranches = branches.map((b) =>
@@ -1181,9 +854,8 @@ function FlowCanvas() {
         ...connection,
         id: `e_${connection.source}_${connection.target}_${Date.now()}`,
         animated: true,
-        label: isSubAgentConnection ? 'Sub-Agent Link' : 'Next Step',
         style: isSubAgentConnection
-          ? { stroke: '#f59e0b', strokeWidth: 2, strokeDasharray: '4 4' }
+          ? { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' }
           : { stroke: '#3b82f6', strokeWidth: 2 },
       } as Edge;
 
@@ -1191,148 +863,18 @@ function FlowCanvas() {
       setEdges(nextEdges);
 
       let nextNodes = nodes;
-      // If linking sub-agent, update parent agent's subAgents array
-      if (isSubAgentConnection && connection.source && connection.target) {
-        const targetNode = nodes.find((n) => n.id === connection.target);
-        if (targetNode && targetNode.type === 'agentNode') {
-          nextNodes = nodes.map((n) => {
-            if (n.id === connection.source && n.type === 'agentNode') {
-              const existing = (n.data as AgentData).subAgents || [];
-              if (!existing.some((s) => s.agentId === connection.target)) {
-                return {
-                  ...n,
-                  data: {
-                    ...n.data,
-                    subAgents: [
-                      ...existing,
-                      {
-                        agentId: targetNode.id,
-                        name: targetNode.data.label,
-                        role: targetNode.data.role,
-                        delegationType: 'parallel',
-                      },
-                    ],
-                  },
-                };
-              }
-            }
-            return n;
-          });
-          setNodes(nextNodes);
-        }
+      if (sourceNode?.type === 'agentNode') {
+        nextNodes = syncAgentSubAgents(nodes, nextEdges);
+        setNodes(nextNodes);
       }
       recordSnapshot(nextNodes, nextEdges, { description: 'Connect agents' });
     },
     [nodes, edges, setEdges, setNodes, reconnectTriggersToRoot, recordSnapshot]
   );
 
-  // Tool Drawer Actions
-  const handleOpenEditTool = useCallback((tool: ToolDefinition) => {
-    setEditingTool(tool);
-    setIsToolDrawerOpen(true);
-    setSelectedAgentId(null);
-    setSelectedTriggerId(null);
-    setIsTriggerDrawerOpen(false);
-  }, []);
-
-  const handleCreateCustomTool = useCallback(() => {
-    const newTool: ToolDefinition = {
-      id: `tool_custom_${Date.now()}`,
-      name: 'Custom API Tool',
-      type: 'api',
-      description: 'Custom external API integration or web service.',
-      codePrompt: 'Call the Twitter/X or external API endpoint with required parameters and return parsed JSON data.',
-      endpointUrl: 'https://api.example.com/v1/resource',
-      authKeyEnv: 'API_SECRET_KEY',
-      parameters: {
-        query: 'string - search query or resource identifier',
-      },
-      enabled: true,
-    };
-    setEditingTool(newTool);
-    setIsToolDrawerOpen(true);
-    setSelectedAgentId(null);
-    setSelectedTriggerId(null);
-    setIsTriggerDrawerOpen(false);
-  }, []);
-
-  const handleCreateMcpTool = useCallback(() => {
-    const newMcpTool: ToolDefinition = {
-      id: `tool_mcp_${Date.now()}`,
-      name: 'New MCP Server',
-      type: 'mcp',
-      description: 'Model Context Protocol (MCP) server providing tools and resources.',
-      codePrompt: 'Connect to MCP server via stdio/sse and invoke exposed tool capabilities.',
-      enabled: true,
-      mcpConfig: {
-        serverName: 'custom-mcp-server',
-        transport: 'stdio',
-        command: 'npx',
-        args: ['-y', '@modelcontextprotocol/server-everything'],
-        envVars: {
-          MCP_AUTH_TOKEN: 'your-token-if-needed',
-        },
-        exposedTools: ['*'],
-        autoApproveTools: ['read_*'],
-      },
-    };
-    setEditingTool(newMcpTool);
-    setIsToolDrawerOpen(true);
-    setSelectedAgentId(null);
-    setSelectedTriggerId(null);
-    setIsTriggerDrawerOpen(false);
-  }, []);
-
-  const handleSaveTool = useCallback((savedTool: ToolDefinition) => {
-    setTools((prev) => {
-      const exists = prev.some((t) => t.id === savedTool.id);
-      if (exists) {
-        return prev.map((t) => (t.id === savedTool.id ? savedTool : t));
-      }
-      return [savedTool, ...prev];
-    });
-
-    // Synchronize to any agent nodes holding this tool
-    setNodes((nds) =>
-      nds.map((n) => {
-        if (n.type === 'agentNode') {
-          const agentData = n.data as AgentData;
-          const hasTool = agentData.tools?.some((t) => t.id === savedTool.id);
-          if (hasTool) {
-            return {
-              ...n,
-              data: {
-                ...n.data,
-                tools: agentData.tools.map((t) => (t.id === savedTool.id ? savedTool : t)),
-              },
-            };
-          }
-        }
-        return n;
-      })
-    );
-  }, [setNodes]);
-
-  const handleDeleteTool = useCallback((toolId: string) => {
-    setTools((prev) => prev.filter((t) => t.id !== toolId));
-    setNodes((nds) =>
-      nds.map((n) => {
-        if (n.type === 'agentNode') {
-          const agentData = n.data as AgentData;
-          return {
-            ...n,
-            data: {
-              ...n.data,
-              tools: (agentData.tools || []).filter((t) => t.id !== toolId),
-            },
-          };
-        }
-        return n;
-      })
-    );
-  }, [setNodes]);
-
-  // Drag & Drop onto canvas
+  // ---------------------------------------------------------------------------
+  // 7. Drag-and-Drop & Creation Handlers
+  // ---------------------------------------------------------------------------
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -1344,11 +886,10 @@ function FlowCanvas() {
 
       const type = event.dataTransfer.getData('application/reactflow/type');
       const isPattern = event.dataTransfer.getData('application/reactflow/isPattern') === 'true';
-      const agentKind = event.dataTransfer.getData('application/reactflow/agentKind') as AgentKind | undefined;
       const triggerType = event.dataTransfer.getData('application/reactflow/triggerType') as TriggerType | undefined;
+      const agentKindData = event.dataTransfer.getData('application/reactflow/agentKind') as AgentKind | '';
       const toolDataStr = event.dataTransfer.getData('application/reactflow/tool');
 
-      // If dropped tool on canvas and an agent is selected, attach tool
       if (toolDataStr) {
         try {
           const droppedTool = JSON.parse(toolDataStr) as ToolDefinition;
@@ -1368,7 +909,6 @@ function FlowCanvas() {
         y: event.clientY,
       });
 
-      // Handling Trigger drop: Auto-connect to root agent
       if (type === 'trigger') {
         const rootAgent = nodes.find((n) => n.type === 'agentNode' && (n.data as AgentData).isStartNode) ||
           nodes.find((n) => n.type === 'agentNode');
@@ -1384,17 +924,18 @@ function FlowCanvas() {
         let nextEdges = [...edges];
 
         if (rootAgent) {
-          const isTester = (triggerType || 'chat') === 'tester';
+          const effectiveTriggerType = triggerType || 'chat';
+          const isTester = effectiveTriggerType === 'tester';
+          const isChat = effectiveTriggerType === 'chat';
           const triggerEdge: Edge = {
             id: `e_trigger_${newTriggerNode.id}_${rootAgent.id}`,
             source: newTriggerNode.id,
-            sourceHandle: isTester ? 'trigger_out_right' : 'trigger_out_bottom',
+            sourceHandle: isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom',
             target: rootAgent.id,
-            targetHandle: isTester ? 'input_left' : 'input',
+            targetHandle: isTester || isChat ? 'input_left' : 'input',
             animated: true,
-            label: isTester ? 'Test Suite Inbound' : 'Trigger Invocation',
             style: {
-              stroke: isTester ? '#ec4899' : '#f59e0b',
+              stroke: '#f59e0b',
               strokeWidth: 2,
               strokeDasharray: '5 5',
             },
@@ -1428,12 +969,15 @@ function FlowCanvas() {
         recordSnapshot(nextNodes, nextEdges, { description: `Add pattern ${type}` });
       } else {
         const hasStartNode = nodes.some((n) => n.type === 'agentNode' && (n.data as AgentData).isStartNode);
+        const effectiveKind: AgentKind = (agentKindData === 'a2a' || agentKindData === 'router' || agentKindData === 'standard')
+          ? agentKindData
+          : (type === 'a2a' || type === 'router' ? (type as AgentKind) : 'standard');
         const newNode = createSingleAgentNode(
-          position.x, 
-          position.y, 
-          undefined, 
-          undefined, 
-          agentKind || 'standard',
+          position.x,
+          position.y,
+          undefined,
+          undefined,
+          effectiveKind,
           {
             model: settings.defaultModel,
             temperature: settings.defaultTemperature,
@@ -1446,18 +990,16 @@ function FlowCanvas() {
         }
         const nextNodes = [...nodes, newNode];
         setNodes(nextNodes);
-        recordSnapshot(nextNodes, edges, { description: `Add agent` });
+        recordSnapshot(nextNodes, edges, { description: `Add ${effectiveKind || 'agent'}` });
       }
     },
-    [screenToFlowPosition, setNodes, setEdges, selectedAgentId, handleAddSpecificTool, nodes, edges, settings, recordSnapshot]
+    [nodes, edges, settings, setNodes, setEdges, recordSnapshot, screenToFlowPosition, selectedAgentId, handleAddSpecificTool]
   );
 
-  // Add Root Agent with Test Suite Trigger (no sub-agents)
   const handleAddRootWithTestSuite = useCallback(() => {
-    const starterAgent = createSingleAgentNode(420, 160, 'Root Agent', undefined, 'standard', {
+    const starterAgent = createSingleAgentNode(420, 140, 'Primary Agent', 'Root coordinator and task orchestrator', 'standard', {
       model: settings.defaultModel,
       temperature: settings.defaultTemperature,
-      maxIterations: settings.defaultMaxIterations,
       memoryType: settings.defaultMemoryType,
       colorTheme: settings.defaultAgentTheme,
       subAgents: [],
@@ -1473,9 +1015,8 @@ function FlowCanvas() {
       target: starterAgent.id,
       targetHandle: 'input_left',
       animated: true,
-      label: 'Test Suite Inbound',
       style: {
-        stroke: '#ec4899',
+        stroke: '#f59e0b',
         strokeWidth: 2,
         strokeDasharray: '5 5',
       },
@@ -1493,14 +1034,13 @@ function FlowCanvas() {
     }, 60);
   }, [nodes, edges, settings, setNodes, setEdges, recordSnapshot, fitView]);
 
-  // Add agent directly from palette click
   const handleAddAgentDirect = useCallback((kind: AgentKind = 'standard') => {
     const hasStartNode = nodes.some((n) => n.type === 'agentNode' && (n.data as AgentData).isStartNode);
     const newNode = createSingleAgentNode(
-      150 + Math.random() * 200, 
-      150 + Math.random() * 150, 
-      undefined, 
-      undefined, 
+      150 + Math.random() * 200,
+      150 + Math.random() * 150,
+      undefined,
+      undefined,
       kind,
       {
         model: settings.defaultModel,
@@ -1517,7 +1057,6 @@ function FlowCanvas() {
     recordSnapshot(nextNodes, edges, { description: `Add agent` });
   }, [nodes, edges, setNodes, settings, recordSnapshot]);
 
-  // Add pattern directly from palette click
   const handleAddPatternDirect = useCallback(
     (patternType: PatternType) => {
       const rawPattern = createPatternNodesAndEdges(patternType, 0, 0);
@@ -1539,18 +1078,18 @@ function FlowCanvas() {
     [nodes, edges, setNodes, setEdges, recordSnapshot]
   );
 
-  // Add trigger directly from palette click
   const handleAddTriggerDirect = useCallback(
     (triggerType: TriggerType) => {
       const rootAgent = nodes.find((n) => n.type === 'agentNode' && (n.data as AgentData).isStartNode) ||
         nodes.find((n) => n.type === 'agentNode');
 
       const isTester = triggerType === 'tester';
+      const isChat = triggerType === 'chat';
       const posX = rootAgent 
-        ? (isTester ? rootAgent.position.x - 380 : rootAgent.position.x + 10) 
+        ? (isTester || isChat ? rootAgent.position.x - 380 : rootAgent.position.x + 10) 
         : 80;
       const posY = rootAgent 
-        ? (isTester ? rootAgent.position.y : Math.max(20, rootAgent.position.y - 280)) 
+        ? (isTester ? rootAgent.position.y : isChat ? rootAgent.position.y - 120 : Math.max(20, rootAgent.position.y - 280)) 
         : 40;
 
       const newTriggerNode = createSingleTriggerNode(posX, posY, triggerType, rootAgent?.id);
@@ -1561,13 +1100,12 @@ function FlowCanvas() {
         const triggerEdge: Edge = {
           id: `e_trigger_${newTriggerNode.id}_${rootAgent.id}`,
           source: newTriggerNode.id,
-          sourceHandle: isTester ? 'trigger_out_right' : 'trigger_out_bottom',
+          sourceHandle: isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom',
           target: rootAgent.id,
-          targetHandle: isTester ? 'input_left' : 'input',
+          targetHandle: isTester || isChat ? 'input_left' : 'input',
           animated: true,
-          label: isTester ? 'Test Suite Inbound' : 'Trigger Invocation',
           style: {
-            stroke: isTester ? '#ec4899' : '#f59e0b',
+            stroke: '#f59e0b',
             strokeWidth: 2,
             strokeDasharray: '5 5',
           },
@@ -1581,23 +1119,26 @@ function FlowCanvas() {
     [nodes, edges, setNodes, setEdges, recordSnapshot]
   );
 
-  // Node Drag Stop handler for undo/redo position snapshotting
   const handleNodeDragStop = useCallback(() => {
     recordSnapshot(nodes, edges, { description: 'Move element' });
   }, [nodes, edges, recordSnapshot]);
 
-  // Auto Layout
-  const handleAutoLayout = useCallback(
-    (direction: 'LR' | 'TB' = 'TB') => {
-      const layouted = getLayoutedElements(nodes, edges, direction);
-      setNodes([...layouted.nodes]);
-      setEdges([...layouted.edges]);
-      recordSnapshot(layouted.nodes, layouted.edges, { description: 'Auto-layout diagram' });
-      setTimeout(() => fitView({ padding: 0.2 }), 50);
-    },
-    [nodes, edges, setNodes, setEdges, fitView, recordSnapshot]
-  );
+  const handleAutoLayout = useCallback(() => {
+    const layouted = getLayoutedElements(nodes, edges);
+    setNodes([...layouted.nodes]);
+    setEdges([...layouted.edges]);
+    recordSnapshot(layouted.nodes, layouted.edges, { description: 'Auto-layout diagram' });
+    setTimeout(() => {
+      fitView({ padding: 0.2 });
+      setTimeout(() => {
+        zoomOut();
+      }, 50);
+    }, 50);
+  }, [nodes, edges, setNodes, setEdges, fitView, zoomOut, recordSnapshot]);
 
+  // ---------------------------------------------------------------------------
+  // 8. Code Generation & Selected Agent Synchronization
+  // ---------------------------------------------------------------------------
   const currentWorkflowDocument = useMemo((): AgentWorkflowDocument => {
     const currentActiveFile = fileTabs.find((t) => t.id === activeTabId) || fileTabs[0];
     return {
@@ -1624,14 +1165,43 @@ function FlowCanvas() {
       })),
       metadata: {
         outputFolder: config.outputFolder,
+        deploymentTarget: config.deploymentTarget || 'agent_engine',
         updatedAt: new Date().toISOString(),
       },
+      deployment: {
+        target: config.deploymentTarget || 'agent_engine',
+        deploymentTarget: config.deploymentTarget || 'agent_engine',
+        outputFolder: config.outputFolder,
+        framework: config.framework === 'google_adk' ? 'google-adk' : config.framework,
+        language: config.language,
+        includeTests: config.includeTests,
+        includeDocker: config.includeDocker,
+        useStreaming: config.useStreaming,
+        deployedResourceId: config.deployedResourceId,
+        serviceUrl: config.serviceUrl,
+        consoleUrl: config.consoleUrl,
+        deployedAt: config.deployedAt,
+      },
     };
-  }, [nodes, edges, config.framework, config.language, config.outputFolder, fileTabs, activeTabId]);
+  }, [
+    nodes,
+    edges,
+    config.framework,
+    config.language,
+    config.outputFolder,
+    config.deploymentTarget,
+    config.includeTests,
+    config.includeDocker,
+    config.useStreaming,
+    config.deployedResourceId,
+    config.serviceUrl,
+    config.consoleUrl,
+    config.deployedAt,
+    fileTabs,
+    activeTabId,
+  ]);
 
-  // Trigger Code Generation via LLM in Extension Host
   const handleTriggerGenerate = useCallback(() => {
-    // Auto-resize bottom tabs panel to 50% unless already expanded (>= 50%) or maximized
     if (!isPanelMaximized && panelContainerRef.current) {
       const containerHeight = panelContainerRef.current.getBoundingClientRect().height;
       if (containerHeight > 0) {
@@ -1643,7 +1213,6 @@ function FlowCanvas() {
       }
     }
 
-    // Immediately clear all existing generated files and tabs so the user sees generation is running
     setGeneratedFiles([]);
     setHasGeneratedCode(false);
     setIsGenerating(true);
@@ -1654,44 +1223,65 @@ function FlowCanvas() {
         document: currentWorkflowDocument,
         targetFramework: currentWorkflowDocument.framework,
         targetLanguage: currentWorkflowDocument.language,
+        deploymentTarget: config.deploymentTarget || 'agent_engine',
         outputFolder: config.outputFolder,
       },
     });
-  }, [currentWorkflowDocument, config.outputFolder, bridge, isPanelMaximized, bottomPanelHeight]);
+  }, [currentWorkflowDocument, config.outputFolder, config.deploymentTarget, bridge, isPanelMaximized, bottomPanelHeight, setBottomPanelHeight, panelContainerRef]);
 
-  // Update generation configuration
   const handleUpdateConfig = useCallback((newConf: Partial<GenerationConfig>) => {
     setConfig((prev) => ({ ...prev, ...newConf }));
   }, []);
 
-  // Selected agent update with root agent auto-reconnect & router branch lines sync
   const selectedAgentNode = nodes.find((n) => n.id === selectedAgentId && n.type === 'agentNode');
+
   const handleUpdateSelectedAgent = useCallback(
     (partialData: Partial<AgentData>) => {
       if (!selectedAgentId) return;
 
+      let nextEdges = edges;
+      if (partialData.subAgents) {
+        const remainingTargetIds = new Set((partialData.subAgents as SubAgentRef[]).map((s) => s.agentId));
+        nextEdges = edges.filter((e) => !(e.source === selectedAgentId && !remainingTargetIds.has(e.target)));
+        if (nextEdges.length !== edges.length) {
+          setEdges(nextEdges);
+        }
+      }
+
+      if (partialData.subAgentPattern) {
+        const targetNode = nodes.find((n) => n.id === selectedAgentId);
+        const curSubs = ((partialData.subAgents || (targetNode?.data as AgentData)?.subAgents) || []) as SubAgentRef[];
+        partialData.subAgents = curSubs.map((sub) => ({
+          ...sub,
+          delegationType: partialData.subAgentPattern,
+        }));
+        if (
+          partialData.subAgentPattern === 'loop' &&
+          partialData.maxIterations === undefined &&
+          (targetNode?.data as AgentData)?.maxIterations === undefined
+        ) {
+          partialData.maxIterations = 3;
+        }
+      }
+
       let nextNodes: Node<any>[];
       if (partialData.isStartNode === true) {
-        // If making this agent the root, reconnect triggers
         reconnectTriggersToRoot(selectedAgentId);
         nextNodes = nodes.map((n) => (n.id === selectedAgentId ? { ...n, data: { ...n.data, ...partialData, isStartNode: true } } : n));
       } else {
         nextNodes = nodes.map((n) => (n.id === selectedAgentId ? { ...n, data: { ...n.data, ...partialData } } : n));
       }
+
+      nextNodes = syncAgentSubAgents(nextNodes, nextEdges);
       setNodes(nextNodes);
 
-      let nextEdges = edges;
-      // If updating routerConfig, automatically synchronize connecting lines from router branches
       if (partialData.routerConfig) {
         const branches = partialData.routerConfig.branches || [];
         const currentSelectedId = selectedAgentId;
-
-        // Filter out existing edges from this router node
-        const preservedEdges = edges.filter((e) => e.source !== currentSelectedId);
-
-        // Build new edges for branches with a targetAgentId
+        const preservedEdges = nextEdges.filter((e) => e.source !== currentSelectedId);
         const newBranchEdges: Edge[] = [];
-        branches.forEach((b, idx) => {
+
+        branches.forEach((b) => {
           if (b.targetAgentId && b.targetAgentId.trim() !== '') {
             const targetNode = nextNodes.find((n) => n.id === b.targetAgentId);
             if (targetNode) {
@@ -1702,8 +1292,7 @@ function FlowCanvas() {
                 target: b.targetAgentId,
                 targetHandle: 'input',
                 animated: true,
-                label: b.label ? `Route: ${b.label}` : `Branch Route #${idx + 1}`,
-                style: { stroke: '#a855f7', strokeWidth: 2 },
+                style: { stroke: '#3b82f6', strokeWidth: 2 },
               });
             }
           }
@@ -1718,14 +1307,12 @@ function FlowCanvas() {
     [selectedAgentId, nodes, edges, setNodes, setEdges, reconnectTriggersToRoot, recordSnapshot]
   );
 
-  // Selected trigger
   const selectedTriggerNode = nodes.find((n) => n.id === selectedTriggerId && n.type === 'triggerNode');
-  
-  // Test Suite Trigger detection & test prompts
   const testSuiteNode = nodes.find(
     (n) => n.type === 'triggerNode' && (n.data as TriggerData).triggerType === 'tester'
   );
   const hasTestSuite = !!testSuiteNode;
+
   const testPrompts = useMemo(() => {
     if (!testSuiteNode) return [];
     const cfg = (testSuiteNode.data as TriggerData).config;
@@ -1734,12 +1321,21 @@ function FlowCanvas() {
       : DEFAULT_MOCK_TEST_PROMPTS;
   }, [testSuiteNode]);
 
-  const agentNodes = useMemo(() => 
+  // Chat Trigger detection & configuration
+  const chatTriggerNode = nodes.find(
+    (n) => n.type === 'triggerNode' && (n.data as TriggerData).triggerType === 'chat'
+  );
+  const hasChatTrigger = !!chatTriggerNode;
+  const chatTriggerConfig = useMemo(() => {
+    if (!chatTriggerNode) return undefined;
+    return (chatTriggerNode.data as TriggerData).config;
+  }, [chatTriggerNode]);
+
+  const agentNodes = useMemo(() =>
     nodes.filter((n) => n.type === 'agentNode').map((n) => n.data as AgentData),
     [nodes]
   );
 
-  // Add tool to selected or target agent
   const handleAttachTool = useCallback(
     (tool: ToolDefinition) => {
       const targetId = toolModalAgentId || selectedAgentId;
@@ -1753,338 +1349,217 @@ function FlowCanvas() {
 
   const targetAgentForTool = nodes.find((n) => n.id === (toolModalAgentId || selectedAgentId));
 
+  // ---------------------------------------------------------------------------
+  // 9. Layout Render
+  // ---------------------------------------------------------------------------
   return (
     <div className="h-screen w-screen flex flex-col bg-[#0d1117] text-[#c9d1d9] select-none overflow-hidden font-sans">
       {activeEditorTab === 'settings' ? (
         <SettingsPage />
       ) : (
         /* RESIZABLE SPLIT CONTAINER (Diagram Editor on Top, Tabs at Bottom) */
-        <div 
+        <div
           ref={panelContainerRef}
           className="flex-1 flex flex-col min-h-0 w-full overflow-hidden relative"
         >
-        {/* TOP: DIAGRAM EDITOR */}
-        <div 
-          className={`relative w-full bg-[#181818] overflow-hidden transition-all ${
-            isPanelMaximized ? 'h-0 min-h-0 hidden' : 'flex-1 min-h-[120px]'
-          }`} 
-          ref={reactFlowWrapper}
-        >
-          <ReactFlow
-            nodes={enrichedNodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onNodeDragStop={handleNodeDragStop}
-            onConnect={onConnect}
-            isValidConnection={isValidConnection}
-            onDrop={onDrop}
-            onDragOver={onDragOver}
-            onNodeClick={(_, node) => {
-              if (node.type === 'triggerNode') {
-                const triggerData = node.data as TriggerData;
-                if (triggerData?.triggerType === 'chat') {
-                  // Chat trigger: do nothing
+          {/* TOP: DIAGRAM EDITOR */}
+          <div
+            className={`relative w-full bg-[#181818] overflow-hidden transition-all ${
+              isPanelMaximized ? 'h-0 min-h-0 hidden' : 'flex-1 min-h-[120px]'
+            }`}
+            ref={reactFlowWrapper}
+          >
+            <ReactFlow
+              nodes={enrichedNodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onNodeDragStop={handleNodeDragStop}
+              onConnect={onConnect}
+              isValidConnection={isValidConnection}
+              onDrop={onDrop}
+              onDragOver={onDragOver}
+              onNodeClick={(_: any, node: any) => {
+                if (node.type === 'triggerNode') {
+                  const triggerData = node.data as TriggerData;
+                  if (triggerData?.triggerType === 'chat') {
+                    setSelectedTriggerId(null);
+                    setIsTriggerDrawerOpen(false);
+                    return;
+                  }
+                  setSelectedTriggerId(node.id);
+                  setIsTriggerDrawerOpen(true);
+                  setSelectedAgentId(null);
+                  setIsToolDrawerOpen(false);
+                } else {
+                  setSelectedAgentId(node.id);
                   setSelectedTriggerId(null);
                   setIsTriggerDrawerOpen(false);
-                  return;
+                  setIsToolDrawerOpen(false);
                 }
-                setSelectedTriggerId(node.id);
-                setIsTriggerDrawerOpen(true);
+              }}
+              onPaneClick={() => {
                 setSelectedAgentId(null);
-                setIsToolDrawerOpen(false);
-              } else {
-                setSelectedAgentId(node.id);
                 setSelectedTriggerId(null);
                 setIsTriggerDrawerOpen(false);
                 setIsToolDrawerOpen(false);
-              }
-            }}
-            onPaneClick={() => {
-              setSelectedAgentId(null);
-              setSelectedTriggerId(null);
-              setIsTriggerDrawerOpen(false);
-              setIsToolDrawerOpen(false);
-            }}
-            nodeTypes={nodeTypes}
-            onNodesDelete={handleNodesDelete}
-            deleteKeyCode={['Backspace', 'Delete']}
-            fitView
-            proOptions={{ hideAttribution: true }}
-            minZoom={0.2}
-            maxZoom={2.5}
-          >
-            <Background color="#333333" gap={18} size={1.2} variant={BackgroundVariant.Dots} />
-          </ReactFlow>
-
-          {/* TOP-RIGHT CANVAS CONTROLS & MINIMAP */}
-          <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-2 pointer-events-auto">
-            {/* Control Button Toolbar Strip */}
-            <div className="flex items-center gap-1 p-1 bg-[#161b22]/95 backdrop-blur-md border border-[#30363d] rounded-lg shadow-xl text-xs text-[#c9d1d9]">
-              {/* Undo */}
-              <button
-                type="button"
-                onClick={handleUndo}
-                disabled={!canUndo}
-                title="Undo (Cmd+Z)"
-                className="p-1.5 rounded hover:bg-[#21262d] disabled:opacity-30 disabled:cursor-not-allowed text-gray-300 hover:text-white transition-colors cursor-pointer"
-              >
-                <Undo2 className="w-3.5 h-3.5" />
-              </button>
-
-              {/* Redo */}
-              <button
-                type="button"
-                onClick={handleRedo}
-                disabled={!canRedo}
-                title="Redo (Cmd+Shift+Z)"
-                className="p-1.5 rounded hover:bg-[#21262d] disabled:opacity-30 disabled:cursor-not-allowed text-gray-300 hover:text-white transition-colors cursor-pointer"
-              >
-                <Redo2 className="w-3.5 h-3.5" />
-              </button>
-
-              <div className="w-px h-4 bg-[#30363d] my-auto" />
-
-              {/* Auto Layout Left-to-Right */}
-              <button
-                type="button"
-                onClick={() => handleAutoLayout('LR')}
-                title="Auto Layout (Horizontal LR)"
-                className="flex items-center gap-1 px-2 py-1 rounded hover:bg-[#21262d] text-gray-300 hover:text-white font-medium text-[11px] transition-colors cursor-pointer"
-              >
-                <LayoutGrid className="w-3.5 h-3.5 text-blue-400" />
-                <span>Layout (L-R)</span>
-              </button>
-
-              {/* Auto Layout Top-to-Bottom */}
-              <button
-                type="button"
-                onClick={() => handleAutoLayout('TB')}
-                title="Auto Layout (Vertical TB)"
-                className="flex items-center gap-1 px-2 py-1 rounded hover:bg-[#21262d] text-gray-300 hover:text-white font-medium text-[11px] transition-colors cursor-pointer"
-              >
-                <LayoutGrid className="w-3.5 h-3.5 text-purple-400 rotate-90" />
-                <span>Layout (T-B)</span>
-              </button>
-
-              <div className="w-px h-4 bg-[#30363d] my-auto" />
-
-              {/* Zoom In */}
-              <button
-                type="button"
-                onClick={() => zoomIn()}
-                title="Zoom In"
-                className="p-1.5 rounded hover:bg-[#21262d] text-gray-300 hover:text-white transition-colors cursor-pointer"
-              >
-                <ZoomIn className="w-3.5 h-3.5" />
-              </button>
-
-              {/* Zoom Out */}
-              <button
-                type="button"
-                onClick={() => zoomOut()}
-                title="Zoom Out"
-                className="p-1.5 rounded hover:bg-[#21262d] text-gray-300 hover:text-white transition-colors cursor-pointer"
-              >
-                <ZoomOut className="w-3.5 h-3.5" />
-              </button>
-
-              {/* Zoom to Fit */}
-              <button
-                type="button"
-                onClick={() => fitView({ padding: 0.2 })}
-                title="Zoom to Fit"
-                className="flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-[#21262d] text-gray-300 hover:text-white font-medium text-[11px] transition-colors cursor-pointer"
-              >
-                <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Zoom to Fit</span>
-              </button>
-            </div>
-
-            {/* MiniMap Positioned Directly Under Controls */}
-            {settings.showMiniMap && (
-              <MiniMap
-                nodeColor={(n) => {
-                  if (n.type === 'triggerNode') return '#f59e0b';
-                  const data = n.data as AgentData;
-                  if (data?.isStartNode) return '#3b82f6';
-                  if (data?.isEvaluator) return '#a855f7';
-                  if (data?.agentKind === 'a2a') return '#06b6d4';
-                  return '#10b981';
-                }}
-                nodeStrokeWidth={2}
-                className="!static !m-0 !h-[110px] !w-[170px] border border-[#30363d] rounded-lg shadow-xl overflow-hidden"
-                maskColor="rgba(0, 0, 0, 0.65)"
+              }}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              connectionLineStyle={{ stroke: '#f59e0b', strokeWidth: 2 }}
+              onNodesDelete={handleNodesDelete}
+              deleteKeyCode={['Backspace', 'Delete']}
+              fitView
+              proOptions={{ hideAttribution: true }}
+              minZoom={0.2}
+              maxZoom={2.5}
+            >
+              {/* TOP-RIGHT CANVAS CONTROLS & MINIMAP */}
+              <CanvasToolbar
+                canUndo={canUndo}
+                canRedo={canRedo}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                onAutoLayout={handleAutoLayout}
+                showMiniMap={settings.showMiniMap}
               />
-            )}
+
+              {/* Empty Diagram State Overlay */}
+              {nodes.length === 0 && (
+                <CanvasEmptyState onAddRootEngine={handleAddRootWithTestSuite} />
+              )}
+
+              {/* Validation Warning Toast */}
+              <ValidationToast
+                warning={validationWarning}
+                onDismiss={() => setValidationWarning(null)}
+              />
+            </ReactFlow>
+
+            {/* Floating Palette on Left */}
+            <PaletteCard
+              tools={tools}
+              selectedAgent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
+              onAddAgent={handleAddAgentDirect}
+              onAddPattern={handleAddPatternDirect}
+              onAddTrigger={handleAddTriggerDirect}
+              onOpenAdvisor={() => setIsAdvisorOpen(true)}
+              onOpenEditTool={handleOpenEditTool}
+              onCreateCustomTool={handleCreateCustomTool}
+              onCreateMcpTool={handleCreateMcpTool}
+              onOpenSample={handleOpenSampleInNewTab}
+              onAddToolToAgent={(tool) => {
+                if (selectedAgentId) {
+                  handleAddSpecificTool(selectedAgentId, tool);
+                } else if (nodes.length > 0) {
+                  const firstAgent = nodes.find((n) => n.type === 'agentNode');
+                  if (firstAgent) handleAddSpecificTool(firstAgent.id, tool);
+                }
+              }}
+            />
+
+            {/* Slide-out Agent Inspector Drawer */}
+            <AgentDrawer
+              agent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
+              allAgents={agentNodes}
+              isOpen={!!selectedAgentId && !isToolDrawerOpen && !isTriggerDrawerOpen}
+              onClose={() => setSelectedAgentId(null)}
+              onUpdateAgent={handleUpdateSelectedAgent}
+              onOpenAddTool={() => selectedAgentId && setToolModalAgentId(selectedAgentId)}
+              onRemoveTool={(toolId) => selectedAgentId && handleRemoveTool(selectedAgentId, toolId)}
+              onEditTool={(tool) => selectedAgentId && handleOpenEditAgentTool(selectedAgentId, tool)}
+            />
+
+            {/* Slide-out Trigger Inspector Drawer */}
+            <TriggerDrawer
+              trigger={selectedTriggerNode ? (selectedTriggerNode.data as TriggerData) : null}
+              availableAgents={agentNodes}
+              isOpen={isTriggerDrawerOpen && !!selectedTriggerNode}
+              onClose={() => {
+                setIsTriggerDrawerOpen(false);
+                setSelectedTriggerId(null);
+              }}
+              onUpdateTrigger={(partial) => {
+                if (selectedTriggerId) handleUpdateTriggerData(selectedTriggerId, partial);
+              }}
+              onDeleteTrigger={() => {
+                if (selectedTriggerId) handleDeleteTrigger(selectedTriggerId);
+              }}
+              onReconnectToRoot={reconnectTriggersToRoot}
+            />
+
+            {/* Slide-out Tool Definition Property Panel */}
+            <ToolPropertyDrawer
+              tool={editingTool}
+              isOpen={isToolDrawerOpen}
+              onClose={() => {
+                setIsToolDrawerOpen(false);
+                setEditingToolScope(null);
+              }}
+              onSaveTool={handleSaveTool}
+              onDeleteTool={handleDeleteTool}
+              scope={editingToolScope?.type || 'global'}
+              agentName={
+                editingToolScope?.type === 'agent'
+                  ? (nodes.find((n) => n.id === editingToolScope.agentId)?.data as AgentData)?.label
+                  : undefined
+              }
+              selectedAgent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
+              onAttachToAgent={(agentId, tool) => {
+                handleAddSpecificTool(agentId, tool);
+                setIsToolDrawerOpen(false);
+                setEditingToolScope(null);
+              }}
+            />
           </div>
 
-          {/* Empty Diagram State */}
-          {nodes.length === 0 && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-              <div className="text-center p-6 rounded-2xl bg-[#1e1e1e]/80 border border-[#333333] shadow-2xl backdrop-blur-md max-w-sm pointer-events-auto">
-                <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center mx-auto mb-3 text-blue-400">
-                  <Bot className="w-6 h-6" />
-                </div>
-                <h3 className="text-sm font-semibold text-white mb-1">Blank Agent Canvas</h3>
-                <p className="text-xs text-gray-400 mb-4 leading-relaxed">
-                  Start building by clicking or dragging an agent, pattern, or trigger from the palette on the left.
-                </p>
-                <div className="flex items-center justify-center">
-                  <button
-                    type="button"
-                    onClick={handleAddRootWithTestSuite}
-                    className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors shadow-sm cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Bot className="w-4 h-4" />
-                    Add Root Engine
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Validation Warning Toast */}
-          {validationWarning && (
-            <div className="absolute top-4 right-4 z-50 max-w-md bg-[#161b22]/95 border border-amber-500/60 text-amber-200 rounded-xl p-3.5 shadow-2xl backdrop-blur-md flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
-              <div className="p-1 rounded bg-amber-500/20 text-amber-400 shrink-0 mt-0.5">
-                <AlertTriangle className="w-4 h-4" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-bold text-white mb-0.5">Diagram Validation</div>
-                <div className="text-xs text-amber-200/90 leading-relaxed">{validationWarning}</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setValidationWarning(null)}
-                className="text-gray-400 hover:text-white p-1 rounded-md transition-colors shrink-0"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-
-          {/* Floating Node, Tools, Triggers & Samples Palette on Left */}
-          <PaletteCard
-            tools={tools}
-            selectedAgent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
-            onAddAgent={handleAddAgentDirect}
-            onAddPattern={handleAddPatternDirect}
-            onAddTrigger={handleAddTriggerDirect}
-            onOpenAdvisor={() => setIsAdvisorOpen(true)}
-            onOpenEditTool={handleOpenEditTool}
-            onCreateCustomTool={handleCreateCustomTool}
-            onCreateMcpTool={handleCreateMcpTool}
-            onOpenSample={handleOpenSampleInNewTab}
-            onAddToolToAgent={(tool) => {
-              if (selectedAgentId) {
-                handleAddSpecificTool(selectedAgentId, tool);
-              } else if (nodes.length > 0) {
-                const firstAgent = nodes.find((n) => n.type === 'agentNode');
-                if (firstAgent) handleAddSpecificTool(firstAgent.id, tool);
+          {/* ADJUSTABLE RESIZING DIVIDER */}
+          <PanelDivider
+            isPanelMaximized={isPanelMaximized}
+            isDraggingDivider={isDraggingDivider}
+            bottomPanelHeight={bottomPanelHeight}
+            onMouseDown={handleDividerMouseDown}
+            onDoubleClick={() => {
+              if (bottomPanelHeight === null) {
+                if (panelContainerRef.current) {
+                  setBottomPanelHeight(panelContainerRef.current.getBoundingClientRect().height * 0.55);
+                }
+              } else {
+                setBottomPanelHeight(null);
               }
             }}
           />
 
-          {/* Slide-out Agent Inspector Drawer */}
-          <AgentDrawer
-            agent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
-            allAgents={agentNodes}
-            isOpen={!!selectedAgentId && !isToolDrawerOpen && !isTriggerDrawerOpen}
-            onClose={() => setSelectedAgentId(null)}
-            onUpdateAgent={handleUpdateSelectedAgent}
-            onOpenAddTool={() => selectedAgentId && setToolModalAgentId(selectedAgentId)}
-            onRemoveTool={(toolId) => selectedAgentId && handleRemoveTool(selectedAgentId, toolId)}
-          />
-
-          {/* Slide-out Trigger Inspector Drawer */}
-          <TriggerDrawer
-            trigger={selectedTriggerNode ? (selectedTriggerNode.data as TriggerData) : null}
-            availableAgents={agentNodes}
-            isOpen={isTriggerDrawerOpen && !!selectedTriggerNode}
-            onClose={() => {
-              setIsTriggerDrawerOpen(false);
-              setSelectedTriggerId(null);
+          {/* BOTTOM PANEL: CODE GENERATION, DEPLOYMENT & TEST RUNNER */}
+          <div
+            style={{
+              height: isPanelMaximized
+                ? '100%'
+                : (bottomPanelHeight !== null ? `${bottomPanelHeight}px` : '33.333%'),
             }}
-            onUpdateTrigger={(partial) => {
-              if (selectedTriggerId) handleUpdateTriggerData(selectedTriggerId, partial);
-            }}
-            onDeleteTrigger={() => {
-              if (selectedTriggerId) handleDeleteTrigger(selectedTriggerId);
-            }}
-            onReconnectToRoot={reconnectTriggersToRoot}
-          />
-
-          {/* Slide-out Tool Definition & Code Directive Property Panel */}
-          <ToolPropertyDrawer
-            tool={editingTool}
-            isOpen={isToolDrawerOpen}
-            onClose={() => setIsToolDrawerOpen(false)}
-            onSaveTool={handleSaveTool}
-            onDeleteTool={handleDeleteTool}
-            selectedAgent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
-            onAttachToAgent={(agentId, tool) => {
-              handleAddSpecificTool(agentId, tool);
-              setIsToolDrawerOpen(false);
-            }}
-          />
-        </div>
-
-        {/* ADJUSTABLE RESIZING DIVIDER */}
-        <div
-          onMouseDown={handleDividerMouseDown}
-          onDoubleClick={() => {
-            if (bottomPanelHeight === null) {
-              if (panelContainerRef.current) {
-                setBottomPanelHeight(panelContainerRef.current.getBoundingClientRect().height * 0.55);
-              }
-            } else {
-              setBottomPanelHeight(null); // Reset back to default 1/3 (33.333%)
-            }
-          }}
-          title="Drag to resize panel. Double-click to toggle between 1/3 default and expanded height."
-          className={`h-2 relative w-full bg-[#161b22] hover:bg-blue-600 cursor-row-resize items-center justify-center transition-all z-30 group select-none shrink-0 border-t border-b border-[#30363d] ${
-            isPanelMaximized ? 'hidden' : 'flex'
-          } ${isDraggingDivider ? 'bg-blue-500 ring-2 ring-blue-500/50' : ''}`}
-        >
-          {/* Grab Handle Pill */}
-          <div className="w-12 h-1 rounded-full bg-[#484f58] group-hover:bg-white group-active:bg-white transition-colors" />
-          
-          {/* Floating resize indicator on hover */}
-          <div className="hidden group-hover:flex items-center gap-2 absolute right-3 text-[10px] font-mono text-white/90 bg-[#0d1117] px-2 py-0.5 rounded border border-[#30363d] shadow-lg pointer-events-none">
-            <span>{bottomPanelHeight !== null ? `${Math.round(bottomPanelHeight)}px` : '33.3% (1/3)'}</span>
-            <span className="text-gray-400">· Drag or double-click</span>
+            className={`w-full overflow-hidden flex flex-col bg-[#0d1117] transition-[height] duration-200 ${
+              isPanelMaximized ? 'flex-1 h-full min-h-0' : 'shrink-0 min-h-[90px]'
+            }`}
+          >
+            <CodeGenerationPanel
+              config={config}
+              onChangeConfig={handleUpdateConfig}
+              onGenerateCode={handleTriggerGenerate}
+              generatedFiles={generatedFiles}
+              isGenerating={isGenerating}
+              onOpenMissingAdvisor={() => setIsAdvisorOpen(true)}
+              hasTestSuite={hasTestSuite}
+              hasGeneratedCode={hasGeneratedCode}
+              testPrompts={testPrompts}
+              agents={agentNodes}
+              isMaximized={isPanelMaximized}
+              onToggleMaximize={handleToggleMaximizePanel}
+              document={currentWorkflowDocument}
+              hasChatTrigger={hasChatTrigger}
+              chatConfig={chatTriggerConfig}
+            />
           </div>
         </div>
-
-        {/* BOTTOM PANEL: CODE GENERATION, DEPLOYMENT & TEST RUNNER TAB INTERFACE */}
-        <div 
-          style={{ 
-            height: isPanelMaximized 
-              ? '100%' 
-              : (bottomPanelHeight !== null ? `${bottomPanelHeight}px` : '33.333%') 
-          }} 
-          className={`w-full overflow-hidden flex flex-col bg-[#0d1117] transition-[height] duration-200 ${
-            isPanelMaximized ? 'flex-1 h-full min-h-0' : 'shrink-0 min-h-[90px]'
-          }`}
-        >
-          <CodeGenerationPanel
-            config={config}
-            onChangeConfig={handleUpdateConfig}
-            onGenerateCode={handleTriggerGenerate}
-            generatedFiles={generatedFiles}
-            isGenerating={isGenerating}
-            onOpenMissingAdvisor={() => setIsAdvisorOpen(true)}
-            hasTestSuite={hasTestSuite}
-            hasGeneratedCode={hasGeneratedCode}
-            testPrompts={testPrompts}
-            agents={agentNodes}
-            isMaximized={isPanelMaximized}
-            onToggleMaximize={handleToggleMaximizePanel}
-            document={currentWorkflowDocument}
-          />
-        </div>
-      </div>
       )}
 
       {/* Tool Attachment Modal */}
@@ -2093,9 +1568,11 @@ function FlowCanvas() {
         onClose={() => setToolModalAgentId(null)}
         onSelectTool={handleAttachTool}
         existingToolIds={((targetAgentForTool?.data as AgentData)?.tools || []).map((t) => t.id)}
+        tools={tools}
+        targetAgentName={(targetAgentForTool?.data as AgentData)?.label}
       />
 
-      {/* Architectural Advisor & "What is missing?" Modal */}
+      {/* Architectural Advisor Modal */}
       <MissingFeaturesModal
         isOpen={isAdvisorOpen}
         onClose={() => setIsAdvisorOpen(false)}
@@ -2104,6 +1581,9 @@ function FlowCanvas() {
   );
 }
 
+/**
+ * Root exported App component. Wraps the canvas with necessary context providers.
+ */
 export default function App() {
   return (
     <ThemeProvider>

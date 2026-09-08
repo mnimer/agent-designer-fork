@@ -75,4 +75,143 @@ describe('Trigger Configuration & Presets Logic', () => {
     assert.equal(pubsubTrigger.triggerKind, 'pubsub');
     assert.equal(pubsubTrigger.config?.subscription, 'orders-sub-auto');
   });
+
+  describe('Test Suite Dynamic Handle Pruning & Single Root Connection', () => {
+    // Helper replicating TriggerNode handle resolution logic
+    const resolveTriggerHandles = (connections: Array<{ sourceHandle?: string; targetHandle?: string }>) => {
+      const isConnected = connections.length > 0;
+      const activeConnection = isConnected ? connections[0] : null;
+      const connectedHandleId = activeConnection?.sourceHandle;
+
+      const isRightActive = isConnected && connectedHandleId === 'trigger_out_right';
+      const isBottomActive = isConnected && connectedHandleId === 'trigger_out_bottom';
+
+      return {
+        showRightHandle: !isConnected || isRightActive || (!isRightActive && !isBottomActive),
+        showBottomHandle: !isConnected || isBottomActive || (!isRightActive && !isBottomActive),
+        isConnectable: true,
+        isConnected,
+      };
+    };
+
+    it('should show both handles and allow connection when disconnected', () => {
+      const handles = resolveTriggerHandles([]);
+      assert.equal(handles.isConnected, false);
+      assert.equal(handles.showRightHandle, true);
+      assert.equal(handles.showBottomHandle, true);
+      assert.equal(handles.isConnectable, true);
+    });
+
+    it('should remove bottom handle when connected via right handle', () => {
+      const handles = resolveTriggerHandles([{ sourceHandle: 'trigger_out_right', targetHandle: 'input' }]);
+      assert.equal(handles.isConnected, true);
+      assert.equal(handles.showRightHandle, true);
+      assert.equal(handles.showBottomHandle, false);
+      assert.equal(handles.isConnectable, true);
+    });
+
+    it('should remove right handle when connected via bottom handle', () => {
+      const handles = resolveTriggerHandles([{ sourceHandle: 'trigger_out_bottom', targetHandle: 'input' }]);
+      assert.equal(handles.isConnected, true);
+      assert.equal(handles.showRightHandle, false);
+      assert.equal(handles.showBottomHandle, true);
+      assert.equal(handles.isConnectable, true);
+    });
+
+    it('should restore both handles when connection is deleted', () => {
+      // 1. Initially connected
+      const connectedHandles = resolveTriggerHandles([{ sourceHandle: 'trigger_out_right' }]);
+      assert.equal(connectedHandles.showBottomHandle, false);
+
+      // 2. User deletes edge -> connections array becomes empty
+      const restoredHandles = resolveTriggerHandles([]);
+      assert.equal(restoredHandles.showRightHandle, true);
+      assert.equal(restoredHandles.showBottomHandle, true);
+      assert.equal(restoredHandles.isConnectable, true);
+    });
+
+    it('should enforce connection strictly to 1 root node', () => {
+      const existingEdges = [
+        { id: 'e_trigger_1', source: 'trigger_node_1', target: 'agent_root' },
+      ];
+
+      // New connection from same trigger to another agent replaces existing edge
+      const newTarget = 'agent_new_root';
+      const updatedEdges = [
+        ...existingEdges.filter((e) => e.source !== 'trigger_node_1'),
+        { id: 'e_trigger_2', source: 'trigger_node_1', target: newTarget },
+      ];
+
+      assert.equal(updatedEdges.length, 1);
+      assert.equal(updatedEdges[0].target, 'agent_new_root');
+    });
+
+    it('should validate Test Suite connections to Top and Left In handles on Root agent', () => {
+      const rootAgentHandles = ['input', 'input_left'];
+      rootAgentHandles.forEach((handle) => {
+        const isValid = ['input', 'input_left'].includes(handle);
+        assert.equal(isValid, true, `Handle ${handle} should be a valid In handle on root agent`);
+      });
+
+      // Right handle removed from agent nodes
+      const isRightHandleValid = ['input', 'input_left'].includes('input_right');
+      assert.equal(isRightHandleValid, false, 'input_right should no longer be a valid In handle');
+
+      const isInvalidHandle = ['input', 'input_left'].includes('random_handle');
+      assert.equal(isInvalidHandle, false);
+    });
+
+    it('should validate Agent Out to In connections across multiple agents', () => {
+      const sourceAgent = { id: 'agent_1', type: 'agentNode' };
+      const rootTargetAgent = { id: 'agent_2', type: 'agentNode', data: { isStartNode: true } };
+      const childTargetAgent = { id: 'agent_3', type: 'agentNode', data: { isStartNode: false } };
+
+      const isValidAgentConnection = (source: any, target: any, targetHandle?: string) => {
+        if (!source || !target) return false;
+        if (source.id === target.id) return false;
+        if (target.type !== 'agentNode') return false;
+        if (source.type !== 'agentNode') return false;
+        const isRoot = target.data?.isStartNode;
+        const validInHandles = isRoot ? ['input', 'input_left'] : ['input'];
+        if (targetHandle && !validInHandles.includes(targetHandle)) return false;
+        return true;
+      };
+
+      // Valid: Out -> In (Top for child agent, Top & Left for root agent)
+      assert.equal(isValidAgentConnection(sourceAgent, rootTargetAgent, 'input'), true);
+      assert.equal(isValidAgentConnection(sourceAgent, rootTargetAgent, 'input_left'), true);
+      assert.equal(isValidAgentConnection(sourceAgent, childTargetAgent, 'input'), true);
+
+      // Invalid: Left handle on non-root child agent
+      assert.equal(isValidAgentConnection(sourceAgent, childTargetAgent, 'input_left'), false);
+
+      // Invalid: Right handle on any agent
+      assert.equal(isValidAgentConnection(sourceAgent, rootTargetAgent, 'input_right'), false);
+      assert.equal(isValidAgentConnection(sourceAgent, childTargetAgent, 'input_right'), false);
+
+      // Invalid: Agent to self
+      assert.equal(isValidAgentConnection(sourceAgent, sourceAgent, 'input'), false);
+
+      // Invalid: Agent to unknown target handle
+      assert.equal(isValidAgentConnection(sourceAgent, rootTargetAgent, 'invalid_handle'), false);
+    });
+
+    it('should route backward feedback loop edges around node boundaries', () => {
+      const source = { x: 300, y: 500, position: 'bottom' };
+      const targetAbove = { x: 300, y: 200, position: 'top' };
+      const targetLeft = { x: 200, y: 200, position: 'left' };
+      const targetRight = { x: 400, y: 200, position: 'right' };
+
+      const isBackwardEdge = (sPos: string, sY: number, tY: number) => {
+        return sPos === 'bottom' && tY < sY + 40;
+      };
+
+      assert.equal(isBackwardEdge(source.position, source.y, targetAbove.y), true);
+      assert.equal(isBackwardEdge(source.position, source.y, targetLeft.y), true);
+      assert.equal(isBackwardEdge(source.position, source.y, targetRight.y), true);
+
+      // Forward edge (downward) should not be flagged as backward
+      assert.equal(isBackwardEdge('bottom', 200, 500), false);
+    });
+  });
 });

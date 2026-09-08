@@ -16,6 +16,7 @@
  *    d. System PATH binaries (`python3`, `python`)
  * 2. Cross-platform path handling for POSIX (`bin/python`) and Windows (`Scripts/python.exe`).
  * 3. Graceful fallback to system PATH if no virtual environment is present.
+ * 4. Automatic A2A protocol detection and dependency provisioning (a2a-sdk, google-adk[a2a]).
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -233,10 +234,11 @@ export class PythonEnvResolver {
    * are installed within the target virtual environment.
    *
    * Logic Flow:
-   * 1. Tests if core dependencies (fastapi, uvicorn, google-genai, pydantic) can be imported.
-   * 2. If import succeeds, returns immediately to maintain low latency on startup.
-   * 3. If import fails, runs 'pip install' with requirements.txt and core framework packages.
-   * 4. Streams real-time progress logs via the optional onLog callback.
+   * 1. Detects whether A2A (Agent-to-Agent) protocol dependencies are required.
+   * 2. Tests if core dependencies (fastapi, uvicorn, google-genai, pydantic, and a2a if needed) can be imported.
+   * 3. If import succeeds, returns immediately to maintain low latency on startup.
+   * 4. If import fails, runs 'pip install' with requirements.txt, core framework packages, and A2A extras.
+   * 5. Streams real-time progress logs via the optional onLog callback.
    *
    * @param pythonBin Path to python binary inside virtual environment
    * @param targetDir Target workspace or agent directory
@@ -247,9 +249,14 @@ export class PythonEnvResolver {
     targetDir: string,
     onLog?: (msg: string, stream?: 'stdout' | 'stderr' | 'system') => Promise<void> | void
   ): Promise<void> {
+    const needsA2A = this.requiresA2ADependencies(targetDir);
+
     try {
-      // Step 1: Quick import check for all core packages
-      await execFileAsync(pythonBin, ['-c', 'import fastapi, uvicorn, pydantic, google.genai'], { cwd: targetDir });
+      // Step 1: Quick import check for all core packages (including a2a when needed)
+      const importCheck = needsA2A
+        ? 'import fastapi, uvicorn, pydantic, google.genai, a2a'
+        : 'import fastapi, uvicorn, pydantic, google.genai';
+      await execFileAsync(pythonBin, ['-c', importCheck], { cwd: targetDir });
       return; // All required packages are already installed
     } catch {
       // Step 2: Check if target directory requires dependencies
@@ -264,33 +271,33 @@ export class PythonEnvResolver {
         } catch {}
       }
 
-      if (!hasReqs && !needsFastApi) {
-        return;
-      }
-
-      if (onLog) {
-        await onLog(
-          hasReqs
-            ? `[Local Runner] Installing dependencies from requirements.txt into .venv...`
-            : `[Local Runner] Installing core dependencies (fastapi, uvicorn, google-genai, pydantic) into .venv...`,
-          'system'
+      if (!hasReqs) {
+        // FAIL FAST: Never fall back to guessing or installing packages without requirements.txt
+        throw new Error(
+          `[Validation Error] 'requirements.txt' not found in ${targetDir}. All agent projects must have a valid requirements.txt before running or deploying.`
         );
       }
 
-      try {
-        if (hasReqs) {
-          await execFileAsync(
-            pythonBin,
-            ['-m', 'pip', 'install', '-r', reqPath, 'fastapi', 'uvicorn', 'google-genai', 'pydantic', 'python-dotenv'],
-            { cwd: targetDir }
-          );
-        } else {
-          await execFileAsync(
-            pythonBin,
-            ['-m', 'pip', 'install', 'fastapi', 'uvicorn', 'google-genai', 'pydantic', 'python-dotenv'],
-            { cwd: targetDir }
+      // FAIL FAST: If A2A is required, verify requirements.txt explicitly declares A2A packages
+      if (needsA2A) {
+        const reqText = fs.readFileSync(reqPath, 'utf-8');
+        if (!reqText.includes('google-adk[a2a]') && !reqText.includes('a2a-sdk')) {
+          throw new Error(
+            `[Validation Error] Agent-to-Agent (A2A) protocol detected in agent code, but 'requirements.txt' is missing required A2A dependencies ('google-adk[a2a]' and/or 'a2a-sdk[http-server]'). Failing fast before run or deployment.`
           );
         }
+      }
+
+      if (onLog) {
+        await onLog(`[Local Runner] Installing dependencies from requirements.txt into .venv...`, 'system');
+      }
+
+      try {
+        await execFileAsync(
+          pythonBin,
+          ['-m', 'pip', 'install', '-r', reqPath],
+          { cwd: targetDir }
+        );
 
         if (onLog) {
           await onLog(`[Local Runner] Dependencies installed successfully into .venv.`, 'system');
@@ -303,6 +310,62 @@ export class PythonEnvResolver {
         throw new Error(errorMsg);
       }
     }
+  }
+
+  /**
+   * Scans target directory to detect if Agent-to-Agent (A2A) dependencies are needed.
+   *
+   * Logic Flow:
+   * 1. Inspects requirements.txt for references to 'a2a' or 'a2a-sdk'.
+   * 2. Scans agent source files (agent.py, server.py, agent_workflow.py, etc.) for A2A imports.
+   * 3. Scans tools/ subdirectory for A2A references.
+   *
+   * @param targetDir Target workspace directory
+   * @returns boolean true if A2A dependencies are required
+   */
+  public requiresA2ADependencies(targetDir: string): boolean {
+    try {
+      const reqPath = path.join(targetDir, 'requirements.txt');
+      if (fs.existsSync(reqPath)) {
+        const reqContent = fs.readFileSync(reqPath, 'utf-8');
+        if (reqContent.includes('a2a')) {
+          return true;
+        }
+      }
+
+      // Check common python entrypoints
+      const pyFiles = ['agent.py', 'server.py', 'agent_workflow.py', 'main.py', '_agent_test_runner.py'];
+      for (const file of pyFiles) {
+        const filePath = path.join(targetDir, file);
+        if (fs.existsSync(filePath)) {
+          const content = fs.readFileSync(filePath, 'utf-8');
+          if (
+            content.includes('import a2a') ||
+            content.includes('from a2a') ||
+            content.includes('RemoteA2aAgent') ||
+            content.includes('to_a2a') ||
+            content.includes('google.adk.a2a')
+          ) {
+            return true;
+          }
+        }
+      }
+
+      // Check tools subdirectory
+      const toolsDir = path.join(targetDir, 'tools');
+      if (fs.existsSync(toolsDir) && fs.statSync(toolsDir).isDirectory()) {
+        const files = fs.readdirSync(toolsDir);
+        for (const file of files) {
+          if (file.endsWith('.py')) {
+            const content = fs.readFileSync(path.join(toolsDir, file), 'utf-8');
+            if (content.includes('a2a') || content.includes('RemoteA2aAgent')) {
+              return true;
+            }
+          }
+        }
+      }
+    } catch {}
+    return false;
   }
 
   /**

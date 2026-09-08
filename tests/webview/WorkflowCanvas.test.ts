@@ -97,15 +97,16 @@ describe('Workflow Canvas Topologies & Layouts', () => {
     assert.equal(agentNode.data.standardConfig?.tools?.[1].type, 'custom');
   });
 
-  it('should compute relative target folder matching filename correctly', async () => {
+  it('should compute relative target folder matching filename correctly and sanitize to valid Python identifiers', async () => {
     const { computeTargetFolder } = await import('../../src/webview/App');
 
-    assert.equal(computeTargetFolder('agents/scratch/scratch-agent.agent'), './scratch-agent/');
+    assert.equal(computeTargetFolder('agents/scratch/scratch-agent.agent'), './scratch_agent/');
     assert.equal(computeTargetFolder('test/agents/myagent.agent'), './myagent/');
     assert.equal(computeTargetFolder('myagent.agent'), './myagent/');
     assert.equal(computeTargetFolder('./myagent.agent'), './myagent/');
     assert.equal(computeTargetFolder('src/workflows/customer_service.agent'), './customer_service/');
     assert.equal(computeTargetFolder('prod\\agents\\myagent.agent'), './myagent/');
+    assert.equal(computeTargetFolder('agents/my-complex-agent-flow.agent'), './my_complex_agent_flow/');
     assert.equal(computeTargetFolder(''), './workflow/');
   });
 });

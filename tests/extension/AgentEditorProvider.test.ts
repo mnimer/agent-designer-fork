@@ -7,10 +7,11 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { AgentEditorProvider } from '../../src/extension/AgentEditorProvider';
 import { AgentWorkflowDocument } from '../../src/shared/types';
 
-describe('AgentEditorProvider', () => {
+describe('AgentEditorProvider', { concurrency: 1 }, () => {
   beforeEach(() => {
     vscode.resetAllMocks();
   });
@@ -42,9 +43,10 @@ describe('AgentEditorProvider', () => {
     assert.ok(triggerNode);
     assert.ok(agentNode);
     assert.equal((agentNode?.data as any).agentKind, 'standard');
-    assert.equal((agentNode?.data as any).standardConfig.tools.length, 1);
-    assert.equal((agentNode?.data as any).standardConfig.tools[0].id, 'tool-google-search');
+    assert.equal((agentNode?.data as any).standardConfig.tools.length, 0);
     assert.equal(workflow.edges.length, 1);
+    assert.equal(workflow.edges[0].sourceHandle, 'trigger_out_right');
+    assert.equal(workflow.edges[0].targetHandle, 'input_left');
   });
 
   it('should generate valid HTML for webview with CSP, nonce, and bootstrap script', () => {
@@ -501,10 +503,10 @@ describe('AgentEditorProvider', () => {
       assert.ok(loadDocMsg);
       assert.equal(loadDocMsg.payload.document.name, 'scratch-agent');
       assert.equal(loadDocMsg.payload.generatedFiles.length, 1);
-      // Ensure targetDir resolved to /agents/scratch/scratch-agent
+      // Ensure targetDir resolved to /agents/scratch/scratch_agent (sanitized for Python module compatibility)
       assert.ok(
-        loadedTargetDir.includes('agents/scratch/scratch-agent'),
-        `Expected targetDir to resolve to agents/scratch/scratch-agent but got: ${loadedTargetDir}`
+        loadedTargetDir.includes('agents/scratch/scratch_agent'),
+        `Expected targetDir to resolve to agents/scratch/scratch_agent but got: ${loadedTargetDir}`
       );
     }
   });
@@ -584,9 +586,9 @@ describe('AgentEditorProvider', () => {
       uri: vscode.Uri.file('/mock/workspace/agents/scratch/scratch-agent.agent'),
     };
 
-    // 1. Default (undefined configuredFolder) -> folder name matches file name
+    // 1. Default (undefined configuredFolder) -> folder name matches file name sanitized to valid Python identifier
     const defaultDir = provider.resolveTargetDirectory(mockDoc, undefined);
-    assert.equal(defaultDir, '/mock/workspace/agents/scratch/scratch-agent');
+    assert.equal(defaultDir, '/mock/workspace/agents/scratch/scratch_agent');
 
     // 2. Relative folder './scratch-agent/' -> resolves to /mock/workspace/agents/scratch/scratch-agent
     const relativeDir = provider.resolveTargetDirectory(mockDoc, './scratch-agent/');
@@ -599,6 +601,90 @@ describe('AgentEditorProvider', () => {
     // 4. Absolute folder
     const absDir = provider.resolveTargetDirectory(mockDoc, '/tmp/absolute/path');
     assert.equal(absDir, '/tmp/absolute/path');
+
+    // 5. Resolves outputFolder from deployment node when configuredFolder is undefined
+    const mockDocWithDeployment: any = {
+      uri: vscode.Uri.file('/mock/workspace/agents/scratch/sample.agent'),
+      getText: () => JSON.stringify({
+        version: '1.0.0',
+        name: 'sample',
+        deployment: {
+          outputFolder: './custom_deploy_folder/',
+        },
+      }),
+    };
+    const deploymentDir = provider.resolveTargetDirectory(mockDocWithDeployment, undefined);
+    assert.equal(deploymentDir, '/mock/workspace/agents/scratch/custom_deploy_folder');
+
+    // 6. Generic root folder './src/agents/' appends sanitized document basename
+    const genericDir = provider.resolveTargetDirectory(mockDoc, './src/agents/');
+    assert.equal(genericDir, path.resolve('/mock/workspace/agents/scratch', './src/agents/scratch_agent'));
+
+    // 7. createEmptyWorkflowDocument and createDefaultWorkflowDocument include sanitized subfolder
+    const emptyDoc = AgentEditorProvider.createEmptyWorkflowDocument('scratch-flow');
+    assert.equal(emptyDoc.deployment?.outputFolder, './src/agents/scratch_flow/');
+
+    const defaultDoc = AgentEditorProvider.createDefaultWorkflowDocument('my-cool-agent');
+    assert.equal(defaultDoc.deployment?.outputFolder, './src/agents/my_cool_agent/');
+  });
+
+  it('should initialize and provide AgentEngineDeployer instance and handle deployment messages', async () => {
+    const mockContext: any = { extensionPath: '/mock', subscriptions: [] };
+    const provider = new AgentEditorProvider(mockContext);
+    assert.ok(provider.getAgentEngineDeployer());
+
+    const doc: AgentWorkflowDocument = {
+      schemaVersion: '1.0.0',
+      name: 'deploy-agent',
+      description: 'Agent Engine Deploy Flow',
+      framework: 'adk',
+      language: 'python',
+      nodes: [],
+      edges: [],
+    };
+
+    const mockDoc: any = {
+      uri: vscode.Uri.file('/mock/workspace/agents/deploy-agent.agent'),
+      getText: () => JSON.stringify(doc),
+      positionAt: () => new vscode.Position(0, 0),
+    };
+
+    let messageCallback: ((msg: any) => Promise<void>) | null = null;
+    const postedMessages: any[] = [];
+    const mockPanel: any = {
+      webview: {
+        options: {},
+        html: '',
+        postMessage: async (msg: any) => {
+          postedMessages.push(msg);
+          return true;
+        },
+        onDidReceiveMessage: (cb: any) => {
+          messageCallback = cb;
+          return { dispose: () => {} };
+        },
+      },
+      onDidDispose: (cb: any) => ({ dispose: () => {} }),
+      onDidChangeViewState: () => ({ dispose: () => {} }),
+    };
+
+    await provider.resolveCustomTextEditor(mockDoc, mockPanel as any, {} as any);
+    assert.ok(messageCallback);
+
+    // 1. Send GET_AGENT_ENGINE_STATUS
+    await (messageCallback as any)({
+      type: 'GET_AGENT_ENGINE_STATUS',
+      payload: { targetDirectory: '/mock/workspace/agents/deploy-agent' },
+    });
+    const statusMsg = postedMessages.find((m) => m.type === 'AGENT_ENGINE_DEPLOY_STATUS');
+    assert.ok(statusMsg);
+    assert.equal(statusMsg.payload.status, 'idle');
+
+    // 2. Send CANCEL_AGENT_ENGINE_DEPLOY
+    await (messageCallback as any)({
+      type: 'CANCEL_AGENT_ENGINE_DEPLOY',
+      payload: { targetDirectory: '/mock/workspace/agents/deploy-agent' },
+    });
   });
 });
 

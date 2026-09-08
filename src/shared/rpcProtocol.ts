@@ -30,6 +30,7 @@ export type WebviewToExtensionMessage =
         document: AgentWorkflowDocument;
         targetFramework?: FrameworkTarget;
         targetLanguage?: LanguageTarget;
+        deploymentTarget?: string;
         outputFolder?: string;
       };
     }
@@ -65,6 +66,24 @@ export type WebviewToExtensionMessage =
       };
     }
   | {
+      type: 'SEND_CHAT_MESSAGE';
+      payload: {
+        sessionId: string;
+        message: string;
+        streaming?: boolean;
+        history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+        document?: AgentWorkflowDocument;
+        targetDirectory?: string;
+        port?: number;
+      };
+    }
+  | {
+      type: 'RESET_CHAT_SESSION';
+      payload?: {
+        sessionId?: string;
+      };
+    }
+  | {
       type: 'START_LOCAL_RUNNER';
       payload: {
         document?: AgentWorkflowDocument;
@@ -77,6 +96,7 @@ export type WebviewToExtensionMessage =
       type: 'STOP_LOCAL_RUNNER';
       payload?: {
         runnerId?: string;
+        port?: number;
       };
     }
   | {
@@ -114,7 +134,7 @@ export type WebviewToExtensionMessage =
     }
   | {
       type: 'BOOTSTRAP_LOADED';
-      payload?: { timestamp: string };
+      payload?: { timestamp?: string | number };
     }
   | {
       type: 'WEBVIEW_LOG';
@@ -140,6 +160,43 @@ export type WebviewToExtensionMessage =
         line?: number;
         col?: number;
         stack?: string;
+      };
+    }
+  | {
+      type: 'DEPLOY_TO_AGENT_ENGINE';
+      payload: {
+        document?: AgentWorkflowDocument;
+        targetDirectory?: string;
+        projectId: string;
+        region?: string;
+        serviceAccount?: string;
+        networkAttachment?: string;
+        stagingBucket?: string;
+        forceNew?: boolean;
+        envVars?: Record<string, string>;
+      };
+    }
+  | {
+      type: 'CANCEL_AGENT_ENGINE_DEPLOY';
+      payload?: {
+        targetDirectory?: string;
+      };
+    }
+  | {
+      type: 'GET_AGENT_ENGINE_STATUS';
+      payload?: {
+        targetDirectory?: string;
+      };
+    }
+  | {
+      type: 'TEST_REMOTE_AGENT_ENGINE';
+      payload: {
+        targetDirectory?: string;
+        query: string;
+        remoteRuntimeId?: string;
+        serviceUrl?: string;
+        location?: string;
+        projectId?: string;
       };
     };
 
@@ -268,5 +325,50 @@ export type ExtensionToWebviewMessage =
         exists: boolean;
         files?: string[];
         generatedFiles?: GeneratedFile[];
+      };
+    }
+  | {
+      type: 'CHAT_STREAM_CHUNK';
+      payload: {
+        sessionId: string;
+        chunk: string;
+        done: boolean;
+        error?: string;
+        trace?: Array<{
+          agentName: string;
+          step: string;
+          durationMs: number;
+        }>;
+      };
+    }
+  | {
+      type: 'AGENT_ENGINE_DEPLOY_LOG';
+      payload: {
+        text: string;
+        stream: 'stdout' | 'stderr' | 'system';
+        timestamp: string;
+      };
+    }
+  | {
+      type: 'AGENT_ENGINE_DEPLOY_STATUS';
+      payload: {
+        status: 'idle' | 'packaging' | 'building' | 'deploying' | 'success' | 'error';
+        remoteRuntimeId?: string;
+        serviceUrl?: string;
+        consoleUrl?: string;
+        error?: string;
+        logs?: string[];
+        isExistingDeployment?: boolean;
+        metadata?: any;
+      };
+    }
+  | {
+      type: 'AGENT_ENGINE_TEST_RESULT';
+      payload: {
+        success: boolean;
+        query: string;
+        response?: string;
+        durationMs: number;
+        error?: string;
       };
     };

@@ -18,7 +18,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { calculateDagreLayout } from './AutoLayout';
+import { getLayoutedElements } from '../../utils/layout';
 import { WorkflowNode, WorkflowEdge } from '../../../shared/types';
 
 export interface CanvasControlsProps {
@@ -38,13 +38,15 @@ export const CanvasControls: React.FC<CanvasControlsProps> = ({
 }) => {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
 
-  /**
-   * Automatically calculates hierarchical positions using Dagre layout algorithm.
-   */
   const handleAutoLayout = () => {
-    const layoutedNodes = calculateDagreLayout(nodes, edges, { direction: 'LR' });
-    onLayoutChange(layoutedNodes);
-    setTimeout(() => fitView({ padding: 0.2 }), 50);
+    const layouted = getLayoutedElements(nodes, edges);
+    onLayoutChange(layouted.nodes as WorkflowNode[]);
+    setTimeout(() => {
+      fitView({ padding: 0.2 });
+      setTimeout(() => {
+        zoomOut();
+      }, 50);
+    }, 50);
   };
 
   return (

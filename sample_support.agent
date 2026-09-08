@@ -102,5 +102,13 @@
     "createdAt": "2026-08-27T11:00:00Z",
     "updatedAt": "2026-08-27T11:00:00Z",
     "author": "Mike Nimer <mikenimer@google.com>"
+  },
+  "deployment": {
+    "target": "agent_engine",
+    "deploymentTarget": "agent_engine",
+    "outputFolder": "./scratch_flow/",
+    "framework": "google-adk",
+    "language": "python"
   }
 }
+

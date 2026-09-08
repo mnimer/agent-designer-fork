@@ -10,11 +10,16 @@ concurrency:
   group: Create Repo on Approve-refs/heads/main
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Build & Test
         run: echo "Repository initialized with 15m timeout and concurrency cancellation guardrails."

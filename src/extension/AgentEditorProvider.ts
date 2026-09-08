@@ -17,7 +17,11 @@
  *    via a single TextEdit replacing full content when docVersion increments.
  * 5. Uses WebviewBridge for typed RPC message dispatching and handler registration.
  * 6. Integrates GeminiCodeGenEngine to synthesize full Python/LangGraph/TypeScript codebases.
- * 7. Provider and panel lifecycle integration: Shuts down all active runner subprocesses and releases ports on panel disposal or extension deactivation.
+ * 7. Provider and panel lifecycle integration: Shuts down local runner subprocesses and releases local ports on panel disposal or extension deactivation, while background cloud deployments (e.g. Vertex AI Agent Engine) persist across tab navigation until completion or explicit cancellation.
+ * 8. Interactive Chat Session Dispatching: Routes interactive chat messages and reset commands to AgentRunnerManager.
+ * 9. Model Selection & Global Region Mandate: Gemini 1.x and 2.x models (including gemini-2.5-flash) are deprecated.
+ *    gemini-3.7-flash is the primary model for Vertex AI, but requires the global region (location='global' or
+ *    GOOGLE_CLOUD_LOCATION='global'). Regional endpoints return 404 NOT_FOUND for gemini-3.7-flash publisher models.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -32,8 +36,10 @@ import {
   WebviewToExtensionMessage,
 } from '../shared/rpcProtocol';
 import { GeneratedFile } from '../shared/codegen/types';
+import { sanitizeFolderBaseName } from '../shared/folderValidation';
 import { GeminiCodeGenEngine } from './GeminiCodeGenEngine';
 import { AgentRunnerManager } from './AgentRunnerManager';
+import { AgentEngineDeployer } from './AgentEngineDeployer';
 
 export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'agentFlow.editor';
@@ -41,6 +47,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   private readonly context: vscode.ExtensionContext;
   private readonly codeGenEngine: GeminiCodeGenEngine;
   private readonly runnerManager: AgentRunnerManager;
+  private readonly agentEngineDeployer: AgentEngineDeployer;
   private readonly outputChannel?: vscode.OutputChannel;
   private readonly messageHandlers: Map<
     string,
@@ -57,7 +64,8 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     this.context = context;
     this.outputChannel = outputChannel;
     this.codeGenEngine = new GeminiCodeGenEngine(context.extensionPath);
-    this.runnerManager = new AgentRunnerManager(context.extensionPath);
+    this.agentEngineDeployer = new AgentEngineDeployer();
+    this.runnerManager = new AgentRunnerManager(context.extensionPath, undefined, this.agentEngineDeployer);
   }
 
   /**
@@ -97,10 +105,31 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   }
 
   /**
-   * Disposes this provider and terminates its runner manager processes.
+   * Retrieves all active local runner sessions across active editor providers.
+   *
+   * @returns Array of runner descriptors
+   */
+  public static getAllActiveRunners(): Array<{ id: string; pid?: number; port?: number; status: string }> {
+    const all: Array<{ id: string; pid?: number; port?: number; status: string }> = [];
+    for (const provider of AgentEditorProvider.activeProviders) {
+      all.push(...provider.runnerManager.getActiveRunners());
+    }
+    return all;
+  }
+
+  /**
+   * Returns the AgentEngineDeployer instance.
+   */
+  public getAgentEngineDeployer(): AgentEngineDeployer {
+    return this.agentEngineDeployer;
+  }
+
+  /**
+   * Disposes this provider and terminates its runner manager and deployer processes.
    */
   public dispose(): void {
     this.runnerManager.dispose();
+    this.agentEngineDeployer.dispose();
   }
 
   /**
@@ -184,7 +213,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       });
 
       // 3. Register diagnostic and core RPC handlers on the bridge
-      bridge.onMessage('BOOTSTRAP_LOADED', (payload) => {
+      bridge.onMessage('BOOTSTRAP_LOADED', (payload: any) => {
         this.outputChannel?.appendLine(`[AgentEditorProvider:Step 3a] Webview HTML container bootstrap loaded at ${payload?.timestamp}`);
       });
 
@@ -231,7 +260,8 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           const relativeFilePath = vscode.workspace.asRelativePath(document.uri);
           
           // Resolve target directory to check for pre-existing generated files
-          const targetDir = this.resolveTargetDirectory(document, (parsedDoc.metadata as any)?.outputFolder);
+          const configuredFolder = parsedDoc.deployment?.outputFolder || (parsedDoc.metadata as any)?.outputFolder;
+          const targetDir = this.resolveTargetDirectory(document, configuredFolder);
           const existingGeneratedFiles = this.loadGeneratedFilesFromDisk(targetDir);
 
           await bridge.postMessage({
@@ -291,24 +321,30 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       const config = vscode.workspace.getConfiguration('agentFlow');
       const apiKey = config.get<string>('geminiApiKey') || process.env.GEMINI_API_KEY || '';
 
-      // 1. Resolve target directory and clean existing files BEFORE generation
+      // 1. Resolve target directory
       const targetDirPath = this.resolveTargetDirectory(document, payload.outputFolder);
       const targetDir = vscode.Uri.file(targetDirPath);
 
-      // Clean old generated source files and venv (preserving active .agent document, .git, and config files)
-      await this.cleanTargetDirectory(targetDirPath, document);
-
       // 2. Synthesize new codebase with Gemini LLM
+      const deploymentTarget =
+        payload.deploymentTarget ||
+        payload.document?.metadata?.deploymentTarget ||
+        'agent-engine';
+
       const result = await this.codeGenEngine.generateCode({
         document: payload.document,
         framework: payload.targetFramework,
         language: payload.targetLanguage,
+        deploymentTarget: deploymentTarget,
         apiKey: apiKey,
-        model: 'gemini-flash-latest',
+        model: 'gemini-3.7-flash',
       });
 
       if (result.success && result.files.length > 0) {
         try {
+          // Clean old generated source files ONLY when generation succeeds and passes validation
+          await this.cleanTargetDirectory(targetDirPath, document);
+
           // Write all generated files to disk
           for (const file of result.files) {
             const fileUri = vscode.Uri.joinPath(targetDir, file.path);
@@ -456,15 +492,29 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     bridge.onMessage('RUN_TESTS', async (payload) => {
       if (!payload?.document) return;
 
-      const targetDir = this.resolveTargetDirectory(document, payload.targetDirectory);
+      try {
+        const targetDir = this.resolveTargetDirectory(document, payload.targetDirectory);
 
-      await this.runnerManager.runTests({
-        document: payload.document,
-        scenarioIds: payload.testScenarioIds,
-        targetDirectory: targetDir,
-        port: payload.port,
-        bridge,
-      });
+        await this.runnerManager.runTests({
+          document: payload.document,
+          scenarioIds: payload.testScenarioIds,
+          targetDirectory: targetDir,
+          port: payload.port,
+          executionTarget: payload.executionTarget,
+          deployedResourceId: payload.deployedResourceId,
+          bridge,
+        });
+      } catch (err: any) {
+        bridge.postMessage({
+          type: 'EXECUTION_LOG',
+          payload: {
+            runId: `run-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            level: 'error',
+            message: `[Test Runner Error]: ${err?.message || String(err)}`,
+          },
+        });
+      }
     });
 
     bridge.onMessage('START_LOCAL_RUNNER', async (payload) => {
@@ -479,7 +529,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       });
     });
 
-    bridge.onMessage('STOP_LOCAL_RUNNER', async (payload) => {
+    bridge.onMessage('STOP_LOCAL_RUNNER', async (payload: any) => {
       await this.runnerManager.stopLocalRunner(payload?.runnerId, payload?.port, bridge);
     });
 
@@ -487,7 +537,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       await this.runnerManager.sendStatus(bridge);
     });
 
-    bridge.onMessage('CHECK_FILES_EXIST', async (payload) => {
+    bridge.onMessage('CHECK_FILES_EXIST', async (payload: any) => {
       const targetDir = this.resolveTargetDirectory(document, payload?.targetDirectory);
 
       const existingGeneratedFiles = this.loadGeneratedFilesFromDisk(targetDir);
@@ -518,6 +568,110 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       this.runnerManager.cancelRun(payload.runId);
     });
 
+    bridge.onMessage('SEND_CHAT_MESSAGE', async (payload) => {
+      if (!payload?.message) return;
+      const targetDir = this.resolveTargetDirectory(document, payload.targetDirectory);
+      await this.runnerManager.sendChatMessage({
+        sessionId: payload.sessionId || 'default-session',
+        message: payload.message,
+        document: payload.document,
+        targetDirectory: targetDir,
+        port: payload.port,
+        streaming: payload.streaming ?? true,
+        history: payload.history,
+        bridge,
+      });
+    });
+
+    // Native Agent Engine deployment and lifecycle handlers
+    bridge.onMessage('DEPLOY_TO_AGENT_ENGINE', async (payload: any) => {
+      const targetDir = this.resolveTargetDirectory(document, payload?.targetDirectory);
+      let parsedDoc: any = undefined;
+      try {
+        parsedDoc = JSON.parse(document.getText());
+      } catch {
+        parsedDoc = payload?.document;
+      }
+
+      const res = await this.agentEngineDeployer.deploy({
+        document: parsedDoc,
+        targetDirectory: targetDir,
+        projectId: payload.projectId,
+        region: payload.region,
+        serviceAccount: payload.serviceAccount,
+        networkAttachment: payload.networkAttachment,
+        stagingBucket: payload.stagingBucket,
+        forceNew: payload.forceNew,
+        agentEngineId: payload.agentEngineId,
+        displayName: payload.displayName || parsedDoc?.name,
+        envVars: payload.envVars,
+        bridge,
+      });
+
+      if (res.success && res.remoteRuntimeId) {
+        try {
+          const currentText = document.getText();
+          const docData = JSON.parse(currentText);
+          const currentDeploy = docData.deployment || {};
+          docData.deployment = {
+            ...currentDeploy,
+            target: 'agent_engine',
+            deployedResourceId: res.remoteRuntimeId,
+            serviceUrl: res.serviceUrl,
+            consoleUrl: res.consoleUrl,
+            deployedAt: new Date().toISOString(),
+          };
+          const newJson = JSON.stringify(docData, null, 2);
+          if (newJson !== currentText) {
+            await this.updateTextDocument(document, newJson);
+            try {
+              await document.save();
+            } catch (saveErr) {
+              console.warn('[AgentEditorProvider] Warning saving document with deployment state:', saveErr);
+            }
+            await bridge.postMessage({
+              type: 'LOAD_DOCUMENT',
+              payload: {
+                document: docData,
+                docVersion: ++docVersion,
+                filePath: document.uri.fsPath,
+              },
+            });
+          }
+        } catch (err) {
+          console.error('[AgentEditorProvider] Error updating document with deployment state:', err);
+        }
+      }
+    });
+
+    bridge.onMessage('CANCEL_AGENT_ENGINE_DEPLOY', async (payload: any) => {
+      const targetDir = payload?.targetDirectory
+        ? this.resolveTargetDirectory(document, payload.targetDirectory)
+        : undefined;
+      this.agentEngineDeployer.cancelDeployment(targetDir, bridge);
+    });
+
+    bridge.onMessage('GET_AGENT_ENGINE_STATUS', async (payload: any) => {
+      const targetDir = this.resolveTargetDirectory(document, payload?.targetDirectory);
+      this.agentEngineDeployer.getDeploymentStatus(targetDir, bridge);
+    });
+
+    bridge.onMessage('TEST_REMOTE_AGENT_ENGINE', async (payload: any) => {
+      const targetDir = this.resolveTargetDirectory(document, payload?.targetDirectory);
+      await this.agentEngineDeployer.testRemoteAgentRuntime({
+        targetDirectory: targetDir,
+        query: payload.query,
+        remoteRuntimeId: payload.remoteRuntimeId,
+        serviceUrl: payload.serviceUrl,
+        location: payload.location,
+        projectId: payload.projectId,
+        bridge,
+      });
+    });
+
+    bridge.onMessage('RESET_CHAT_SESSION', async (payload) => {
+      this.runnerManager.resetChatSession(payload?.sessionId);
+    });
     // Register external message delegates
     this.messageHandlers.forEach((handler, type) => {
       bridge.onMessage(type as any, async (payload) => {
@@ -617,6 +771,8 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     webviewPanel.onDidDispose(async () => {
       await this.runnerManager.stopLocalRunner(undefined, undefined, bridge);
       this.runnerManager.cancelAll();
+      // NOTE: Background cloud deployments to Vertex AI Agent Engine must persist across panel disposal and tab switches.
+      // They are only cancelled if explicitly requested by the user via CANCEL_AGENT_ENGINE_DEPLOY.
       themeChangeSub.dispose();
       docChangeSub.dispose();
       docSaveSub.dispose();
@@ -680,6 +836,13 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
+      deployment: {
+        target: 'agent_engine',
+        deploymentTarget: 'agent_engine',
+        outputFolder: `./src/agents/${sanitizeFolderBaseName(workflowName || 'workflow')}/`,
+        framework: 'google-adk',
+        language: 'python',
+      },
     };
   }
 
@@ -723,23 +886,16 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           position: { x: 440, y: 160 },
           data: {
             label: 'Primary Assistant',
-            description: 'Core LLM agent with Google Search Grounding',
+            description: 'Core LLM agent',
             agentKind: 'standard',
             standardConfig: {
-              model: 'gemini-flash-latest',
+              model: 'gemini-3.7-flash',
               systemInstruction:
                 'You are a helpful, expert AI engineering assistant. Provide direct, grounded, and concise answers.',
               temperature: 0.7,
               topP: 0.95,
               maxOutputTokens: 2048,
-              tools: [
-                {
-                  id: 'tool-google-search',
-                  name: 'Google Search Grounding',
-                  description: 'Ground responses in live Google Web Search results',
-                  type: 'builtin',
-                },
-              ],
+              tools: [],
               memory: 'none',
             },
           },
@@ -750,6 +906,8 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           id: 'edge-trigger-to-agent',
           source: 'node-trigger-1',
           target: 'node-agent-1',
+          sourceHandle: 'trigger_out_right',
+          targetHandle: 'input_left',
         },
       ],
       viewport: { x: 0, y: 0, zoom: 1 },
@@ -757,6 +915,13 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         author: 'Mike Nimer <mikenimer@google.com>',
+      },
+      deployment: {
+        target: 'agent_engine',
+        deploymentTarget: 'agent_engine',
+        outputFolder: `./src/agents/${sanitizeFolderBaseName(workflowName || 'workflow')}/`,
+        framework: 'google-adk',
+        language: 'python',
       },
     };
   }
@@ -862,6 +1027,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         window.vscode = vscode;
         window.vscodeApiInstance = vscode;
         ${initialDoc ? `window.__INITIAL_AGENT_DOCUMENT__ = ${JSON.stringify(initialDoc)};` : ''}
+        ${document ? `window.__INITIAL_AGENT_FILE_PATH__ = ${JSON.stringify(vscode.workspace.asRelativePath(document.uri))};` : ''}
 
         // Global diagnostic hooks for unhandled errors
         window.addEventListener('error', function(e) {
@@ -926,8 +1092,36 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     let folder = configuredFolder?.trim();
 
     if (!folder) {
-      const baseName = path.basename(document.uri.fsPath, '.agent');
-      return path.join(docDir, baseName || 'workflow');
+      try {
+        const text = document.getText();
+        if (text && text.trim().length > 0) {
+          const parsed = JSON.parse(text) as AgentWorkflowDocument;
+          folder = parsed.deployment?.outputFolder?.trim() || parsed.metadata?.outputFolder?.trim();
+        }
+      } catch {
+        // Fall back to filename
+      }
+    }
+
+    const baseName = path.basename(document.uri.fsPath, '.agent');
+    const sanitized = sanitizeFolderBaseName(baseName || 'workflow');
+
+    if (!folder) {
+      return path.join(docDir, sanitized);
+    }
+
+    // If folder is the generic root agents collection, append sanitized agent subfolder
+    if (
+      folder === './src/agents/' ||
+      folder === './src/agents' ||
+      folder === 'src/agents/' ||
+      folder === 'src/agents' ||
+      folder === './agents/' ||
+      folder === './agents' ||
+      folder === 'agents/' ||
+      folder === 'agents'
+    ) {
+      folder = path.join(folder, sanitized);
     }
 
     if (path.isAbsolute(folder)) {
@@ -994,6 +1188,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           try {
             const content = fs.readFileSync(path.join(targetDir, entry.name), 'utf-8');
             files.push({
+              path: entry.name,
               name: entry.name,
               language,
               content,
@@ -1013,8 +1208,8 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         'README.md': 5,
         'Dockerfile': 6,
       };
-      const pA = priorityOrder[a.name] || 10;
-      const pB = priorityOrder[b.name] || 10;
+      const pA = priorityOrder[a.name || a.path] || 10;
+      const pB = priorityOrder[b.name || b.path] || 10;
       return pA - pB;
     });
 

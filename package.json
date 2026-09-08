@@ -1,9 +1,13 @@
 {
-  "name": "agent-flow-builder",
-  "displayName": "Visual Studio Code Agent Flow Builder",
-  "description": "Visual multi-agent IDE canvas orchestrator for designing, testing, and generating production-ready compound AI systems.",
+  "name": "visual-agent-designer",
+  "displayName": "Visual Studio Agent Designer",
+  "description": "Visual multi-agent IDE canvas orchestrator for designing, testing, and generating production-ready AI agents.",
   "version": "1.0.0",
   "publisher": "mikenimer",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cloud-gtm/visual-agent-designer.git"
+  },
   "author": "Mike Nimer <mikenimer@google.com>",
   "license": "Apache-2.0",
   "engines": {
@@ -17,13 +21,30 @@
   ],
   "main": "./dist/extension/extension.js",
   "activationEvents": [
-    "onStartupFinished",
-    "onCustomEditor:agentFlow.editor",
-    "onCommand:agentFlow.createWorkflow",
-    "onCommand:agentFlow.generateCode",
-    "onCommand:agentFlow.runTests"
+    "onStartupFinished"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentFlow",
+          "title": "Agent Designer",
+          "icon": "resource/icons/agent-flow.svg"
+        }
+      ]
+    },
+    "views": {
+      "agentFlow": [
+        {
+          "id": "agentFlow.views.workflows",
+          "name": "Workflows"
+        },
+        {
+          "id": "agentFlow.views.deployments",
+          "name": "Deployments & Runtimes"
+        }
+      ]
+    },
     "customEditors": [
       {
         "viewType": "agentFlow.editor",
@@ -51,6 +72,42 @@
         "command": "agentFlow.runTests",
         "title": "Agent Flow: Execute Agent Test Suite",
         "category": "Agent Flow"
+      },
+      {
+        "command": "agentFlow.sidebar.newWorkflow",
+        "title": "New Workflow",
+        "category": "Agent Designer",
+        "icon": "$(add)"
+      },
+      {
+        "command": "agentFlow.sidebar.refreshWorkflows",
+        "title": "Refresh Workflows",
+        "category": "Agent Designer",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentFlow.sidebar.duplicateWorkflow",
+        "title": "Duplicate Workflow",
+        "category": "Agent Designer",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "agentFlow.sidebar.deleteWorkflow",
+        "title": "Delete Workflow",
+        "category": "Agent Designer",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "agentFlow.sidebar.refreshDeployments",
+        "title": "Refresh Deployments",
+        "category": "Agent Designer",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentFlow.deployToAgentEngine",
+        "title": "Deploy to Vertex AI Agent Engine",
+        "category": "Agent Designer",
+        "icon": "$(cloud-upload)"
       }
     ],
     "menus": {
@@ -63,6 +120,53 @@
         },
         {
           "command": "agentFlow.runTests"
+        },
+        {
+          "command": "agentFlow.deployToAgentEngine"
+        },
+        {
+          "command": "agentFlow.sidebar.newWorkflow"
+        },
+        {
+          "command": "agentFlow.sidebar.refreshWorkflows"
+        },
+        {
+          "command": "agentFlow.sidebar.duplicateWorkflow"
+        },
+        {
+          "command": "agentFlow.sidebar.deleteWorkflow"
+        },
+        {
+          "command": "agentFlow.sidebar.refreshDeployments"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "agentFlow.sidebar.newWorkflow",
+          "when": "view == agentFlow.views.workflows",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentFlow.sidebar.refreshWorkflows",
+          "when": "view == agentFlow.views.workflows",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agentFlow.sidebar.refreshDeployments",
+          "when": "view == agentFlow.views.deployments",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "agentFlow.sidebar.duplicateWorkflow",
+          "when": "view == agentFlow.views.workflows && viewItem == workflowItem",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentFlow.sidebar.deleteWorkflow",
+          "when": "view == agentFlow.views.workflows && viewItem == workflowItem",
+          "group": "inline@2"
         }
       ]
     },
@@ -103,6 +207,7 @@
     "build": "npm run compile",
     "watch:extension": "esbuild ./src/extension/extension.ts --bundle --outfile=dist/extension/extension.js --external:vscode --format=cjs --platform=node --sourcemap --watch",
     "watch:webview": "vite build --watch",
+    "package": "vsce package --no-dependencies",
     "clean": "rm -rf dist",
     "test": "npx tsx --test --test-concurrency=1 'tests/**/*.test.ts'"
   },
@@ -121,10 +226,14 @@
     "@types/react-dom": "^19.0.4",
     "@types/vscode": "^1.85.0",
     "@vitejs/plugin-react": "^5.0.4",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
   }
 }

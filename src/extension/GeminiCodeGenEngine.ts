@@ -6,10 +6,14 @@
  * and calls Gemini (gemini-flash-latest) to synthesize a complete production repository.
  *
  * Architectural Decisions:
- * 1. Pure LLM Generation: Code synthesis is 100% delegated to Gemini LLM (`gemini-flash-latest`). Zero template fallbacks.
- * 2. Prompt Decoupling: Prompts reside in `resource/prompts/` (e.g., `resource/prompts/python-adk.prompt.txt`).
+ * 1. Pure LLM Generation: Code synthesis is 100% delegated to Gemini LLM (`gemini-3.7-flash`). Zero template fallbacks.
+ * 2. Prompt Decoupling: Prompts reside in `resource/prompts/` (e.g., `resource/prompts/python_adk_agent-engine.prompt.txt`).
  * 3. Multi-Credential Support: Authenticates via `GEMINI_API_KEY` (settings/env) or falls back to Google Application Default Credentials (ADC).
- * 4. Structured Output Parsing: Robustly parses multi-file JSON arrays conforming to `{ path, description, content }`.
+ * 5. Standalone Merged Prompts: Self-contained prompt templates in `resource/prompts/` provide complete framework, workflow, and deployment instructions without external file appending.
+ * 6. Automated Post-Generation Import Normalization: Automatically inspects and corrects known LLM import errors
+ *    for Google ADK tools (such as mapping invalid `google.adk.tools.google_search` to `google.adk.tools`) before persisting.
+ * 7. Dependency Integrity Assurance: Automatically validates that requirements.txt contains all required extras (e.g. google-adk[a2a] and a2a-sdk[http-server]) whenever an A2A agent node is part of the workflow.
+ * 8. Asset File Extraction: Emits dedicated agent card JSON files for A2A nodes alongside agent code.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -18,6 +22,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { GeneratedFile, CodeGenRequest, CodeGenResult } from '../shared/codegen/types';
+import { sanitizeAgentIdentifier } from '../shared/identifierValidation';
 
 export interface AssertionEvaluationRequest {
   inputQuery: string;
@@ -49,25 +54,59 @@ export class GeminiCodeGenEngine {
     const doc = request.document;
     const framework = request.framework || doc.framework || 'google-adk';
     const language = request.language || doc.language || 'python';
-    const model = request.model || 'gemini-flash-latest';
+    const target = request.deploymentTarget || doc.metadata?.deploymentTarget || 'agent-engine';
+    const model = request.model || 'gemini-3.7-flash';
     const apiKey = request.apiKey || process.env.GEMINI_API_KEY || '';
 
     try {
       // 1. Load prompt template from resource/prompts directory
-      const promptTemplate = this.loadPromptTemplate(framework, language);
-      const workflowJson = JSON.stringify(doc, null, 2);
+      const promptTemplate = this.loadPromptTemplate(framework, language, target);
+
+      // Sanitize agent nodes to guarantee valid Python identifier names
+      const sanitizedDoc = {
+        ...doc,
+        nodes: (doc.nodes || []).map((node: any) => {
+          const isTrigger =
+            node.type === 'trigger' ||
+            node.type === 'triggerNode' ||
+            node.type === 'tester' ||
+            node.type === 'chat' ||
+            node.id?.includes('trigger') ||
+            node.id?.includes('tester');
+
+          if (!isTrigger) {
+            const data = node.data || {};
+            const cleanName = sanitizeAgentIdentifier(data.name || data.label || node.id);
+            return {
+              ...node,
+              data: {
+                ...data,
+                name: cleanName,
+              },
+            };
+          }
+          return node;
+        }),
+      };
+
+      const workflowJson = JSON.stringify(sanitizedDoc, null, 2);
       const interpolatedPrompt = promptTemplate.replace('{{WORKFLOW_JSON}}', workflowJson);
 
-      // 2. Invoke Gemini LLM with credentials (API Key or ADC)
-      const generatedFiles = await this.callGeminiApi(interpolatedPrompt, apiKey, model);
+      const rawGeneratedFiles = await this.callGeminiApi(interpolatedPrompt, apiKey, model);
 
-      if (!generatedFiles || generatedFiles.length === 0) {
+      if (!rawGeneratedFiles || rawGeneratedFiles.length === 0) {
         throw new Error('Gemini returned an empty file list. Please verify the prompt and model output.');
       }
 
+      // 3. Post-process and sanitize generated code (e.g. normalize framework tool imports)
+      const postProcessedFiles = this.postProcessGeneratedFiles(rawGeneratedFiles);
+
+      // 4. Finalize generated files: ensure dependencies, extract agent cards, and sanitize Python source
+      const finalizedFiles = this.finalizeGeneratedFiles(doc, postProcessedFiles);
+
       return {
         success: true,
-        files: generatedFiles,
+        files: finalizedFiles,
         modelUsed: model,
         timestamp: new Date().toISOString(),
       };
@@ -84,23 +123,120 @@ export class GeminiCodeGenEngine {
   }
 
   /**
-   * Loads the prompt template file corresponding to the target framework and language
+   * Post-processes generated code files to automatically sanitize and normalize
+   * common LLM import variations for Google ADK and framework modules.
+   *
+   * Normalizations:
+   * 1. Replaces 'from google.adk.tools.google_search import google_search'
+   *    or 'from google.adk.tools.google_search import GoogleSearchTool'
+   *    with valid Google ADK exports ('from google.adk.tools import google_search' or 'from google.adk.tools.google_search_tool import GoogleSearchTool').
+   * 2. Normalizes 'import google.adk.tools.google_search' -> 'from google.adk.tools import google_search'
+   * 3. Normalizes 'from google.adk.tools.vertex_ai_search import ...' -> 'from google.adk.tools import VertexAiSearchTool'
+   *
+   * @param files List of generated files
+   * @returns Sanitized generated files
+   */
+  public postProcessGeneratedFiles(files: GeneratedFile[]): GeneratedFile[] {
+    return files.map((file) => {
+      if (!file.path.endsWith('.py')) {
+        return file;
+      }
+
+      let content = file.content;
+
+      // NOTE: Fix invalid google.adk.tools.google_search submodule imports
+      // 1. from google.adk.tools.google_search import google_search -> from google.adk.tools import google_search
+      content = content.replace(
+        /from\s+google\.adk\.tools\.google_search\s+import\s+google_search/g,
+        'from google.adk.tools import google_search'
+      );
+
+      // 2. from google.adk.tools.google_search import GoogleSearchTool -> from google.adk.tools.google_search_tool import GoogleSearchTool
+      content = content.replace(
+        /from\s+google\.adk\.tools\.google_search\s+import\s+GoogleSearchTool/g,
+        'from google.adk.tools.google_search_tool import GoogleSearchTool'
+      );
+
+      // 3. import google.adk.tools.google_search -> from google.adk.tools import google_search
+      content = content.replace(
+        /import\s+google\.adk\.tools\.google_search\b/g,
+        'from google.adk.tools import google_search'
+      );
+
+      // 4. from google.adk.tools.vertex_ai_search import VertexAiSearchTool -> from google.adk.tools import VertexAiSearchTool
+      content = content.replace(
+        /from\s+google\.adk\.tools\.vertex_ai_search\s+import\s+VertexAiSearchTool/g,
+        'from google.adk.tools import VertexAiSearchTool'
+      );
+
+      // 5. enable_cloud_metrics=True and enable_cloud_tracing=True
+      // -> bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("K_SERVICE"))
+      // NOTE: Google Cloud's telemetry.googleapis.com requires a deployed Reasoning Engine resource ID
+      // and returns 400 Bad Request when metrics or traces are exported from an undeployed local runner.
+      content = content.replace(
+        /enable_cloud_metrics\s*=\s*True/g,
+        'enable_cloud_metrics=bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("K_SERVICE"))'
+      );
+      content = content.replace(
+        /enable_cloud_tracing\s*=\s*True/g,
+        'enable_cloud_tracing=bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("K_SERVICE"))'
+      );
+
+      // 6. Strip forbidden description parameter from App(...)
+      // In google.adk.apps.App, Pydantic strict mode is active (extra='forbid') and App does not accept a description argument.
+      content = content.replace(/(\bApp\s*\([^)]*?),\s*description\s*=\s*(?:'[^']*'|"[^"]*")/g, '$1');
+      content = content.replace(/(\bApp\s*\(\s*)description\s*=\s*(?:'[^']*'|"[^"]*"),?\s*/g, '$1');
+
+      return {
+        ...file,
+        content,
+      };
+    });
+  }
+
+  /**
+   * Loads the prompt template file corresponding to the target framework, language, and deployment target
    * from the `resource/prompts/` directory.
    *
    * @param framework Framework identifier (e.g. 'google-adk', 'langgraph')
    * @param language Programming language (e.g. 'python', 'typescript')
+   * @param target Optional deployment target (e.g. 'cloudrun', 'agent-engine', 'agent_engine', 'cloud_run')
    * @returns The raw string prompt template
    */
-  public loadPromptTemplate(framework: string, language: string): string {
-    const cleanFramework = framework.replace('google-', '').replace('_', '-');
-    const promptFileName = `${language}-${cleanFramework}.prompt.txt`;
+  public loadPromptTemplate(framework: string, language: string, target?: string): string {
+    const cleanFramework = framework.replace('google-', '').replace('-', '_').replace('google_', '');
+    const rawTarget = (target || 'agent-engine').toLowerCase().trim();
+    const normalizedTarget = rawTarget.includes('agent')
+      ? 'agent-engine'
+      : rawTarget.includes('cloud')
+      ? 'cloudrun'
+      : rawTarget.replace(/_/g, '-');
 
-    const candidatePaths = [
-      path.join(this.extensionPath, 'resource', 'prompts', promptFileName),
-      path.join(this.extensionPath, 'resource', 'prompts', 'python-adk.prompt.txt'),
-      path.join(process.cwd(), 'resource', 'prompts', promptFileName),
-      path.join(process.cwd(), 'resource', 'prompts', 'python-adk.prompt.txt'),
+    const candidateFileNames = [
+      // 1. Target-specific filenames (e.g., python_adk_agent-engine.prompt.txt, python_adk_cloudrun.prompt.txt)
+      `${language}_${cleanFramework}_${normalizedTarget}.prompt.txt`,
+      `${language}_${cleanFramework}_${rawTarget.replace(/_/g, '-')}.prompt.txt`,
+      `${language}_${cleanFramework}_${rawTarget.replace(/[_-]/g, '')}.prompt.txt`,
+      `${language}-${cleanFramework}-${normalizedTarget}.prompt.txt`,
+      // 2. Default target filenames
+      `${language}_${cleanFramework}_agent-engine.prompt.txt`,
+      `${language}_${cleanFramework}_cloudrun.prompt.txt`,
+      `${language}_${cleanFramework}.prompt.txt`,
+      'python_adk_agent-engine.prompt.txt',
+      'python_adk_cloudrun.prompt.txt',
     ];
+
+    const searchDirs = [
+      path.join(this.extensionPath, 'resource', 'prompts'),
+      path.join(process.cwd(), 'resource', 'prompts'),
+    ];
+
+    const candidatePaths: string[] = [];
+    for (const dir of searchDirs) {
+      for (const fileName of candidateFileNames) {
+        candidatePaths.push(path.join(dir, fileName));
+      }
+    }
 
     for (const candidate of candidatePaths) {
       if (fs.existsSync(candidate)) {
@@ -109,18 +245,12 @@ export class GeminiCodeGenEngine {
     }
 
     throw new Error(
-      `Prompt template not found for framework '${framework}' and language '${language}'. Looked in: ${candidatePaths.join(', ')}`
+      `Prompt template not found for framework '${framework}', language '${language}', target '${target || 'default'}'. Looked in: ${candidatePaths.slice(0, 6).join(', ')}`
     );
   }
 
-  /**
-   * Invokes the Gemini API via @google/genai SDK or direct REST with API Key / ADC.
-   *
-   * @param prompt Full interpolated prompt instruction
-   * @param apiKey Optional Gemini API key
-   * @param model Target model identifier (default: 'gemini-flash-latest')
-   * @returns Array of generated file objects
-   */
+
+
   /**
    * Invokes the Gemini API via @google/genai SDK or direct REST with API Key / ADC.
    * Seamlessly falls back to Google Application Default Credentials (ADC) if the API key fails.
@@ -156,14 +286,28 @@ export class GeminiCodeGenEngine {
     }
   }
 
+  /**
+   * Gemini response schema for structured output code generation.
+   * Constrains the LLM response to a strongly-typed JSON array of file objects.
+   */
   private readonly fileArraySchema = {
     type: 'ARRAY',
+    description: 'List of source code and configuration files generated for the complete agent project.',
     items: {
       type: 'OBJECT',
       properties: {
-        path: { type: 'STRING' },
-        description: { type: 'STRING' },
-        content: { type: 'STRING' },
+        path: {
+          type: 'STRING',
+          description: 'Relative file path including subdirectories (e.g., "src/agent.py", "tests/test_agent.py", "requirements.txt").',
+        },
+        description: {
+          type: 'STRING',
+          description: 'Brief 1-2 sentence description explaining the purpose and contents of this file.',
+        },
+        content: {
+          type: 'STRING',
+          description: 'Complete, production-ready, unabridged source code for the file without placeholders or truncation.',
+        },
       },
       required: ['path', 'description', 'content'],
     },
@@ -636,6 +780,187 @@ Instructions:
       passed: false,
       reason: `Expected output to contain or satisfy "${expectedCriteria}".`,
     };
+  }
+
+  /**
+   * Validates that necessary dependencies (such as A2A protocol packages)
+   * are explicitly present in requirements.txt. Fails fast if the generated code is invalid.
+   *
+   * Logic Flow:
+   * 1. Checks if the workflow document contains any A2A agent nodes (agentKind === 'a2a')
+   *    or if any generated file references A2A imports or RemoteA2aAgent.
+   * 2. If A2A is required, locates requirements.txt in the generated files.
+   * 3. Fails fast with a clear error if requirements.txt is missing or lacks A2A packages.
+   *
+   * @param doc The input AgentWorkflowDocument
+   * @param files The array of files generated by Gemini
+   */
+  public validateRequiredDependencies(doc: any, files: GeneratedFile[]): void {
+    const hasA2A =
+      (doc?.nodes || []).some((n: any) => n.data?.agentKind === 'a2a' || n.data?.agentType === 'a2a_agent') ||
+      files.some(
+        (f) =>
+          f.content.includes('RemoteA2aAgent') ||
+          f.content.includes('import a2a') ||
+          f.content.includes('from a2a') ||
+          f.content.includes('to_a2a')
+      );
+
+    if (!hasA2A) {
+      return;
+    }
+
+    const reqFile = files.find(
+      (f) => f.path === 'requirements.txt' || f.path.endsWith('/requirements.txt')
+    );
+
+    if (!reqFile) {
+      throw new Error(
+        'Validation Error: Generated repository is missing requirements.txt with required A2A dependencies (google-adk[a2a] and a2a-sdk[http-server]).'
+      );
+    }
+
+    if (!reqFile.content.includes('google-adk[a2a]') || !reqFile.content.includes('a2a-sdk')) {
+      throw new Error(
+        'Validation Error: Generated requirements.txt is missing required A2A dependencies (google-adk[a2a] and a2a-sdk[http-server]). Failing fast to prevent running or deploying invalid code.'
+      );
+    }
+  }
+
+  /**
+   * Ensures that dedicated agent card JSON files exist for any A2A agent nodes in the workflow.
+   *
+   * Logic Flow:
+   * 1. Scans workflow document nodes for agentKind === 'a2a'.
+   * 2. If a node defines rawJsonPack, formats and writes `<agent_name>_agent_card.json`
+   * Ensures that complete agent card JSON files are created for all A2A nodes in the workflow.
+   * If the LLM emitted a truncated or partial card file (or used either `*_agent_card.json` or `*_card.json`),
+   * this method synchronizes both filename variants with the canonical, full JSON from `a2aConfig.rawJsonPack`.
+   *
+   * @param doc The workflow document containing nodes
+   * @param files The array of files generated by Gemini
+   * @returns Updated array of generated files with canonical agent card files
+   */
+  public ensureAgentCards(doc: any, files: GeneratedFile[]): GeneratedFile[] {
+    const updatedFiles = [...files];
+    const nodes = doc?.nodes || [];
+
+    for (const node of nodes) {
+      const isA2a = node.data?.agentKind === 'a2a' || node.data?.agentType === 'a2a_agent';
+      if (isA2a && node.data?.a2aConfig?.rawJsonPack) {
+        const label = node.data.label || node.data.id || 'agent';
+        const safeName = label
+          .toLowerCase()
+          .replace(/[^a-z0-9_]/g, '_')
+          .replace(/_+/g, '_')
+          .replace(/^_|_$/g, '');
+
+        const primaryCardFilename = `${safeName}_agent_card.json`;
+        const altCardFilename = `${safeName}_card.json`;
+
+        let formattedCard = node.data.a2aConfig.rawJsonPack;
+        try {
+          const parsed = JSON.parse(formattedCard);
+          formattedCard = JSON.stringify(parsed, null, 2);
+        } catch {
+          // Keep raw if JSON formatting fails
+        }
+
+        let primaryFound = false;
+        let altFound = false;
+
+        // Scan existing generated files to overwrite any emitted card variations
+        for (let i = 0; i < updatedFiles.length; i++) {
+          const filePath = updatedFiles[i].path;
+          if (filePath === primaryCardFilename || filePath.endsWith('/' + primaryCardFilename)) {
+            updatedFiles[i] = {
+              path: filePath,
+              content: formattedCard,
+              description: `Agent Card definition for ${label}`,
+            };
+            primaryFound = true;
+          } else if (filePath === altCardFilename || filePath.endsWith('/' + altCardFilename)) {
+            updatedFiles[i] = {
+              path: filePath,
+              content: formattedCard,
+              description: `Agent Card definition for ${label}`,
+            };
+            altFound = true;
+          }
+        }
+
+        // Canonical rawJsonPack from workflow definition must be present for both naming conventions
+        if (!primaryFound) {
+          updatedFiles.push({
+            path: primaryCardFilename,
+            content: formattedCard,
+            description: `Agent Card definition for ${label}`,
+          });
+        }
+        if (!altFound) {
+          updatedFiles.push({
+            path: altCardFilename,
+            content: formattedCard,
+            description: `Agent Card definition for ${label}`,
+          });
+        }
+      }
+    }
+
+    return updatedFiles;
+  }
+
+  /**
+   * Validates that essential entrypoint files are present in the generated repository.
+   * Fails fast if the LLM omitted the core agent entrypoint ('agent.py') or if 'agent.py'
+   * does not define 'root_agent'.
+   *
+   * Logic Flow:
+   * 1. Check if 'agent.py' exists in generated files.
+   * 2. If missing, throw a descriptive Validation Error detailing the generated files.
+   * 3. Verify 'agent.py' includes 'root_agent' assignment.
+   *
+   * @param doc The input AgentWorkflowDocument
+   * @param files The array of generated files
+   */
+  public validateGeneratedFiles(doc: any, files: GeneratedFile[]): void {
+    const hasAgentPy = files.some(
+      (f) => f.path === 'agent.py' || f.path.endsWith('/agent.py')
+    );
+
+    if (!hasAgentPy) {
+      const generatedList = files.map((f) => f.path).join(', ');
+      throw new Error(
+        `Validation Error: Generated repository is missing the core entrypoint 'agent.py'. All agent repositories must include 'agent.py' defining 'root_agent'. Received files: [${generatedList}]`
+      );
+    }
+
+    const agentPy = files.find(
+      (f) => f.path === 'agent.py' || f.path.endsWith('/agent.py')
+    );
+
+    if (agentPy && !agentPy.content.includes('root_agent')) {
+      throw new Error(
+        `Validation Error: 'agent.py' does not define 'root_agent'. Ensure the workflow orchestrator is assigned to 'root_agent'.`
+      );
+    }
+  }
+
+  /**
+   * Finalizes the generated file repository:
+   * 1. Validates that core files ('agent.py') and 'root_agent' exist
+   * 2. Guarantees required runtime packages (such as A2A) in requirements.txt
+   * 3. Extracts and writes dedicated agent card JSON files for any A2A nodes
+   *
+   * @param doc The workflow document
+   * @param files The raw generated files from Gemini
+   * @returns Final files ready for deployment and execution
+   */
+  public finalizeGeneratedFiles(doc: any, files: GeneratedFile[]): GeneratedFile[] {
+    this.validateGeneratedFiles(doc, files);
+    this.validateRequiredDependencies(doc, files);
+    const result = this.ensureAgentCards(doc, files);
+    return result;
   }
 }
 

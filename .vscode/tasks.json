@@ -9,6 +9,27 @@
         "isDefault": true
       },
       "problemMatcher": []
+    },
+    {
+      "label": "npm: compile",
+      "type": "npm",
+      "script": "compile",
+      "problemMatcher": []
+    },
+    {
+      "label": "wait",
+      "type": "shell",
+      "command": "sleep 2", // On Windows (cmd), use: "timeout /t 3" or "Start-Sleep -s 3" for PowerShell
+      "problemMatcher": []
+    },
+    {
+      "label": "build-and-run",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "npm: compile",
+        "wait"
+      ],
+      "problemMatcher": []
     }
   ]
 }

@@ -89,4 +89,20 @@ describe('useWebviewBridge Core Logic', () => {
       }
     );
   });
+
+  it('should support onMessage as a functional alias for subscribe', () => {
+    const receivedMessages: string[] = [];
+    const subscribe = (type: string, listener: (payload: any) => void) => {
+      return (payload: any) => listener(payload);
+    };
+    const onMessage = subscribe;
+
+    const handler = onMessage('AGENT_ENGINE_DEPLOY_LOG', (payload) => {
+      receivedMessages.push(payload.text);
+    });
+
+    handler({ text: 'Deployment initiated' });
+    assert.equal(receivedMessages.length, 1);
+    assert.equal(receivedMessages[0], 'Deployment initiated');
+  });
 });

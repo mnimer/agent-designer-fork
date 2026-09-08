@@ -19,7 +19,7 @@ To ensure fast iteration, robust test coverage, and strict quality gates, engine
 +=========================================================================================================+
 | [v1.0.0] Core Foundation • Single Agent • Google Search Tool • Test Suite Trigger • ADK Python Runner   |
 |     ↓                                                                                                   |
-| [v1.0.1] Interactive Chat Trigger • Cloud Deployment IaC (Cloud Run + Agent Engine Terraform)            |
+| [v1.0.1] Interactive Chat Trigger • Cloud Run IaC • Native Agent Engine Container Deployment            |
 |     ↓                                                                                                   |
 | [v1.0.2] Multi-Agent Topologies & Delegation Patterns (Sequential Pipeline, Parallel Fan-Out)          |
 |     ↓                                                                                                   |
@@ -103,17 +103,25 @@ To ensure fast iteration, robust test coverage, and strict quality gates, engine
      - Undo/Redo history stack (`Cmd+Z` / `Cmd+Y`).
      - Auto-layout integration (`LR` / `TB` using Dagre).
      - Full JSON serialization/deserialization for `.agent` files.
+  8. **VS Code Activity Bar & Sidebar Explorer**:
+     - Official Activity Bar container (`viewsContainers.activitybar`) with custom icon.
+     - Sidebar tree view scanning workspace for `*.agent` workflows with quick create/open actions.
+     - Deployments status tree view for active local runners and remote Agent Engine endpoints.
+  9. **VSIX Packaging & GitHub Actions Release Pipeline**:
+     - Automated `@vscode/vsce` packaging script with production `.vscodeignore`.
+     - GitHub Actions workflow triggered on version tags (`v*.*.*`) on `main` branch to test, build, and publish `.vsix` releases.
 
 * **Acceptance Criteria**:
   - Opening a `.agent` file launches the custom visual editor.
   - Clicking "Generate Code" invokes Gemini with `prompts/python-adk.prompt.txt` and renders full multi-file project tabs.
   - Clicking "Run All Unit Tests" runs tests against a real Python subprocess and reports pass/fail with execution latency.
+  - Pushing a git version tag builds a clean `.vsix` bundle and drafts a GitHub release.
   - 100% unit test coverage on extension backend, serialization, and prompt parser functions.
 
 ---
 
-### Release 1.0.1 — Interactive Chat & Cloud Deployment IaC
-**Theme**: Add conversational chat trigger, interactive chat testing, and automated Terraform infrastructure-as-code generation for Google Cloud Run and Vertex AI Agent Engine.
+### Release 1.0.1 — Interactive Chat & Cloud Deployment (Cloud Run & Native Agent Engine)
+**Theme**: Add conversational chat trigger, interactive chat testing, automated Terraform infrastructure-as-code generation for Google Cloud Run / shared GCP foundation, and native container deployment to Vertex AI Agent Engine (Agent Runtime).
 
 * **Features**:
   1. **Chat Trigger Node (`chat`)**:
@@ -122,16 +130,30 @@ To ensure fast iteration, robust test coverage, and strict quality gates, engine
   2. **Interactive In-Editor Chat Runner**:
      - New "Interactive Chat" tab in the bottom workbench panel.
      - Allows real-time streaming conversational testing with the agent workflow.
-  3. **Cloud Deployment & IaC Panel (`DeploymentTab`)**:
-     - Deployment Target Selector: **Google Cloud Run (v2 Service)** vs **Vertex AI Agent Engine (Reasoning Engine)**.
+  3. **Cloud Infrastructure IaC Panel (`DeploymentTab`)**:
+     - Deployment Target Selector: **Google Cloud Run (v2 Service)** vs **Shared GCP Infrastructure**.
      - Automatic extraction of runtime secrets (e.g., `GEMINI_API_KEY`).
-     - Generates production-ready `main.tf` (Terraform provider `google` / `google-beta`), `Dockerfile` (distroless container), and `deploy.sh` script.
+     - Generates production-ready `main.tf` (Terraform provider `google` / `google-beta`) for Cloud Run, Artifact Registry, IAM service accounts, and optional PSC Network Attachments for private VPC connectivity.
      - One-click copy and export to `./deploy/` directory.
+  4. **Native Vertex AI Agent Engine (Agent Runtime) Container Deployment**:
+     - Container-based deployment following Google ADK specifications (`agents-cli deploy`).
+     - Generates `cloudbuild.yaml` for automated testing and Agent Runtime deployment in GCP.
+     - Generates project-root `Dockerfile`, `.gcloudignore`, and `fast_api_app.py` mounting ADK `/run_sse`, A2A routes, and reasoning engine adapter routes.
+     - Manages `deployment_metadata.json` (`remote_agent_runtime_id`, `deployment_target: "agent_runtime"`, `is_a2a`, `agent_directory`, `deployment_timestamp`).
+     - Real-time build and deployment log streaming via `WebviewBridge`.
+     - Live testing against the deployed engine via the `/api` HTTP passthrough:
+       `https://{location}-aiplatform.googleapis.com/reasoningEngines/v1/{resource}/api/run_sse`
+  5. **Visual Samples & Blueprints Gallery (Samples Tab & Palette)**:
+     - Dedicated interactive visual catalog in the canvas diagram's `Samples` tab and floating palette.
+     - Curated production-ready enterprise blueprints (Company Verifier, Customer Support Specialist, Financial Research Analyst, Code Quality Critic Triad).
+     - Visual preview cards with tags, descriptions, and one-click loading into canvas.
 
 * **Acceptance Criteria**:
   - Wiring a Chat Trigger allows live multi-turn chat in the bottom panel.
   - Generating Cloud Run Terraform produces valid HCL with Secret Manager bindings and public/private invoker IAM policies.
-  - Generating Agent Engine Terraform produces `google_vertex_ai_reasoning_engine` resource specifications.
+  - Deploying to Agent Engine compiles the container via Cloud Build, registers the reasoning engine instance, and populates `deployment_metadata.json`.
+  - Testing against a deployed Agent Engine streams chat tokens live in the interactive runner.
+  - Selecting a sample from the Samples Tab loads the complete agent graph topology into the canvas.
 
 ---
 
@@ -229,6 +251,9 @@ To ensure fast iteration, robust test coverage, and strict quality gates, engine
   3. **Tool Property Drawer & Custom Registry**:
      - Create, edit, test, and save custom tools in local catalog.
      - Drag tools from palette directly onto canvas agents.
+  4. **ADK Built-in Tools Registry & Cross-Harness Tool Adapters**:
+     - Complete palette of official Google ADK built-in tools (`google_search`, `vertex_ai_search`, `load_web_page`, `request_input`, `preload_memory`, `code_execution`, `agent_as_tool`).
+     - Runtime-agnostic canonical JSON representation: tools compile to native ADK imports (`from google.adk.tools import ...`), LangGraph/LangChain equivalents (`@tool`, LangGraph interrupts, Google GenAI search), or TypeScript SDK declarations.
 
 * **Acceptance Criteria**:
   - Adding a REST API tool generates an async `httpx` or `requests` tool function in `tools.py` with secret resolution.

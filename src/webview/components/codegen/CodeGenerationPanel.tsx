@@ -23,12 +23,17 @@ import {
   Maximize2,
   Minimize2,
   Cloud,
-  Key
+  Key,
+  MessageSquare,
+  AlertCircle,
+  CheckCircle2,
 } from 'lucide-react';
 import { AgentData, FrameworkType, GeneratedFile, GenerationConfig, LanguageType, TestPrompt } from '../../types';
 import { AgentWorkflowDocument } from '../../../shared/types';
 import { DeploymentTab } from '../deployment/DeploymentTab';
 import { TestRunnerTab } from '../testing/TestRunnerTab';
+import { ChatRunnerTab } from '../chat/ChatRunnerTab';
+import { validateTargetFolder } from '../../../shared/folderValidation';
 
 interface CodeGenerationPanelProps {
   config: GenerationConfig;
@@ -40,10 +45,15 @@ interface CodeGenerationPanelProps {
   hasTestSuite?: boolean;
   hasGeneratedCode?: boolean;
   testPrompts?: TestPrompt[];
-  agents?: AgentData[];
   isMaximized?: boolean;
   onToggleMaximize?: () => void;
   document?: AgentWorkflowDocument;
+  hasChatTrigger?: boolean;
+  chatConfig?: {
+    initialMessage?: string;
+    streaming?: boolean;
+    sessionMemory?: string;
+  };
 }
 
 /**
@@ -57,6 +67,7 @@ interface CodeGenerationPanelProps {
  * - LangGraph and TypeScript options are currently disabled in this version.
  * - Generate Code button is disabled.
  * - Mocked file tabs are hidden when no generated files are present.
+ * - Supports Interactive Chat Runner tab when a Chat Trigger node is present on canvas.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -74,11 +85,15 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   isMaximized = false,
   onToggleMaximize,
   document: workflowDoc,
+  hasChatTrigger = false,
+  chatConfig,
 }) => {
-  const [activeTab, setActiveTab] = useState<'codegen' | 'deployment' | 'test_runner'>('codegen');
+  const [activeTab, setActiveTab] = useState<'codegen' | 'deployment' | 'test_runner' | 'chat'>('codegen');
   const [activeFileIndex, setActiveFileIndex] = useState<number>(0);
   const [copied, setCopied] = useState(false);
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
+
+  const folderValidation = validateTargetFolder(config.outputFolder || '');
 
   const sampleFolders = [
     './src/agents/',
@@ -108,7 +123,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
     const element = document.createElement('a');
     const file = new Blob([currentFile.content], { type: 'text/plain' });
     element.href = URL.createObjectURL(file);
-    element.download = currentFile.name;
+    element.download = currentFile.name || currentFile.path || 'file.txt';
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
@@ -194,6 +209,26 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                 </div>
               )}
             </div>
+          )}
+
+          {/* 4th TAB: Interactive Chat Runner (shown if a Chat Trigger is attached) */}
+          {hasChatTrigger && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('chat')}
+              title="Interactive live streaming chat runner"
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+                activeTab === 'chat'
+                  ? 'border-emerald-500 text-emerald-400 bg-[#0d1117]/60'
+                  : 'border-transparent text-gray-400 hover:text-emerald-300'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Interactive Chat</span>
+              <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Live
+              </span>
+            </button>
           )}
         </div>
 
@@ -345,7 +380,11 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                     value={config.outputFolder}
                     onChange={(e) => onChangeConfig({ outputFolder: e.target.value })}
                     placeholder="./src/agents/"
-                    className="flex-1 px-3 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-blue-500 rounded text-xs font-mono text-gray-300 focus:outline-none"
+                    className={`flex-1 px-3 py-1.5 bg-[#0d1117] border rounded text-xs font-mono text-gray-300 focus:outline-none ${
+                      !folderValidation.isValid
+                        ? 'border-amber-500/80 focus:border-amber-500'
+                        : 'border-[#30363d] focus:border-blue-500'
+                    }`}
                   />
                   <button
                     type="button"
@@ -356,6 +395,35 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                     <FolderOpen className="w-3.5 h-3.5" />
                   </button>
                 </div>
+
+                {/* Character Validation Message & Quick Fix */}
+                {!folderValidation.isValid ? (
+                  <div className="mt-2 p-2 bg-amber-950/40 border border-amber-600/40 rounded text-[11px] text-amber-200 space-y-2">
+                    <div className="flex items-start gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                      <div className="leading-tight">{folderValidation.error}</div>
+                    </div>
+                    {folderValidation.hasHyphens && (
+                      <div className="flex items-center justify-between pt-1 border-t border-amber-800/40">
+                        <span className="text-[10px] text-gray-300">
+                          Replace <code className="text-amber-300 font-mono">-</code> with <code className="text-emerald-300 font-mono">_</code>:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onChangeConfig({ outputFolder: folderValidation.sanitizedPath })}
+                          className="px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-[10px] font-medium transition-colors cursor-pointer"
+                        >
+                          Use '{folderValidation.sanitizedBase}'
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-400/90 font-mono">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span>Valid Python package name: {folderValidation.folderBase}</span>
+                  </div>
+                )}
 
                 {isFolderPickerOpen && (
                   <div className="p-1.5 rounded-lg bg-[#0d1117] border border-[#30363d] space-y-1 animate-in fade-in">
@@ -527,6 +595,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
           generatedFiles={generatedFiles}
           agents={agents}
           document={workflowDoc}
+          onUpdateGenerationConfig={onChangeConfig}
         />
       </div>
 
@@ -537,6 +606,17 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
           agents={agents}
           config={config}
           document={workflowDoc}
+          onNavigateToDeployment={() => setActiveTab('deployment')}
+        />
+      </div>
+
+      {/* Interactive Chat Tab */}
+      <div className={activeTab === 'chat' ? 'flex-1 flex flex-col h-full overflow-hidden' : 'hidden'}>
+        <ChatRunnerTab
+          document={workflowDoc}
+          config={config}
+          chatConfig={chatConfig}
+          agents={agents}
           onNavigateToDeployment={() => setActiveTab('deployment')}
         />
       </div>

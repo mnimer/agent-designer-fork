@@ -7,12 +7,12 @@ export const SAMPLE_COMPANY_VERIFIER: SampleWorkflowDefinition = {
   name: 'Company Verifier & Entity Classifier',
   filename: 'company_verifier.agent',
   category: 'Enterprise Integration & Identity',
-  badge: 'Pub/Sub + Places API',
-  description: 'Automated business entity verification. Listens to Pub/Sub registration events, queries Google Places API for physical location and operating status, and uses prompt reasoning to classify entity legitimacy and category (restaurant, machine shop, retail, medical, tech, etc.).',
+  badge: 'Pub/Sub + Search Grounding',
+  description: 'Automated business entity verification. Listens to Pub/Sub registration events, queries Google Search Grounding and Web Page Reader for corporate presence and operational status, and uses prompt reasoning to classify entity legitimacy and category (restaurant, machine shop, retail, medical, tech, etc.).',
   features: [
     'Cloud Pub/Sub Event Ingestion trigger with custom subscription',
-    'Google Places API (searchText) tool invocation',
-    'Google Search Grounding fallback for ambiguous records',
+    'Google Search Grounding for entity verification',
+    'Web Page Reader for official domain and filing inspection',
     'Taxonomy classifier: restaurant, machine shop, retail, healthcare, etc.',
     'Structured JSON verification report with confidence & risk indicators',
   ],
@@ -47,7 +47,7 @@ export const SAMPLE_COMPANY_VERIFIER: SampleWorkflowDefinition = {
       data: {
         id: 'agent_company_verifier',
         label: 'Company Verifier & Classifier',
-        role: 'Verifies business legitimacy against Google Places API and categorizes business type (restaurant, machine shop, retail, medical, tech, etc.).',
+        role: 'Verifies business legitimacy against Google Search Grounding and categorizes business type (restaurant, machine shop, retail, medical, tech, etc.).',
         model: 'gemini-flash-latest',
         temperature: 0.1,
         maxIterations: 8,
@@ -55,9 +55,9 @@ export const SAMPLE_COMPANY_VERIFIER: SampleWorkflowDefinition = {
         systemPrompt: `You are an automated Business Verification and Entity Classifier Agent.
 
 When a company registration payload is received:
-1. Call the "Google Places API (Business Lookup)" tool to search for the entity using the business name, address, and phone number.
+1. Use Google Search Grounding to verify recent web footprint, official corporate filings, or business directory listings.
 2. Cross-verify if the place is marked as OPERATIONAL, permanently closed, or unrecognized.
-3. If Places API returns ambiguous results, use Google Search Grounding to verify recent web footprint, corporate filings, or directory listings.
+3. If search returns ambiguous results, use the Web Page Reader to inspect official domain pages.
 4. Analyze the place details to answer two primary questions:
    a. Is this a genuine, real, and operating business? (Status: "VERIFIED" | "UNVERIFIED" | "SUSPICIOUS")
    b. What specific business category does it belong to? Classify into standardized taxonomy:
@@ -71,8 +71,8 @@ When a company registration payload is received:
       - "professional services" (legal, accounting, consulting, architectural)
 5. Return a structured JSON verification report with confidence score (0.00 - 1.00), verified physical address, operational status, primary category, secondary subcategories, and any fraud risk flags.`,
         tools: [
-          AVAILABLE_TOOLS[0], // Google Places API
-          AVAILABLE_TOOLS[2], // Google Search Grounding
+          AVAILABLE_TOOLS.find(t => t.id === 'tool_google_search') || AVAILABLE_TOOLS[0], // Google Search Grounding
+          AVAILABLE_TOOLS.find(t => t.id === 'builtin_load_web_page') || AVAILABLE_TOOLS[2], // Web Page Reader
         ],
         subAgents: [],
         subAgentPattern: 'parallel',
@@ -132,7 +132,7 @@ export const SAMPLE_PROCUREMENT_REQUEST: SampleWorkflowDefinition = {
     'FSR Champion Agent: pitches sales velocity, customer demand, and store competitive edge',
     'Procurement Officer Agent: audits gross margins %, MOQ cash outlay, and warehouse logistics',
     'Executive Judge Agent: evaluates 3 rounds of structured debate and renders final ruling',
-    'Dual tools: Procurement & Margin Calculator + Market Research Grounding',
+    'Dual tools: Python Code Sandbox + Market Research Grounding',
   ],
   nodesCount: 4,
   toolsCount: 3,
@@ -175,7 +175,7 @@ Your mission is to passionately and convincingly argue why the company should on
 - Provide practical sell-through forecasts and suggest promotional store bundles to accelerate initial velocity.
 - In each round of the 3-turn debate, directly counter Procurement's objections regarding MOQ risk or lead time by offering risk mitigation (e.g. store pre-commitments, marketing co-op dollars).`,
         tools: [
-          AVAILABLE_TOOLS[2], // Google Search Grounding
+          AVAILABLE_TOOLS.find(t => t.id === 'tool_google_search') || AVAILABLE_TOOLS[1], // Google Search Grounding
         ],
         subAgents: [],
         subAgentPattern: 'parallel',
@@ -200,14 +200,14 @@ Your mission is to passionately and convincingly argue why the company should on
         agentKind: 'standard',
         systemPrompt: `You are the Senior Procurement & Financial Inventory Officer.
 Your mandate is financial rigor and risk minimization:
-- Use the "Procurement & Margin Calculator" tool to calculate net margin %, total cash commitment (MOQ * unit_cost), inventory carrying cost, and break-even unit threshold.
+- Use the "Python Code Sandbox" tool to calculate net margin %, total cash commitment (MOQ * unit_cost), inventory carrying cost, and break-even unit threshold.
 - Scrutinize supplier reliability, lead-time volatility, warehouse shelf-space requirements, and return/defect terms.
 - Challenge the FSR's overly optimistic sales assumptions with conservative sell-through models.
 - Push for supplier concessions: Net-60 payment terms, vendor guaranteed markdown subsidies, or reduced initial MOQ trial batches.
 - Engage in a rigorous 3-turn debate with the FSR before presenting your financial audit to the Executive Judge.`,
         tools: [
-          AVAILABLE_TOOLS[1], // Procurement & Margin Calculator
-          AVAILABLE_TOOLS[6], // SQL Database Query
+          AVAILABLE_TOOLS.find(t => t.id === 'tool_code_interpreter') || AVAILABLE_TOOLS[5], // Python Code Sandbox
+          AVAILABLE_TOOLS.find(t => t.id === 'builtin_vertex_ai_search') || AVAILABLE_TOOLS[1], // Vertex AI Search
         ],
         subAgents: [],
         subAgentPattern: 'parallel',
