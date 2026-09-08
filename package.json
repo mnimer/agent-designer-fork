@@ -29,7 +29,7 @@
         {
           "id": "agentFlow",
           "title": "Agent Designer",
-          "icon": "resources/icons/agent-flow.svg"
+          "icon": "resource/icons/agent-flow.svg"
         }
       ]
     },
