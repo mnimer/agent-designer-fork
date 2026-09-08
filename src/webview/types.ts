@@ -228,6 +228,16 @@ export interface A2AGoogleIamConfig {
   serviceAccountEnv?: string;
 }
 
+export interface A2AAgentSkill {
+  id: string;
+  name: string;
+  description: string;
+  tags?: string[];
+  examples?: string[];
+  inputModes?: string[];
+  outputModes?: string[];
+}
+
 export interface A2AConfig {
   connectionMode?: 'url' | 'json_pack';
   endpoint: string;
@@ -243,6 +253,10 @@ export interface A2AConfig {
   timeoutSeconds?: number;
   maxRetries?: number;
   capabilities: string[];
+  skills?: A2AAgentSkill[];
+  iconUrl?: string;
+  preferredTransport?: string;
+  delegationPrompt?: string;
 }
 
 export type RouterEvaluationMode = 

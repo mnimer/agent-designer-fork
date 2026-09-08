@@ -8,6 +8,12 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 
 ### Deployment Target: Google Vertex Agent Engine
 
+### CRITICAL MANDATE: COMPLETE REPOSITORY GENERATION (ALL FILES REQUIRED, STARTING WITH agent.py)
+- `agent.py` IS THE CORE WORKFLOW FILE AND MUST ALWAYS BE GENERATED AS THE FIRST FILE IN THE RETURNED JSON ARRAY. It defines `root_agent`, all sub-agents, tools, callbacks, and orchestration logic. Every other file (main.py, test_agent.py, agent_runtime_app.py) directly imports `root_agent` from `agent.py`.
+- You MUST generate the COMPLETE repository and emit EVERY required file in the output JSON array.
+- Emitting only a partial project or omitting core files like `agent.py` is strictly forbidden and breaks testing and deployment.
+- Every response MUST include the full project manifest: `agent.py` (with `root_agent`), runtime adapter (`agent_runtime_app.py`), packaging, CLI runner, test suite, evaluation dataset and script, dependencies, Dockerfile, CI/CD pipeline, Terraform infrastructure, and documentation.
+
 ### WORKFLOW SPECIFICATION:
 ```json
 {{WORKFLOW_JSON}}
@@ -17,21 +23,48 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 
 ### REQUIREMENTS & ARCHITECTURE:
 
-1. **Agent Harness & Agent Architecture**:
-   - You MUST implement agents using the official Google ADK SDK/Harness (`from google.adk.agents import Agent, SequentialAgent, ParallelAgent, LoopAgent`).
-    - **CRITICAL IDENTIFIER RULE FOR NAMES**: Every `name` argument passed to `Agent`, `LlmAgent`, `SequentialAgent`, `ParallelAgent`, or `LoopAgent` MUST BE A VALID PYTHON IDENTIFIER (lowercase snake_case with letters, digits, and underscores, e.g. `cat_agent`, `check_google_places`, `address_validator_agent`).
-      * NEVER pass a display label with spaces (e.g. NEVER `name="Cat Agent"`; instead use `name="cat_agent"` or the node's `data.name` identifier).
-      * Google ADK runs Pydantic validation on node names requiring `str.isidentifier()`. Any name containing spaces or hyphens immediately triggers `Value error, Node name '...' must be a valid Python identifier` and fails the local test runner with an HTTP 500 error.
-    - **CRITICAL IMPORT RULE FOR BUILT-IN TOOLS (`google_search`)**:
-      * For Google Search Grounding: ALWAYS import `google_search` directly from `google.adk.tools`:
-        `from google.adk.tools import google_search`
-      * **FATAL ERROR TO AVOID**: NEVER import via `from google.adk.tools.google_search import google_search` or `import google.adk.tools.google_search`. There is NO module named `google_search` inside `google.adk.tools` (the tool is exported as a pre-instantiated singleton `google_search` from `google.adk.tools`). Attempting `from google.adk.tools.google_search import ...` causes a fatal `ModuleNotFoundError: No module named 'google.adk.tools.google_search'` crash at runtime!
-      * Wire into agent using `tools=[google_search]`.
-    - **CRITICAL PARAMETER CONSTRAINTS**:
-     * Do NOT pass `temperature` directly as a kwarg to `Agent(...)` - `temperature` is not a permitted kwarg on `Agent` in Google ADK.
-     * Orchestrator agents (`SequentialAgent`, `ParallelAgent`, `LoopAgent`) do NOT take `instruction` or `temperature` kwargs! They accept `name`, `description`, `sub_agents`, and optional `max_iterations` (for `LoopAgent`).
-   - Sub-agents defined in the workflow JSON MUST be declared as distinct `Agent` instances and wired into the parent agent using the `sub_agents=[...]` array.
-   - **CRITICAL ANTI-PATTERN - NO AGENT SUBCLASSES**: Under NO circumstances should you create custom classes that subclass `Agent`, `BaseAgent`, or `SequentialAgent` (e.g. `class MyAgent(Agent):`). DO NOT override private framework methods like `_run_async_impl()`, `_run_impl()`, or `run_node_impl()`. All agents MUST be instantiated directly as top-level variables (`agent_1 = Agent(...)`, `root_agent = SequentialAgent(...)`).
+1. **Agent Harness & Agent Architecture (Google ADK)**:
+   - You MUST implement agents using the official Google ADK SDK (`from google.adk.agents import Agent, SequentialAgent, ParallelAgent, LoopAgent` and `from google.adk.agents.remote_a2a_agent import RemoteA2aAgent`).
+   - All agents MUST be instantiated as top-level module variables (`agent_1 = Agent(...)`, `root_agent = SequentialAgent(...)`). NEVER subclass `Agent` or `BaseAgent`. DO NOT override private framework methods like `_run_async_impl()`, `_run_impl()`, or `run_node_impl()`.
+   - **CRITICAL IDENTIFIER RULE FOR NAMES**: Every `name` argument passed to `Agent`, `RemoteA2aAgent`, `SequentialAgent`, `ParallelAgent`, or `LoopAgent` MUST BE A VALID PYTHON IDENTIFIER (lowercase snake_case with letters, digits, and underscores, e.g. `cat_agent`, `check_google_places`, `address_validator_agent`).
+     * NEVER pass a display label with spaces (e.g. NEVER `name="Cat Agent"`; instead use `name="cat_agent"` or the node's `data.name` identifier).
+     * Google ADK runs Pydantic validation on node names requiring `str.isidentifier()`. Any name containing spaces or hyphens immediately triggers `Value error, Node name '...' must be a valid Python identifier` and fails the local test runner with an HTTP 500 error.
+
+   - **ADK AGENT CLASS CONTRACTS & PARAMETER CONSTRAINTS**:
+     * **`Agent(...)` (Leaf Execution Agent)**:
+       - **Purpose**: Executes LLM prompts and tools.
+       - **Valid Kwargs**: `name`, `model`, `instruction`, `description`, `tools`, `sub_agents`, `output_key`, `output_schema`, `before_agent_callback`, `after_agent_callback`.
+       - **State Writing**: `output_key="<state_key>"` stores the agent's output text/schema into session state so downstream agents can reference it.
+       - **Forbidden Kwargs**: `temperature` is not accepted directly on `Agent` in Google ADK.
+     * **`RemoteA2aAgent(...)` (A2A Protocol Gateway Agent)**:
+       - **Purpose**: Proxies execution over HTTP to an external Agent-to-Agent (A2A) agent defined by an agent card.
+       - **Valid Kwargs**: `name`, `description`, `agent_card`, `httpx_client`, `sub_agents`, `before_agent_callback`, `after_agent_callback`.
+       - **Agent Card Path**: Reference `agent_card=str(Path(__file__).parent / f"{safe_name}_agent_card.json")`. The full canonical agent card JSON (including all public `additionalInterfaces` with `HTTP+JSON`) is automatically exported by the engine. DO NOT generate mock, partial, or truncated agent card files.
+       - **Forbidden Kwargs**: `instruction`, `model`, `tools`, `output_key`, `output_schema`, `temperature`, `auth_credential`, `custom_headers`. Passing any of these causes a Pydantic `extra_forbidden` ValidationError.
+       - **Authentication**: Authenticate using standard `google.auth.default()` and pass an authenticated `httpx.AsyncClient(headers=headers, timeout=600.0, limits=httpx.Limits(max_keepalive_connections=0))` to `httpx_client=`.
+     * **`ParallelAgent(...)` (Concurrent Composite Agent)**:
+       - **Purpose**: Executes child sub-agents concurrently in parallel.
+       - **Valid Kwargs**: `name`, `description`, `sub_agents`, `before_agent_callback`, `after_agent_callback`.
+       - **Forbidden Kwargs**: `instruction`, `model`, `tools`, `output_key`, `output_schema`, `temperature`. Passing `output_key` causes a Pydantic `extra_forbidden` ValidationError.
+     * **`SequentialAgent(...)` (Pipeline Composite Agent)**:
+       - **Purpose**: Executes child sub-agents in sequential order, passing state from step to step.
+       - **Valid Kwargs**: `name`, `description`, `sub_agents`, `before_agent_callback`, `after_agent_callback`.
+       - **Forbidden Kwargs**: `instruction`, `model`, `tools`, `output_key`, `output_schema`, `temperature`. Passing `output_key` causes a Pydantic `extra_forbidden` ValidationError.
+     * **`LoopAgent(...)` (Iterative Composite Agent)**:
+       - **Purpose**: Executes child sub-agents repeatedly up to `max_iterations`.
+       - **Valid Kwargs**: `name`, `description`, `sub_agents`, `max_iterations`, `before_agent_callback`, `after_agent_callback`.
+       - **Forbidden Kwargs**: `instruction`, `model`, `tools`, `output_key`, `output_schema`, `temperature`. Passing `output_key` causes a Pydantic `extra_forbidden` ValidationError.
+
+   - **APP & RESUMABILITY IMPORTS**:
+     * `App` and `ResumabilityConfig` are standalone classes in `google.adk.apps`.
+     * ALWAYS import directly: `from google.adk.apps import App, ResumabilityConfig`.
+     * NEVER write `App.ResumabilityConfig`. Instantiate as `resumability_config=ResumabilityConfig(is_resumable=True)`.
+
+   - **CRITICAL IMPORT RULE FOR BUILT-IN TOOLS (`google_search`)**:
+     * For Google Search Grounding: ALWAYS import `google_search` directly from `google.adk.tools`:
+       `from google.adk.tools import google_search`
+     * **FATAL ERROR TO AVOID**: NEVER import via `from google.adk.tools.google_search import google_search` or `import google.adk.tools.google_search`. There is NO module named `google_search` inside `google.adk.tools` (the tool is exported as a pre-instantiated singleton `google_search` from `google.adk.tools`). Attempting `from google.adk.tools.google_search import ...` causes a fatal `ModuleNotFoundError: No module named 'google.adk.tools.google_search'` crash at runtime!
+     * Wire into agent using `tools=[google_search]`. When domain filters are required or subagents are attached, import `from google.adk.tools.google_search_tool import GoogleSearchTool` and instantiate `GoogleSearchTool(bypass_multi_tools_limit=True)`.
 
 2. **CRITICAL: LLM MODEL CONSTRAINTS & GLOBAL REGION MANDATE**:
    - Under NO circumstances should any generated code (in `agent.py`, `tools/*.py`, etc.) reference deprecated Gemini models such as `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.0-flash`, `gemini-1.5-flash`, `gemini-1.5-pro`, or `gemini-flash-latest`. Gemini 1.x and 2.x models are deprecated.
@@ -42,8 +75,15 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
      os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
      ```
    - If the node configuration in the workflow JSON specifies a model, use that model (mapping legacy aliases `gemini-flash-latest`, `gemini-1.5-flash`, `gemini-2.5-flash`, etc. to `gemini-3.7-flash`).
-   - **CRITICAL VERTEX AI CONSTRAINT - SEARCH TOOL & OUTPUT SCHEMA**:
-     Vertex AI Gemini DOES NOT support combining Google Search tools (`google_search`) with controlled generation (`output_schema` / response schema) on the SAME agent. If an agent uses the `google_search` tool, you MUST NOT attach `output_schema` to that agent! Instead, describe the expected output format in the agent's `instruction` text, save the response to `output_key`, and let a downstream synthesizer agent (which does not use `google_search`) produce the final `output_schema`.
+   - **CRITICAL ADK & VERTEX AI SEARCH TOOL CONSTRAINTS**:
+     * **Bypass Multi-Tools Limit for Search**: The Gemini API natively restricts combining built-in search grounding with function calling (including agent delegation via `sub_agents=[...]`) unless `bypass_multi_tools_limit=True` is explicitly specified.
+       - Whenever an agent uses Google Search:
+         * Import syntax: `from google.adk.tools.google_search_tool import GoogleSearchTool`
+         * Instantiation syntax: `GoogleSearchTool(bypass_multi_tools_limit=True)`
+         * DO NOT use `from google.adk.tools import google_search` or instantiate `GoogleSearchTool()` without `bypass_multi_tools_limit=True` when sub-agents or other tools are attached! Doing so raises runtime `ValueError: Agent has sub-agent transfer targets but is configured with GoogleSearchTool without bypass_multi_tools_limit=True`.
+       - Whenever an agent uses Vertex AI Search:
+         * Instantiation syntax: `VertexAiSearchTool(..., bypass_multi_tools_limit=True)`.
+     * **Search Tool & Output Schema**: Vertex AI Gemini DOES NOT support combining Google Search tools with controlled generation (`output_schema` / response schema) on the SAME agent. If an agent uses `GoogleSearchTool`, you MUST NOT attach `output_schema` to that agent! Instead, describe the expected output format in the agent's `instruction` text, save the response to `output_key`, and let a downstream synthesizer agent (which does not use `GoogleSearchTool`) produce the final `output_schema`.
    - Under NO circumstances should you generate mock response fallbacks, fake dummy data, hardcoded if/else string checks (e.g. `if "1600 Amphitheatre" in prompt: return ResponseSchema(...)`), or simulated client returns.
    - All code MUST execute real live inference using the official Google GenAI SDK (`google-genai` / `genai.Client()`) with Vertex AI (`genai.Client(vertexai=True)`).
    - If client initialization or API calls fail, the code MUST raise a clear runtime exception (`RuntimeError` or `ValueError`) rather than faking an answer or returning dummy data.
@@ -74,11 +114,16 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
         * When a child agent itself has its own connected `subAgents: [...]`, that child is an intermediate parent. Its OWN `subAgentPattern` dictates how its grandchildren are orchestrated.
         * Always construct the hierarchy bottom-up: instantiate leaf `Agent`s first, compose them into intermediate layer orchestrators according to each intermediate parent's `subAgentPattern`, and finally assemble the root orchestrator as `root_agent`.
 
-4. **Structured Output** (if defined in workload specification JSON):
-   - Generate `pydantic_models.py` with the Pydantic schema model.
-   - Configure sub-agents with `output_key="<name>_output"` to store results in session state.
-   - For Sequential, Parallel, and Loop: Create a tool-free synthesizer `Agent` with `output_schema=ResponseSchema` evaluating `{<name>_output}` from state.
-   - For Coordinator: Place `output_schema=ResponseSchema` directly on the root `Agent` since it coordinates conversational delegation directly.
+4. **Structured Output vs Plain Text Output & Strict Data Isolation**:
+   - **Only generate Pydantic models if structured output is explicitly defined**: If an agent node specifies `outputFormat: "json"` (or explicitly defines a JSON schema), generate `pydantic_models.py` with that schema model and configure `output_schema=ResponseSchema`.
+   - **Plain Text Output (`outputFormat: "text"` or unconfigured)**: If `outputFormat` is `"text"` or not explicitly set to JSON schema, DO NOT generate artificial domain Pydantic models (such as inventing a custom domain result class like `StockAnalysisResult`). The agent or synthesizer MUST return plain text or markdown without `output_schema`.
+   - **ZERO TEST-SUITE LEAKAGE (CRITICAL MANDATE)**:
+     * Nodes of type `triggerNode` with `triggerType: "tester"`, `testPrompts`, `testPayload`, and `expectedOutput` are strictly and exclusively for generating `tests/test_agent.py` and `eval_dataset.jsonl`.
+     * UNDER NO CIRCUMSTANCES should any test queries, expected assertion strings, sample values, or specific entities (e.g., specific stock ticker symbols like MRNA, DELL, MU, product names, or test outputs) be leaked, referenced, hinted at, or hardcoded into `agent.py`, `agent_runtime_app.py`, agent system instructions, or synthesizer instructions!
+     * Agent instructions MUST strictly reflect ONLY the `systemPrompt` defined in that specific agent node. If an agent node's `systemPrompt` is "Select the right sub-agent that can answer the question.", its instruction must be exactly that. NEVER embellish or inject domain knowledge from test cases into agent prompts.
+     * If an orchestrator or synthesizer agent is generated for parallel/sequential pipelines, its instructions must be general (e.g., "Synthesize and consolidate the responses provided by the sub-agents to answer the user request.") and MUST NOT mention any domain specifics or entities from test cases.
+   - For Sequential, Parallel, and Loop with explicit schemas: Create a tool-free synthesizer `Agent` evaluating sub-agent state. If `outputFormat` is text, the synthesizer outputs text/markdown.
+   - For Coordinator: Place `output_schema=ResponseSchema` directly on the root `Agent` only when `outputFormat: "json"`.
 
 5. **Observability: Logging, Tracing & Metrics (ADK & OpenTelemetry Strategy)**:
    - **NO Hardcoded `print()` or Custom Agent Subclasses**: Under NO circumstances should you use `print()` for tracing/logging or subclass `Agent` / override `_run_async_impl` to intercept execution. ADK natively implements OpenTelemetry GenAI Semantic Conventions for end-to-end observability.
@@ -100,22 +145,27 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
        ```
    - **Distributed Tracing & Metrics (OpenTelemetry & Google Cloud)**:
      * ADK automatically emits hierarchical trace spans (`invoke_agent`, `invoke_workflow`, `execute_tool`, `generate_content`) and metrics (`gen_ai.invoke_agent.duration`, `gen_ai.client.token.usage`, `gen_ai.invoke_agent.tool_calls`).
-     * In `agent.py` / `main.py`, initialize ADK telemetry providers for Cloud Trace, Cloud Logging, and Cloud Monitoring:
-       ```python
-       import os
-       from google.adk.telemetry.google_cloud import get_gcp_exporters
-       from google.adk.telemetry.setup import maybe_set_otel_providers
+      * In `agent.py` / `main.py`, initialize ADK telemetry providers for Cloud Trace, Cloud Logging, and Cloud Monitoring when deployed:
+        ```python
+        import os
+        from google.adk.telemetry.google_cloud import get_gcp_exporters
+        from google.adk.telemetry.setup import maybe_set_otel_providers
 
-       os.environ.setdefault("OTEL_SERVICE_NAME", "adk-agent-service")
-       gcp_exporters = get_gcp_exporters(
-           enable_cloud_logging=True,
-           enable_cloud_tracing=bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID")),
-           enable_cloud_metrics=bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID")),
-       )
-       maybe_set_otel_providers([gcp_exporters])
-       ```
-     * For local development or OTLP backends, ADK automatically respects standard OTel env vars (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`) when calling `maybe_set_otel_providers()`.
-   - **Tool Observability**:
+        os.environ.setdefault("OTEL_SERVICE_NAME", "adk-agent-service")
+        # Enable cloud exporters in deployed environments or when explicitly requested
+        is_deployed = bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("K_SERVICE") or os.getenv("ENABLE_OTEL_EXPORTERS", "").lower() in ("true", "1"))
+        try:
+            gcp_exporters = get_gcp_exporters(
+                enable_cloud_logging=True,
+                enable_cloud_tracing=is_deployed,
+                enable_cloud_metrics=is_deployed,
+            )
+            maybe_set_otel_providers([gcp_exporters])
+        except Exception:
+            pass
+        ```
+      * For local development or OTLP backends, ADK automatically respects standard OTel env vars (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`) when calling `maybe_set_otel_providers()`. For local development or testing without OTLP backends, OpenTelemetry network exporters are disabled via `OTEL_SDK_DISABLED=true` to prevent local 400 Bad Request metric export spam.
+    - **Tool Observability**:
      * In custom tool functions (`tools/*.py`), log progress using `logger.info(...)` or `logger.debug(...)` rather than `print()`.
 
 6. **File Structure to Generate**:
@@ -208,7 +258,7 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
    - `test_agent.py`: Comprehensive `pytest` test suite executing all test scenarios and assertions against `root_agent`.
    - `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios for Vertex AI Agent Evaluation. Do not add additional tests; you should only use tests defined by the user in the "Test Suite" node (attached to the root agent) in the workflow JSON.
    - `evaluate.py`: Vertex AI Agent Evaluation script utilizing the official `vertexai.evaluation` SDK and `EvalTask`.
-   - `requirements.txt`: Dependencies needed locally and for deployment: Must include `google-adk>=2.0.0`, `google-cloud-agentplatform>=0.1.0`, `google-cloud-aiplatform[evaluation,reasoningengine]>=1.60.0`, `google-genai>=1.0.0`, `fastapi>=0.110.0`, `uvicorn>=0.28.0`, `pydantic>=2.0.0`, `cloudpickle>=3.0.0`, `pytest>=8.0.0`, `pytest-asyncio>=0.23.0`, `python-dotenv>=1.0.0`.
+   - `requirements.txt`: Dependencies needed locally and for deployment: Must include `google-adk>=2.0.0`, `google-cloud-agentplatform>=0.1.0`, `google-cloud-aiplatform[evaluation,reasoningengine]>=1.60.0`, `google-genai>=1.0.0`, `fastapi>=0.110.0`, `uvicorn>=0.28.0`, `pydantic>=2.0.0`, `cloudpickle>=3.0.0`, `pytest>=8.0.0`, `pytest-asyncio>=0.23.0`, `python-dotenv>=1.0.0`. When any node in the workflow is an A2A agent (`agentKind: "a2a"`), `requirements.txt` MUST ALSO include `google-adk[a2a]>=2.0.0` and `a2a-sdk[http-server]>=0.3.4`.
    - `main.tf`: Terraform deployment file that will use the google_vertex_ai_reasoning_engine resource to deploy Agent to GCP Agent Engine, this should deploy to existing project, but will include everything else required for the different triggers (event, topics, service accounts, enable apis, etc.)
    - `README.md`: Architecture overview, local execution with `main.py`, deployment with `python deploy.py` or Cloud Build, and invoking the deployed Agent Engine resource from Gemini Enterprise or Python SDK.
 
@@ -230,10 +280,34 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
    - `.gcloudignore` & `.gitignore`:
      * Exclude `.git`, `.github`, `.venv`, `venv`, `__pycache__`, `*.pyc`, `.pytest_cache`, `.agent`, `*.agent`, `.env`, and local caches.
 
+### MANDATORY COMPLETE REPOSITORY FILE MANIFEST:
+Every response MUST create the complete project. Emitting only 1 or 2 files is strictly prohibited.
+You MUST output EVERY single one of the following files in the returned JSON array:
+1. `agent.py`: Complete Google ADK root_agent, sub-agents, and state flow.
+2. `agent_runtime_app.py`: Vertex AI Agent Engine entrypoint adapter using AdkApp.
+3. `agents-cli-manifest.yaml`: Google ADK manifest for agents-cli deployment.
+4. `pyproject.toml`: Modern packaging metadata and dependencies.
+5. `fast_api_app.py`: Production FastAPI server with ADK and Reasoning Engine adapter endpoints.
+6. `main.py`: Local CLI test runner using ADK Runner.
+7. `test_agent.py`: Pytest test suite covering all workflow test scenarios.
+8. `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios.
+9. `evaluate.py`: Vertex AI Agent Evaluation script using vertexai.evaluation.
+10. `requirements.txt`: Complete pinned runtime dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
+11. `Dockerfile`: Multi-stage Python 3.11 container definition.
+12. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests and deploying.
+13. `main.tf`: Complete Terraform configuration deploying google_vertex_ai_reasoning_engine.
+14. `.gitignore`: Git ignore patterns for Python, venv, and cache.
+15. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
+16. `README.md`: Architecture overview, local execution, and deployment instructions.
+17. Auxiliary files as needed:
+    - `pydantic_models.py` (when structured output schemas or Pydantic models are used)
+    - `tools/*.py` (when custom tools are defined)
+
 ---
 
 ### OUTPUT FORMAT:
-Respond ONLY with a valid JSON array of file objects conforming to this exact schema (no markdown formatting, no backticks surrounding the JSON, only raw parseable JSON):
+Respond ONLY with a valid JSON array of file objects conforming to this exact schema (no markdown formatting, no backticks surrounding the JSON, only raw parseable JSON).
+DO NOT STOP or truncate after generating one or two files. Generate ALL files in the manifest above:
 
 [
   {
@@ -1040,23 +1114,58 @@ Use `before_model_callback` to filter input or `after_model_callback` to filter 
 
 ## 11. A2A Protocol
 
-Requires `pip install google-adk[a2a]`.
+Requires `pip install "google-adk[a2a]>=2.0.0" "a2a-sdk[http-server]>=0.3.4"`.
 
+### Exposing an agent as an A2A service
 ```python
-# Expose an agent as an A2A service
-# Prefer scaffolding over manual code — scaffold a normal `adk` agent; A2A is built in (see /google-agents-cli-scaffold)
 from google.adk.a2a.utils.agent_to_a2a import to_a2a
 from a2a.types import AgentCard
 to_a2a(root_agent, port=8001)
-
-# Consume a remote A2A agent
-from google.adk.agents.remote_a2a_agent import RemoteA2aAgent, AGENT_CARD_WELL_KNOWN_PATH
-remote = RemoteA2aAgent(
-    name="remote_agent",
-    description="...",
-    agent_card=f"http://remote-host:8001{AGENT_CARD_WELL_KNOWN_PATH}",
-)
 ```
+
+### Consuming a remote A2A agent (CRITICAL RULES)
+CRITICAL ADK RULES:
+1. `RemoteA2aAgent` is imported ONLY from `google.adk.agents.remote_a2a_agent import RemoteA2aAgent`.
+2. NEVER import `google.adk.auth.google_iam_auth` or `google.adk.auth.auth_credential` — these modules DO NOT EXIST in ADK.
+3. NEVER pass `auth_credential=`, `custom_headers=`, or `output_key=` to `RemoteA2aAgent(...)` — these parameters DO NOT EXIST on `RemoteA2aAgent`.
+4. NEVER write `App.ResumabilityConfig(...)`. `App` is a Pydantic model and does not expose `ResumabilityConfig` as an attribute. Always import it at top-level: `from google.adk.apps import App, ResumabilityConfig` and write `resumability_config=ResumabilityConfig(is_resumable=True)`.
+5. When `a2aConfig.rawJsonPack` is provided in the workflow node, emit a `<agent_name>_agent_card.json` file containing the JSON card payload, and pass its path to `agent_card=`:
+   ```python
+   from pathlib import Path
+   from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
+
+   card_path = str(Path(__file__).parent / "<agent_name>_agent_card.json")
+   remote_agent = RemoteA2aAgent(
+       name="<agent_name>",
+       description="...",
+       agent_card=card_path,
+   )
+   ```
+5. When connecting to Google Cloud A2A endpoints (e.g. `*.googleapis.com` or Cloud Run endpoints requiring Google Cloud authentication), pass an authenticated `httpx.AsyncClient` via `httpx_client`:
+   ```python
+   import httpx
+   import google.auth
+   from google.auth.transport.requests import Request
+   from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
+
+   try:
+       credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+       credentials.refresh(Request())
+       headers = {"Authorization": f"Bearer {credentials.token}"}
+   except Exception:
+       headers = {}
+
+   # Disable persistent keepalive connections so pooled sockets are not reused across closed asyncio event loops
+   limits = httpx.Limits(max_keepalive_connections=0)
+   httpx_client = httpx.AsyncClient(headers=headers, timeout=600.0, limits=limits)
+
+   remote_agent = RemoteA2aAgent(
+       name="<agent_name>",
+       description="...",
+       agent_card=card_path,
+       httpx_client=httpx_client,
+   )
+   ```
 
 ### A2UI
 

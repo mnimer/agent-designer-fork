@@ -115,6 +115,16 @@ export interface RouterAgentConfig {
   branches: RouterBranch[];
 }
 
+export interface A2AAgentSkill {
+  id: string;
+  name: string;
+  description: string;
+  tags?: string[];
+  examples?: string[];
+  inputModes?: string[];
+  outputModes?: string[];
+}
+
 export interface A2AAgentConfig {
   protocolVersion: string;
   endpointUrl: string;
@@ -123,6 +133,10 @@ export interface A2AAgentConfig {
   authSecretKey?: string;
   iamTargetAudience?: string;
   capabilities: string[];
+  skills?: A2AAgentSkill[];
+  iconUrl?: string;
+  preferredTransport?: string;
+  delegationPrompt?: string;
 }
 
 export interface AgentNodeData {

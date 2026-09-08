@@ -34,6 +34,7 @@ import {
   Cpu,
   Wrench,
   Globe,
+  Globe2,
   Terminal,
   Database,
   FileText,
@@ -408,6 +409,39 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                   onClick={() => onAddAgent('standard')}
                   title="Add Standard Agent"
                   className="p-1.5 rounded bg-[#0d1117] hover:bg-blue-600 border border-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+              </div>
+
+              {/* A2A Protocol Agent */}
+              <div
+                draggable
+                onDragStart={(e) => handleDragStartAgent(e, 'a2a', false, 'a2a')}
+                className="group relative flex items-center justify-between p-2.5 bg-[#21262d] border border-[#30363d] rounded-lg cursor-move hover:bg-[#30363d] hover:border-cyan-500/50 transition-all shadow-sm active:cursor-grabbing"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-300 shrink-0" />
+                  <div className="p-1.5 rounded-md bg-[#0d1117] border border-cyan-500/40 shrink-0">
+                    <Globe2 className="w-4 h-4 text-cyan-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-semibold text-xs text-[#c9d1d9] flex items-center gap-1.5">
+                      <span>A2A Agent</span>
+                      <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                        Protocol
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-gray-400 truncate max-w-[140px]">
+                      Decentralized JSON-RPC A2A endpoint
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onAddAgent('a2a')}
+                  title="Add A2A Protocol Agent"
+                  className="p-1.5 rounded bg-[#0d1117] hover:bg-cyan-600 border border-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer"
                 >
                   <Plus className="w-3 h-3" />
                 </button>

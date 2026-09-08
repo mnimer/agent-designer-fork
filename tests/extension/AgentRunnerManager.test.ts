@@ -245,6 +245,11 @@ describe('AgentRunnerManager', () => {
       'import time\nprint("Server active")\ntime.sleep(2)\n',
       'utf-8'
     );
+    fs.writeFileSync(
+      path.join(tmpDir, 'requirements.txt'),
+      '# Local runner test dependencies\n',
+      'utf-8'
+    );
 
     const runnerId = await manager.startLocalRunner({
       document: sampleDocument,
@@ -415,7 +420,7 @@ describe('AgentRunnerManager', () => {
 
     // Override httpPostJson to simulate OpenAI chat completions returning JSON content
     (manager as any).httpPostJson = async (_port: number, _path: string, body: any) => {
-      assert.equal(body.model, 'gemini-flash-latest');
+      assert.equal(body.model, 'gemini-3.7-flash');
       return {
         ok: true,
         status: 200,

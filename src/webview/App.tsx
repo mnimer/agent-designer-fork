@@ -887,6 +887,7 @@ function FlowCanvas() {
       const type = event.dataTransfer.getData('application/reactflow/type');
       const isPattern = event.dataTransfer.getData('application/reactflow/isPattern') === 'true';
       const triggerType = event.dataTransfer.getData('application/reactflow/triggerType') as TriggerType | undefined;
+      const agentKindData = event.dataTransfer.getData('application/reactflow/agentKind') as AgentKind | '';
       const toolDataStr = event.dataTransfer.getData('application/reactflow/tool');
 
       if (toolDataStr) {
@@ -968,12 +969,15 @@ function FlowCanvas() {
         recordSnapshot(nextNodes, nextEdges, { description: `Add pattern ${type}` });
       } else {
         const hasStartNode = nodes.some((n) => n.type === 'agentNode' && (n.data as AgentData).isStartNode);
+        const effectiveKind: AgentKind = (agentKindData === 'a2a' || agentKindData === 'router' || agentKindData === 'standard')
+          ? agentKindData
+          : (type === 'a2a' || type === 'router' ? (type as AgentKind) : 'standard');
         const newNode = createSingleAgentNode(
           position.x,
           position.y,
           undefined,
           undefined,
-          (type as AgentKind) || 'standard',
+          effectiveKind,
           {
             model: settings.defaultModel,
             temperature: settings.defaultTemperature,
@@ -986,7 +990,7 @@ function FlowCanvas() {
         }
         const nextNodes = [...nodes, newNode];
         setNodes(nextNodes);
-        recordSnapshot(nextNodes, edges, { description: `Add ${type || 'agent'}` });
+        recordSnapshot(nextNodes, edges, { description: `Add ${effectiveKind || 'agent'}` });
       }
     },
     [nodes, edges, settings, setNodes, setEdges, recordSnapshot, screenToFlowPosition, selectedAgentId, handleAddSpecificTool]

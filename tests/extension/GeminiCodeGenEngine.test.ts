@@ -14,6 +14,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'path';
+import * as fs from 'fs';
 import { GeminiCodeGenEngine } from '../../src/extension/GeminiCodeGenEngine';
 import { AgentWorkflowDocument } from '../../src/shared/types';
 
@@ -210,7 +211,7 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
     const originalCall = (engine as any).callGeminiApi;
     (engine as any).callGeminiApi = async (prompt: string) => {
       capturedPrompt = prompt;
-      return [{ path: 'agent.py', description: 'Test', content: 'print("ok")' }];
+      return [{ path: 'agent.py', description: 'Test', content: 'root_agent = Agent(name="root")' }];
     };
 
     try {
@@ -228,6 +229,280 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
     } finally {
       (engine as any).callGeminiApi = originalCall;
     }
+  });
+
+  it('should guarantee A2A dependencies in requirements.txt when A2A node is in workflow', () => {
+    const a2aDoc: AgentWorkflowDocument = {
+      version: '1.0.0',
+      name: 'A2AWorkflow',
+      framework: 'google-adk',
+      language: 'python',
+      nodes: [
+        {
+          id: 'agent-a2a',
+          type: 'agent',
+          position: { x: 0, y: 0 },
+          data: {
+            label: 'StockAgent',
+            agentKind: 'a2a',
+            systemPrompt: 'You are a stock query agent.',
+          },
+        },
+      ],
+    };
+
+    // Case 1: requirements.txt properly includes A2A dependencies -> should pass
+    const validA2aFiles = [
+      {
+        path: 'requirements.txt',
+        description: 'Deps',
+        content: 'google-adk[a2a]>=2.0.0\na2a-sdk[http-server]>=0.3.4\nfastapi>=0.110.0\n',
+      },
+      {
+        path: 'agent.py',
+        description: 'Agent',
+        content: 'from a2a.types import AgentCard\n',
+      },
+    ];
+    assert.doesNotThrow(() => {
+      engine.validateRequiredDependencies(a2aDoc, validA2aFiles);
+    });
+
+    // Case 2: requirements.txt omitted by LLM -> must FAIL FAST
+    const filesNoReq = [
+      {
+        path: 'agent.py',
+        description: 'Agent',
+        content: 'from a2a.types import AgentCard\n',
+      },
+    ];
+    assert.throws(
+      () => engine.validateRequiredDependencies(a2aDoc, filesNoReq),
+      /Validation Error: Generated repository is missing requirements\.txt/
+    );
+
+    // Case 3: requirements.txt missing A2A dependencies -> must FAIL FAST
+    const filesMissingA2aDeps = [
+      {
+        path: 'requirements.txt',
+        description: 'Deps',
+        content: 'google-adk>=2.0.0\nfastapi>=0.110.0\n',
+      },
+      {
+        path: 'agent.py',
+        description: 'Agent',
+        content: 'from a2a.types import AgentCard\n',
+      },
+    ];
+    assert.throws(
+      () => engine.validateRequiredDependencies(a2aDoc, filesMissingA2aDeps),
+      /Validation Error: Generated requirements\.txt is missing required A2A dependencies/
+    );
+
+    // Case 4: standard agent with no A2A dependencies should pass
+    const standardDoc: AgentWorkflowDocument = {
+      version: '1.0.0',
+      name: 'StandardWorkflow',
+      framework: 'google-adk',
+      language: 'python',
+      nodes: [
+        {
+          id: 'agent-std',
+          type: 'agent',
+          position: { x: 0, y: 0 },
+          data: {
+            label: 'StdAgent',
+            agentKind: 'standard',
+            systemPrompt: 'Hello',
+          },
+        },
+      ],
+    };
+    const standardFiles = [
+      {
+        path: 'requirements.txt',
+        description: 'Deps',
+        content: 'google-adk>=2.0.0\nfastapi>=0.110.0\n',
+      },
+    ];
+    assert.doesNotThrow(() => {
+      engine.validateRequiredDependencies(standardDoc, standardFiles);
+    });
+  });
+
+  it('should ensure dedicated agent card JSON files exist for A2A nodes with rawJsonPack', () => {
+    const a2aDoc: AgentWorkflowDocument = {
+      version: '1.0.0',
+      name: 'A2AWorkflow',
+      framework: 'google-adk',
+      language: 'python',
+      nodes: [
+        {
+          id: 'stock_node',
+          type: 'agentNode',
+          position: { x: 0, y: 0 },
+          data: {
+            label: 'Stock Agent',
+            agentKind: 'a2a',
+            a2aConfig: {
+              protocolVersion: '1.0',
+              endpoint: 'https://example.com/a2a',
+              rawJsonPack: '{"name":"stock_agent","protocolVersion":"1.0"}',
+            },
+          },
+        },
+      ],
+    };
+
+    const initialFiles = [
+      {
+        path: 'agent.py',
+        description: 'Agent logic',
+        content: 'from google.adk.agents.remote_a2a_agent import RemoteA2aAgent\n',
+      },
+    ];
+
+    const updated = engine.ensureAgentCards(a2aDoc, initialFiles);
+    const cardFile = updated.find((f) => f.path === 'stock_agent_agent_card.json');
+    assert.ok(cardFile, 'stock_agent_agent_card.json should be created');
+    assert.ok(cardFile.content.includes('"name": "stock_agent"'));
+
+    const altCardFile = updated.find((f) => f.path === 'stock_agent_card.json');
+    assert.ok(altCardFile, 'stock_agent_card.json should also be created for alternate reference');
+    assert.ok(altCardFile.content.includes('"name": "stock_agent"'));
+  });
+
+  it('ensureAgentCards should overwrite truncated card file emitted by LLM', () => {
+    const a2aDoc = {
+      nodes: [
+        {
+          id: 'stock_1',
+          type: 'agent',
+          data: {
+            label: 'stock agent',
+            agentKind: 'a2a',
+            a2aConfig: {
+              rawJsonPack: JSON.stringify({
+                name: 'stock_agent',
+                url: 'https://example.com',
+                additionalInterfaces: [{ transport: 'HTTP+JSON', url: 'https://example.com' }],
+              }),
+            },
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const initialFiles = [
+      {
+        path: 'stock_agent_card.json',
+        description: 'Truncated card',
+        content: '{"name": "stock_agent"}',
+      },
+    ];
+
+    const updated = engine.ensureAgentCards(a2aDoc, initialFiles);
+    const altCardFile = updated.find((f) => f.path === 'stock_agent_card.json');
+    assert.ok(altCardFile);
+    assert.ok(altCardFile.content.includes('additionalInterfaces'), 'Truncated card must be overwritten with full rawJsonPack');
+  });
+
+  it('finalizeGeneratedFiles should ensure dependencies and extract A2A agent cards', () => {
+    const docWithA2A = {
+      nodes: [
+        {
+          id: 'a2a_1',
+          type: 'agent',
+          data: {
+            role: 'Remote Stock Agent',
+            agentType: 'a2a_agent',
+            a2aConfig: {
+              rawJsonPack: JSON.stringify({ name: 'stock_agent', url: 'https://stock-agent.run.app' }),
+            },
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const initialFiles = [
+      {
+        path: 'requirements.txt',
+        description: 'Dependencies',
+        content: 'google-adk[a2a]>=2.0.0\na2a-sdk[http-server]>=0.3.4\n',
+      },
+      {
+        path: 'agent.py',
+        description: 'Agent logic',
+        content: '# agent code\nroot_agent = "dummy_root"',
+      },
+    ];
+
+    const finalized = engine.finalizeGeneratedFiles(docWithA2A, initialFiles);
+
+    const reqFile = finalized.find((f) => f.path === 'requirements.txt');
+    assert.ok(reqFile, 'requirements.txt should exist');
+    assert.ok(reqFile.content.includes('google-adk[a2a]'), 'requirements.txt should have google-adk[a2a]');
+
+    const cardFile = finalized.find((f) => f.path.endsWith('_agent_card.json'));
+    assert.ok(cardFile, 'agent card should be extracted and added');
+  });
+
+  it('validateGeneratedFiles must fail fast when agent.py is missing or does not define root_agent', () => {
+    // Case 1: Missing agent.py
+    assert.throws(
+      () => {
+        engine.validateGeneratedFiles({}, [
+          { path: 'main.py', content: 'import os', description: 'CLI' },
+        ]);
+      },
+      /Validation Error: Generated repository is missing the core entrypoint 'agent.py'/,
+      'Should throw when agent.py is missing'
+    );
+
+    // Case 2: agent.py present but missing root_agent
+    assert.throws(
+      () => {
+        engine.validateGeneratedFiles({}, [
+          { path: 'agent.py', content: 'print("hello")', description: 'Agent' },
+        ]);
+      },
+      /Validation Error: 'agent.py' does not define 'root_agent'/,
+      'Should throw when root_agent is missing from agent.py'
+    );
+
+    // Case 3: Valid agent.py with root_agent
+    assert.doesNotThrow(() => {
+      engine.validateGeneratedFiles({}, [
+        { path: 'agent.py', content: 'root_agent = Agent(...)', description: 'Agent' },
+      ]);
+    });
+  });
+
+  it('prompt templates must contain strict ADK class parameter contracts and A2A instructions', () => {
+    const promptPath = path.join(
+      __dirname,
+      '../../resource/prompts/python_adk_agent-engine.prompt.txt'
+    );
+    const promptContent = fs.readFileSync(promptPath, 'utf8');
+
+    assert.ok(promptContent.includes('RemoteA2aAgent(...)'), 'Prompt must instruct on RemoteA2aAgent');
+    assert.ok(promptContent.includes('ParallelAgent(...)'), 'Prompt must instruct on ParallelAgent');
+    assert.ok(promptContent.includes('SequentialAgent(...)'), 'Prompt must instruct on SequentialAgent');
+    assert.ok(promptContent.includes('LoopAgent(...)'), 'Prompt must instruct on LoopAgent');
+    assert.ok(promptContent.includes('output_key'), 'Prompt must instruct on output_key rules');
+    assert.ok(promptContent.includes('ResumabilityConfig'), 'Prompt must instruct on ResumabilityConfig imports');
+    assert.ok(promptContent.includes('COMPLETE REPOSITORY GENERATION'), 'Prompt must mandate complete repository generation');
+    assert.ok(promptContent.includes('MANDATORY COMPLETE REPOSITORY FILE MANIFEST'), 'Prompt must define mandatory file manifest');
+
+    const cloudrunPromptPath = path.join(
+      __dirname,
+      '../../resource/prompts/python_adk_cloudrun.prompt.txt'
+    );
+    const cloudrunPromptContent = fs.readFileSync(cloudrunPromptPath, 'utf8');
+    assert.ok(cloudrunPromptContent.includes('COMPLETE REPOSITORY GENERATION'), 'Cloud Run prompt must mandate complete repository generation');
+    assert.ok(cloudrunPromptContent.includes('MANDATORY COMPLETE REPOSITORY FILE MANIFEST'), 'Cloud Run prompt must define mandatory file manifest');
   });
 
   describe('postProcessGeneratedFiles', () => {

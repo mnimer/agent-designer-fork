@@ -8,11 +8,16 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
 
 ### Deployment Target: Google Cloud Run
 
+### CRITICAL MANDATE: COMPLETE REPOSITORY GENERATION (ALL FILES REQUIRED, STARTING WITH agent.py)
+- `agent.py` IS THE CORE WORKFLOW FILE AND MUST ALWAYS BE GENERATED AS THE FIRST FILE IN THE RETURNED JSON ARRAY. It defines `root_agent`, all sub-agents, tools, callbacks, and orchestration logic. Every other file (main.py, test_agent.py, server.py) directly imports `root_agent` from `agent.py`.
+- You MUST generate the COMPLETE repository and emit EVERY required file in the output JSON array.
+- Emitting only a partial project or omitting core files like `agent.py` is strictly forbidden and breaks testing and deployment.
+- Every response MUST include the full project manifest: `agent.py` (with `root_agent`), FastAPI server (`server.py`), packaging, CLI runner, test suite, evaluation dataset and script, dependencies, Dockerfile, CI/CD pipeline, Terraform infrastructure, and documentation.
+
 ### WORKFLOW SPECIFICATION:
 ```json
 {{WORKFLOW_JSON}}
 ```
-
 
 ---
 
@@ -43,6 +48,18 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
              * **Parallel (`subAgentPattern: "parallel"` / `"broadcast"`)**: Use `SequentialAgent(sub_agents=[ParallelAgent(name="parallel_workers", sub_agents=[child_1, child_2, ...]), synthesizer])`.
              * **Loop (`subAgentPattern: "loop"` / `"review_critique"`)**: Use `SequentialAgent(sub_agents=[LoopAgent(name="refinement_loop", sub_agents=[child_1, child_2, ...], max_iterations=3), synthesizer])`. DO NOT use `ParallelAgent`.
              * **Coordinator (`subAgentPattern: "coordinator"` / `"hierarchical_decomposition"`)**: Use `Agent(name="...", model="gemini-3.7-flash", sub_agents=[child_1, child_2, ...], output_schema=ResponseSchema)`.
+             * **Agent Class Parameter Constraints**:
+                - `Agent(...)`: Leaf execution agent accepting `name`, `model`, `instruction`, `description`, `tools`, `sub_agents`, `output_key`, `output_schema`. `output_key` stores output to session state.
+                - `RemoteA2aAgent(...)`: A2A protocol gateway agent accepting `name`, `description`, `agent_card`, `httpx_client`, `sub_agents`. Forbidden: `instruction`, `temperature`, `output_key`, `tools`. Passing `output_key` causes a Pydantic `extra_forbidden` ValidationError.
+                - `ParallelAgent(...)`, `SequentialAgent(...)`, `LoopAgent(...)`: Composite container agents accepting `name`, `description`, `sub_agents` (and `max_iterations` for Loop). Forbidden: `instruction`, `temperature`, `output_key`, `tools`. Passing `output_key` causes a Pydantic `extra_forbidden` ValidationError.
+             * **CRITICAL ADK & VERTEX AI SEARCH TOOL CONSTRAINTS**:
+                 - The Gemini API natively restricts combining built-in search grounding with function calling (including agent delegation via `sub_agents=[...]`) unless `bypass_multi_tools_limit=True` is explicitly specified.
+                 - Whenever an agent uses Google Search:
+                   * Import syntax: `from google.adk.tools.google_search_tool import GoogleSearchTool`
+                   * Instantiation syntax: `GoogleSearchTool(bypass_multi_tools_limit=True)`
+                   * DO NOT use `from google.adk.tools import google_search` or instantiate `GoogleSearchTool()` without `bypass_multi_tools_limit=True` when sub-agents or other tools are attached! Doing so raises runtime `ValueError: Agent has sub-agent transfer targets but is configured with GoogleSearchTool without bypass_multi_tools_limit=True`.
+                 - Whenever an agent uses Vertex AI Search:
+                   * Instantiation syntax: `VertexAiSearchTool(..., bypass_multi_tools_limit=True)`.
           2. **Leaf Nodes are Plain Agents (Ignore their `subAgentPattern`)**:
              * If an agent node has NO sub-agents (`subAgents` is empty `[]` or omitted), its own `subAgentPattern` MUST BE COMPLETELY IGNORED. A leaf node is always a standard `Agent(...)` with its own instructions and tools. It is NEVER an orchestrator and MUST NOT be wrapped in a `ParallelAgent` or `SequentialAgent`.
           3. **Ignore Legacy `delegationType` in Child Objects**:
@@ -112,7 +129,8 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
      if _agent_dir not in sys.path:
          sys.path.insert(0, _agent_dir)
      ```
-   - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs (when defined in nodes).
+   - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs ONLY when explicitly defined in nodes (e.g. `outputFormat: "json"`). If `outputFormat` is `"text"` or unconfigured, DO NOT invent artificial Pydantic schema models or result classes.
+   - **ZERO TEST-SUITE LEAKAGE (CRITICAL MANDATE)**: `triggerNode`, `testPrompts`, `testPayload`, and `expectedOutput` are strictly for test suites and evaluation. NEVER leak or incorporate test queries, expected assertions, or specific test entities (e.g. stock tickers, sample names) into `agent.py`, `server.py`, or agent instructions. Agent instructions must strictly reflect ONLY the node's `systemPrompt`.
    - `tools/*.py`: Tool definitions (e.g., Google Search, custom functions, MCP tools). Group tools logically by category/source. Use standard `logging.getLogger(__name__)`.
    - `server.py`: Production FastAPI server leveraging ADK's built-in FastAPI integration with OpenTelemetry exporters:
      ```python
@@ -128,13 +146,17 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
          format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
      )
 
-     # Wire OpenTelemetry to Google Cloud Logging, Cloud Trace, and Cloud Monitoring
-     gcp_exporters = get_gcp_exporters(
-         enable_cloud_logging=True,
-         enable_cloud_tracing=bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("K_SERVICE")),
-         enable_cloud_metrics=bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("K_SERVICE")),
-     )
-     maybe_set_otel_providers([gcp_exporters])
+     # Wire OpenTelemetry to Google Cloud Logging, Cloud Trace, and Cloud Monitoring when deployed
+     is_deployed = bool(os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("K_SERVICE") or os.getenv("ENABLE_OTEL_EXPORTERS", "").lower() in ("true", "1"))
+     try:
+         gcp_exporters = get_gcp_exporters(
+             enable_cloud_logging=True,
+             enable_cloud_tracing=is_deployed,
+             enable_cloud_metrics=is_deployed,
+         )
+         maybe_set_otel_providers([gcp_exporters])
+     except Exception:
+         pass
 
      AGENTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -191,6 +213,7 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
      pytest-asyncio>=0.23.0
      python-dotenv>=1.0.0
      ```
+     (Note: If any node in the workflow is an A2A agent (`agentKind: "a2a"`), `requirements.txt` MUST ALSO include `google-adk[a2a]>=2.0.0` and `a2a-sdk[http-server]>=0.3.4`).
    - `Dockerfile`: Production Python 3.11 container.
      ```dockerfile
      FROM python:3.11-slim
@@ -293,8 +316,40 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
        value       = google_cloud_run_v2_service.agent_service.uri
      }
      ```
-    - `main.tf`: Terraform deployment file that will deploy Agent to GCP Cloud Run, this should deploy to existing project, but will include everything else required for the different triggers (event, topics, service accounts, enable apis, etc. )
-    - `README.md`: Architecture overview, local execution (`python main.py` and `python server.py`), CI/CD deployment guide, Pub/Sub Push setup, and Gemini Enterprise OpenAPI tool integration.
+### MANDATORY COMPLETE REPOSITORY FILE MANIFEST:
+Every response MUST create the complete project. Emitting only 1 or 2 files is strictly prohibited.
+You MUST output EVERY single one of the following files in the returned JSON array:
+1. `agent.py`: Complete Google ADK root_agent, sub-agents, and state flow.
+2. `server.py`: Production FastAPI server mounting ADK endpoints and health checks.
+3. `main.py`: Local CLI test runner using ADK Runner.
+4. `test_agent.py`: Pytest test suite validating all test scenarios against root_agent.
+5. `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios.
+6. `evaluate.py`: Vertex AI Agent Evaluation script using vertexai.evaluation.EvalTask.
+7. `requirements.txt`: Complete pinned dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
+8. `Dockerfile`: Production Python 3.11 container definition.
+9. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests and deploying.
+10. `main.tf`: Complete Terraform configuration deploying google_cloud_run_v2_service.
+11. `pyproject.toml`: Modern packaging metadata and dependencies.
+12. `.gitignore`: Git ignore patterns for Python, venv, and cache.
+13. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
+14. `README.md`: Architecture overview, local execution, and deployment instructions.
+15. Auxiliary files as needed:
+    - `pydantic_models.py` (when structured output schemas or Pydantic models are used)
+    - `tools/*.py` (when custom tools are defined)
+
+---
+
+### OUTPUT FORMAT:
+Respond ONLY with a valid JSON array of file objects conforming to this exact schema (no markdown formatting, no backticks surrounding the JSON, only raw parseable JSON).
+DO NOT STOP or truncate after generating one or two files. Generate ALL files in the manifest above:
+
+[
+  {
+    "path": "<file name>",
+    "description": "<description>",
+    "content": "<file source code>"
+  }
+]
 
 ---
 
@@ -1111,23 +1166,58 @@ Use `before_model_callback` to filter input or `after_model_callback` to filter 
 
 ## 11. A2A Protocol
 
-Requires `pip install google-adk[a2a]`.
+Requires `pip install "google-adk[a2a]>=2.0.0" "a2a-sdk[http-server]>=0.3.4"`.
 
+### Exposing an agent as an A2A service
 ```python
-# Expose an agent as an A2A service
-# Prefer scaffolding over manual code — scaffold a normal `adk` agent; A2A is built in (see /google-agents-cli-scaffold)
 from google.adk.a2a.utils.agent_to_a2a import to_a2a
 from a2a.types import AgentCard
 to_a2a(root_agent, port=8001)
-
-# Consume a remote A2A agent
-from google.adk.agents.remote_a2a_agent import RemoteA2aAgent, AGENT_CARD_WELL_KNOWN_PATH
-remote = RemoteA2aAgent(
-    name="remote_agent",
-    description="...",
-    agent_card=f"http://remote-host:8001{AGENT_CARD_WELL_KNOWN_PATH}",
-)
 ```
+
+### Consuming a remote A2A agent (CRITICAL RULES)
+CRITICAL ADK RULES:
+1. `RemoteA2aAgent` is imported ONLY from `google.adk.agents.remote_a2a_agent import RemoteA2aAgent`.
+2. NEVER import `google.adk.auth.google_iam_auth` or `google.adk.auth.auth_credential` — these modules DO NOT EXIST in ADK.
+3. NEVER pass `auth_credential=`, `custom_headers=`, or `output_key=` to `RemoteA2aAgent(...)` — these parameters DO NOT EXIST on `RemoteA2aAgent`.
+4. NEVER write `App.ResumabilityConfig(...)`. `App` is a Pydantic model and does not expose `ResumabilityConfig` as an attribute. Always import it at top-level: `from google.adk.apps import App, ResumabilityConfig` and write `resumability_config=ResumabilityConfig(is_resumable=True)`.
+5. When `a2aConfig.rawJsonPack` is provided in the workflow node, emit a `<agent_name>_agent_card.json` file containing the JSON card payload, and pass its path to `agent_card=`:
+   ```python
+   from pathlib import Path
+   from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
+
+   card_path = str(Path(__file__).parent / "<agent_name>_agent_card.json")
+   remote_agent = RemoteA2aAgent(
+       name="<agent_name>",
+       description="...",
+       agent_card=card_path,
+   )
+   ```
+5. When connecting to Google Cloud A2A endpoints (e.g. `*.googleapis.com` or Cloud Run endpoints requiring Google Cloud authentication), pass an authenticated `httpx.AsyncClient` via `httpx_client`:
+   ```python
+   import httpx
+   import google.auth
+   from google.auth.transport.requests import Request
+   from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
+
+   try:
+       credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+       credentials.refresh(Request())
+       headers = {"Authorization": f"Bearer {credentials.token}"}
+   except Exception:
+       headers = {}
+
+   # Disable persistent keepalive connections so pooled sockets are not reused across closed asyncio event loops
+   limits = httpx.Limits(max_keepalive_connections=0)
+   httpx_client = httpx.AsyncClient(headers=headers, timeout=600.0, limits=limits)
+
+   remote_agent = RemoteA2aAgent(
+       name="<agent_name>",
+       description="...",
+       agent_card=card_path,
+       httpx_client=httpx_client,
+   )
+   ```
 
 ### A2UI
 
