@@ -73,12 +73,12 @@ interface StandardAgentDrawerProps {
   onOpenAddTool: () => void;
   onRemoveTool: (toolId: string) => void;
   onEditTool?: (tool: ToolDefinition) => void;
+  onSelectAgent?: (agentId: string) => void;
 }
 
 const SUPPORTED_MODELS = [
   { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash (Recommended - Global Region)', desc: 'Next-gen hybrid reasoning with adaptive thinking on Vertex AI' },
   { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', desc: 'Fast, lightweight multimodal reasoning on Vertex AI' },
-  { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)', desc: 'Fast, lightweight, sub-second multimodal reasoning' },
 ];
 
 const PATTERN_OPTIONS = ADK_DELEGATION_PATTERNS;
@@ -91,6 +91,7 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
   onOpenAddTool,
   onRemoveTool,
   onEditTool,
+  onSelectAgent,
 }) => {
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
@@ -99,14 +100,16 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
   const currentPattern: DelegationPattern = agent.subAgentPattern || 'parallel';
   const promptValue = agent.systemPrompt ?? '';
 
-  const currentIdentifier = agent.name ?? sanitizeAgentIdentifier(agent.label || agent.id);
+  const currentIdentifier = agent.identifier || agent.name || sanitizeAgentIdentifier(agent.label || agent.id);
   const identifierValidation = validateAgentIdentifier(currentIdentifier);
 
   const handleLabelChange = (newLabel: string) => {
     const oldSanitized = sanitizeAgentIdentifier(agent.label || agent.id);
     const updates: Partial<AgentData> = { label: newLabel };
-    if (!agent.name || agent.name === oldSanitized) {
-      updates.name = sanitizeAgentIdentifier(newLabel);
+    if (!agent.name || agent.name === oldSanitized || !agent.identifier || agent.identifier === oldSanitized) {
+      const newSanitized = sanitizeAgentIdentifier(newLabel);
+      updates.name = newSanitized;
+      updates.identifier = newSanitized;
     }
     onUpdateAgent(updates);
   };
@@ -114,7 +117,7 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
   const handleIdentifierChange = (rawName: string) => {
     // Disallow spaces immediately by replacing with underscores
     const noSpaces = rawName.replace(/\s+/g, '_');
-    onUpdateAgent({ name: noSpaces });
+    onUpdateAgent({ name: noSpaces, identifier: noSpaces });
   };
 
   const handleMoveSubAgent = (fromIdx: number, toIdx: number) => {
@@ -171,7 +174,7 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
               {agent.label}
             </h3>
             <span className="text-[10px] text-blue-400 font-mono flex items-center gap-1">
-              Standard Agent Properties
+              {agent.isStartNode ? 'Root Agent Properties' : 'Sub-Agent Properties'}
             </span>
           </div>
         </div>
@@ -1051,6 +1054,16 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1">
+                    {onSelectAgent && (
+                      <button
+                        type="button"
+                        onClick={() => onSelectAgent(sub.agentId)}
+                        title={`Configure ${sub.name}`}
+                        className="p-1 text-gray-400 hover:text-blue-400 hover:bg-[#161b22] rounded transition-colors cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
                       onClick={() => handleMoveSubAgent(idx, idx - 1)}
                       disabled={idx === 0}

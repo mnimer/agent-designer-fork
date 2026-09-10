@@ -161,15 +161,25 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
 
   return nodes.map((node) => {
     // Only agent nodes possess subAgents delegation arrays
-    if (node.type !== 'agentNode') {
+    if (node.type !== 'agentNode' && node.type !== 'agent') {
       return node;
     }
 
     const currentSubAgents: SubAgentRef[] = (node.data as AgentData)?.subAgents || [];
 
-    // NOTE: Find all outgoing edges where target is an existing agent node
+    const isBottomHandle = (handleId?: string | null) => {
+      if (!handleId) return true;
+      if (handleId === 'output' || handleId === 'subagent' || handleId.startsWith('branch_')) return true;
+      return handleId !== 'input' && handleId !== 'input_left';
+    };
+
+    // NOTE: Find all outgoing edges from bottom handle where target is an existing agent node
     const outgoingAgentEdges = edges.filter(
-      (e) => e.source === node.id && nodeMap.has(e.target) && nodeMap.get(e.target)!.type === 'agentNode'
+      (e) =>
+        e.source === node.id &&
+        isBottomHandle(e.sourceHandle) &&
+        nodeMap.has(e.target) &&
+        (nodeMap.get(e.target)!.type === 'agentNode' || nodeMap.get(e.target)!.type === 'agent')
     );
     const connectedTargetIds = Array.from(new Set(outgoingAgentEdges.map((e) => e.target)));
     const parentPattern = (node.data as AgentData)?.subAgentPattern || 'parallel';

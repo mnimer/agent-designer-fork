@@ -452,9 +452,13 @@ export class PythonAdkGenerator {
     const workflowCode = this.generateWorkflowFile(workflow, options);
 
     const hasA2A = (workflow.nodes || []).some((n: any) => n.data?.agentKind === 'a2a');
+    const hasMcp = (workflow.nodes || []).some((n: any) =>
+      (n.data?.tools || []).some((t: any) => t.type === 'mcp' || t.mcpConfig)
+    );
     const requirementsCode = [
       hasA2A ? 'google-adk[a2a]>=0.1.0' : 'google-adk>=0.1.0',
       ...(hasA2A ? ['a2a-sdk[http-server]>=0.3.4'] : []),
+      ...(hasMcp ? ['mcp>=1.0.0'] : []),
       'google-cloud-aiplatform>=1.70.0',
       'google-auth>=2.30.0',
       'pydantic>=2.0.0',

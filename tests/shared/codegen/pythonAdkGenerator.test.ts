@@ -231,6 +231,40 @@ describe('Python ADK Generator & A2A JSON-RPC 2.0 Client', () => {
     assert.ok(envFile?.content.includes('A2A_AGENT_AUTH_TOKEN='));
   });
 
+  it('should include mcp>=1.0.0 in requirements.txt when workflow contains MCP tools', () => {
+    const generator = new PythonAdkGenerator();
+    const workflow: AgentWorkflowDocument = {
+      id: 'wf-mcp',
+      name: 'MCP Workflow',
+      nodes: [
+        {
+          id: 'agent-1',
+          data: {
+            label: 'MCP Agent',
+            tools: [
+              {
+                id: 'mcp-tool-1',
+                name: 'Filesystem MCP',
+                type: 'mcp',
+                mcpConfig: {
+                  serverName: 'fs',
+                  transport: 'stdio',
+                  command: 'npx',
+                },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const files = generator.generateFullProject(workflow);
+    const reqFile = files.find((f) => f.path === 'requirements.txt');
+    assert.ok(reqFile, 'requirements.txt should be generated');
+    assert.ok(reqFile.content.includes('mcp>=1.0.0'), 'Should include mcp>=1.0.0');
+  });
+
   it('should export convenience function generateToolsPyForWorkflow', () => {
     const workflow: AgentWorkflowDocument = {
       id: 'wf-helper',

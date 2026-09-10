@@ -686,5 +686,66 @@ describe('AgentEditorProvider', { concurrency: 1 }, () => {
       payload: { targetDirectory: '/mock/workspace/agents/deploy-agent' },
     });
   });
+
+  it('should handle DISCOVER_MCP_TOOLS message and reply with MCP_TOOLS_DISCOVERED', async () => {
+    const mockContext: any = {
+      extensionPath: '/mock/extension',
+      extensionUri: vscode.Uri.file('/mock/extension'),
+      subscriptions: [],
+    };
+    const provider = new AgentEditorProvider(mockContext);
+
+    const doc: AgentWorkflowDocument = {
+      version: '1.0.0',
+      name: 'mcp-test',
+      description: 'MCP Test',
+      framework: 'google-adk',
+      language: 'python',
+      nodes: [],
+      edges: [],
+    };
+
+    const mockDoc: any = {
+      uri: vscode.Uri.file('/mock/workspace/mcp-test.agent'),
+      getText: () => JSON.stringify(doc),
+      positionAt: () => new vscode.Position(0, 0),
+    };
+
+    let messageCallback: ((msg: any) => Promise<void>) | null = null;
+    const postedMessages: any[] = [];
+    const mockPanel: any = {
+      webview: {
+        options: {},
+        html: '',
+        postMessage: async (msg: any) => {
+          postedMessages.push(msg);
+          return true;
+        },
+        onDidReceiveMessage: (cb: any) => {
+          messageCallback = cb;
+          return { dispose: () => {} };
+        },
+      },
+      onDidDispose: () => ({ dispose: () => {} }),
+      onDidChangeViewState: () => ({ dispose: () => {} }),
+    };
+
+    await provider.resolveCustomTextEditor(mockDoc, mockPanel as any, {} as any);
+    assert.ok(messageCallback);
+
+    // Send DISCOVER_MCP_TOOLS with missing command to verify response
+    await (messageCallback as any)({
+      type: 'DISCOVER_MCP_TOOLS',
+      payload: {
+        transport: 'stdio',
+        command: '',
+      },
+    });
+
+    const replyMsg = postedMessages.find((m) => m.type === 'MCP_TOOLS_DISCOVERED');
+    assert.ok(replyMsg, 'Should have received MCP_TOOLS_DISCOVERED message');
+    assert.strictEqual(replyMsg.payload.success, false);
+    assert.match(replyMsg.payload.error, /requires a valid command/);
+  });
 });
 

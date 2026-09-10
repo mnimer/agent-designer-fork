@@ -13,6 +13,7 @@
  */
 
 import React from 'react';
+import { Edge } from 'reactflow';
 import { AgentData, ToolDefinition } from '../../types';
 import { StandardAgentDrawer } from './StandardAgentDrawer';
 import { A2AAgentDrawer } from './A2AAgentDrawer';
@@ -21,23 +22,27 @@ import { RouterAgentDrawer } from './RouterAgentDrawer';
 interface AgentDrawerProps {
   agent: AgentData | null;
   allAgents: AgentData[];
+  edges?: Edge[];
   isOpen: boolean;
   onClose: () => void;
   onUpdateAgent: (updatedData: Partial<AgentData>) => void;
   onOpenAddTool: () => void;
   onRemoveTool: (toolId: string) => void;
   onEditTool?: (tool: ToolDefinition) => void;
+  onSelectAgent?: (agentId: string) => void;
 }
 
 export const AgentDrawer: React.FC<AgentDrawerProps> = ({
   agent,
   allAgents,
+  edges,
   isOpen,
   onClose,
   onUpdateAgent,
   onOpenAddTool,
   onRemoveTool,
   onEditTool,
+  onSelectAgent,
 }) => {
   if (!isOpen || !agent) return null;
 
@@ -47,8 +52,13 @@ export const AgentDrawer: React.FC<AgentDrawerProps> = ({
       <A2AAgentDrawer
         agent={agent}
         allAgents={allAgents}
+        edges={edges}
         onClose={onClose}
         onUpdateAgent={onUpdateAgent}
+        onOpenAddTool={onOpenAddTool}
+        onRemoveTool={onRemoveTool}
+        onEditTool={onEditTool}
+        onSelectAgent={onSelectAgent}
       />
     );
   }
@@ -60,6 +70,10 @@ export const AgentDrawer: React.FC<AgentDrawerProps> = ({
         allAgents={allAgents}
         onClose={onClose}
         onUpdateAgent={onUpdateAgent}
+        onOpenAddTool={onOpenAddTool}
+        onRemoveTool={onRemoveTool}
+        onEditTool={onEditTool}
+        onSelectAgent={onSelectAgent}
       />
     );
   }
@@ -73,6 +87,7 @@ export const AgentDrawer: React.FC<AgentDrawerProps> = ({
       onOpenAddTool={onOpenAddTool}
       onRemoveTool={onRemoveTool}
       onEditTool={onEditTool}
+      onSelectAgent={onSelectAgent}
     />
   );
 };

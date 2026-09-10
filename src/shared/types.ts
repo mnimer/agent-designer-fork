@@ -47,6 +47,32 @@ export interface AgentAsToolConfig {
   subAgentDescription?: string;
 }
 
+export type McpTransportType = 'stdio' | 'sse' | 'http';
+
+export type McpAuthProviderType = 'none' | 'google_credentials';
+
+export interface McpOAuthConfig {
+  scopes?: string[];
+  projectId?: string;
+}
+
+export interface McpToolConfig {
+  serverName: string;
+  transport: McpTransportType;
+  command?: string;
+  args?: string[];
+  cwd?: string;
+  serverUrl?: string;
+  envVars?: Record<string, string>;
+  headers?: Record<string, string>;
+  exposedTools?: string[];
+  autoApproveTools?: string[];
+  timeoutSeconds?: number;
+  authProviderType?: McpAuthProviderType;
+  oauthConfig?: McpOAuthConfig;
+  discoveredTools?: ToolDefinition[];
+}
+
 export interface ToolDefinition {
   id: string;
   name: string;
@@ -55,6 +81,7 @@ export interface ToolDefinition {
   category?: ToolCategory | string;
   builtinType?: AdkBuiltinToolType;
   config?: Record<string, unknown>;
+  mcpConfig?: McpToolConfig;
   vertexAiSearchConfig?: VertexAiSearchConfig;
   googleSearchConfig?: GoogleSearchConfig;
   requestInputConfig?: RequestInputConfig;

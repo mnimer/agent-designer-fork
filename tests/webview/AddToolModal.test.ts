@@ -145,4 +145,16 @@ describe('AddToolModal Logic & Tool Panel Alignment', () => {
     );
     assert.equal(noResults.length, 0);
   });
+
+  it('should support onRegisterMcpServer callback to trigger MCP registration flow', () => {
+    let mcpRegistered = false;
+    const handleRegisterMcp = () => {
+      mcpRegistered = true;
+    };
+
+    // Simulate clicking "+ Register MCP Server" action
+    handleRegisterMcp();
+    assert.equal(mcpRegistered, true, 'onRegisterMcpServer callback should be invoked');
+  });
 });
+

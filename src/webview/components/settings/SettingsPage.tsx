@@ -32,7 +32,6 @@ import { FrameworkType, LanguageType, DelegationPattern, AgentMemoryType } from 
 const SUPPORTED_MODELS = [
   { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash (Recommended - Global Region)', provider: 'Google' },
   { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', provider: 'Google' },
-  { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)', provider: 'Google' },
 ];
 
 const MEMORY_CHOICES: { id: AgentMemoryType; label: string; desc: string }[] = [

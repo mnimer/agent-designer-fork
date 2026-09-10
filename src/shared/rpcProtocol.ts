@@ -11,6 +11,8 @@ import {
   FrameworkTarget,
   LanguageTarget,
   ToolDefinition,
+  McpAuthProviderType,
+  McpOAuthConfig,
 } from './types';
 import { GeneratedFile } from './codegen/types';
 
@@ -120,7 +122,14 @@ export type WebviewToExtensionMessage =
         transport: 'stdio' | 'sse' | 'http';
         command?: string;
         args?: string[];
+        cwd?: string;
         url?: string;
+        serverUrl?: string;
+        envVars?: Record<string, string>;
+        headers?: Record<string, string>;
+        timeoutSeconds?: number;
+        authProviderType?: McpAuthProviderType;
+        oauthConfig?: McpOAuthConfig;
       };
     }
   | {
@@ -297,6 +306,11 @@ export type ExtensionToWebviewMessage =
       payload: {
         success: boolean;
         tools: ToolDefinition[];
+        serverInfo?: {
+          name: string;
+          version?: string;
+        };
+        latencyMs?: number;
         error?: string;
       };
     }

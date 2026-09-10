@@ -59,6 +59,7 @@ import {
   SubAgentRef,
   ToolDefinition,
   PatternType,
+  McpToolConfig,
 } from './types';
 import { AgentWorkflowDocument } from '../shared/types';
 import { INITIAL_NODES, INITIAL_EDGES } from './data/initialGraph';
@@ -290,6 +291,52 @@ function FlowCanvas() {
     setIsTriggerDrawerOpen,
   });
 
+  /**
+   * Handles testing the MCP connection handshake and tool discovery over VS Code RPC bridge.
+   */
+  const handleTestMcpHandshake = useCallback(
+    async (mcpConfig: McpToolConfig) => {
+      const reqTimeout = ((mcpConfig.timeoutSeconds || 30) + 5) * 1000;
+      try {
+        const reply = await bridge.sendRequestWithReply(
+          {
+            type: 'DISCOVER_MCP_TOOLS',
+            payload: {
+              serverName: mcpConfig.serverName,
+              transport: mcpConfig.transport,
+              command: mcpConfig.command,
+              args: mcpConfig.args,
+              cwd: mcpConfig.cwd,
+              url: mcpConfig.serverUrl,
+              serverUrl: mcpConfig.serverUrl,
+              envVars: mcpConfig.envVars,
+              headers: mcpConfig.headers,
+              timeoutSeconds: mcpConfig.timeoutSeconds,
+              authProviderType: mcpConfig.authProviderType,
+              oauthConfig: mcpConfig.oauthConfig,
+            },
+          },
+          'MCP_TOOLS_DISCOVERED',
+          reqTimeout
+        );
+        return reply as {
+          success: boolean;
+          tools: ToolDefinition[];
+          serverInfo?: { name: string; version?: string };
+          latencyMs?: number;
+          error?: string;
+        };
+      } catch (err: any) {
+        return {
+          success: false,
+          tools: [],
+          error: err?.message || 'Handshake request timed out',
+        };
+      }
+    },
+    [bridge]
+  );
+
   const {
     bottomPanelHeight,
     setBottomPanelHeight,
@@ -400,7 +447,7 @@ function FlowCanvas() {
     (agentId: string, tool: ToolDefinition) => {
       const toolInstance: ToolDefinition = JSON.parse(JSON.stringify(tool));
       const nextNodes = nodes.map((n) => {
-        if (n.id === agentId && n.type === 'agentNode') {
+        if (n.id === agentId && (n.type === 'agentNode' || n.type === 'agent')) {
           const currentTools: ToolDefinition[] = (n.data as AgentData).tools || [];
           if (currentTools.some((t) => t.id === toolInstance.id)) return n;
           return {
@@ -422,7 +469,7 @@ function FlowCanvas() {
   const handleRemoveTool = useCallback(
     (agentId: string, toolId: string) => {
       const nextNodes = nodes.map((n) => {
-        if (n.id === agentId && n.type === 'agentNode') {
+        if (n.id === agentId && (n.type === 'agentNode' || n.type === 'agent')) {
           return {
             ...n,
             data: {
@@ -618,6 +665,14 @@ function FlowCanvas() {
 
       if (sourceNode?.type === 'agentNode') {
         if (targetNode?.type !== 'agentNode') return false;
+        if (
+          connection.sourceHandle &&
+          connection.sourceHandle !== 'output' &&
+          connection.sourceHandle !== 'subagent' &&
+          !connection.sourceHandle.startsWith('branch_')
+        ) {
+          return false;
+        }
       }
 
       if (sourceNode?.type === 'triggerNode') {
@@ -866,8 +921,15 @@ function FlowCanvas() {
       const nextEdges = addEdge(newEdge, edges);
       setEdges(nextEdges);
 
+      const targetNode = nodes.find((n) => n.id === connection.target);
+      const isAgentEdge =
+        sourceNode?.type === 'agentNode' ||
+        sourceNode?.type === 'agent' ||
+        targetNode?.type === 'agentNode' ||
+        targetNode?.type === 'agent';
+
       let nextNodes = nodes;
-      if (sourceNode?.type === 'agentNode') {
+      if (isAgentEdge) {
         nextNodes = syncAgentSubAgents(nodes, nextEdges);
         setNodes(nextNodes);
       }
@@ -1250,7 +1312,7 @@ function FlowCanvas() {
     setConfig((prev) => ({ ...prev, ...newConf }));
   }, []);
 
-  const selectedAgentNode = nodes.find((n) => n.id === selectedAgentId && n.type === 'agentNode');
+  const selectedAgentNode = nodes.find((n) => n.id === selectedAgentId && (n.type === 'agentNode' || n.type === 'agent'));
 
   const handleUpdateSelectedAgent = useCallback(
     (partialData: Partial<AgentData>) => {
@@ -1349,7 +1411,9 @@ function FlowCanvas() {
   }, [chatTriggerNode]);
 
   const agentNodes = useMemo(() =>
-    nodes.filter((n) => n.type === 'agentNode').map((n) => n.data as AgentData),
+    nodes
+      .filter((n) => n.type === 'agentNode' || n.type === 'agent')
+      .map((n) => ({ ...n.data, id: (n.data as AgentData)?.id || n.id } as AgentData)),
     [nodes]
   );
 
@@ -1477,14 +1541,23 @@ function FlowCanvas() {
 
             {/* Slide-out Agent Inspector Drawer */}
             <AgentDrawer
-              agent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
+              agent={
+                selectedAgentNode
+                  ? {
+                      ...(selectedAgentNode.data as AgentData),
+                      id: (selectedAgentNode.data as AgentData)?.id || selectedAgentNode.id,
+                    }
+                  : null
+              }
               allAgents={agentNodes}
+              edges={edges}
               isOpen={!!selectedAgentId && !isToolDrawerOpen && !isTriggerDrawerOpen}
               onClose={() => setSelectedAgentId(null)}
               onUpdateAgent={handleUpdateSelectedAgent}
               onOpenAddTool={() => selectedAgentId && setToolModalAgentId(selectedAgentId)}
               onRemoveTool={(toolId) => selectedAgentId && handleRemoveTool(selectedAgentId, toolId)}
               onEditTool={(tool) => selectedAgentId && handleOpenEditAgentTool(selectedAgentId, tool)}
+              onSelectAgent={(agentId) => setSelectedAgentId(agentId)}
             />
 
             {/* Slide-out Trigger Inspector Drawer */}
@@ -1522,6 +1595,8 @@ function FlowCanvas() {
                   : undefined
               }
               selectedAgent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
+              targetLanguage={config.language || 'python'}
+              onTestMcpHandshake={handleTestMcpHandshake}
               onAttachToAgent={(agentId, tool) => {
                 handleAddSpecificTool(agentId, tool);
                 setIsToolDrawerOpen(false);
@@ -1588,6 +1663,7 @@ function FlowCanvas() {
         existingToolIds={((targetAgentForTool?.data as AgentData)?.tools || []).map((t) => t.id)}
         tools={tools}
         targetAgentName={(targetAgentForTool?.data as AgentData)?.label}
+        onRegisterMcpServer={handleCreateMcpTool}
       />
 
       {/* Architectural Advisor Modal */}

@@ -65,7 +65,7 @@ import {
 import { PATTERN_DEFINITIONS } from '../../data/patterns';
 import { TRIGGER_CATALOG, TriggerCatalogItem } from '../../data/triggerDefinitions';
 import { SAMPLES_CATALOG } from '../../data/sampleWorkflows';
-import { categorizeTools } from '../../data/builtinTools';
+import { categorizeTools, isNativeAdkTool } from '../../data/builtinTools';
 import { PatternType, AgentKind, ToolDefinition, AgentData, TriggerType, SampleWorkflowDefinition } from '../../types';
 
 interface PaletteCardProps {
@@ -100,19 +100,39 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   const [isOpen, setIsOpen] = useState(true);
   const [toolSearch, setToolSearch] = useState('');
   const [toolCategoryFilter, setToolCategoryFilter] = useState<'all' | 'mcp' | 'api' | 'builtin'>('all');
-  // NOTE: Categorized tool sections are collapsible and default closed per UX requirements
-  const [openToolSections, setOpenToolSections] = useState<Record<string, boolean>>({
+  const [openToolCategories, setOpenToolCategories] = useState<Record<string, boolean>>({
+    native_adk: true,
+    mcp: false,
+    custom: false,
     grounding: false,
     enterprise_search: false,
     system: false,
-    custom: false,
   });
+  // NOTE: Track explicit manual user toggles during an active search query
+  const [searchToggledCategories, setSearchToggledCategories] = useState<Record<string, boolean>>({});
 
-  const toggleToolSection = (sectionId: string) => {
-    setOpenToolSections((prev) => ({
-      ...prev,
-      [sectionId]: !prev[sectionId],
-    }));
+  /**
+   * Toggles the collapse/expand state of a tool category.
+   * If the user is actively searching, preserves the search-scoped toggle state
+   * without destroying the default closed/open preferences for normal browsing.
+   *
+   * @param categoryId ID of the category section to toggle
+   */
+  const toggleToolCategory = (categoryId: string) => {
+    if (toolSearch.trim().length > 0) {
+      setSearchToggledCategories((prev) => {
+        const currentlyExpanded = prev[categoryId] !== undefined ? prev[categoryId] : true;
+        return {
+          ...prev,
+          [categoryId]: !currentlyExpanded,
+        };
+      });
+    } else {
+      setOpenToolCategories((prev) => ({
+        ...prev,
+        [categoryId]: !prev[categoryId],
+      }));
+    }
   };
 
   const handleTabClick = (tab: 'agents' | 'tools' | 'triggers' | 'samples') => {
@@ -158,10 +178,10 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   };
 
   const getToolIcon = (tool: ToolDefinition) => {
-    if (tool.builtinType === 'google_search' || tool.id === 'builtin_google_search') {
+    if (tool.builtinType === 'google_search' || tool.id === 'builtin_google_search' || tool.id === 'tool_google_search') {
       return <Globe className="w-3.5 h-3.5 text-sky-400" />;
     }
-    if (tool.builtinType === 'vertex_ai_search' || tool.id === 'builtin_vertex_ai_search') {
+    if (tool.builtinType === 'vertex_ai_search' || tool.id === 'builtin_vertex_ai_search' || tool.id === 'tool_rag_retriever') {
       return <Database className="w-3.5 h-3.5 text-amber-400" />;
     }
     if (tool.builtinType === 'load_web_page' || tool.id === 'builtin_load_web_page') {
@@ -176,13 +196,14 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
     if (tool.builtinType === 'agent_as_tool' || tool.id === 'builtin_agent_as_tool') {
       return <Bot className="w-3.5 h-3.5 text-indigo-400" />;
     }
+    if (tool.builtinType === 'code_execution' || tool.id === 'tool_code_interpreter' || tool.type === 'code') {
+      return <Terminal className="w-3.5 h-3.5 text-emerald-400" />;
+    }
     switch (tool.type) {
       case 'mcp':
         return <Server className="w-3.5 h-3.5 text-purple-400" />;
       case 'search':
         return <Globe className="w-3.5 h-3.5 text-sky-400" />;
-      case 'code':
-        return <Terminal className="w-3.5 h-3.5 text-emerald-400" />;
       case 'db':
         return <Database className="w-3.5 h-3.5 text-amber-400" />;
       case 'rag':
@@ -248,9 +269,9 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
 
     if (!matchesSearch) return false;
 
-    if (toolCategoryFilter === 'mcp') return t.type === 'mcp';
-    if (toolCategoryFilter === 'api') return t.type === 'api' || t.type === 'custom';
-    if (toolCategoryFilter === 'builtin') return t.type === 'search' || t.type === 'code' || t.type === 'db' || t.type === 'rag';
+    if (toolCategoryFilter === 'mcp') return t.type === 'mcp' || t.mcpConfig !== undefined;
+    if (toolCategoryFilter === 'api') return t.type === 'api';
+    if (toolCategoryFilter === 'builtin') return isNativeAdkTool(t);
     return true;
   });
 
@@ -370,7 +391,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
               {activeTab === 'samples' && <Sparkles className="w-4 h-4 text-purple-400" />}
               <h3 className="text-xs font-bold uppercase tracking-wider text-gray-300">
                 {activeTab === 'agents' && 'Agents & Patterns'}
-                {activeTab === 'tools' && 'Tool Registry (0)'}
+                {activeTab === 'tools' && `Tool Registry (${tools.length})`}
                 {activeTab === 'triggers' && 'Workflow Triggers & QA'}
                 {activeTab === 'samples' && 'Workflow Samples (0)'}
               </h3>
@@ -525,14 +546,20 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
               <input
                 type="text"
                 value={toolSearch}
-                onChange={(e) => setToolSearch(e.target.value)}
+                onChange={(e) => {
+                  setToolSearch(e.target.value);
+                  setSearchToggledCategories({});
+                }}
                 placeholder="Search tools & datastores..."
                 className="w-full pl-8 pr-6 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-purple-500 rounded-md text-[11px] text-gray-200 placeholder-gray-500 focus:outline-none"
               />
               {toolSearch && (
                 <button
                   type="button"
-                  onClick={() => setToolSearch('')}
+                  onClick={() => {
+                    setToolSearch('');
+                    setSearchToggledCategories({});
+                  }}
                   className="absolute right-2 top-2 text-gray-400 hover:text-gray-200 text-xs cursor-pointer"
                 >
                   ×
@@ -543,51 +570,47 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
 
           {/* Categorized Tool Sections */}
           {(() => {
-            // NOTE: Filter tools by name, description, category, or builtin type
+            // NOTE: Filter tools by name, description, category, builtin type, MCP serverName, command, and ID
             const filtered = tools.filter((t) => {
               if (!toolSearch.trim()) return true;
-              const q = toolSearch.toLowerCase();
+              const q = toolSearch.toLowerCase().trim();
               return (
                 t.name.toLowerCase().includes(q) ||
                 t.description.toLowerCase().includes(q) ||
+                (t.type && t.type.toLowerCase().includes(q)) ||
                 (t.category && t.category.toLowerCase().includes(q)) ||
-                (t.builtinType && t.builtinType.toLowerCase().includes(q))
+                (t.builtinType && t.builtinType.toLowerCase().includes(q)) ||
+                (t.mcpConfig?.serverName && t.mcpConfig.serverName.toLowerCase().includes(q)) ||
+                (t.mcpConfig?.command && t.mcpConfig.command.toLowerCase().includes(q)) ||
+                (t.id && t.id.toLowerCase().includes(q))
               );
             });
             const categorized = categorizeTools(filtered);
 
             const categorySections = [
               {
-                id: 'grounding',
-                title: 'Built-in Grounding',
-                subtitle: 'Live Web & Document Grounding',
-                icon: <Globe className="w-3.5 h-3.5 text-sky-400" />,
-                tools: categorized.grounding,
-                badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
+                id: 'native_adk',
+                title: 'Native ADK Tools',
+                subtitle: 'Google ADK Built-in Tools & Function Tools',
+                icon: <Wrench className="w-3.5 h-3.5 text-blue-400" />,
+                tools: categorized.native_adk,
+                badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
               },
               {
-                id: 'enterprise_search',
-                title: 'Enterprise Search',
-                subtitle: 'Vertex AI Search & Knowledge Corpora',
-                icon: <Database className="w-3.5 h-3.5 text-amber-400" />,
-                tools: categorized.enterprise_search,
-                badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-              },
-              {
-                id: 'system',
-                title: 'System Tools',
-                subtitle: 'Execution, Memory, Interruption & Sub-Agents',
-                icon: <Terminal className="w-3.5 h-3.5 text-emerald-400" />,
-                tools: categorized.system,
-                badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+                id: 'mcp',
+                title: 'MCP Servers',
+                subtitle: 'Model Context Protocol Integrations',
+                icon: <Server className="w-3.5 h-3.5 text-purple-400" />,
+                tools: categorized.mcp,
+                badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
               },
               {
                 id: 'custom',
-                title: 'Custom & Community Tools',
-                subtitle: 'MCP Servers, REST APIs & Custom Code',
-                icon: <Wrench className="w-3.5 h-3.5 text-purple-400" />,
-                tools: categorized.custom,
-                badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+                title: 'Custom & External Tools',
+                subtitle: 'REST APIs & External Integrations',
+                icon: <Radio className="w-3.5 h-3.5 text-amber-400" />,
+                tools: categorized.custom.filter((t) => !isNativeAdkTool(t) && t.type !== 'mcp' && !t.mcpConfig && !t.id.startsWith('tool_mcp_')),
+                badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
               },
             ];
 
@@ -605,15 +628,18 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
               <div className="space-y-4">
                 {categorySections.map((section) => {
                   if (section.tools.length === 0) return null;
-                  // Auto-expand sections during active search, otherwise obey collapsible state (default closed)
-                  const isExpanded = toolSearch.trim().length > 0 ? true : Boolean(openToolSections[section.id]);
+                  const isSearching = toolSearch.trim().length > 0;
+                  // NOTE: Auto-expand any category containing matches during search, while allowing manual toggling
+                  const isExpanded = isSearching
+                    ? (searchToggledCategories[section.id] !== undefined ? searchToggledCategories[section.id] : true)
+                    : (openToolCategories[section.id] ?? false);
 
                   return (
                     <div key={section.id} className="space-y-1.5 bg-[#0d1117]/40 rounded-lg border border-[#30363d]/60 p-2">
                       {/* Collapsible Category Header */}
                       <button
                         type="button"
-                        onClick={() => toggleToolSection(section.id)}
+                        onClick={() => toggleToolCategory(section.id)}
                         className="w-full flex items-center justify-between text-left hover:text-white transition-colors cursor-pointer group select-none"
                         data-testid={`toggle-tool-section-${section.id}`}
                       >
@@ -633,70 +659,70 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                         </span>
                       </button>
 
-                      {/* Tool Items (Collapsible, default closed) */}
+                      {/* Tool Items (Collapsible) */}
                       {isExpanded && (
                         <div className="space-y-2 pt-1 border-t border-[#30363d]/40">
-                        {section.tools.map((t) => {
-                          const isAttached = selectedAgent?.tools?.some((at) => at.id === t.id);
+                          {section.tools.map((t) => {
+                            const isAttached = selectedAgent?.tools?.some((at) => at.id === t.id);
 
-                          return (
-                            <div
-                              key={t.id}
-                              draggable
-                              onDragStart={(e) => handleDragStartTool(e, t)}
-                              className="group relative flex items-start gap-2 p-2 bg-[#0d1117] hover:bg-[#161b22] border border-[#30363d] hover:border-purple-500/50 rounded-lg transition-all cursor-grab active:cursor-grabbing shadow-xs"
-                            >
-                              <div className="mt-0.5 text-gray-500 group-hover:text-gray-300">
-                                <GripVertical className="w-3 h-3" />
-                              </div>
-
-                              <div className="p-1 rounded bg-[#161b22] border border-[#30363d] shrink-0 mt-0.5">
-                                {getToolIcon(t)}
-                              </div>
-
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center justify-between gap-1">
-                                  <span className="text-[11px] font-bold text-gray-200 group-hover:text-white truncate">
-                                    {t.name}
-                                  </span>
-                                  {isAttached && (
-                                    <span className="text-[8px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold shrink-0">
-                                      Attached
-                                    </span>
-                                  )}
+                            return (
+                              <div
+                                key={t.id}
+                                draggable
+                                onDragStart={(e) => handleDragStartTool(e, t)}
+                                className="group relative flex items-start gap-2 p-2 bg-[#0d1117] hover:bg-[#161b22] border border-[#30363d] hover:border-purple-500/50 rounded-lg transition-all cursor-grab active:cursor-grabbing shadow-xs"
+                              >
+                                <div className="mt-0.5 text-gray-500 group-hover:text-gray-300">
+                                  <GripVertical className="w-3 h-3" />
                                 </div>
-                                <p className="text-[10px] text-gray-400 line-clamp-2 leading-tight mt-0.5">
-                                  {t.description}
-                                </p>
-                              </div>
 
-                              {/* Hover / Quick Actions */}
-                              <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => onOpenEditTool(t)}
-                                  className="p-1 rounded text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"
-                                  title="Configure tool properties"
-                                >
-                                  <Edit2 className="w-3 h-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => onAddToolToAgent(t)}
-                                  className="p-1 rounded text-purple-400 hover:text-purple-200 hover:bg-purple-900/40 transition-colors cursor-pointer"
-                                  title="Add to selected Agent"
-                                >
-                                  <Plus className="w-3 h-3" />
-                                </button>
+                                <div className="p-1 rounded bg-[#161b22] border border-[#30363d] shrink-0 mt-0.5">
+                                  {getToolIcon(t)}
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="text-[11px] font-bold text-gray-200 group-hover:text-white truncate">
+                                      {t.name}
+                                    </span>
+                                    {isAttached && (
+                                      <span className="text-[8px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold shrink-0">
+                                        Attached
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-gray-400 line-clamp-2 leading-tight mt-0.5">
+                                    {t.description}
+                                  </p>
+                                </div>
+
+                                {/* Hover / Quick Actions */}
+                                <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenEditTool(t)}
+                                    className="p-1 rounded text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"
+                                    title="Configure tool properties"
+                                  >
+                                    <Edit2 className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => onAddToolToAgent(t)}
+                                    className="p-1 rounded text-purple-400 hover:text-purple-200 hover:bg-purple-900/40 transition-colors cursor-pointer"
+                                    title="Add to selected Agent"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             );
           })()}

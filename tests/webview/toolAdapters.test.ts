@@ -210,6 +210,99 @@ describe('Tool Adapter Compiler', () => {
       assert.ok(result.toolBindings.includes('github_mcp_client_tool'));
     });
 
+    it('should compile MCP Client Tool with full configuration (cwd, env, timeout, tools, auto-approve)', () => {
+      const advancedMcpTool: ToolDefinition = {
+        id: 't_mcp_advanced',
+        name: 'Database MCP',
+        type: 'mcp',
+        mcpConfig: {
+          serverName: 'postgres-db',
+          transport: 'stdio',
+          command: 'uvx',
+          args: ['mcp-server-postgres'],
+          cwd: '/workspace/db',
+          envVars: { DB_PORT: '5432' },
+          timeoutSeconds: 45,
+          exposedTools: ['read_query', 'list_tables'],
+          autoApproveTools: ['read_query'],
+        },
+      };
+
+      const result = compileTools([advancedMcpTool], 'google-adk');
+      const def = result.toolDefinitions.find((d) => d.includes('database_mcp_tool'));
+      assert.ok(def, 'Should generate database_mcp_tool');
+      assert.ok(def.includes('name="postgres-db"'));
+      assert.ok(def.includes('transport="stdio"'));
+      assert.ok(def.includes('command="uvx"'));
+      assert.ok(def.includes('cwd="/workspace/db"'));
+      assert.ok(def.includes('env={"DB_PORT":"5432"}'));
+      assert.ok(def.includes('timeout=45'));
+      assert.ok(def.includes('tools=["read_query","list_tables"]'));
+      assert.ok(def.includes('auto_approve_tools=["read_query"]'));
+    });
+
+    it('should compile MCP Client Tool with SSE transport and custom headers', () => {
+      const sseMcpTool: ToolDefinition = {
+        id: 't_mcp_sse',
+        name: 'Remote Search MCP',
+        type: 'mcp',
+        mcpConfig: {
+          serverName: 'remote-search',
+          transport: 'sse',
+          serverUrl: 'https://mcp.internal.example/sse',
+          headers: { 'X-Custom-Auth': 'secret-token' },
+          timeoutSeconds: 20,
+        },
+      };
+
+      const result = compileTools([sseMcpTool], 'google-adk');
+      const def = result.toolDefinitions.find((d) => d.includes('remote_search_mcp_tool'));
+      assert.ok(def, 'Should generate remote_search_mcp_tool');
+      assert.ok(def.includes('name="remote-search"'));
+      assert.ok(def.includes('transport="sse"'));
+      assert.ok(def.includes('url="https://mcp.internal.example/sse"'));
+      assert.ok(def.includes('headers={"X-Custom-Auth":"secret-token"}'));
+      assert.ok(def.includes('timeout=20'));
+    });
+
+    it('should compile MCP Client Tool with Google Cloud ADC authProviderType and auto-refreshing OAuth tokens', () => {
+      const googleMcpTool: ToolDefinition = {
+        id: 't_mcp_bigquery',
+        name: 'BigQuery MCP',
+        type: 'mcp',
+        mcpConfig: {
+          serverName: 'bigquery-server',
+          transport: 'http',
+          serverUrl: 'https://bigquery.googleapis.com/mcp',
+          authProviderType: 'google_credentials',
+          oauthConfig: {
+            scopes: [
+              'https://www.googleapis.com/auth/cloud-platform',
+              'https://www.googleapis.com/auth/bigquery',
+            ],
+            projectId: 'my-production-project',
+          },
+          timeoutSeconds: 30,
+        },
+      };
+
+      const result = compileTools([googleMcpTool], 'google-adk');
+      assert.ok(result.imports.some((i) => i.includes('import google.auth')));
+      assert.ok(result.imports.some((i) => i.includes('from google.auth.transport.requests import Request as GoogleAuthRequest')));
+
+      const headerFnDef = result.toolDefinitions.find((d) => d.includes('def _get_bigquery_mcp_tool_headers():'));
+      assert.ok(headerFnDef, 'Should generate header resolution function');
+      assert.ok(headerFnDef.includes('google.auth.default(scopes='));
+      assert.ok(headerFnDef.includes('credentials.refresh(GoogleAuthRequest())'));
+      assert.ok(headerFnDef.includes('"my-production-project"'));
+
+      const toolDef = result.toolDefinitions.find((d) => d.includes('bigquery_mcp_tool = McpClientTool('));
+      assert.ok(toolDef, 'Should instantiate bigquery_mcp_tool');
+      assert.ok(toolDef.includes('url="https://bigquery.googleapis.com/mcp"'));
+      assert.ok(toolDef.includes('headers=_get_bigquery_mcp_tool_headers()'));
+      assert.ok(result.toolBindings.includes('bigquery_mcp_tool'));
+    });
+
     it('should compile custom Python functions with docstrings and typed signatures', () => {
       const customTool: ToolDefinition = {
         id: 'cust_weather',
