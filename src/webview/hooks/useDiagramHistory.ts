@@ -1,3 +1,21 @@
+/**
+ * useDiagramHistory.ts - Diagram State Undo/Redo History Stack Hook
+ *
+ * Purpose:
+ * Provides a robust, per-tab undo/redo history manager for the Visual Agent Designer canvas.
+ * Manages past and future snapshots of nodes, edges, and selection metadata, directly syncing
+ * with React Flow state setters (setNodes, setEdges) and tracking canUndo / canRedo availability.
+ *
+ * Architectural Decisions:
+ * 1. Author: Mike Nimer <mikenimer@google.com>
+ * 2. Bi-directional State Synchronization: Accepts optional setNodes and setEdges setters to directly
+ *    apply snapshots back to the canvas when undo() or redo() is triggered.
+ * 3. Backward Compatibility: Flexibly accepts (nodes, edges, setNodes, setEdges, options) or (nodes, edges, options).
+ * 4. Deep Clone Isolation: Deep clones nodes and edges using JSON serialization to avoid shared references across snapshots.
+ * 5. Redo Branch Truncation: Clears the redo future stack whenever a new distinct action is recorded.
+ * 6. Aliased Handlers: Returns both { undo, redo } and { handleUndo, handleRedo } for seamless integration.
+ */
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Node, Edge } from '@xyflow/react';
 
@@ -28,8 +46,29 @@ function cloneSnapshot(snapshot: HistorySnapshot): HistorySnapshot {
 export function useDiagramHistory(
   initialNodes: Node<any>[],
   initialEdges: Edge[],
-  options: UseDiagramHistoryOptions = {}
+  setNodesOrOptions?: React.Dispatch<React.SetStateAction<Node<any>[]>> | UseDiagramHistoryOptions,
+  setEdges?: React.Dispatch<React.SetStateAction<Edge[]>>,
+  optionsOrUndefined?: UseDiagramHistoryOptions
 ) {
+  const isSecondArgOptions =
+    typeof setNodesOrOptions === 'object' &&
+    setNodesOrOptions !== null &&
+    !('length' in setNodesOrOptions);
+
+  const options: UseDiagramHistoryOptions =
+    (isSecondArgOptions ? (setNodesOrOptions as UseDiagramHistoryOptions) : optionsOrUndefined) || {};
+
+  const setNodes =
+    typeof setNodesOrOptions === 'function'
+      ? (setNodesOrOptions as React.Dispatch<React.SetStateAction<Node<any>[]>>)
+      : undefined;
+
+  const setNodesRef = useRef(setNodes);
+  setNodesRef.current = setNodes;
+
+  const setEdgesRef = useRef(setEdges);
+  setEdgesRef.current = setEdges;
+
   const maxHistory = options.maxHistory || 40;
   const activeTabId = options.activeTabId || 'default';
 
@@ -177,7 +216,7 @@ export function useDiagramHistory(
   );
 
   /**
-   * Perform Undo
+   * Perform Undo: Restores the previous snapshot from the past stack and applies it to the canvas.
    */
   const undo = useCallback((): HistorySnapshot | null => {
     const hist = getActiveHistory();
@@ -195,12 +234,20 @@ export function useDiagramHistory(
     hist.past = newPast;
     hist.current = previous;
 
+    // Direct synchronization: apply previous snapshot back to canvas state
+    if (setNodesRef.current) {
+      setNodesRef.current(JSON.parse(JSON.stringify(previous.nodes)));
+    }
+    if (setEdgesRef.current) {
+      setEdgesRef.current(JSON.parse(JSON.stringify(previous.edges)));
+    }
+
     bumpVersion();
     return cloneSnapshot(previous);
   }, [getActiveHistory, bumpVersion]);
 
   /**
-   * Perform Redo
+   * Perform Redo: Restores the next snapshot from the future stack and applies it to the canvas.
    */
   const redo = useCallback((): HistorySnapshot | null => {
     const hist = getActiveHistory();
@@ -217,6 +264,14 @@ export function useDiagramHistory(
 
     hist.future = newFuture;
     hist.current = next;
+
+    // Direct synchronization: apply next snapshot back to canvas state
+    if (setNodesRef.current) {
+      setNodesRef.current(JSON.parse(JSON.stringify(next.nodes)));
+    }
+    if (setEdgesRef.current) {
+      setEdgesRef.current(JSON.parse(JSON.stringify(next.edges)));
+    }
 
     bumpVersion();
     return cloneSnapshot(next);
@@ -236,6 +291,8 @@ export function useDiagramHistory(
     recordSnapshot,
     undo,
     redo,
+    handleUndo: undo,
+    handleRedo: redo,
     initializeTabHistory,
   };
 }

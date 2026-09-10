@@ -17,6 +17,8 @@
  *    multiples of 8px (p-2, p-4, gap-2, py-2, etc.).
  * 4. Deduplication & Status: Clearly tags already attached tools with an "Attached" indicator
  *    while enabling one-click attachment for unattached tools.
+ * 5. Collapsible Category Sections: Tool sections are collapsible and default closed to streamline scanning,
+ *    auto-expanding when the user types a search query.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -37,7 +39,9 @@ import {
   Server,
   HelpCircle,
   History,
-  Bot
+  Bot,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { ToolDefinition } from '../../types';
 import { AVAILABLE_TOOLS } from '../../data/defaultTools';
@@ -104,6 +108,20 @@ export const AddToolModal: React.FC<AddToolModalProps> = ({
   targetAgentName,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  // NOTE: Category sections are collapsible and default closed per UX requirements
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    grounding: false,
+    enterprise_search: false,
+    system: false,
+    custom: false,
+  });
+
+  const toggleSection = (sectionId: string) => {
+    setOpenSections((prev) => ({
+      ...prev,
+      [sectionId]: !prev[sectionId],
+    }));
+  };
 
   // Filter tools by name, description, category, or type
   const filteredTools = useMemo(() => {
@@ -217,14 +235,26 @@ export const AddToolModal: React.FC<AddToolModalProps> = ({
           ) : (
             categorySections.map((section) => {
               if (section.tools.length === 0) return null;
+              // Auto-expand sections during active search, otherwise obey collapsible state (default closed)
+              const isSectionOpen = searchQuery.trim().length > 0 ? true : Boolean(openSections[section.id]);
 
               return (
-                <div key={section.id} className="space-y-2">
-                  {/* Category Header */}
-                  <div className="flex items-center justify-between pb-1 border-b border-[#30363d]/60">
+                <div key={section.id} className="space-y-1.5 bg-[#0d1117]/40 rounded-lg border border-[#30363d]/60 p-2.5">
+                  {/* Collapsible Category Header */}
+                  <button
+                    type="button"
+                    onClick={() => toggleSection(section.id)}
+                    className="w-full flex items-center justify-between text-left hover:text-white transition-colors cursor-pointer group select-none"
+                    data-testid={`toggle-modal-tool-section-${section.id}`}
+                  >
                     <div className="flex items-center gap-1.5 min-w-0">
+                      {isSectionOpen ? (
+                        <ChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                      ) : (
+                        <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                      )}
                       {section.icon}
-                      <span className="text-xs font-bold text-gray-200 tracking-tight">
+                      <span className="text-xs font-bold text-gray-200 group-hover:text-white tracking-tight">
                         {section.title}
                       </span>
                       <span className="text-[10px] text-gray-500 hidden sm:inline">
@@ -234,11 +264,12 @@ export const AddToolModal: React.FC<AddToolModalProps> = ({
                     <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono font-bold shrink-0 ${section.badgeColor}`}>
                       {section.tools.length}
                     </span>
-                  </div>
+                  </button>
 
-                  {/* Tool Items */}
-                  <div className="space-y-1.5">
-                    {section.tools.map((tool) => {
+                  {/* Tool Items (Collapsible, default closed) */}
+                  {isSectionOpen && (
+                    <div className="space-y-1.5 pt-1 border-t border-[#30363d]/40">
+                      {section.tools.map((tool) => {
                       const isAlreadyAdded = existingToolIds.includes(tool.id);
 
                       return (
@@ -300,9 +331,10 @@ export const AddToolModal: React.FC<AddToolModalProps> = ({
                       );
                     })}
                   </div>
-                </div>
-              );
-            })
+                )}
+              </div>
+            );
+          })
           )}
         </div>
 
