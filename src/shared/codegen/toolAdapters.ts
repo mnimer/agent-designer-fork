@@ -189,27 +189,74 @@ export class ToolAdapterCompiler {
         const serverName = tool.mcpConfig?.serverName || 'mcp-server';
         const transport = tool.mcpConfig?.transport || 'stdio';
 
-        if (transport === 'sse') {
-          const sseUrl = tool.mcpConfig?.serverUrl || 'http://localhost:8000/sse';
-          definitions.push(
-            `${varName} = McpClientTool(\n` +
-            `    name="${serverName}",\n` +
-            `    transport="sse",\n` +
-            `    url="${sseUrl}",\n` +
-            `)`
-          );
+        const toolArgs: string[] = [
+          `    name="${serverName}",`,
+          `    transport="${transport}",`,
+        ];
+
+        if (transport === 'sse' || transport === 'http') {
+          const sseUrl = tool.mcpConfig?.serverUrl || tool.endpointUrl || 'http://localhost:8000/sse';
+          toolArgs.push(`    url="${sseUrl}",`);
+          if (tool.mcpConfig?.authProviderType === 'google_credentials') {
+            importSet.add('import google.auth');
+            importSet.add('from google.auth.transport.requests import Request as GoogleAuthRequest');
+            importSet.add('import os');
+
+            const scopes = tool.mcpConfig.oauthConfig?.scopes && tool.mcpConfig.oauthConfig.scopes.length > 0
+              ? JSON.stringify(tool.mcpConfig.oauthConfig.scopes)
+              : '["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/bigquery"]';
+            const projectIdExpr = tool.mcpConfig.oauthConfig?.projectId
+              ? `"${tool.mcpConfig.oauthConfig.projectId}"`
+              : 'os.environ.get("GOOGLE_CLOUD_PROJECT", "")';
+
+            const headerFnName = `_get_${varName}_headers`;
+            const headerBlock = [
+              `def ${headerFnName}():`,
+              `    """Resolves and auto-refreshes Google Cloud ADC OAuth token for ${serverName}."""`,
+              `    credentials, default_project = google.auth.default(scopes=${scopes})`,
+              `    if not credentials.valid:`,
+              `        credentials.refresh(GoogleAuthRequest())`,
+              `    headers = {"Authorization": f"Bearer {credentials.token}"}`,
+              `    project = ${projectIdExpr} or default_project`,
+              `    if project:`,
+              `        headers["x-goog-user-project"] = project`,
+              `    return headers`,
+            ].join('\n');
+
+            definitions.push(headerBlock);
+            toolArgs.push(`    headers=${headerFnName}(),`);
+          } else if (tool.mcpConfig?.headers && Object.keys(tool.mcpConfig.headers).length > 0) {
+            toolArgs.push(`    headers=${JSON.stringify(tool.mcpConfig.headers)},`);
+          } else if (tool.authKeyEnv) {
+            toolArgs.push(`    headers={"Authorization": f"Bearer {os.environ.get('${tool.authKeyEnv}', '')}"},`);
+            importSet.add('import os');
+          }
         } else {
           const cmd = tool.mcpConfig?.command || 'npx';
           const args = JSON.stringify(tool.mcpConfig?.args || []);
-          definitions.push(
-            `${varName} = McpClientTool(\n` +
-            `    name="${serverName}",\n` +
-            `    transport="stdio",\n` +
-            `    command="${cmd}",\n` +
-            `    args=${args},\n` +
-            `)`
-          );
+          toolArgs.push(`    command="${cmd}",`);
+          toolArgs.push(`    args=${args},`);
+          if (tool.mcpConfig?.cwd) {
+            toolArgs.push(`    cwd="${tool.mcpConfig.cwd}",`);
+          }
+          if (tool.mcpConfig?.envVars && Object.keys(tool.mcpConfig.envVars).length > 0) {
+            toolArgs.push(`    env=${JSON.stringify(tool.mcpConfig.envVars)},`);
+          }
         }
+
+        if (tool.mcpConfig?.timeoutSeconds) {
+          toolArgs.push(`    timeout=${tool.mcpConfig.timeoutSeconds},`);
+        }
+
+        if (tool.mcpConfig?.exposedTools && tool.mcpConfig.exposedTools.length > 0 && !tool.mcpConfig.exposedTools.includes('*')) {
+          toolArgs.push(`    tools=${JSON.stringify(tool.mcpConfig.exposedTools)},`);
+        }
+
+        if (tool.mcpConfig?.autoApproveTools && tool.mcpConfig.autoApproveTools.length > 0) {
+          toolArgs.push(`    auto_approve_tools=${JSON.stringify(tool.mcpConfig.autoApproveTools)},`);
+        }
+
+        definitions.push(`${varName} = McpClientTool(\n${toolArgs.join('\n')}\n)`);
         bindings.push(varName);
         continue;
       }

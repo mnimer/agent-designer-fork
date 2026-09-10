@@ -56,7 +56,8 @@ import {
   Split,
   CornerDownRight,
   Scale,
-  Braces
+  Braces,
+  AlertCircle
 } from 'lucide-react';
 import { 
   AgentData, 
@@ -394,8 +395,8 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                 </>
               ) : isA2A ? (
                 <>
-                  <Globe2 className="w-2.5 h-2.5 shrink-0 text-cyan-400" />
-                  <span className="truncate font-mono">{data.a2aConfig?.endpoint || 'https://api.agent-network.internal/a2a/v1'}</span>
+                  <Cpu className="w-2.5 h-2.5 shrink-0 text-cyan-400" />
+                  <span className="truncate">{data.model || 'gemini-3.7-flash'} • A2A Client</span>
                 </>
               ) : (
                 <>
@@ -530,7 +531,23 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
         ) : (
           /* Standard / A2A Agent Body */
           <>
-            {/* A2A Dedicated Endpoint Status Badge & Protocol Card */}
+            {/* Agent Prompt / Description preview */}
+            <div className="bg-[#0d1117] p-2.5 rounded-lg border border-[#30363d]">
+              <div className="text-[10px] uppercase font-bold tracking-wider text-gray-400 mb-0.5 flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Sparkles className={`w-2.5 h-2.5 ${isA2A ? 'text-cyan-400' : 'text-amber-400'}`} />
+                  {isA2A ? 'Published Capability' : 'Agent Prompt'}
+                </span>
+                {isA2A && (
+                  <span className="text-[9px] text-cyan-400 font-mono">Peer Intent</span>
+                )}
+              </div>
+              <p className={`text-[11px] line-clamp-2 leading-relaxed ${data.systemPrompt ? 'text-gray-300' : 'text-gray-500 italic'}`}>
+                {data.systemPrompt || 'Add agent instructions'}
+              </p>
+            </div>
+
+            {/* A2A Dedicated Endpoint Status Badge & Protocol Card (2nd field on A2A card, above tools) */}
             {isA2A && (
               <div 
                 onClick={(e) => {
@@ -543,7 +560,11 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                 {/* Endpoint Status Badge Header */}
                 <div className="flex items-center justify-between text-[10px]">
                   <span className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-cyan-300">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-500/50" />
+                    {data.a2aConfig?.endpoint ? (
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-500/50" />
+                    ) : (
+                      <span className="w-2 h-2 rounded-full bg-amber-400 shadow-sm shadow-amber-500/50" />
+                    )}
                     <span>A2A Endpoint</span>
                   </span>
                   <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono text-[9px] font-semibold">
@@ -553,8 +574,12 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
 
                 {/* Endpoint URL Pill */}
                 <div className="font-mono text-[10px] text-gray-200 bg-[#161b22] px-2 py-1 rounded border border-[#30363d] group-hover/a2a:border-cyan-500/40 truncate flex items-center gap-1.5 transition-colors">
-                  <Globe2 className="w-3 h-3 text-cyan-400 shrink-0" />
-                  <span className="truncate">{data.a2aConfig?.endpoint || 'https://api.agent-network.internal/a2a/v1'}</span>
+                  <Globe2 className={`w-3 h-3 shrink-0 ${data.a2aConfig?.endpoint ? 'text-cyan-400' : 'text-amber-400'}`} />
+                  {data.a2aConfig?.endpoint ? (
+                    <span className="truncate">{data.a2aConfig.endpoint}</span>
+                  ) : (
+                    <span className="truncate text-gray-500 italic">No endpoint configured (Import card)</span>
+                  )}
                 </div>
 
                 {/* Agent Card Discovery Path & Auth Type Badge */}
@@ -562,13 +587,21 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                   <span className="flex items-center gap-1 truncate max-w-[170px]">
                     <span className="text-gray-500 font-mono">Card:</span>
                     <span className="font-mono text-cyan-300 truncate">
-                      {data.a2aConfig?.agentCardUrl || '/.well-known/agent-card.json'}
+                      {data.a2aConfig?.agentCardUrl || (data.a2aConfig?.rawJsonPack ? 'Inline JSON spec' : 'Not specified')}
                     </span>
                   </span>
                   <span className="px-1.5 py-0.2 rounded bg-[#161b22] border border-[#30363d] uppercase font-mono text-[8px] text-cyan-400 font-bold">
                     {data.a2aConfig?.authType || 'bearer'}
                   </span>
                 </div>
+
+                {/* Empty State Banner if neither skills nor capabilities configured */}
+                {(!data.a2aConfig?.skills || data.a2aConfig.skills.length === 0) && (!data.a2aConfig?.capabilities || data.a2aConfig.capabilities.length === 0) && (
+                  <div className="text-[9px] text-amber-400/90 bg-amber-950/20 px-2 py-0.5 rounded border border-amber-500/20 flex items-center gap-1">
+                    <AlertCircle className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                    <span>Agent card required</span>
+                  </div>
+                )}
 
                 {/* Published Skills Preview */}
                 {data.a2aConfig?.skills && data.a2aConfig.skills.length > 0 && (
@@ -595,22 +628,6 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                 )}
               </div>
             )}
-
-            {/* Agent Prompt / Description preview */}
-            <div className="bg-[#0d1117] p-2.5 rounded-lg border border-[#30363d]">
-              <div className="text-[10px] uppercase font-bold tracking-wider text-gray-400 mb-0.5 flex items-center justify-between">
-                <span className="flex items-center gap-1">
-                  <Sparkles className={`w-2.5 h-2.5 ${isA2A ? 'text-cyan-400' : 'text-amber-400'}`} />
-                  {isA2A ? 'Published Capability' : 'Agent Prompt'}
-                </span>
-                {isA2A && (
-                  <span className="text-[9px] text-cyan-400 font-mono">Peer Intent</span>
-                )}
-              </div>
-              <p className={`text-[11px] line-clamp-2 leading-relaxed ${data.systemPrompt ? 'text-gray-300' : 'text-gray-500 italic'}`}>
-                {data.systemPrompt || 'Add agent instructions'}
-              </p>
-            </div>
 
             {/* Structured Output Schema Preview Card */}
             {data.structuredOutput?.enabled && (
@@ -850,6 +867,7 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                 </div>
               </div>
             )}
+
           </>
         )}
       </div>

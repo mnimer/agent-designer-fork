@@ -40,6 +40,7 @@ import { sanitizeFolderBaseName } from '../shared/folderValidation';
 import { GeminiCodeGenEngine } from './GeminiCodeGenEngine';
 import { AgentRunnerManager } from './AgentRunnerManager';
 import { AgentEngineDeployer } from './AgentEngineDeployer';
+import { McpSubprocessManager } from './McpSubprocessManager';
 
 export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'agentFlow.editor';
@@ -48,6 +49,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   private readonly codeGenEngine: GeminiCodeGenEngine;
   private readonly runnerManager: AgentRunnerManager;
   private readonly agentEngineDeployer: AgentEngineDeployer;
+  private readonly mcpManager: McpSubprocessManager;
   private readonly outputChannel?: vscode.OutputChannel;
   private readonly messageHandlers: Map<
     string,
@@ -66,6 +68,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     this.codeGenEngine = new GeminiCodeGenEngine(context.extensionPath);
     this.agentEngineDeployer = new AgentEngineDeployer();
     this.runnerManager = new AgentRunnerManager(context.extensionPath, undefined, this.agentEngineDeployer);
+    this.mcpManager = new McpSubprocessManager();
   }
 
   /**
@@ -561,6 +564,34 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           generatedFiles: existingGeneratedFiles,
         },
       });
+    });
+
+    bridge.onMessage('DISCOVER_MCP_TOOLS', async (payload: any) => {
+      try {
+        this.outputChannel?.appendLine(
+          `[AgentEditorProvider] Discovering MCP tools via ${payload?.transport || 'stdio'} transport (cmd: ${payload?.command || 'N/A'}, url: ${payload?.url || 'N/A'})`
+        );
+        const result = await this.mcpManager.discoverTools(payload);
+        await bridge.postMessage({
+          type: 'MCP_TOOLS_DISCOVERED',
+          payload: {
+            success: result.success,
+            tools: result.tools,
+            serverInfo: result.serverInfo,
+            latencyMs: result.latencyMs,
+            error: result.error,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'MCP_TOOLS_DISCOVERED',
+          payload: {
+            success: false,
+            tools: [],
+            error: err?.message || String(err),
+          },
+        });
+      }
     });
 
     bridge.onMessage('CANCEL_TESTS', (payload) => {

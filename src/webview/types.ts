@@ -1,3 +1,9 @@
+/**
+ * types.ts - Core Webview Data Models & Protocol Definitions
+ *
+ * Author: Mike Nimer <mikenimer@google.com>
+ */
+
 export type FrameworkType = 'google_adk' | 'langgraph';
 export type LanguageType = 'python' | 'typescript';
 export type AgentKind = 'standard' | 'a2a' | 'router';
@@ -90,17 +96,28 @@ export interface TriggerData extends Record<string, unknown> {
 
 export type McpTransportType = 'stdio' | 'sse' | 'http';
 
+export type McpAuthProviderType = 'none' | 'google_credentials';
+
+export interface McpOAuthConfig {
+  scopes?: string[];
+  projectId?: string;
+}
+
 export interface McpToolConfig {
   serverName: string;
   transport: McpTransportType;
   command?: string;
   args?: string[];
+  cwd?: string;
   serverUrl?: string;
   envVars?: Record<string, string>;
   headers?: Record<string, string>;
   exposedTools?: string[];
   autoApproveTools?: string[];
   timeoutSeconds?: number;
+  authProviderType?: McpAuthProviderType;
+  oauthConfig?: McpOAuthConfig;
+  discoveredTools?: ToolDefinition[];
 }
 
 export type ToolCategory = 
@@ -330,6 +347,7 @@ export interface AgentData extends Record<string, unknown> {
   id: string;
   label: string;
   name?: string;
+  identifier?: string;
   role: string;
   model: string;
   systemPrompt: string;

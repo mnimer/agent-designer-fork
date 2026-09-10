@@ -30,13 +30,16 @@ import {
   CornerDownRight,
   Sparkles,
   Cpu,
-  AlertCircle
+  AlertCircle,
+  Wrench,
+  Pencil
 } from 'lucide-react';
 import { 
   AgentData, 
   RouterConfig, 
   RouterEvaluationMode, 
-  RouterBranchCondition 
+  RouterBranchCondition,
+  ToolDefinition
 } from '../../types';
 import { validateAgentIdentifier, sanitizeAgentIdentifier } from '../../../shared/identifierValidation';
 
@@ -45,12 +48,15 @@ interface RouterAgentDrawerProps {
   allAgents: AgentData[];
   onClose: () => void;
   onUpdateAgent: (updatedData: Partial<AgentData>) => void;
+  onOpenAddTool?: () => void;
+  onRemoveTool?: (toolId: string) => void;
+  onEditTool?: (tool: ToolDefinition) => void;
+  onSelectAgent?: (agentId: string) => void;
 }
 
 const SUPPORTED_MODELS = [
   { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash (Recommended - Global Region)', desc: 'Next-gen hybrid reasoning intent classifier and JSON branch decision engine on Vertex AI' },
   { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', desc: 'Ultra-fast intent classifier and JSON branch decision engine on Vertex AI' },
-  { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)', desc: 'Ultra-fast intent classifier and JSON branch decision engine' },
 ];
 
 const EVALUATION_MODES: { id: RouterEvaluationMode; label: string; icon: React.ReactNode; desc: string; badge: string }[] = [
@@ -89,6 +95,10 @@ export const RouterAgentDrawer: React.FC<RouterAgentDrawerProps> = ({
   allAgents,
   onClose,
   onUpdateAgent,
+  onOpenAddTool,
+  onRemoveTool,
+  onEditTool,
+  onSelectAgent,
 }) => {
   // Ensure default routerConfig exists
   const routerConfig: RouterConfig = agent.routerConfig || {
@@ -124,21 +134,23 @@ export const RouterAgentDrawer: React.FC<RouterAgentDrawerProps> = ({
 
   const otherAgents = allAgents.filter((a) => a.id !== agent.id);
 
-  const currentIdentifier = agent.name ?? sanitizeAgentIdentifier(agent.label || agent.id, 'router');
+  const currentIdentifier = agent.identifier || agent.name || sanitizeAgentIdentifier(agent.label || agent.id, 'router');
   const identifierValidation = validateAgentIdentifier(currentIdentifier, 'router');
 
   const handleLabelChange = (newLabel: string) => {
     const oldSanitized = sanitizeAgentIdentifier(agent.label || agent.id, 'router');
     const updates: Partial<AgentData> = { label: newLabel };
-    if (!agent.name || agent.name === oldSanitized) {
-      updates.name = sanitizeAgentIdentifier(newLabel, 'router');
+    if (!agent.name || agent.name === oldSanitized || !agent.identifier || agent.identifier === oldSanitized) {
+      const newSanitized = sanitizeAgentIdentifier(newLabel, 'router');
+      updates.name = newSanitized;
+      updates.identifier = newSanitized;
     }
     onUpdateAgent(updates);
   };
 
   const handleIdentifierChange = (rawName: string) => {
     const noSpaces = rawName.replace(/\s+/g, '_');
-    onUpdateAgent({ name: noSpaces });
+    onUpdateAgent({ name: noSpaces, identifier: noSpaces });
   };
 
   const handleUpdateRouterConfig = (updates: Partial<RouterConfig>) => {
@@ -184,7 +196,7 @@ export const RouterAgentDrawer: React.FC<RouterAgentDrawerProps> = ({
               {agent.label}
             </h3>
             <span className="text-[10px] text-purple-400 font-mono flex items-center gap-1">
-              Router Properties & Branching Logic
+              {agent.isStartNode ? 'Router Root Node Properties' : 'Router Sub-Agent Properties'}
             </span>
           </div>
         </div>
@@ -484,6 +496,68 @@ export const RouterAgentDrawer: React.FC<RouterAgentDrawerProps> = ({
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        {/* Attached Tools Section */}
+        <div className="space-y-2 pt-2 border-t border-[#30363d]">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
+              <Wrench className="w-3 h-3 text-purple-400" />
+              Attached Tools ({agent.tools?.length || 0})
+            </label>
+            {onOpenAddTool && (
+              <button
+                type="button"
+                onClick={onOpenAddTool}
+                className="flex items-center gap-1 text-[11px] text-purple-400 hover:text-purple-300 font-medium cursor-pointer"
+              >
+                <Plus className="w-3 h-3" />
+                Add Tool
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            {agent.tools && agent.tools.length > 0 ? (
+              agent.tools.map((tool: ToolDefinition) => (
+                <div
+                  key={tool.id}
+                  className="flex items-center justify-between p-2 rounded-lg bg-[#0d1117] border border-[#30363d]"
+                >
+                  <div className="min-w-0 pr-2">
+                    <div className="font-semibold text-gray-200 text-xs truncate">{tool.name}</div>
+                    <div className="text-[10px] text-gray-400 truncate max-w-[190px]">{tool.description}</div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {onEditTool && (
+                      <button
+                        type="button"
+                        onClick={() => onEditTool(tool)}
+                        title={`Configure ${tool.name} for this agent`}
+                        className="p-1 text-gray-400 hover:text-purple-400 hover:bg-[#161b22] rounded transition-colors cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {onRemoveTool && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveTool(tool.id)}
+                        title={`Remove ${tool.name}`}
+                        className="p-1 text-gray-400 hover:text-rose-400 hover:bg-[#161b22] rounded transition-colors cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-[11px] text-gray-400 italic p-2 bg-[#0d1117] rounded-lg border border-dashed border-[#30363d]">
+                No tools attached yet. Click &quot;Add Tool&quot; to attach tools to this router node.
+              </div>
+            )}
           </div>
         </div>
 
