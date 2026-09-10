@@ -1675,8 +1675,14 @@ if __name__ == '__main__':
         },
       });
 
-      // Evaluate assertion using Gemini LLM Judge if expectedOutput is specified
-      if (scenario.expectedOutput && scenario.expectedOutput.trim().length > 0) {
+      // Evaluate assertion using specialized engine or Gemini LLM Judge
+      const shouldEvaluateAssertion = Boolean(
+        (scenario.expectedOutput && scenario.expectedOutput.trim().length > 0) ||
+        scenario.assertionType === 'json_schema' ||
+        scenario.expectedSchema
+      );
+
+      if (shouldEvaluateAssertion) {
         await bridge.postMessage({
           type: 'EXECUTION_LOG',
           payload: {
@@ -1684,16 +1690,18 @@ if __name__ == '__main__':
             scenarioId: scenario.id,
             timestamp: new Date().toISOString(),
             level: 'info',
-            message: `[Test Evaluator] Evaluating assertion criteria via Gemini Judge: "${scenario.expectedOutput}"...`,
+            message: `[Test Evaluator] Evaluating assertion (${scenario.assertionType || 'criteria'}): "${scenario.expectedOutput || (scenario.assertionType === 'json_schema' ? 'Schema conformance' : '')}"...`,
           },
         });
 
         const evalStartTime = Date.now();
         const evalResult = await this.codeGenEngine.evaluateAssertion({
           inputQuery: inputQuery,
-          expectedCriteria: scenario.expectedOutput,
+          expectedCriteria: scenario.expectedOutput || '',
           actualOutput: responseText,
           model: 'gemini-3.7-flash',
+          assertionType: scenario.assertionType,
+          expectedSchema: scenario.expectedSchema,
         });
         const evalLatencyMs = Date.now() - evalStartTime;
 
@@ -1984,9 +1992,15 @@ if __name__ == '__main__':
           },
         });
 
-        // Evaluate assertion using Gemini LLM Judge if expectedOutput is specified
+        // Evaluate assertion using specialized engine or Gemini LLM Judge
         let evalLatencyMs = 0;
-        if (scenario.expectedOutput && scenario.expectedOutput.trim().length > 0) {
+        const shouldEvaluateAssertion = Boolean(
+          (scenario.expectedOutput && scenario.expectedOutput.trim().length > 0) ||
+          scenario.assertionType === 'json_schema' ||
+          scenario.expectedSchema
+        );
+
+        if (shouldEvaluateAssertion) {
           await bridge.postMessage({
             type: 'EXECUTION_LOG',
             payload: {
@@ -1994,16 +2008,18 @@ if __name__ == '__main__':
               scenarioId: scenario.id,
               timestamp: new Date().toISOString(),
               level: 'info',
-              message: `[Test Evaluator] Evaluating assertion criteria via Gemini Judge: "${scenario.expectedOutput}"...`,
+              message: `[Test Evaluator] Evaluating assertion (${scenario.assertionType || 'criteria'}): "${scenario.expectedOutput || (scenario.assertionType === 'json_schema' ? 'Schema conformance' : '')}"...`,
             },
           });
 
           const evalStartTime = Date.now();
           const evalResult = await this.codeGenEngine.evaluateAssertion({
             inputQuery: inputQuery,
-            expectedCriteria: scenario.expectedOutput,
+            expectedCriteria: scenario.expectedOutput || '',
             actualOutput: responseText,
             model: 'gemini-flash-latest',
+            assertionType: scenario.assertionType,
+            expectedSchema: scenario.expectedSchema,
           });
           evalLatencyMs = Date.now() - evalStartTime;
 
@@ -2436,6 +2452,11 @@ if __name__ == '__main__':
     const triggerNodes = (document.nodes || []).filter(
       (n) => n.type === 'trigger' || (n as any).type === 'triggerNode'
     );
+    const rootAgent = (document.nodes || []).find(
+      (n) => n.type === 'agent' || (n as any).type === 'agentNode'
+    );
+    const fallbackSchema = (rootAgent?.data as any)?.structuredOutput || (rootAgent?.data as any)?.structuredOutputSchema;
+
     for (const node of triggerNodes) {
       const data = node.data as any;
       if (data?.config?.testScenarios && Array.isArray(data.config.testScenarios) && data.config.testScenarios.length > 0) {
@@ -2445,6 +2466,8 @@ if __name__ == '__main__':
             name: s.name || s.id,
             inputQuery: s.inputQuery || s.prompt || '',
             expectedOutput: s.expectedOutput,
+            assertionType: s.assertionType || (s as any).assertion_type,
+            expectedSchema: s.expectedSchema || (s as any).expected_schema || fallbackSchema,
           });
         }
       } else if (data?.config?.testPrompts && Array.isArray(data.config.testPrompts) && data.config.testPrompts.length > 0) {
@@ -2454,6 +2477,8 @@ if __name__ == '__main__':
             name: p.name || p.id,
             inputQuery: p.prompt || p.inputQuery || '',
             expectedOutput: p.expectedOutput,
+            assertionType: p.assertionType || (p as any).assertion_type,
+            expectedSchema: p.expectedSchema || (p as any).expected_schema || fallbackSchema,
           });
         }
       }

@@ -24,14 +24,14 @@
 | **TASK-109** | v1.0.0 | Quality | End-to-End Test Suite & 100% Coverage Suite | **Complete** | TASK-100 to TASK-108 |
 | **TASK-110** | v1.0.1 | Triggers | Chat Trigger Node & Interactive Chat Runner Panel | **Complete** | TASK-107 |
 | **TASK-111** | v1.0.1 | Deployment | Cloud Infrastructure IaC Panel (Cloud Run & Shared GCP Resources) | **Not Started** | TASK-106 |
-| **TASK-112** | v1.0.2 | Canvas | Multi-Agent Wiring, Sockets & Connection Validation | **Not Started** | TASK-103 |
-| **TASK-113** | v1.0.2 | Patterns | Sequential Pipeline & Parallel Fan-Out Patterns | **Not Started** | TASK-112 |
-| **TASK-114** | v1.0.2 | Codegen | Multi-Agent DAG Python ADK Code Generation & Tracing | **Not Started** | TASK-113 |
+| **TASK-112** | v1.0.2 | Canvas | Multi-Agent Wiring, Sockets & Connection Validation | **Complete** | TASK-103 |
+| **TASK-113** | v1.0.2 | Patterns | Sequential Pipeline & Parallel Fan-Out Patterns | **Complete** | TASK-112 |
+| **TASK-114** | v1.0.2 | Codegen | Multi-Agent DAG Python ADK Code Generation & Tracing | **Complete** | TASK-113 |
 | **TASK-115** | v1.0.3 | Memory | In-Memory & Cloud Firestore Checkpointer Configuration | **Not Started** | TASK-103, TASK-111 |
 | **TASK-116** | v1.0.4 | A2A | Agent-to-Agent (A2A) Protocol Node & JSON-RPC Client | **In Progress** | TASK-112, TASK-115 |
 | **TASK-117** | v1.0.5 | Router | Router Node & Dynamic Branching Logic | **Not Started** | TASK-112 |
 | **TASK-118** | v1.0.6 | Tools | Custom REST API Tool Builder & Python Code Sandbox | **Not Started** | TASK-104 |
-| **TASK-119** | v1.0.7 | Schema | Structured Output Schema Builder & Pydantic Validation | **Not Started** | TASK-103, TASK-106 |
+| **TASK-119** | v1.0.7 | Schema | Structured Output Schema Builder & Pydantic Validation | **Complete** | TASK-103, TASK-106 |
 | **TASK-120** | v1.0.8 | MCP | Model Context Protocol (MCP) Client & Handshake Test | **In Progress** | TASK-104, TASK-107 |
 | **TASK-121** | v1.0.9 | Triggers & IAM | Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise IAM OIDC Auth | **Not Started** | TASK-105, TASK-111, TASK-116 |
 | **TASK-122** | v1.1.0 | Framework | LangGraph Framework Support (Python StateGraph Target) | **Not Started** | TASK-106, TASK-114 |

@@ -585,4 +585,156 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
       assert.ok(processed[0].content.includes('app = App(name=animal_expert.name, root_agent=animal_expert)'));
     });
   });
+
+  describe('Assertion Evaluation and JSON Schema Validation', () => {
+    it('validateJsonSchemaAssertion should validate conformant JSON output', () => {
+      const schema = {
+        type: 'OBJECT',
+        properties: {
+          title: { type: 'STRING' },
+          score: { type: 'NUMBER' },
+          active: { type: 'BOOLEAN' },
+          tags: { type: 'ARRAY' },
+          status: { type: 'STRING', enum: ['pending', 'completed'] },
+        },
+        required: ['title', 'score'],
+      };
+
+      const validOutput = JSON.stringify({
+        title: 'Report',
+        score: 95.5,
+        active: true,
+        tags: ['alpha', 'beta'],
+        status: 'completed',
+      });
+
+      const result = engine.validateJsonSchemaAssertion(validOutput, schema);
+      assert.equal(result.passed, true);
+      assert.ok(result.reason.includes('conforms') || result.reason.includes('passed'));
+    });
+
+    it('validateJsonSchemaAssertion should strip markdown code fences', () => {
+      const schema = {
+        type: 'OBJECT',
+        properties: {
+          city: { type: 'STRING' },
+        },
+        required: ['city'],
+      };
+
+      const markdownOutput = '```json\n{\n  "city": "San Francisco"\n}\n```';
+      const result = engine.validateJsonSchemaAssertion(markdownOutput, schema);
+      assert.equal(result.passed, true);
+    });
+
+    it('validateJsonSchemaAssertion should fail on malformed JSON', () => {
+      const result = engine.validateJsonSchemaAssertion('{ invalid json }', { type: 'OBJECT' });
+      assert.equal(result.passed, false);
+      assert.ok(result.reason.includes('Failed to parse response as JSON'));
+    });
+
+    it('validateJsonSchemaAssertion should fail when required fields are missing', () => {
+      const schema = {
+        type: 'OBJECT',
+        properties: {
+          username: { type: 'STRING' },
+          email: { type: 'STRING' },
+        },
+        required: ['username', 'email'],
+      };
+
+      const result = engine.validateJsonSchemaAssertion(JSON.stringify({ username: 'alice' }), schema);
+      assert.equal(result.passed, false);
+      assert.ok(result.reason.includes('Missing required property "email"'));
+    });
+
+    it('validateJsonSchemaAssertion should fail on type mismatch', () => {
+      const schema = {
+        type: 'OBJECT',
+        properties: {
+          count: { type: 'NUMBER' },
+        },
+      };
+
+      const result = engine.validateJsonSchemaAssertion(JSON.stringify({ count: 'not-a-number' }), schema);
+      assert.equal(result.passed, false);
+      assert.ok(result.reason.includes('Property "count" must be a number'));
+    });
+
+    it('validateJsonSchemaAssertion should fail when enum value is not allowed', () => {
+      const schema = {
+        type: 'OBJECT',
+        properties: {
+          role: { type: 'STRING', enum: ['admin', 'user', 'guest'] },
+        },
+      };
+
+      const result = engine.validateJsonSchemaAssertion(JSON.stringify({ role: 'superadmin' }), schema);
+      assert.equal(result.passed, false);
+      assert.ok(result.reason.includes('Property "role" has value "superadmin" which is not in allowed enums'));
+    });
+
+    it('evaluateAssertion should support exact match assertionType', async () => {
+      const passResult = await engine.evaluateAssertion({
+        inputQuery: 'Ping',
+        expectedCriteria: 'pong',
+        actualOutput: 'pong',
+        assertionType: 'exact',
+      });
+      assert.equal(passResult.passed, true);
+
+      const failResult = await engine.evaluateAssertion({
+        inputQuery: 'Ping',
+        expectedCriteria: 'pong',
+        actualOutput: 'pong extra',
+        assertionType: 'exact',
+      });
+      assert.equal(failResult.passed, false);
+    });
+
+    it('evaluateAssertion should support contains assertionType', async () => {
+      const passResult = await engine.evaluateAssertion({
+        inputQuery: 'Query',
+        expectedCriteria: 'target string',
+        actualOutput: 'Here is the target string inside text',
+        assertionType: 'contains',
+      });
+      assert.equal(passResult.passed, true);
+
+      const failResult = await engine.evaluateAssertion({
+        inputQuery: 'Query',
+        expectedCriteria: 'missing string',
+        actualOutput: 'Here is some other text',
+        assertionType: 'contains',
+      });
+      assert.equal(failResult.passed, false);
+    });
+
+    it('evaluateAssertion should dispatch json_schema assertionType to schema validator', async () => {
+      const schema = {
+        type: 'OBJECT',
+        properties: { summary: { type: 'STRING' } },
+        required: ['summary'],
+      };
+
+      const passResult = await engine.evaluateAssertion({
+        inputQuery: 'Summarize',
+        expectedCriteria: 'summary property',
+        actualOutput: JSON.stringify({ summary: 'Done deal' }),
+        assertionType: 'json_schema',
+        expectedSchema: schema,
+      });
+      assert.equal(passResult.passed, true);
+
+      const failResult = await engine.evaluateAssertion({
+        inputQuery: 'Summarize',
+        expectedCriteria: 'summary property',
+        actualOutput: JSON.stringify({ other: 123 }),
+        assertionType: 'json_schema',
+        expectedSchema: schema,
+      });
+      assert.equal(failResult.passed, false);
+      assert.ok(failResult.reason.includes('Missing required property "summary"'));
+    });
+  });
 });
