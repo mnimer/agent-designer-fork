@@ -10,6 +10,7 @@
  * 3. Supports running the entire test suite or targeting individual test prompts.
  * 4. Fallback mock simulation when running in standalone browser dev preview.
  * 5. Multi-target execution harness supporting Local Agent Runner and Remote Agent Engine. Dynamic health checks, target readiness, and UI controls adapt automatically based on the active execution target.
+ * 6. Collapsible Execution Logs and Console Output (collapsed by default) with an interactive grab drag handle for dynamic resizing between 80px and 600px, and universal selectable text across all prompt, output, assertion, trace, and log elements.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -90,13 +91,44 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
   const [expandedTraceId, setExpandedTraceId] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [logs, setLogs] = useState<ExecutionLogEntry[]>([]);
-  const [isConsoleOpen, setIsConsoleOpen] = useState<boolean>(true);
+  // Execution logs drawer collapsed by default as requested
+  const [isConsoleOpen, setIsConsoleOpen] = useState<boolean>(false);
+  const [consoleHeight, setConsoleHeight] = useState<number>(180);
   const [latestLogByScenario, setLatestLogByScenario] = useState<Record<string, string>>({});
   const [localRunnerStatus, setLocalRunnerStatus] = useState<'idle' | 'starting' | 'running' | 'stopped' | 'error'>('idle');
   const [localRunnerPort, setLocalRunnerPort] = useState<number>(8000);
   const [isCheckingHealth, setIsCheckingHealth] = useState<boolean>(false);
   const activeRunIdRef = useRef<string | null>(null);
   const consoleEndRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Handles mouse drag to resize the execution logs drawer.
+   * Allows dragging up or down with bounded heights between 80px and 600px.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
+   */
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = isConsoleOpen ? consoleHeight : 0;
+    if (!isConsoleOpen) {
+      setIsConsoleOpen(true);
+    }
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = startY - moveEvent.clientY;
+      const nextHeight = Math.min(Math.max((startHeight || 180) + delta, 80), 600);
+      setConsoleHeight(nextHeight);
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [isConsoleOpen, consoleHeight]);
 
   const [remoteEngineId, setRemoteEngineId] = useState<string | null>(null);
 
@@ -810,10 +842,10 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                     <div className="w-5 h-5 rounded-full bg-[#0d1117] border border-[#30363d] flex items-center justify-center text-[10px] font-bold text-gray-400 shrink-0">
                       {index + 1}
                     </div>
-                    <span className="font-bold text-xs text-white truncate">
+                    <span className="font-bold text-xs text-white truncate select-text cursor-text" style={{ userSelect: 'text' }}>
                       {tp.name}
                     </span>
-                    <span className="text-[9px] uppercase font-mono px-1.5 py-0.2 rounded bg-[#0d1117] text-gray-400 border border-[#30363d]">
+                    <span className="text-[9px] uppercase font-mono px-1.5 py-0.2 rounded bg-[#0d1117] text-gray-400 border border-[#30363d] select-text" style={{ userSelect: 'text' }}>
                       {tp.assertionType || 'contains'}
                     </span>
                   </div>
@@ -821,28 +853,28 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                   <div className="flex items-center gap-2 shrink-0">
                     {/* Status Badge */}
                     {isIdle && (
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0d1117] text-gray-400 border border-[#30363d] flex items-center gap-1">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0d1117] text-gray-400 border border-[#30363d] flex items-center gap-1 select-text" style={{ userSelect: 'text' }}>
                         <Clock className="w-2.5 h-2.5" />
                         Ready
                       </span>
                     )}
 
                     {isRunning && (
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-500/40 flex items-center gap-1 animate-pulse">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-500/40 flex items-center gap-1 animate-pulse select-text" style={{ userSelect: 'text' }}>
                         <Activity className="w-2.5 h-2.5 animate-spin" />
                         Running...
                       </span>
                     )}
 
                     {isPassed && (
-                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-950/70 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-950/70 text-emerald-400 border border-emerald-500/40 flex items-center gap-1 select-text" style={{ userSelect: 'text' }}>
                         <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                         Passed ({result.durationMs}ms)
                       </span>
                     )}
 
                     {isFailed && (
-                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-rose-950/70 text-rose-400 border border-rose-500/40 flex items-center gap-1">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-rose-950/70 text-rose-400 border border-rose-500/40 flex items-center gap-1 select-text" style={{ userSelect: 'text' }}>
                         <XCircle className="w-3 h-3 text-rose-400" />
                         Failed
                       </span>
@@ -889,7 +921,7 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                         )}
                       </button>
                     </div>
-                    <div className="flex-1 p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d] font-mono text-[11px] text-gray-200 leading-relaxed overflow-y-auto max-h-[140px]">
+                    <div className="flex-1 p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d] font-mono text-[11px] text-gray-200 leading-relaxed overflow-y-auto max-h-[140px] select-text cursor-text" style={{ userSelect: 'text' }}>
                       {tp.prompt}
                     </div>
                   </div>
@@ -902,7 +934,7 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                         Expected Result
                       </span>
                     </div>
-                    <div className="flex-1 p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d] font-mono text-[11px] text-gray-300 leading-relaxed overflow-y-auto max-h-[140px]">
+                    <div className="flex-1 p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d] font-mono text-[11px] text-gray-300 leading-relaxed overflow-y-auto max-h-[140px] select-text cursor-text" style={{ userSelect: 'text' }}>
                       {tp.expectedOutput}
                     </div>
                   </div>
@@ -929,35 +961,35 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                       )}
                     </div>
 
-                    <div className={`flex-1 p-2.5 rounded-lg border font-mono text-[11px] leading-relaxed overflow-y-auto max-h-[140px] ${
+                    <div className={`flex-1 p-2.5 rounded-lg border font-mono text-[11px] leading-relaxed overflow-y-auto max-h-[140px] select-text cursor-text ${
                       isPassed
                         ? 'bg-[#0d1117] border-emerald-500/30 text-emerald-200'
                         : isFailed
                         ? 'bg-[#0d1117] border-rose-500/30 text-rose-200'
                         : 'bg-[#0d1117] border-[#30363d] text-gray-500 italic'
-                    }`}>
+                    }`} style={{ userSelect: 'text' }}>
                       {isRunning ? (
-                        <div className="flex flex-col items-center gap-2 text-amber-400 py-3 justify-center text-center">
+                        <div className="flex flex-col items-center gap-2 text-amber-400 py-3 justify-center text-center select-text">
                           <div className="flex items-center gap-2">
                             <Activity className="w-3.5 h-3.5 animate-spin" />
                             <span className="font-semibold">Executing test scenario...</span>
                           </div>
                           {latestLogByScenario[tp.id] && (
-                            <span className="text-[10.5px] text-gray-400 font-mono line-clamp-2 px-2">
+                            <span className="text-[10.5px] text-gray-400 font-mono line-clamp-2 px-2 select-text cursor-text" style={{ userSelect: 'text' }}>
                               {latestLogByScenario[tp.id]}
                             </span>
                           )}
                         </div>
                       ) : result.output ? (
-                        <pre className="whitespace-pre-wrap font-mono text-[10.5px]">
+                        <pre className="whitespace-pre-wrap font-mono text-[10.5px] select-text cursor-text" style={{ userSelect: 'text' }}>
                           {result.output}
                         </pre>
                       ) : isFailed ? (
-                        <div className="text-rose-400 text-[10.5px] font-mono whitespace-pre-wrap">
+                        <div className="text-rose-400 text-[10.5px] font-mono whitespace-pre-wrap select-text cursor-text" style={{ userSelect: 'text' }}>
                           {result.assertionDetails || 'Test failed with no response output.'}
                         </div>
                       ) : (
-                        <span className="flex items-center justify-center h-full text-center text-gray-500">
+                        <span className="flex items-center justify-center h-full text-center text-gray-500 select-text">
                           Click "Run" to execute this test prompt against the agent workflow.
                         </span>
                       )}
@@ -967,15 +999,15 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
 
                 {/* Footer Assertion & Multi-Agent Execution Trace (when available) */}
                 {result.status !== 'idle' && (result.output || result.assertionDetails) && (
-                  <div className="px-3.5 py-2 bg-[#12161c] rounded-b-xl border-t border-[#30363d] flex flex-wrap items-center justify-between text-[11px] gap-2">
-                    <div className="flex items-center gap-1.5 text-gray-300">
+                  <div className="px-3.5 py-2 bg-[#12161c] rounded-b-xl border-t border-[#30363d] flex flex-wrap items-center justify-between text-[11px] gap-2 select-text">
+                    <div className="flex items-center gap-1.5 text-gray-300 select-text">
                       {isPassed ? (
                         <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
                       ) : (
                         <AlertCircle className="w-3 h-3 text-rose-400 shrink-0" />
                       )}
                       <span className="font-semibold text-gray-400">Assertion:</span>
-                      <span className={isPassed ? 'text-emerald-300' : 'text-rose-300'}>
+                      <span className={`select-text cursor-text ${isPassed ? 'text-emerald-300' : 'text-rose-300'}`} style={{ userSelect: 'text' }}>
                         {result.assertionDetails || (isPassed ? 'Passed' : 'Failed')}
                       </span>
                     </div>
@@ -996,19 +1028,19 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
 
                 {/* Collapsible Execution Trace Details */}
                 {expandedTraceId === tp.id && result.agentTrace && (
-                  <div className="px-3.5 py-2.5 bg-[#0d1117] border-t border-[#21262d] space-y-1.5 text-[10.5px]">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                  <div className="px-3.5 py-2.5 bg-[#0d1117] border-t border-[#21262d] space-y-1.5 text-[10.5px] select-text">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 select-text">
                       Multi-Agent Execution Pipeline Trace
                     </div>
                     <div className="space-y-1">
                       {result.agentTrace.map((step, sIdx) => (
-                        <div key={sIdx} className="flex items-center gap-2 text-gray-300">
-                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#161b22] text-amber-300 border border-[#30363d]">
+                        <div key={sIdx} className="flex items-center gap-2 text-gray-300 select-text" style={{ userSelect: 'text' }}>
+                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#161b22] text-amber-300 border border-[#30363d] select-text" style={{ userSelect: 'text' }}>
                             {step.agentName}
                           </span>
                           <ArrowRight className="w-2.5 h-2.5 text-gray-500 shrink-0" />
-                          <span className="text-gray-300 truncate">{step.step}</span>
-                          <span className="ml-auto text-[9.5px] font-mono text-gray-500">{step.durationMs}ms</span>
+                          <span className="text-gray-300 truncate select-text cursor-text" style={{ userSelect: 'text' }}>{step.step}</span>
+                          <span className="ml-auto text-[9.5px] font-mono text-gray-500 select-text" style={{ userSelect: 'text' }}>{step.durationMs}ms</span>
                         </div>
                       ))}
                     </div>
@@ -1022,6 +1054,16 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
 
       {/* Live Execution Console & Logs */}
       <div className="border-t border-[#30363d] bg-[#0d1117] flex flex-col shrink-0">
+        {/* Grab Drag Control to resize Execution Logs */}
+        <div
+          data-testid="console-resize-handle"
+          onMouseDown={handleResizeStart}
+          className="h-2 w-full bg-[#161b22] hover:bg-pink-600/70 cursor-row-resize border-b border-[#30363d] flex items-center justify-center transition-colors group select-none"
+          title="Drag to resize Execution Logs"
+        >
+          <div className="w-10 h-1 rounded-full bg-[#30363d] group-hover:bg-white transition-colors" />
+        </div>
+
         <div 
           onClick={() => setIsConsoleOpen(!isConsoleOpen)}
           className="flex items-center justify-between px-4 py-2 bg-[#161b22] border-b border-[#30363d] text-xs font-semibold cursor-pointer select-none hover:bg-[#1c2128]"
@@ -1052,8 +1094,8 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
 
         {isConsoleOpen && (
           <div
-            className="h-40 overflow-y-auto p-4 font-mono text-[11px] space-y-1 bg-[#090d13] text-gray-300 select-text cursor-text"
-            style={{ userSelect: 'text' }}
+            className="overflow-y-auto p-4 font-mono text-[11px] space-y-1 bg-[#090d13] text-gray-300 select-text cursor-text"
+            style={{ height: `${consoleHeight}px`, userSelect: 'text' }}
           >
             {logs.length === 0 ? (
               <div className="text-gray-500 italic py-2 text-center select-text">

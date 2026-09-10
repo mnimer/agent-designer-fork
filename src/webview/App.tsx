@@ -178,7 +178,7 @@ function FlowCanvas() {
     initializeTabHistory,
   } = useDiagramHistory(nodes, edges, setNodes, setEdges);
 
-  // Synchronize parent subAgents when edges are deleted
+  // Synchronize parent subAgents when edges are deleted and record snapshot for undo/redo
   const onEdgesChange = useCallback(
     (changes: any) => {
       onEdgesChangeState(changes);
@@ -186,13 +186,17 @@ function FlowCanvas() {
       if (isRemoval) {
         setTimeout(() => {
           setEdges((currentEdges) => {
-            setNodes((currentNodes) => syncAgentSubAgents(currentNodes, currentEdges));
+            setNodes((currentNodes) => {
+              const synced = syncAgentSubAgents(currentNodes, currentEdges);
+              recordSnapshot(synced, currentEdges, { description: 'Remove connection' });
+              return synced;
+            });
             return currentEdges;
           });
         }, 10);
       }
     },
-    [onEdgesChangeState, setEdges, setNodes]
+    [onEdgesChangeState, setEdges, setNodes, recordSnapshot]
   );
 
   // ---------------------------------------------------------------------------
@@ -1120,8 +1124,14 @@ function FlowCanvas() {
   );
 
   const handleNodeDragStop = useCallback(() => {
-    recordSnapshot(nodes, edges, { description: 'Move element' });
-  }, [nodes, edges, recordSnapshot]);
+    setNodes((currentNodes) => {
+      setEdges((currentEdges) => {
+        recordSnapshot(currentNodes, currentEdges, { description: 'Move element' });
+        return currentEdges;
+      });
+      return currentNodes;
+    });
+  }, [setNodes, setEdges, recordSnapshot]);
 
   const handleAutoLayout = useCallback(() => {
     const layouted = getLayoutedElements(nodes, edges);
@@ -1228,6 +1238,13 @@ function FlowCanvas() {
       },
     });
   }, [currentWorkflowDocument, config.outputFolder, config.deploymentTarget, bridge, isPanelMaximized, bottomPanelHeight, setBottomPanelHeight, panelContainerRef]);
+
+  const handleStopGenerate = useCallback(() => {
+    setIsGenerating(false);
+    bridge.postMessage({
+      type: 'CANCEL_CODE_GENERATION',
+    });
+  }, [bridge]);
 
   const handleUpdateConfig = useCallback((newConf: Partial<GenerationConfig>) => {
     setConfig((prev) => ({ ...prev, ...newConf }));
@@ -1545,6 +1562,7 @@ function FlowCanvas() {
               config={config}
               onChangeConfig={handleUpdateConfig}
               onGenerateCode={handleTriggerGenerate}
+              onStopGenerate={handleStopGenerate}
               generatedFiles={generatedFiles}
               isGenerating={isGenerating}
               onOpenMissingAdvisor={() => setIsAdvisorOpen(true)}

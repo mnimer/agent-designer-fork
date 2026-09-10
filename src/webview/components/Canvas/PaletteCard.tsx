@@ -12,6 +12,7 @@
  * - Decision 2: Supports Conversational Chat and Test Suite QA as active triggers, while PubSub and
  *   Scheduled triggers are explicitly marked as disabled until their backend runtime integrations are implemented.
  * - Decision 3: Spacing and layout follow the strict 8pt grid system.
+ * - Decision 4: Categorized tool sections in the Tools catalog are collapsible and default closed.
  */
 
 import React, { useState } from 'react';
@@ -24,6 +25,7 @@ import {
   Layers, 
   ChevronDown, 
   ChevronUp, 
+  ChevronRight,
   GripVertical, 
   HelpCircle, 
   Network, 
@@ -98,6 +100,20 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   const [isOpen, setIsOpen] = useState(true);
   const [toolSearch, setToolSearch] = useState('');
   const [toolCategoryFilter, setToolCategoryFilter] = useState<'all' | 'mcp' | 'api' | 'builtin'>('all');
+  // NOTE: Categorized tool sections are collapsible and default closed per UX requirements
+  const [openToolSections, setOpenToolSections] = useState<Record<string, boolean>>({
+    grounding: false,
+    enterprise_search: false,
+    system: false,
+    custom: false,
+  });
+
+  const toggleToolSection = (sectionId: string) => {
+    setOpenToolSections((prev) => ({
+      ...prev,
+      [sectionId]: !prev[sectionId],
+    }));
+  };
 
   const handleTabClick = (tab: 'agents' | 'tools' | 'triggers' | 'samples') => {
     if (!isOpen) {
@@ -589,22 +605,37 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
               <div className="space-y-4">
                 {categorySections.map((section) => {
                   if (section.tools.length === 0) return null;
+                  // Auto-expand sections during active search, otherwise obey collapsible state (default closed)
+                  const isExpanded = toolSearch.trim().length > 0 ? true : Boolean(openToolSections[section.id]);
 
                   return (
-                    <div key={section.id} className="space-y-2">
-                      <div className="flex items-center justify-between pb-1 border-b border-[#30363d]/60">
-                        <div className="flex items-center gap-1.5">
+                    <div key={section.id} className="space-y-1.5 bg-[#0d1117]/40 rounded-lg border border-[#30363d]/60 p-2">
+                      {/* Collapsible Category Header */}
+                      <button
+                        type="button"
+                        onClick={() => toggleToolSection(section.id)}
+                        className="w-full flex items-center justify-between text-left hover:text-white transition-colors cursor-pointer group select-none"
+                        data-testid={`toggle-tool-section-${section.id}`}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {isExpanded ? (
+                            <ChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                          ) : (
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                          )}
                           {section.icon}
-                          <span className="text-[11px] font-bold text-gray-300 tracking-tight">
+                          <span className="text-[11px] font-bold text-gray-300 group-hover:text-white tracking-tight">
                             {section.title}
                           </span>
                         </div>
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono font-bold ${section.badgeColor}`}>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono font-bold shrink-0 ${section.badgeColor}`}>
                           {section.tools.length}
                         </span>
-                      </div>
+                      </button>
 
-                      <div className="space-y-2">
+                      {/* Tool Items (Collapsible, default closed) */}
+                      {isExpanded && (
+                        <div className="space-y-2 pt-1 border-t border-[#30363d]/40">
                         {section.tools.map((t) => {
                           const isAttached = selectedAgent?.tools?.some((at) => at.id === t.id);
 
@@ -662,9 +693,10 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                           );
                         })}
                       </div>
-                    </div>
-                  );
-                })}
+                    )}
+                  </div>
+                );
+              })}
               </div>
             );
           })()}
