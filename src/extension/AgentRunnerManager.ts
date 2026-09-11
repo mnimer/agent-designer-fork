@@ -54,8 +54,9 @@
  * 15. Clean SSE Stream Termination & Telemetry Silencing in Local Runner: Breaks client read loop immediately
  *     upon receiving 'data: [DONE]' or finish_reason 'stop' to prevent indefinite hangs in reader.read(), sends
  *     'Connection: close' and close_connection=True in _agent_test_runner.py, and sets OTEL_SDK_DISABLED='true' to
- *     silence remote telemetry export 400 Bad Request spam in local environments.
->>>>>>> origin/develop
+ * 16. Remote Reasoning Engine Interactive Chat Execution: Routes interactive chat messages
+ *     to Vertex AI Agent Engine via AgentEngineDeployer.testRemoteAgentRuntime with real-time SSE token
+ *     streaming over WebviewBridge, multi-turn reasoning engine session reuse, and graceful error handling.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -100,6 +101,8 @@ export interface SendChatMessageOptions {
   document?: AgentWorkflowDocument;
   targetDirectory?: string;
   port?: number;
+  executionTarget?: 'local' | 'remote';
+  deployedResourceId?: string;
   bridge: WebviewBridge;
 }
 
@@ -114,6 +117,7 @@ export class AgentRunnerManager {
   private pythonResolver: PythonEnvResolver;
   private codeGenEngine: GeminiCodeGenEngine;
   private chatSessions: Map<string, Array<{ role: 'user' | 'assistant'; content: string }>> = new Map();
+  private remoteReasoningEngineSessions: Map<string, string> = new Map();
   private agentEngineDeployer?: AgentEngineDeployer;
 
   /**
@@ -187,6 +191,8 @@ try:
 except Exception:
     pass
 
+_shared_session_service = None
+
 agent_instance = None
 
 def get_agent():
@@ -209,9 +215,9 @@ def get_agent():
         except Exception:
             pass
 
-        # 2. Inspect agent.py for root_agent / pipeline instances
+        # 2. Inspect agent.py for root_agent / pipeline instances (prefer app if present)
         import agent
-        for var_name in ['root_agent', 'agent_runtime', 'app', 'workflow', 'pipeline', 'agent_instance', 'agent']:
+        for var_name in ['app', 'root_agent', 'agent_runtime', 'workflow', 'pipeline', 'agent_instance', 'agent']:
             if hasattr(agent, var_name):
                 val = getattr(agent, var_name)
                 # Verify it is an instance, NOT an uninstantiated class or module
@@ -258,14 +264,9 @@ class TestHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(b'{"status":"ok"}')
-        elif self.path == '/v1/models':
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(b'{"data":[{"id":"gemini-flash-latest"}]}')
-        else:
-            self.send_response(404)
-            self.end_headers()
+            return
+        self.send_response(404)
+        self.end_headers()
 
     def do_POST(self):
         content_length = int(self.headers.get('Content-Length', 0))
@@ -285,6 +286,8 @@ class TestHandler(BaseHTTPRequestHandler):
         if not prompt:
             prompt = data.get('prompt', '') or data.get('input', '') or data.get('query', '') or body
 
+        session_id = data.get('sessionId') or data.get('session_id') or 'default_user_session'
+
         try:
             ag = get_agent()
             if ag is None:
@@ -293,26 +296,60 @@ class TestHandler(BaseHTTPRequestHandler):
             res = None
 
             def _extract_text_from_event(evt):
-                if isinstance(evt, dict):
-                    content = evt.get('content') or {}
-                    parts = content.get('parts') or []
-                    texts = []
-                    for p in parts:
-                        if isinstance(p, dict) and p.get('text'):
-                            texts.append(p['text'])
-                    return "".join(texts)
-                elif hasattr(evt, 'content') and evt.content:
-                    parts = getattr(evt.content, 'parts', []) or []
-                    texts = []
-                    for p in parts:
-                        if hasattr(p, 'text') and p.text:
-                            texts.append(p.text)
-                    return "".join(texts)
-                elif hasattr(evt, 'text') and evt.text:
-                    return evt.text
+                texts = []
+                if hasattr(evt, 'text') and evt.text:
+                    texts.append(str(evt.text))
                 elif isinstance(evt, str):
                     return evt
-                return ""
+
+                content = getattr(evt, 'content', None) if not isinstance(evt, dict) else evt.get('content')
+                if content:
+                    parts = getattr(content, 'parts', []) if not isinstance(content, dict) else content.get('parts', [])
+                    for p in (parts or []):
+                        if isinstance(p, dict):
+                            if p.get('text'):
+                                texts.append(str(p['text']))
+                            fc = p.get('function_call')
+                            if fc:
+                                fc_name = fc.get('name', '') if isinstance(fc, dict) else getattr(fc, 'name', '')
+                                fc_args = fc.get('args', {}) if isinstance(fc, dict) else getattr(fc, 'args', {})
+                                if 'request_input' in fc_name:
+                                    msg = fc_args.get('message') or fc_args.get('prompt') or fc_args.get('text')
+                                    if msg:
+                                        texts.append(str(msg))
+                        else:
+                            if hasattr(p, 'text') and p.text:
+                                texts.append(str(p.text))
+                            if hasattr(p, 'function_call') and p.function_call:
+                                fc = p.function_call
+                                fc_name = getattr(fc, 'name', '')
+                                fc_args = getattr(fc, 'args', {}) or {}
+                                if 'request_input' in fc_name:
+                                    msg = None
+                                    if isinstance(fc_args, dict):
+                                        msg = fc_args.get('message') or fc_args.get('prompt') or fc_args.get('text')
+                                    elif hasattr(fc_args, 'get'):
+                                        msg = fc_args.get('message') or fc_args.get('prompt') or fc_args.get('text')
+                                    if msg:
+                                        texts.append(str(msg))
+
+                if hasattr(evt, 'get_function_calls') and callable(getattr(evt, 'get_function_calls')):
+                    try:
+                        for fc in evt.get_function_calls():
+                            fc_name = getattr(fc, 'name', '')
+                            if 'request_input' in fc_name:
+                                fc_args = getattr(fc, 'args', {}) or {}
+                                msg = None
+                                if isinstance(fc_args, dict):
+                                    msg = fc_args.get('message') or fc_args.get('prompt') or fc_args.get('text')
+                                elif hasattr(fc_args, 'get'):
+                                    msg = fc_args.get('message') or fc_args.get('prompt') or fc_args.get('text')
+                                if msg and str(msg) not in texts:
+                                    texts.append(str(msg))
+                    except Exception:
+                        pass
+
+                return "".join(texts)
 
             # 1. AdkApp async_stream_query / stream_query support
             if hasattr(ag, 'async_stream_query') and callable(getattr(ag, 'async_stream_query')):
@@ -353,15 +390,36 @@ class TestHandler(BaseHTTPRequestHandler):
                     from google.genai import types
                     from google.adk.apps import App
 
+                    global _shared_session_service
+                    if _shared_session_service is None:
+                        _shared_session_service = InMemorySessionService()
+
                     async def _run_adk_runner():
-                        session_service = InMemorySessionService()
-                        session = await session_service.create_session(app_name="vad_app", user_id="test_user")
+                        app_to_run = ag
                         if isinstance(ag, App):
-                            runner = Runner(app=ag, session_service=session_service)
+                            app_name = getattr(ag, 'name', 'vad_app') or 'vad_app'
+                            runner = Runner(app=ag, session_service=_shared_session_service)
                         elif hasattr(ag, 'root_agent') and isinstance(getattr(ag, 'root_agent'), App):
-                            runner = Runner(app=getattr(ag, 'root_agent'), session_service=session_service)
+                            app_to_run = getattr(ag, 'root_agent')
+                            app_name = getattr(app_to_run, 'name', 'vad_app') or 'vad_app'
+                            runner = Runner(app=app_to_run, session_service=_shared_session_service)
                         else:
-                            runner = Runner(agent=ag, app_name="vad_app", session_service=session_service)
+                            try:
+                                import agent
+                                if hasattr(agent, 'app') and isinstance(getattr(agent, 'app'), App):
+                                    app_to_run = agent.app
+                                    app_name = getattr(app_to_run, 'name', 'vad_app') or 'vad_app'
+                                    runner = Runner(app=app_to_run, session_service=_shared_session_service)
+                                else:
+                                    app_name = getattr(ag, 'name', 'vad_app') or 'vad_app'
+                                    runner = Runner(agent=ag, app_name=app_name, session_service=_shared_session_service)
+                            except Exception:
+                                app_name = getattr(ag, 'name', 'vad_app') or 'vad_app'
+                                runner = Runner(agent=ag, app_name=app_name, session_service=_shared_session_service)
+
+                        session = await _shared_session_service.get_session(app_name=app_name, user_id="test_user", session_id=session_id)
+                        if session is None:
+                            session = await _shared_session_service.create_session(app_name=app_name, user_id="test_user", session_id=session_id)
 
                         final_texts = []
                         accum_texts = []
@@ -407,9 +465,18 @@ class TestHandler(BaseHTTPRequestHandler):
                 elif hasattr(ag, 'invoke') and callable(getattr(ag, 'invoke')):
                     res = ag.invoke({"messages": [{"role": "user", "content": prompt}]})
                 elif hasattr(ag, 'run') and callable(getattr(ag, 'run')):
-                    res = ag.run(prompt)
+                    try:
+                        import inspect
+                        sig = inspect.signature(ag.run)
+                        if len(sig.parameters) > 0:
+                            res = ag.run(prompt)
+                    except Exception as run_err:
+                        sys.stderr.write(f"[ag.run fallback ignored] {run_err}\\n")
                 elif callable(ag):
-                    res = ag(prompt)
+                    try:
+                        res = ag(prompt)
+                    except Exception as call_err:
+                        sys.stderr.write(f"[ag(prompt) fallback ignored] {call_err}\\n")
                 else:
                     raise RuntimeError("Agent instance has no query, generate, invoke, or run method")
 
@@ -678,7 +745,7 @@ if __name__ == '__main__':
   public async startLocalRunner(options: StartLocalRunnerOptions): Promise<string> {
     const { targetDirectory, port = 8000, envVars = {}, bridge } = options;
     const runnerId = `local-runner-${Date.now()}`;
-    const targetDir = targetDirectory || path.join(process.cwd(), 'src', 'agents');
+    const targetDir = targetDirectory || process.cwd();
 
     this.runnerStatus = 'starting';
     this.lastRunningPort = port;
@@ -2105,15 +2172,26 @@ if __name__ == '__main__':
    *
    * Flow:
    * 1. Resolves session turn history and appends the user prompt.
-   * 2. Detects or auto-starts the local server runner on localhost if offline.
-   * 3. Dispatches HTTP POST to /v1/chat/completions with stream=true.
-   * 4. Consumes SSE chunks or JSON payloads and posts CHAT_STREAM_CHUNK to Webview.
-   * 5. Saves assistant response to session history and signals turn completion.
+   * 2. If executionTarget is 'remote', delegates to AgentEngineDeployer.testRemoteAgentRuntime
+   *    and streams response chunks over the bridge.
+   * 3. If executionTarget is 'local', detects or auto-starts the local server runner on localhost.
+   * 4. Dispatches HTTP POST to /v1/chat/completions with stream=true.
+   * 5. Consumes SSE chunks or JSON payloads and posts CHAT_STREAM_CHUNK to Webview.
+   * 6. Saves assistant response to session history and signals turn completion.
    *
    * @param options Execution parameters for the chat turn
+   * @author Mike Nimer <mikenimer@google.com>
    */
   public async sendChatMessage(options: SendChatMessageOptions): Promise<void> {
-    const { sessionId, message, bridge, document, targetDirectory } = options;
+    const {
+      sessionId,
+      message,
+      bridge,
+      document,
+      targetDirectory,
+      executionTarget = 'local',
+      deployedResourceId,
+    } = options;
     const streaming = options.streaming !== false;
 
     // NOTE: Maintain in-memory turn history for the active session
@@ -2123,6 +2201,114 @@ if __name__ == '__main__':
     }
     history.push({ role: 'user', content: message });
     this.chatSessions.set(sessionId, history);
+
+    // NOTE: If targeting remote Agent Engine, delegate to AgentEngineDeployer
+    if (executionTarget === 'remote') {
+      if (!this.agentEngineDeployer) {
+        await bridge.postMessage({
+          type: 'CHAT_STREAM_CHUNK',
+          payload: {
+            sessionId,
+            chunk: '',
+            done: true,
+            error: 'Agent Engine deployer is not configured for remote chat execution.',
+          },
+        });
+        return;
+      }
+
+      const rawServiceUrl = (document as any)?.deployment?.serviceUrl;
+      const sanitizedServiceUrl =
+        rawServiceUrl && !rawServiceUrl.includes('localhost') && !rawServiceUrl.includes('127.0.0.1')
+          ? rawServiceUrl
+          : undefined;
+
+      const existingRemoteSessionId = this.remoteReasoningEngineSessions.get(sessionId);
+      let streamedTokens = '';
+
+      try {
+        const remoteResult = await this.agentEngineDeployer.testRemoteAgentRuntime({
+          targetDirectory: targetDirectory || (document as any)?._targetDirectory || '',
+          remoteRuntimeId: deployedResourceId || (document as any)?.deployment?.deployedResourceId,
+          serviceUrl: sanitizedServiceUrl,
+          query: message,
+          bridge,
+          remoteSessionId: existingRemoteSessionId,
+          onChunk: (chunkText) => {
+            streamedTokens += chunkText;
+            bridge.postMessage({
+              type: 'CHAT_STREAM_CHUNK',
+              payload: {
+                sessionId,
+                chunk: chunkText,
+                done: false,
+              },
+            });
+          },
+        });
+
+        if (!remoteResult.success || (!remoteResult.response && !streamedTokens)) {
+          throw new Error(remoteResult.error || 'Remote agent returned an empty response.');
+        }
+
+        const finalReply = remoteResult.response || streamedTokens;
+        if (remoteResult.remoteSessionId) {
+          this.remoteReasoningEngineSessions.set(sessionId, remoteResult.remoteSessionId);
+        }
+
+        // If no chunks were streamed incrementally, emit full reply or smooth simulated chunks
+        if (!streamedTokens && finalReply) {
+          if (streaming && finalReply.length > 50) {
+            const words = finalReply.split(' ');
+            for (let i = 0; i < words.length; i++) {
+              const token = words[i] + (i < words.length - 1 ? ' ' : '');
+              await bridge.postMessage({
+                type: 'CHAT_STREAM_CHUNK',
+                payload: {
+                  sessionId,
+                  chunk: token,
+                  done: false,
+                },
+              });
+              await new Promise((r) => setTimeout(r, 12));
+            }
+          } else {
+            await bridge.postMessage({
+              type: 'CHAT_STREAM_CHUNK',
+              payload: {
+                sessionId,
+                chunk: finalReply,
+                done: false,
+              },
+            });
+          }
+        }
+
+        history.push({ role: 'assistant', content: finalReply });
+        this.chatSessions.set(sessionId, history);
+
+        await bridge.postMessage({
+          type: 'CHAT_STREAM_CHUNK',
+          payload: {
+            sessionId,
+            chunk: '',
+            done: true,
+          },
+        });
+      } catch (err: any) {
+        const errMsg = this.formatErrorMessage(err);
+        await bridge.postMessage({
+          type: 'CHAT_STREAM_CHUNK',
+          payload: {
+            sessionId,
+            chunk: '',
+            done: true,
+            error: `Remote chat execution failed: ${errMsg}`,
+          },
+        });
+      }
+      return;
+    }
 
     // NOTE: Step 1 - Check if local runner is active or attempt auto-start
     let port = options.port || (await this.detectLiveRunnerPort());
@@ -2177,6 +2363,8 @@ if __name__ == '__main__':
       model: modelName,
       messages: history.map((h) => ({ role: h.role, content: h.content })),
       stream: streaming,
+      sessionId,
+      session_id: sessionId,
     };
 
     // NOTE: Step 3 - Send request to runner endpoint (/v1/chat/completions)
@@ -2363,8 +2551,10 @@ if __name__ == '__main__':
   public resetChatSession(sessionId?: string): void {
     if (sessionId) {
       this.chatSessions.delete(sessionId);
+      this.remoteReasoningEngineSessions.delete(sessionId);
     } else {
       this.chatSessions.clear();
+      this.remoteReasoningEngineSessions.clear();
     }
   }
 

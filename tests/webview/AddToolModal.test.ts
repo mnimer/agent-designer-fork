@@ -16,6 +16,7 @@
  * @author Mike Nimer <mikenimer@google.com>
  */
 
+import React from 'react';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { AddToolModal } from '../../src/webview/components/inspector/AddToolModal';
@@ -146,15 +147,47 @@ describe('AddToolModal Logic & Tool Panel Alignment', () => {
     assert.equal(noResults.length, 0);
   });
 
-  it('should support onRegisterMcpServer callback to trigger MCP registration flow', () => {
+  it('should support onRegisterMcpServer callback to trigger MCP registration flow without ReferenceError', () => {
     let mcpRegistered = false;
     const handleRegisterMcp = () => {
       mcpRegistered = true;
     };
 
-    // Simulate clicking "+ Register MCP Server" action
+    // Temporarily stub useState and useMemo to verify AddToolModal executes without reference error
+    const originalUseState = React.useState;
+    const originalUseMemo = React.useMemo;
+    try {
+      (React as any).useState = (initial: any) => [
+        typeof initial === 'function' ? initial() : initial,
+        () => {},
+      ];
+      (React as any).useMemo = (fn: any) => fn();
+
+      // Verify AddToolModal executes without reference error when rendered with onRegisterMcpServer
+      const renderedWithMcp = AddToolModal({
+        isOpen: true,
+        onClose: () => {},
+        onSelectTool: () => {},
+        existingToolIds: [],
+        onRegisterMcpServer: handleRegisterMcp,
+      });
+      assert.ok(renderedWithMcp, 'AddToolModal should render valid JSX with onRegisterMcpServer');
+
+      // Verify AddToolModal executes without reference error when rendered without onRegisterMcpServer
+      const renderedWithoutMcp = AddToolModal({
+        isOpen: true,
+        onClose: () => {},
+        onSelectTool: () => {},
+        existingToolIds: [],
+      });
+      assert.ok(renderedWithoutMcp, 'AddToolModal should render valid JSX without onRegisterMcpServer');
+    } finally {
+      (React as any).useState = originalUseState;
+      (React as any).useMemo = originalUseMemo;
+    }
+
     handleRegisterMcp();
-    assert.equal(mcpRegistered, true, 'onRegisterMcpServer callback should be invoked');
+    assert.equal(mcpRegistered, true);
   });
 });
 

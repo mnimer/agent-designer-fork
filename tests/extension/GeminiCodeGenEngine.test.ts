@@ -96,11 +96,15 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
 
     const agentEnginePrompt = engine.loadPromptTemplate('google-adk', 'python', 'agent-engine');
     assert.ok(agentEnginePrompt.includes('Agent Engine'));
-    assert.ok(agentEnginePrompt.includes('deploy.py'));
+    assert.ok(agentEnginePrompt.includes('main.tf'));
+    assert.ok(agentEnginePrompt.includes('cloudbuild-buildonly.yaml'));
+    assert.ok(agentEnginePrompt.includes('null_resource'));
 
     const agentEngineUnderscorePrompt = engine.loadPromptTemplate('google-adk', 'python', 'agent_engine');
     assert.ok(agentEngineUnderscorePrompt.includes('Agent Engine'));
-    assert.ok(agentEngineUnderscorePrompt.includes('deploy.py'));
+    assert.ok(agentEngineUnderscorePrompt.includes('main.tf'));
+    assert.ok(agentEngineUnderscorePrompt.includes('cloudbuild-buildonly.yaml'));
+    assert.ok(agentEngineUnderscorePrompt.includes('null_resource'));
   });
 
   it('should parse raw Gemini JSON response with markdown fences', () => {

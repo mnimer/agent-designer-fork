@@ -2,19 +2,24 @@
  * AgentEngineDeploymentsTreeProvider
  *
  * TreeDataProvider implementation for the VS Code Activity Bar "Deployments & Runtimes" view.
- * Inspects the workspace for `deployment_metadata.json` records (generated when workflows are
- * deployed to Google Cloud Vertex AI Agent Engine or Cloud Run) and queries active local runner sessions.
+ * Inspects the workspace for `.agent` workflow documents containing active deployment metadata
+ * (and legacy `deployment_metadata.json` files for backward compatibility) and queries active
+ * local runner sessions.
  *
  * Job in Application:
  * Provides immediate situational awareness of live agent runtimes, deployment targets,
- * remote endpoints, and active local runner subprocesses directly in the extension sidebar.
+ * remote endpoints, and active local runner subprocesses directly in the extension sidebar,
+ * using the `.agent` file as the single source of truth for deployment state.
  *
  * Architectural Decisions:
- * 1. Dual Telemetry Sources: Aggregates both persisted cloud deployment metadata (`deployment_metadata.json`)
+ * 1. Single Source of Truth: Reads deployment state directly from the `.agent` file's `deployment` block,
+ *    eliminating redundant `deployment_metadata.json` sidecar files in generated code repositories.
+ * 2. Dual Telemetry Sources: Aggregates both persisted cloud deployment metadata (.agent files)
  *    and live in-memory local runner subprocesses (`AgentEditorProvider.getAllActiveRunners()`).
- * 2. Reactive Invalidation: FileSystemWatcher watches for `deployment_metadata.json` lifecycle events so the
- *    view updates the moment `agents-cli deploy` or Cloud Build completes.
- * 3. Helpful Empty State: When neither cloud deployments nor local runners are active, displays a friendly
+ * 3. Reactive Invalidation: FileSystemWatcher watches for both agent files and deployment_metadata.json
+ *    lifecycle events so the view updates the moment a deployment completes.
+ * 4. Backward Compatibility: Still inspects standalone `deployment_metadata.json` files if present.
+ * 5. Helpful Empty State: When neither cloud deployments nor local runners are active, displays a friendly
  *    guidance item directing users to the diagram's Deployment Tab.
  *
  * @author Mike Nimer <mikenimer@google.com>
@@ -25,7 +30,7 @@ import * as path from 'path';
 import { AgentEditorProvider } from '../AgentEditorProvider';
 
 /**
- * Deployment metadata record schema as emitted by `agents-cli deploy`.
+ * Deployment metadata record schema representing cloud runtime configuration.
  */
 export interface DeploymentMetadataRecord {
   remote_agent_runtime_id?: string;
@@ -34,6 +39,7 @@ export interface DeploymentMetadataRecord {
   agent_directory?: string;
   deployment_timestamp?: string;
   service_url?: string;
+  console_url?: string;
   status?: string;
   [key: string]: any;
 }
@@ -50,6 +56,8 @@ export interface LocalRunnerDescriptor {
 
 /**
  * Tree Item representing a deployed runtime, an active local runner, or an empty state placeholder.
+ *
+ * @author Mike Nimer <mikenimer@google.com>
  */
 export class DeploymentTreeItem extends vscode.TreeItem {
   public readonly itemType: 'deployment' | 'runner' | 'empty';
@@ -81,7 +89,7 @@ export class DeploymentTreeItem extends vscode.TreeItem {
       this.deploymentMetadata = meta;
       this.fileUri = options?.fileUri;
 
-      const target = meta.deployment_target || 'agent_runtime';
+      const target = meta.deployment_target || 'agent_engine';
       const formattedTimestamp = meta.deployment_timestamp
         ? new Date(meta.deployment_timestamp).toLocaleDateString()
         : 'recent';
@@ -95,18 +103,18 @@ export class DeploymentTreeItem extends vscode.TreeItem {
         `- **Agent Directory**: ${meta.agent_directory || 'app'}\n` +
         `- **A2A Enabled**: ${meta.is_a2a ? 'Yes' : 'No'}\n` +
         `- **Deployed**: ${meta.deployment_timestamp || 'N/A'}\n` +
-        `${this.fileUri ? `- **Metadata File**: ${this.fileUri.fsPath}` : ''}`
+        `${this.fileUri ? `- **Source File**: ${this.fileUri.fsPath}` : ''}`
       ).value;
 
       // Cloud icon with status color
       this.iconPath = new vscode.ThemeIcon('cloud', new vscode.ThemeColor('charts.green'));
       this.contextValue = 'deploymentItem';
 
-      // Open metadata file on click if available
+      // Open source file on click if available
       if (this.fileUri) {
         this.command = {
           command: 'vscode.open',
-          title: 'Open Deployment Metadata',
+          title: 'Open Deployment Source',
           arguments: [this.fileUri],
         };
       }
@@ -140,7 +148,7 @@ export class DeploymentTreeItem extends vscode.TreeItem {
       this.itemType = 'empty';
       this.description = 'Deploy via Deployment Tab';
       this.tooltip =
-        'No active local runner sessions or deployment_metadata.json files found. ' +
+        'No active local runner sessions or deployed .agent workflows found. ' +
         'Open a workflow and switch to the Deployment Tab to deploy to Vertex AI Agent Engine or Cloud Run.';
       this.iconPath = new vscode.ThemeIcon('info');
       this.contextValue = 'emptyDeploymentItem';
@@ -150,6 +158,8 @@ export class DeploymentTreeItem extends vscode.TreeItem {
 
 /**
  * Tree Data Provider for Deployments and Active Runtimes.
+ *
+ * @author Mike Nimer <mikenimer@google.com>
  */
 export class AgentEngineDeploymentsTreeProvider
   implements vscode.TreeDataProvider<DeploymentTreeItem>, vscode.Disposable {
@@ -157,32 +167,46 @@ export class AgentEngineDeploymentsTreeProvider
   public readonly onDidChangeTreeData: vscode.Event<DeploymentTreeItem | undefined | void> =
     this._onDidChangeTreeData.event;
 
-  private fileWatcher?: vscode.FileSystemWatcher;
+  private agentFileWatcher?: vscode.FileSystemWatcher;
+  private legacyMetaWatcher?: vscode.FileSystemWatcher;
   private disposables: vscode.Disposable[] = [];
 
   /**
-   * Initializes the AgentEngineDeploymentsTreeProvider and watches deployment metadata files.
+   * Initializes the AgentEngineDeploymentsTreeProvider and registers file watchers.
    */
   constructor() {
-    this.initializeFileWatcher();
+    this.initializeFileWatchers();
   }
 
   /**
-   * Watches `deployment_metadata.json` files for changes to update deployment status reactively.
+   * Watches `.agent` files and legacy `deployment_metadata.json` files for changes.
    */
-  private initializeFileWatcher(): void {
+  private initializeFileWatchers(): void {
+    // Section 1: Watch .agent files (primary single source of truth)
     try {
-      this.fileWatcher = vscode.workspace.createFileSystemWatcher('**/deployment_metadata.json');
-
+      this.agentFileWatcher = vscode.workspace.createFileSystemWatcher('**/*.agent');
       this.disposables.push(
-        this.fileWatcher.onDidCreate(() => this.refresh()),
-        this.fileWatcher.onDidChange(() => this.refresh()),
-        this.fileWatcher.onDidDelete(() => this.refresh()),
-        this.fileWatcher
+        this.agentFileWatcher.onDidCreate(() => this.refresh()),
+        this.agentFileWatcher.onDidChange(() => this.refresh()),
+        this.agentFileWatcher.onDidDelete(() => this.refresh()),
+        this.agentFileWatcher
       );
     } catch (err) {
       // NOTE: File watcher creation might throw in isolated mock test environments
-      console.warn('[AgentEngineDeploymentsTreeProvider] Could not create file watcher:', err);
+      console.warn('[AgentEngineDeploymentsTreeProvider] Could not create .agent file watcher:', err);
+    }
+
+    // Section 2: Watch legacy deployment_metadata.json files for backward compatibility
+    try {
+      this.legacyMetaWatcher = vscode.workspace.createFileSystemWatcher('**/deployment_metadata.json');
+      this.disposables.push(
+        this.legacyMetaWatcher.onDidCreate(() => this.refresh()),
+        this.legacyMetaWatcher.onDidChange(() => this.refresh()),
+        this.legacyMetaWatcher.onDidDelete(() => this.refresh()),
+        this.legacyMetaWatcher
+      );
+    } catch (err) {
+      console.warn('[AgentEngineDeploymentsTreeProvider] Could not create metadata file watcher:', err);
     }
   }
 
@@ -215,8 +239,9 @@ export class AgentEngineDeploymentsTreeProvider
     }
 
     const items: DeploymentTreeItem[] = [];
+    const discoveredIds = new Set<string>();
 
-    // 1. Gather active local runner sessions
+    // Section 1: Gather active local runner sessions
     try {
       const activeRunners = AgentEditorProvider.getAllActiveRunners();
       for (const runner of activeRunners) {
@@ -226,7 +251,43 @@ export class AgentEngineDeploymentsTreeProvider
       // Ignore errors querying runner sessions
     }
 
-    // 2. Discover deployment_metadata.json files in the workspace
+    // Section 2: Discover deployed instances from .agent workflow documents
+    try {
+      const agentFiles = await vscode.workspace.findFiles('**/*.agent', '**/node_modules/**');
+
+      for (const fileUri of agentFiles) {
+        try {
+          const fileBytes = await vscode.workspace.fs.readFile(fileUri);
+          const rawContent = Buffer.from(fileBytes).toString('utf-8');
+          const doc = JSON.parse(rawContent);
+
+          const deploy = doc.deployment;
+          if (deploy && (deploy.deployedResourceId || deploy.serviceUrl)) {
+            const runtimeId = deploy.deployedResourceId || 'Deployed Agent Engine';
+            discoveredIds.add(runtimeId);
+
+            const meta: DeploymentMetadataRecord = {
+              remote_agent_runtime_id: runtimeId,
+              deployment_target: deploy.target || deploy.deploymentTarget || 'agent_engine',
+              is_a2a: Boolean(deploy.is_a2a || deploy.isA2A),
+              agent_directory: deploy.outputFolder || path.basename(fileUri.fsPath, '.agent'),
+              deployment_timestamp: deploy.deployedAt || doc.metadata?.updatedAt,
+              service_url: deploy.serviceUrl,
+              console_url: deploy.consoleUrl,
+              status: 'ACTIVE',
+            };
+
+            items.push(new DeploymentTreeItem('deployment', { metadata: meta, fileUri }));
+          }
+        } catch {
+          // Skip corrupt or unreadable .agent files
+        }
+      }
+    } catch {
+      // Workspace file search error handling
+    }
+
+    // Section 3: Fallback discovery from legacy deployment_metadata.json files
     try {
       const metadataFiles = await vscode.workspace.findFiles(
         '**/deployment_metadata.json',
@@ -239,7 +300,10 @@ export class AgentEngineDeploymentsTreeProvider
           const rawContent = Buffer.from(fileBytes).toString('utf-8');
           const meta: DeploymentMetadataRecord = JSON.parse(rawContent);
 
-          items.push(new DeploymentTreeItem('deployment', { metadata: meta, fileUri }));
+          if (meta.remote_agent_runtime_id && !discoveredIds.has(meta.remote_agent_runtime_id)) {
+            discoveredIds.add(meta.remote_agent_runtime_id);
+            items.push(new DeploymentTreeItem('deployment', { metadata: meta, fileUri }));
+          }
         } catch {
           // Skip corrupt or unreadable metadata files
         }
@@ -248,7 +312,7 @@ export class AgentEngineDeploymentsTreeProvider
       // Workspace file search error handling
     }
 
-    // 3. Fallback to empty state item if no active deployments or runners exist
+    // Section 4: Fallback to empty state item if no active deployments or runners exist
     if (items.length === 0) {
       items.push(new DeploymentTreeItem('empty'));
     }

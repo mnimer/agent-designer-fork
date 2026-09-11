@@ -139,7 +139,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
     bridge.postMessage({
       type: 'CHECK_FILES_EXIST',
       payload: {
-        targetDirectory: generationConfig.outputFolder || 'src/agents',
+        targetDirectory: generationConfig.outputFolder || './',
       },
     });
     bridge.postMessage({
@@ -333,7 +333,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
           generatedFiles={generatedFiles}
           secrets={secretValues}
           onSecretChange={(k, v) => setSecretValues((prev) => ({ ...prev, [k]: v }))}
-          targetDirectory={generationConfig.outputFolder || 'src/agents'}
+          targetDirectory={generationConfig.outputFolder || './'}
           onTargetDirectoryChange={(newFolder) => onUpdateGenerationConfig?.({ outputFolder: newFolder })}
           sharedProjectId={sharedProjectId}
           onProjectIdChange={handleSharedProjectIdChange}

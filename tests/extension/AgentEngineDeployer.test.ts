@@ -417,7 +417,7 @@ create_params:
       assert.ok(content.includes('hatchling.build'));
     });
 
-    it('should generate agent_runtime_app.py when absent', () => {
+    it('should generate agent_runtime_app.py when absent with global location mandate', () => {
       deployer.ensureAgentRuntimeApp(tempDir);
 
       const runtimeAppPath = path.join(tempDir, 'agent_runtime_app.py');
@@ -426,6 +426,8 @@ create_params:
       assert.ok(content.includes('from vertexai.agent_engines.templates.adk import AdkApp'));
       assert.ok(content.includes('agent_runtime = AdkApp('));
       assert.ok(content.includes('from agent import root_agent'));
+      assert.ok(content.includes('os.environ["GOOGLE_CLOUD_LOCATION"] = "global"'));
+      assert.ok(content.includes('os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"'));
     });
 
     it('should always include [tool.uv] package = false in generated pyproject.toml', () => {
@@ -454,14 +456,52 @@ create_params:
       assert.ok(content.includes('package = false'));
     });
 
-    it('should preserve existing agent_runtime_app.py if already present', () => {
-      const customContent = '# Custom agent runtime app\n';
+    it('should patch existing agent_runtime_app.py if GOOGLE_CLOUD_LOCATION is missing', () => {
+      const customContent = 'import os\nfrom agent import root_agent\n';
+      const runtimeAppPath = path.join(tempDir, 'agent_runtime_app.py');
+      fs.writeFileSync(runtimeAppPath, customContent, 'utf8');
+
+      deployer.ensureAgentRuntimeApp(tempDir);
+
+      const updated = fs.readFileSync(runtimeAppPath, 'utf8');
+      assert.ok(updated.includes('os.environ["GOOGLE_CLOUD_LOCATION"] = "global"'));
+      assert.ok(updated.includes('from agent import root_agent'));
+    });
+
+    it('should preserve existing agent_runtime_app.py if GOOGLE_CLOUD_LOCATION is already set', () => {
+      const customContent = 'import os\nos.environ["GOOGLE_CLOUD_LOCATION"] = "global"\n';
       const runtimeAppPath = path.join(tempDir, 'agent_runtime_app.py');
       fs.writeFileSync(runtimeAppPath, customContent, 'utf8');
 
       deployer.ensureAgentRuntimeApp(tempDir);
 
       assert.equal(fs.readFileSync(runtimeAppPath, 'utf8'), customContent);
+    });
+
+    it('should ensure .agent_engine_config.json contains env_vars for global location', () => {
+      deployer.ensureAgentEngineConfig(tempDir);
+
+      const configPath = path.join(tempDir, '.agent_engine_config.json');
+      assert.ok(fs.existsSync(configPath));
+      const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      assert.equal(parsed.env_vars.GOOGLE_CLOUD_LOCATION, 'global');
+      assert.equal(parsed.env_vars.GOOGLE_GENAI_USE_VERTEXAI, '1');
+    });
+
+    it('should patch agent.py replacing setdefault with direct assignment for GOOGLE_CLOUD_LOCATION', () => {
+      const agentPyPath = path.join(tempDir, 'agent.py');
+      fs.writeFileSync(
+        agentPyPath,
+        `import os\nos.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "1")\nos.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")\nfrom google.adk.agents import Agent\n`,
+        'utf8'
+      );
+
+      deployer.ensureAgentImports(tempDir);
+
+      const updated = fs.readFileSync(agentPyPath, 'utf8');
+      assert.ok(!updated.includes('os.environ.setdefault("GOOGLE_CLOUD_LOCATION"'));
+      assert.ok(updated.includes('os.environ["GOOGLE_CLOUD_LOCATION"] = "global"'));
+      assert.ok(updated.includes('os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"'));
     });
 
     it('should fail fast if agent code uses A2A but requirements.txt is missing', () => {
@@ -1070,7 +1110,8 @@ create_params:
 
     it('should not duplicate sys.path patch if already present', () => {
       const agentPyPath = path.join(tempDir, 'agent.py');
-      const existing = 'import sys\nsys.path.insert(0, "/some/dir")\nroot_agent = None\n';
+      const existing =
+        'import os\nos.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"\nos.environ["GOOGLE_CLOUD_LOCATION"] = "global"\nimport sys\nsys.path.insert(0, "/some/dir")\nroot_agent = None\n';
       fs.writeFileSync(agentPyPath, existing, 'utf8');
 
       deployer.ensureAgentImports(tempDir);
@@ -1376,6 +1417,49 @@ create_params:
         );
       } finally {
         (deployer as any).performHttpQuery = originalPerformHttp;
+      }
+    });
+
+    it('should resolve gcloud executable path or candidate', () => {
+      const gcloud = deployer.resolveGcloudPath();
+      assert.ok(gcloud && typeof gcloud === 'string' && gcloud.length > 0);
+    });
+
+    it('should prioritize GOOGLE_OAUTH_ACCESS_TOKEN environment variable', async () => {
+      const originalEnvToken = process.env.GOOGLE_OAUTH_ACCESS_TOKEN;
+      try {
+        process.env.GOOGLE_OAUTH_ACCESS_TOKEN = 'mock-oauth-token-12345';
+        (deployer as any).cachedAccessToken = null;
+        (deployer as any).cachedAccessTokenExpiresAt = 0;
+
+        const header = await deployer.getAccessTokenHeader();
+        assert.equal(header, 'Bearer mock-oauth-token-12345');
+      } finally {
+        if (originalEnvToken !== undefined) {
+          process.env.GOOGLE_OAUTH_ACCESS_TOKEN = originalEnvToken;
+        } else {
+          delete process.env.GOOGLE_OAUTH_ACCESS_TOKEN;
+        }
+        (deployer as any).cachedAccessToken = null;
+        (deployer as any).cachedAccessTokenExpiresAt = 0;
+      }
+    });
+
+    it('should throw descriptive authentication error when calling live Agent Engine without auth header', async () => {
+      const originalGetToken = deployer.getAccessTokenHeader;
+      (deployer as any).getAccessTokenHeader = async () => '';
+
+      try {
+        await (deployer as any).performHttpQuery(
+          'https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/reasoningEngines/123:streamQuery',
+          'test query'
+        );
+        assert.fail('Expected error to be thrown');
+      } catch (err: any) {
+        assert.ok(err.message.includes('Missing required OAuth 2 access token'));
+        assert.ok(err.message.includes('gcloud auth login'));
+      } finally {
+        (deployer as any).getAccessTokenHeader = originalGetToken;
       }
     });
   });

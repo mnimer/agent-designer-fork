@@ -212,4 +212,142 @@ describe('Interactive Chat Runner & Streaming Protocol', () => {
     assert.equal(errPayload.sessionId, 'error-session');
     assert.ok(errPayload.error.length > 0);
   });
+
+  it('should return error chunk when executionTarget is remote but deployer is not configured', async () => {
+    const manager = new AgentRunnerManager('/mock/extension');
+    const { bridge, sentMessages } = createMockBridge();
+
+    await manager.sendChatMessage({
+      bridge,
+      sessionId: 'remote-no-deployer',
+      message: 'Hello remote',
+      executionTarget: 'remote',
+    });
+
+    const errorChunks = sentMessages.filter(
+      (m) => m.type === 'CHAT_STREAM_CHUNK' && (m as any).payload?.error
+    );
+
+    assert.ok(errorChunks.length >= 1);
+    const errPayload = (errorChunks[0] as any).payload;
+    assert.equal(errPayload.done, true);
+    assert.equal(errPayload.sessionId, 'remote-no-deployer');
+    assert.ok(errPayload.error.includes('deployer is not configured'));
+  });
+
+  it('should stream chunks and track remote reasoning engine sessions for executionTarget === remote', async () => {
+    const manager = new AgentRunnerManager('/mock/extension');
+    const { bridge, sentMessages } = createMockBridge();
+
+    let capturedQuery = '';
+    let capturedRemoteSessionId: string | undefined = undefined;
+
+    const mockDeployer: any = {
+      testRemoteAgentRuntime: async (options: any) => {
+        capturedQuery = options.query;
+        capturedRemoteSessionId = options.remoteSessionId;
+
+        // Simulate streaming chunks
+        if (options.onChunk) {
+          options.onChunk('Hello ');
+          options.onChunk('from ');
+          options.onChunk('Vertex AI Agent Engine!');
+        }
+
+        return {
+          success: true,
+          response: 'Hello from Vertex AI Agent Engine!',
+          remoteSessionId: 'remote-sess-xyz-123',
+        };
+      },
+    };
+
+    manager.setAgentEngineDeployer(mockDeployer);
+
+    // First turn
+    await manager.sendChatMessage({
+      bridge,
+      sessionId: 'remote-session-1',
+      message: 'What is your status?',
+      executionTarget: 'remote',
+      deployedResourceId: 'projects/123/locations/global/reasoningEngines/456',
+    });
+
+    assert.equal(capturedQuery, 'What is your status?');
+    assert.equal(capturedRemoteSessionId, undefined);
+
+    const streamChunks = sentMessages.filter(
+      (m) => m.type === 'CHAT_STREAM_CHUNK' && (m as any).payload?.sessionId === 'remote-session-1'
+    );
+    assert.ok(streamChunks.length >= 4, `Expected at least 4 chunks, got ${streamChunks.length}`);
+
+    const lastChunk = (streamChunks[streamChunks.length - 1] as any).payload;
+    assert.equal(lastChunk.done, true);
+    assert.equal(lastChunk.sessionId, 'remote-session-1');
+
+    // History should be stored
+    const history = manager.getChatHistory('remote-session-1');
+    assert.equal(history.length, 2);
+    assert.equal(history[0].role, 'user');
+    assert.equal(history[0].content, 'What is your status?');
+    assert.equal(history[1].role, 'assistant');
+    assert.ok(history[1].content.includes('Vertex AI Agent Engine'));
+
+    // Second turn: should reuse remoteSessionId
+    await manager.sendChatMessage({
+      bridge,
+      sessionId: 'remote-session-1',
+      message: 'Follow up question',
+      executionTarget: 'remote',
+    });
+
+    assert.equal(capturedQuery, 'Follow up question');
+    assert.equal(capturedRemoteSessionId, 'remote-sess-xyz-123');
+
+    // Resetting session should clear both memory and remote session
+    manager.resetChatSession('remote-session-1');
+    assert.equal(manager.getChatHistory('remote-session-1').length, 0);
+
+    // Third turn after reset: remoteSessionId should be undefined again
+    await manager.sendChatMessage({
+      bridge,
+      sessionId: 'remote-session-1',
+      message: 'New fresh start',
+      executionTarget: 'remote',
+    });
+
+    assert.equal(capturedRemoteSessionId, undefined);
+  });
+
+  it('should handle remote execution failure gracefully with error chunk', async () => {
+    const manager = new AgentRunnerManager('/mock/extension');
+    const { bridge, sentMessages } = createMockBridge();
+
+    const mockDeployer: any = {
+      testRemoteAgentRuntime: async () => {
+        return {
+          success: false,
+          error: 'Remote reasoning engine 404: Not Found',
+        };
+      },
+    };
+
+    manager.setAgentEngineDeployer(mockDeployer);
+
+    await manager.sendChatMessage({
+      bridge,
+      sessionId: 'remote-err-session',
+      message: 'Hello',
+      executionTarget: 'remote',
+    });
+
+    const errorChunks = sentMessages.filter(
+      (m) => m.type === 'CHAT_STREAM_CHUNK' && (m as any).payload?.error
+    );
+
+    assert.ok(errorChunks.length >= 1);
+    const errPayload = (errorChunks[0] as any).payload;
+    assert.equal(errPayload.done, true);
+    assert.ok(errPayload.error.includes('Remote reasoning engine 404: Not Found'));
+  });
 });

@@ -1236,8 +1236,8 @@ function FlowCanvas() {
         data: e.data ? { ...e.data } : undefined,
       })),
       metadata: {
-        outputFolder: config.outputFolder,
-        deploymentTarget: config.deploymentTarget || 'agent_engine',
+        ...(initialInjectedDoc?.metadata?.createdAt ? { createdAt: initialInjectedDoc.metadata.createdAt } : {}),
+        ...(initialInjectedDoc?.metadata?.author ? { author: initialInjectedDoc.metadata.author } : {}),
         updatedAt: new Date().toISOString(),
       },
       deployment: {
