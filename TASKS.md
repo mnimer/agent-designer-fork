@@ -42,7 +42,7 @@
 | **TASK-127** | v1.0.0 | Release & CI | Automated VSIX Packaging & Tag-Triggered GitHub Actions Release Workflow | **Done** | TASK-100, TASK-109 |
 | **TASK-128** | v1.0.1 | Blueprints | Visual Samples & Blueprints Gallery (Samples Tab & Palette) | **Not Started** | TASK-103, TASK-108 |
 | **TASK-129** | v1.0.6 | Tools | ADK Built-in Tools Registry & Cross-Harness Tool Adapter Architecture | **Done** | TASK-104, TASK-118 |
-| **TASK-130** | v1.0.8 | MCP / Tools | Google Cloud Remote MCP Servers Registry in Tools Tab | **Not Started** | TASK-120, TASK-129 |
+| **TASK-130** | v1.0.8 | MCP / Tools | Google Cloud Remote MCP Servers Registry in Tools Tab | **Completed** | TASK-120, TASK-129 |
 
 ---
 
@@ -761,7 +761,7 @@
 
 ---
 
-### [TASK-130] Google Cloud Remote MCP Servers Registry & Tools Panel Group
+### [TASK-130] Google Cloud Remote MCP Servers Registry & Tools Panel Group (COMPLETED)
 * **Release**: `v1.0.8`
 * **Target Package/Files**:
   - `src/shared/types.ts`

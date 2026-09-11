@@ -25,7 +25,7 @@ import { spawn, exec, ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import * as http from 'http';
 import * as https from 'https';
-import { ToolDefinition, McpAuthProviderType, McpOAuthConfig } from '../shared/types';
+import { ToolDefinition, McpAuthProviderType, McpOAuthConfig, McpSecretConfig } from '../shared/types';
 
 const execAsync = promisify(exec);
 
@@ -41,6 +41,8 @@ export interface McpDiscoveryParams {
   timeoutSeconds?: number;
   authProviderType?: McpAuthProviderType;
   oauthConfig?: McpOAuthConfig;
+  secretConfig?: McpSecretConfig;
+  bearerToken?: string;
 }
 
 export interface McpDiscoveryResult {
@@ -52,6 +54,9 @@ export interface McpDiscoveryResult {
   };
   latencyMs?: number;
   error?: string;
+  requiresAuth?: boolean;
+  authType?: string;
+  authUrl?: string;
 }
 
 export interface SpawnOptionsLike {
@@ -172,13 +177,18 @@ export class McpSubprocessManager {
       : this.defaultTimeoutMs;
 
     try {
-      // Dynamic Google Cloud ADC Credential resolution
+      // Dynamic Credential resolution: Google Cloud ADC or Bearer Token / Secret
       const effectiveHeaders: Record<string, string> = { ...(params.headers || {}) };
       if (params.authProviderType === 'google_credentials') {
         const creds = await this.resolveGoogleCredentials(params.oauthConfig);
         effectiveHeaders['Authorization'] = `Bearer ${creds.token}`;
         if (creds.projectId && !effectiveHeaders['x-goog-user-project']) {
           effectiveHeaders['x-goog-user-project'] = creds.projectId;
+        }
+      } else if (params.authProviderType === 'bearer_token' || params.bearerToken || params.secretConfig?.bearerToken) {
+        const token = params.bearerToken || params.secretConfig?.bearerToken;
+        if (token && !effectiveHeaders['Authorization']) {
+          effectiveHeaders['Authorization'] = `Bearer ${token.trim()}`;
         }
       }
 
@@ -489,13 +499,69 @@ export class McpSubprocessManager {
   }
 
   /**
+   * Parses JSON-RPC response data from either standard JSON or Server-Sent Events (SSE) stream text.
+   * Remote streamable MCP servers (e.g. Yahoo Finance) emit events as "event: message\ndata: { ... }".
+   *
+   * @param data Raw response text
+   * @returns Parsed JSON-RPC payload object
+   */
+  public static parseSseOrJsonPayload(data: string): any {
+    const trimmed = (data || '').trim();
+    if (!trimmed) {
+      throw new Error('Empty response payload');
+    }
+
+    // Fast-path: Standard JSON payload starting with { or [
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        // Fallback to line scanning if trailing SSE lines or whitespace exist
+      }
+    }
+
+    // SSE Stream line scanning: extract payload from "data: {...}" lines
+    const lines = trimmed.split('\n');
+    let lastDataJson: any = null;
+
+    for (const line of lines) {
+      const lineTrimmed = line.trim();
+      if (lineTrimmed.startsWith('data:')) {
+        const jsonCandidate = lineTrimmed.slice(5).trim();
+        if (jsonCandidate.startsWith('{') || jsonCandidate.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(jsonCandidate);
+            if (parsed.result || parsed.error || parsed.jsonrpc) {
+              lastDataJson = parsed;
+            }
+          } catch {
+            // Keep scanning for subsequent valid data payloads
+          }
+        }
+      }
+    }
+
+    if (lastDataJson) {
+      return lastDataJson;
+    }
+
+    // Attempt direct parse as last resort
+    return JSON.parse(trimmed);
+  }
+
+  public parseSseOrJsonPayload(data: string): any {
+    return McpSubprocessManager.parseSseOrJsonPayload(data);
+  }
+
+  /**
    * Executes an HTTP or SSE query against a remote MCP server endpoint.
    *
    * Logic Flow:
-   * 1. Parse target URL and prepare custom HTTP headers.
-   * 2. Send POST / or query endpoint with initialize payload or GET for SSE endpoint.
-   * 3. Handle response stream or JSON-RPC reply.
-   * 4. Map tools to ToolDefinition array and calculate latency.
+   * 1. Parse target URL and prepare custom HTTP headers (including Accept for JSON and text/event-stream).
+   * 2. Send POST initialize payload or GET for SSE endpoint.
+   * 3. Handle response stream or JSON-RPC reply (parsing SSE events if streamable HTTP).
+   * 4. If tools are empty, query tools/list.
+   * 5. Map tools to ToolDefinition array and calculate latency.
    *
    * @param params Discovery configuration with target url
    * @param timeoutMs Timeout in milliseconds
@@ -583,18 +649,31 @@ export class McpSubprocessManager {
           const statusCode = res.statusCode || 0;
 
           if (statusCode >= 400) {
+            const isAuthError = statusCode === 401 || statusCode === 403;
+            let authUrl: string | undefined;
+            const wwwAuth = (res.headers['www-authenticate'] as string) || '';
+            const authMatch = wwwAuth.match(/authorization_uri="([^"]+)"/) || wwwAuth.match(/realm="([^"]+)"/);
+            if (authMatch) {
+              authUrl = authMatch[1];
+            }
+
             return resolve({
               success: false,
               tools: [],
               latencyMs,
-              error: `HTTP ${statusCode} ${res.statusMessage || 'Error'}: ${responseData.slice(0, 200)}`,
+              requiresAuth: isAuthError,
+              authType: isAuthError ? 'oauth' : undefined,
+              authUrl,
+              error: isAuthError
+                ? `Authentication required (HTTP ${statusCode}). OAuth 2.0 or Bearer token needed to connect: ${responseData.slice(0, 150)}`
+                : `HTTP ${statusCode} ${res.statusMessage || 'Error'}: ${responseData.slice(0, 200)}`,
             });
           }
 
           // If SSE connection returned stream or JSON
           try {
-            // Attempt to parse JSON response
-            const parsed = JSON.parse(responseData);
+            // Attempt to parse JSON response (supporting SSE event data formatting)
+            const parsed = this.parseSseOrJsonPayload(responseData);
             if (parsed.error) {
               return resolve({
                 success: false,
@@ -611,7 +690,7 @@ export class McpSubprocessManager {
             };
 
             // If HTTP endpoint returned serverInfo but tools are empty, query tools/list
-            if (rawTools.length === 0 && params.transport === 'http') {
+            if (rawTools.length === 0 && (params.transport === 'http' || params.transport === 'sse')) {
               const listReqOptions: http.RequestOptions = {
                 ...options,
                 method: 'POST',
@@ -628,7 +707,7 @@ export class McpSubprocessManager {
                 listRes.on('data', (c) => { listData += c.toString(); });
                 listRes.on('end', () => {
                   try {
-                    const listParsed = JSON.parse(listData);
+                    const listParsed = this.parseSseOrJsonPayload(listData);
                     const fetchedTools: any[] = listParsed.result?.tools || listParsed.tools || [];
                     const tools = this.normalizeMcpTools(
                       fetchedTools.length > 0 ? fetchedTools : rawTools,

@@ -143,7 +143,8 @@ describe('Collapsible Tool Sections - Logic & State', () => {
       categorized.grounding.length +
       categorized.enterprise_search.length +
       categorized.system.length +
-      categorized.custom.length;
+      categorized.custom.length +
+      categorized.google_cloud_mcp.length;
     
     assert.equal(totalCategorized, AVAILABLE_TOOLS.length, 'All available tools must be categorized');
   });

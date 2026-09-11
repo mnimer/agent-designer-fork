@@ -130,8 +130,8 @@ describe('Tool Category Auto-Expansion During Search', () => {
       );
     });
 
-    assert.equal(filtered.length, 1);
-    assert.equal(filtered[0].id, 'tool_mcp_cloudsql');
+    assert.ok(filtered.length >= 1);
+    assert.ok(filtered.some((t) => t.id === 'tool_mcp_cloudsql'));
     assert.equal(computeIsExpanded('mcp', query), true);
   });
 

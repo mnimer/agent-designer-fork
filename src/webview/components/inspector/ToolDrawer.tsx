@@ -59,6 +59,17 @@ export interface ToolDrawerProps {
   agentName?: string;
   targetLanguage?: string;
   onTestMcpHandshake?: (config: McpToolConfig) => Promise<McpHandshakeResult>;
+  onStartOAuthFlow?: (options: {
+    authUrl: string;
+    tokenUrl?: string;
+    clientId?: string;
+    clientSecret?: string;
+    scopes?: string[];
+    secretName?: string;
+    envVar?: string;
+  }) => Promise<{ success: boolean; bearerToken?: string; tokenPreview?: string; error?: string }>;
+  onSaveMcpSecret?: (secretName: string, envVar: string, token: string) => Promise<{ success: boolean; error?: string; tokenPreview?: string }>;
+  onGetMcpSecret?: (secretName: string, envVar?: string) => Promise<{ success: boolean; hasToken: boolean; tokenPreview?: string; bearerToken?: string; error?: string }>;
 }
 
 export const ToolDrawer: React.FC<ToolDrawerProps> = (props) => {

@@ -401,4 +401,89 @@ describe('McpSubprocessManager', () => {
     assert.strictEqual(result.success, false);
     assert.match(result.error || '', /Application Default Credentials/);
   });
+
+  it('should parse Server-Sent Events (SSE) streaming responses correctly', () => {
+    const ssePayload = 'event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"get_stock_quote","description":"Fetches quotes"}]}}\n\n';
+    const parsed = McpSubprocessManager.parseSseOrJsonPayload(ssePayload);
+    assert.ok(parsed, 'Should parse SSE message event data');
+    assert.strictEqual(parsed.id, 1);
+    assert.strictEqual(parsed.result.tools[0].name, 'get_stock_quote');
+  });
+
+  it('should detect HTTP 401 Unauthorized and return requiresAuth: true', async () => {
+    let capturedHeaders: Record<string, string | string[] | undefined> = {};
+    const server = http.createServer((req, res) => {
+      capturedHeaders = req.headers;
+      res.writeHead(401, {
+        'Content-Type': 'application/json',
+        'WWW-Authenticate': 'Bearer error="invalid_token", error_description="The access token expired"',
+      });
+      res.end(JSON.stringify({ error: 'Unauthorized' }));
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const port = (server.address() as any).port;
+
+    try {
+      const manager = new McpSubprocessManager();
+      const result = await manager.discoverTools({
+        transport: 'http',
+        url: `http://127.0.0.1:${port}/mcp`,
+        bearerToken: 'expired-token',
+      });
+
+      assert.strictEqual(result.success, false);
+      assert.strictEqual(result.requiresAuth, true);
+      assert.strictEqual(result.authType, 'oauth');
+      assert.match(result.error || '', /401/);
+      assert.strictEqual(capturedHeaders['authorization'], 'Bearer expired-token');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('should inject Bearer token headers into Streamable HTTP MCP handshake requests', async () => {
+    let capturedHeaders: Record<string, string | string[] | undefined> = {};
+    const server = http.createServer((req, res) => {
+      capturedHeaders = req.headers;
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        const msg = JSON.parse(body);
+        if (msg.method === 'initialize') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            id: msg.id,
+            result: { protocolVersion: '2024-11-05', serverInfo: { name: 'SlackServer' } },
+          }));
+        } else if (msg.method === 'tools/list') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            id: msg.id,
+            result: { tools: [{ name: 'post_slack_message' }] },
+          }));
+        }
+      });
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const port = (server.address() as any).port;
+
+    try {
+      const manager = new McpSubprocessManager();
+      const result = await manager.discoverTools({
+        transport: 'http',
+        url: `http://127.0.0.1:${port}/mcp`,
+        bearerToken: 'xoxb-valid-slack-token',
+      });
+
+      assert.strictEqual(result.success, true);
+      assert.strictEqual(result.tools[0].name, 'post_slack_message');
+      assert.strictEqual(capturedHeaders['authorization'], 'Bearer xoxb-valid-slack-token');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
 });

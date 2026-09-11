@@ -234,6 +234,7 @@ export function isNativeAdkTool(tool: ToolDefinition): boolean {
 
 export interface CategorizedTools {
   native_adk: ToolDefinition[];
+  google_cloud_mcp: ToolDefinition[];
   mcp: ToolDefinition[];
   custom: ToolDefinition[];
   // Backwards compatibility for existing sub-category consumers & tests
@@ -308,6 +309,7 @@ export function sanitizeToolList(tools: ToolDefinition[]): ToolDefinition[] {
 /**
  * Segregates an array of tools into designer categories:
  * - Native ADK Tools: Official Google ADK built-in tools and FunctionTool definitions
+ * - Google Cloud MCP Servers: Official remote Google Cloud & Workspace MCP servers
  * - MCP Servers: Standard Model Context Protocol servers
  * - Custom & External: Third-party REST APIs and custom integrations
  *
@@ -321,6 +323,7 @@ export function sanitizeToolList(tools: ToolDefinition[]): ToolDefinition[] {
 export function categorizeTools(tools: ToolDefinition[]): CategorizedTools {
   const categorized: CategorizedTools = {
     native_adk: [],
+    google_cloud_mcp: [],
     mcp: [],
     custom: [],
     grounding: [],
@@ -331,11 +334,14 @@ export function categorizeTools(tools: ToolDefinition[]): CategorizedTools {
   const cleanTools = sanitizeToolList(tools);
 
   for (const tool of cleanTools) {
-    const isMcp = tool.type === 'mcp' || tool.mcpConfig !== undefined || tool.id.startsWith('tool_mcp_');
-    const isAdk = !isMcp && isNativeAdkTool(tool);
+    const isGoogleCloudMcp = tool.category === 'google_cloud_mcp' || tool.id.startsWith('gcp_mcp_');
+    const isMcp = !isGoogleCloudMcp && (tool.type === 'mcp' || tool.mcpConfig !== undefined || tool.id.startsWith('tool_mcp_'));
+    const isAdk = !isGoogleCloudMcp && !isMcp && isNativeAdkTool(tool);
 
-    // 1. Group into Native ADK vs MCP
-    if (isAdk) {
+    // 1. Group into Native ADK vs Google Cloud MCP vs generic MCP
+    if (isGoogleCloudMcp) {
+      categorized.google_cloud_mcp.push(tool);
+    } else if (isAdk) {
       categorized.native_adk.push(tool);
     } else if (isMcp) {
       categorized.mcp.push(tool);
@@ -361,7 +367,7 @@ export function categorizeTools(tools: ToolDefinition[]): CategorizedTools {
       tool.type === 'code'
     ) {
       categorized.system.push(tool);
-    } else {
+    } else if (!isGoogleCloudMcp) {
       categorized.custom.push(tool);
     }
   }

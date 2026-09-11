@@ -13,6 +13,7 @@ import {
   ToolDefinition,
   McpAuthProviderType,
   McpOAuthConfig,
+  McpSecretConfig,
 } from './types';
 import { GeneratedFile } from './codegen/types';
 
@@ -132,6 +133,39 @@ export type WebviewToExtensionMessage =
         timeoutSeconds?: number;
         authProviderType?: McpAuthProviderType;
         oauthConfig?: McpOAuthConfig;
+        secretConfig?: McpSecretConfig;
+        bearerToken?: string;
+      };
+    }
+  | {
+      type: 'START_MCP_OAUTH_FLOW';
+      payload: {
+        authUrl: string;
+        tokenUrl?: string;
+        clientId?: string;
+        clientSecret?: string;
+        scopes?: string[];
+        secretName?: string;
+        envVar?: string;
+        targetDirectory?: string;
+        timeoutMs?: number;
+      };
+    }
+  | {
+      type: 'SAVE_MCP_SECRET';
+      payload: {
+        secretName: string;
+        envVar?: string;
+        token: string;
+        targetDirectory?: string;
+      };
+    }
+  | {
+      type: 'GET_MCP_SECRET';
+      payload: {
+        secretName: string;
+        envVar?: string;
+        targetDirectory?: string;
       };
     }
   | {
@@ -313,6 +347,38 @@ export type ExtensionToWebviewMessage =
           version?: string;
         };
         latencyMs?: number;
+        error?: string;
+        requiresAuth?: boolean;
+        authType?: string;
+        authUrl?: string;
+      };
+    }
+  | {
+      type: 'MCP_OAUTH_COMPLETED';
+      payload: {
+        success: boolean;
+        bearerToken?: string;
+        tokenPreview?: string;
+        error?: string;
+      };
+    }
+  | {
+      type: 'MCP_SECRET_SAVED';
+      payload: {
+        success: boolean;
+        secretName?: string;
+        envVar?: string;
+        tokenPreview?: string;
+        error?: string;
+      };
+    }
+  | {
+      type: 'MCP_SECRET_RETRIEVED';
+      payload: {
+        success: boolean;
+        hasToken: boolean;
+        tokenPreview?: string;
+        bearerToken?: string;
         error?: string;
       };
     }

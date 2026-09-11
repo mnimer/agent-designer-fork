@@ -60,7 +60,8 @@ describe('AddToolModal Logic & Tool Panel Alignment', () => {
       categorized.grounding.length +
       categorized.enterprise_search.length +
       categorized.system.length +
-      categorized.custom.length;
+      categorized.custom.length +
+      categorized.google_cloud_mcp.length;
     assert.equal(totalCategorized, AVAILABLE_TOOLS.length);
   });
 
@@ -109,7 +110,8 @@ describe('AddToolModal Logic & Tool Panel Alignment', () => {
       categorized.grounding.length +
         categorized.enterprise_search.length +
         categorized.system.length +
-        categorized.custom.length,
+        categorized.custom.length +
+        categorized.google_cloud_mcp.length,
       dynamicTools.length
     );
   });

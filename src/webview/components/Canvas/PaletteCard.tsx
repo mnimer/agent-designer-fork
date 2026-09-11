@@ -37,7 +37,6 @@ import {
   Cpu,
   Wrench,
   Globe,
-  Globe2,
   Terminal,
   Database,
   FileText,
@@ -61,13 +60,18 @@ import {
   Plug,
   TerminalSquare,
   Globe2,
-  History
+  History,
+  Cloud,
+  BarChart3,
+  Shield,
+  ExternalLink
 } from 'lucide-react';
 import { PATTERN_DEFINITIONS } from '../../data/patterns';
 import { TRIGGER_CATALOG, TriggerCatalogItem } from '../../data/triggerDefinitions';
 import { SAMPLES_CATALOG } from '../../data/sampleWorkflows';
 import { categorizeTools, isNativeAdkTool } from '../../data/builtinTools';
-import { PatternType, AgentKind, ToolDefinition, AgentData, TriggerType, SampleWorkflowDefinition } from '../../types';
+import { GOOGLE_CLOUD_MCP_DOMAINS, GOOGLE_CLOUD_MCP_SERVERS, GoogleCloudDomainMeta } from '../../data/googleCloudMcpServers';
+import { PatternType, AgentKind, ToolDefinition, AgentData, TriggerType, SampleWorkflowDefinition, GoogleCloudLaunchStage } from '../../types';
 
 interface PaletteCardProps {
   tools: ToolDefinition[];
@@ -103,6 +107,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   const [toolCategoryFilter, setToolCategoryFilter] = useState<'all' | 'mcp' | 'api' | 'builtin'>('all');
   const [openToolCategories, setOpenToolCategories] = useState<Record<string, boolean>>({
     native_adk: true,
+    google_cloud_mcp: false,
     mcp: false,
     custom: false,
     grounding: false,
@@ -111,6 +116,37 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   });
   // NOTE: Track explicit manual user toggles during an active search query
   const [searchToggledCategories, setSearchToggledCategories] = useState<Record<string, boolean>>({});
+
+  // Sub-accordions state for the 6 Google Cloud MCP domains
+  const [openGcpDomains, setOpenGcpDomains] = useState<Record<string, boolean>>({
+    databases_storage: false,
+    compute_containers: false,
+    ai_search_agent: false,
+    analytics_etl_governance: false,
+    management_observability_security: false,
+    developer_workspace: false,
+  });
+  const [searchToggledGcpDomains, setSearchToggledGcpDomains] = useState<Record<string, boolean>>({});
+
+  /**
+   * Toggles the collapse/expand state of a GCP domain sub-accordion.
+   */
+  const toggleGcpDomain = (domainId: string) => {
+    if (toolSearch.trim().length > 0) {
+      setSearchToggledGcpDomains((prev) => {
+        const currentlyExpanded = prev[domainId] !== undefined ? prev[domainId] : true;
+        return {
+          ...prev,
+          [domainId]: !currentlyExpanded,
+        };
+      });
+    } else {
+      setOpenGcpDomains((prev) => ({
+        ...prev,
+        [domainId]: !prev[domainId],
+      }));
+    }
+  };
 
   /**
    * Toggles the collapse/expand state of a tool category.
@@ -179,6 +215,17 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   };
 
   const getToolIcon = (tool: ToolDefinition) => {
+    if (tool.category === 'google_cloud_mcp') {
+      switch (tool.icon) {
+        case 'Database': return <Database className="w-3.5 h-3.5 text-amber-400" />;
+        case 'Cpu': return <Cpu className="w-3.5 h-3.5 text-cyan-400" />;
+        case 'Bot': return <Bot className="w-3.5 h-3.5 text-blue-400" />;
+        case 'BarChart3': return <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />;
+        case 'Shield': return <Shield className="w-3.5 h-3.5 text-rose-400" />;
+        case 'Code': return <Code className="w-3.5 h-3.5 text-indigo-400" />;
+        default: return <Cloud className="w-3.5 h-3.5 text-sky-400" />;
+      }
+    }
     if (tool.builtinType === 'google_search' || tool.id === 'builtin_google_search' || tool.id === 'tool_google_search') {
       return <Globe className="w-3.5 h-3.5 text-sky-400" />;
     }
@@ -214,6 +261,32 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
       default:
         return <Code className="w-3.5 h-3.5 text-indigo-400" />;
     }
+  };
+
+  const getGcpDomainIcon = (iconName: string) => {
+    switch (iconName) {
+      case 'Database': return <Database className="w-3.5 h-3.5 text-amber-400 shrink-0" />;
+      case 'Cpu': return <Cpu className="w-3.5 h-3.5 text-cyan-400 shrink-0" />;
+      case 'Bot': return <Bot className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
+      case 'BarChart3': return <BarChart3 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
+      case 'Shield': return <Shield className="w-3.5 h-3.5 text-rose-400 shrink-0" />;
+      case 'Code': return <Code className="w-3.5 h-3.5 text-indigo-400 shrink-0" />;
+      default: return <Cloud className="w-3.5 h-3.5 text-sky-400 shrink-0" />;
+    }
+  };
+
+  const renderLaunchStageBadge = (stage?: GoogleCloudLaunchStage) => {
+    if (!stage) return null;
+    const badgeColors: Record<GoogleCloudLaunchStage, string> = {
+      GA: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+      Preview: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+      Beta: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
+    };
+    return (
+      <span className={`text-[8px] px-1 py-0.2 rounded border font-semibold shrink-0 ${badgeColors[stage] || badgeColors.GA}`}>
+        {stage}
+      </span>
+    );
   };
 
   /**
@@ -583,6 +656,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                 onChange={(e) => {
                   setToolSearch(e.target.value);
                   setSearchToggledCategories({});
+                  setSearchToggledGcpDomains({});
                 }}
                 placeholder="Search tools & datastores..."
                 className="w-full pl-8 pr-6 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-purple-500 rounded-md text-[11px] text-gray-200 placeholder-gray-500 focus:outline-none"
@@ -593,6 +667,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                   onClick={() => {
                     setToolSearch('');
                     setSearchToggledCategories({});
+                    setSearchToggledGcpDomains({});
                   }}
                   className="absolute right-2 top-2 text-gray-400 hover:text-gray-200 text-xs cursor-pointer"
                 >
@@ -615,6 +690,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                 (t.category && t.category.toLowerCase().includes(q)) ||
                 (t.builtinType && t.builtinType.toLowerCase().includes(q)) ||
                 (t.mcpConfig?.serverName && t.mcpConfig.serverName.toLowerCase().includes(q)) ||
+                (t.mcpConfig?.serverUrl && t.mcpConfig.serverUrl.toLowerCase().includes(q)) ||
                 (t.mcpConfig?.command && t.mcpConfig.command.toLowerCase().includes(q)) ||
                 (t.id && t.id.toLowerCase().includes(q))
               );
@@ -629,6 +705,16 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                 icon: <Wrench className="w-3.5 h-3.5 text-blue-400" />,
                 tools: categorized.native_adk,
                 badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+                isGcpGroup: false,
+              },
+              {
+                id: 'google_cloud_mcp',
+                title: 'Google Cloud MCP Servers',
+                subtitle: 'Official Remote Google Cloud & Workspace MCP Servers',
+                icon: <Cloud className="w-3.5 h-3.5 text-sky-400" />,
+                tools: categorized.google_cloud_mcp,
+                badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
+                isGcpGroup: true,
               },
               {
                 id: 'mcp',
@@ -637,14 +723,16 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                 icon: <Server className="w-3.5 h-3.5 text-purple-400" />,
                 tools: categorized.mcp,
                 badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+                isGcpGroup: false,
               },
               {
                 id: 'custom',
                 title: 'Custom & External Tools',
                 subtitle: 'REST APIs & External Integrations',
                 icon: <Radio className="w-3.5 h-3.5 text-amber-400" />,
-                tools: categorized.custom.filter((t) => !isNativeAdkTool(t) && t.type !== 'mcp' && !t.mcpConfig && !t.id.startsWith('tool_mcp_')),
+                tools: categorized.custom.filter((t) => !isNativeAdkTool(t) && t.type !== 'mcp' && !t.mcpConfig && !t.id.startsWith('tool_mcp_') && t.category !== 'google_cloud_mcp'),
                 badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+                isGcpGroup: false,
               },
             ];
 
@@ -695,64 +783,179 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
 
                       {/* Tool Items (Collapsible) */}
                       {isExpanded && (
-                        <div className="space-y-2 pt-1 border-t border-[#30363d]/40">
-                          {section.tools.map((t) => {
-                            const isAttached = selectedAgent?.tools?.some((at) => at.id === t.id);
+                        section.isGcpGroup ? (
+                          /* Sub-accordions for Google Cloud MCP Domains */
+                          <div className="space-y-2 pt-1 border-t border-[#30363d]/40">
+                            {GOOGLE_CLOUD_MCP_DOMAINS.map((domain) => {
+                              const domainTools = section.tools.filter((t) => {
+                                const sDef = GOOGLE_CLOUD_MCP_SERVERS.find((s) => s.id === t.id);
+                                return sDef?.domain === domain.id;
+                              });
 
-                            return (
-                              <div
-                                key={t.id}
-                                draggable
-                                onDragStart={(e) => handleDragStartTool(e, t)}
-                                className="group relative flex items-start gap-2 p-2 bg-[#0d1117] hover:bg-[#161b22] border border-[#30363d] hover:border-purple-500/50 rounded-lg transition-all cursor-grab active:cursor-grabbing shadow-xs"
-                              >
-                                <div className="mt-0.5 text-gray-500 group-hover:text-gray-300">
-                                  <GripVertical className="w-3 h-3" />
-                                </div>
+                              if (domainTools.length === 0) return null;
 
-                                <div className="p-1 rounded bg-[#161b22] border border-[#30363d] shrink-0 mt-0.5">
-                                  {getToolIcon(t)}
-                                </div>
+                              const isDomainExpanded = isSearching
+                                ? (searchToggledGcpDomains[domain.id] !== undefined ? searchToggledGcpDomains[domain.id] : true)
+                                : (openGcpDomains[domain.id] ?? false);
 
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center justify-between gap-1">
-                                    <span className="text-[11px] font-bold text-gray-200 group-hover:text-white truncate">
-                                      {t.name}
-                                    </span>
-                                    {isAttached && (
-                                      <span className="text-[8px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold shrink-0">
-                                        Attached
+                              return (
+                                <div key={domain.id} className="space-y-1 bg-[#161b22]/40 rounded-md border border-[#30363d]/40 p-1.5">
+                                  {/* Collapsible Domain Header */}
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleGcpDomain(domain.id)}
+                                    className="w-full flex items-center justify-between text-left hover:text-white transition-colors cursor-pointer group select-none py-0.5 px-1 rounded hover:bg-[#161b22]"
+                                    data-testid={`toggle-gcp-domain-${domain.id}`}
+                                  >
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      {isDomainExpanded ? (
+                                        <ChevronDown className="w-3 h-3 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                                      ) : (
+                                        <ChevronRight className="w-3 h-3 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                                      )}
+                                      {getGcpDomainIcon(domain.icon)}
+                                      <span className="text-[10.5px] font-semibold text-gray-300 group-hover:text-white truncate">
+                                        {domain.label}
                                       </span>
-                                    )}
-                                  </div>
-                                  <p className="text-[10px] text-gray-400 line-clamp-2 leading-tight mt-0.5">
-                                    {t.description}
-                                  </p>
-                                </div>
+                                    </div>
+                                    <span className="text-[8.5px] px-1 py-0.2 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 font-mono font-medium shrink-0">
+                                      {domainTools.length}
+                                    </span>
+                                  </button>
 
-                                {/* Hover / Quick Actions */}
-                                <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => onOpenEditTool(t)}
-                                    className="p-1 rounded text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"
-                                    title="Configure tool properties"
-                                  >
-                                    <Edit2 className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => onAddToolToAgent(t)}
-                                    className="p-1 rounded text-purple-400 hover:text-purple-200 hover:bg-purple-900/40 transition-colors cursor-pointer"
-                                    title="Add to selected Agent"
-                                  >
-                                    <Plus className="w-3 h-3" />
-                                  </button>
+                                  {/* Domain Tool Items (Collapsible with 8pt grid indentation: pl-2) */}
+                                  {isDomainExpanded && (
+                                    <div className="space-y-2 pl-2 pt-1.5 border-l border-[#30363d]/40 mt-1">
+                                      {domainTools.map((t) => {
+                                        const isAttached = selectedAgent?.tools?.some((at) => at.id === t.id);
+                                        return (
+                                          <div
+                                            key={t.id}
+                                            draggable
+                                            onDragStart={(e) => handleDragStartTool(e, t)}
+                                            className="group relative flex items-start gap-2 p-2 bg-[#0d1117] hover:bg-[#161b22] border border-[#30363d] hover:border-sky-500/50 rounded-lg transition-all cursor-grab active:cursor-grabbing shadow-xs"
+                                            data-testid={`gcp-mcp-tool-${t.id}`}
+                                          >
+                                            <div className="mt-0.5 text-gray-500 group-hover:text-gray-300">
+                                              <GripVertical className="w-3 h-3" />
+                                            </div>
+
+                                            <div className="p-1 rounded bg-[#161b22] border border-[#30363d] shrink-0 mt-0.5">
+                                              {getToolIcon(t)}
+                                            </div>
+
+                                            <div className="min-w-0 flex-1">
+                                              <div className="flex items-center justify-between gap-1">
+                                                <span className="text-[11px] font-bold text-gray-200 group-hover:text-white truncate">
+                                                  {t.name}
+                                                </span>
+                                                <div className="flex items-center gap-1 shrink-0">
+                                                  {renderLaunchStageBadge(t.mcpConfig?.launchStage)}
+                                                  {isAttached && (
+                                                    <span className="text-[8px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold shrink-0">
+                                                      Attached
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              </div>
+                                              {t.mcpConfig?.serverUrl && (
+                                                <div className="text-[9px] font-mono text-sky-400/70 truncate mt-0.5">
+                                                  {t.mcpConfig.serverUrl}
+                                                </div>
+                                              )}
+                                              <p className="text-[10px] text-gray-400 line-clamp-2 leading-tight mt-0.5">
+                                                {t.description}
+                                              </p>
+                                            </div>
+
+                                            {/* Quick Actions */}
+                                            <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0">
+                                              <button
+                                                type="button"
+                                                onClick={() => onOpenEditTool(t)}
+                                                className="p-1 rounded text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"
+                                                title="Configure tool properties"
+                                              >
+                                                <Edit2 className="w-3 h-3" />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => onAddToolToAgent(t)}
+                                                className="p-1 rounded text-sky-400 hover:text-sky-200 hover:bg-sky-900/40 transition-colors cursor-pointer"
+                                                title="Add to selected Agent"
+                                              >
+                                                <Plus className="w-3 h-3" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
                                 </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="space-y-2 pt-1 border-t border-[#30363d]/40">
+                            {section.tools.map((t) => {
+                              const isAttached = selectedAgent?.tools?.some((at) => at.id === t.id);
+
+                              return (
+                                <div
+                                  key={t.id}
+                                  draggable
+                                  onDragStart={(e) => handleDragStartTool(e, t)}
+                                  className="group relative flex items-start gap-2 p-2 bg-[#0d1117] hover:bg-[#161b22] border border-[#30363d] hover:border-purple-500/50 rounded-lg transition-all cursor-grab active:cursor-grabbing shadow-xs"
+                                >
+                                  <div className="mt-0.5 text-gray-500 group-hover:text-gray-300">
+                                    <GripVertical className="w-3 h-3" />
+                                  </div>
+
+                                  <div className="p-1 rounded bg-[#161b22] border border-[#30363d] shrink-0 mt-0.5">
+                                    {getToolIcon(t)}
+                                  </div>
+
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className="text-[11px] font-bold text-gray-200 group-hover:text-white truncate">
+                                        {t.name}
+                                      </span>
+                                      {isAttached && (
+                                        <span className="text-[8px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold shrink-0">
+                                          Attached
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 line-clamp-2 leading-tight mt-0.5">
+                                      {t.description}
+                                    </p>
+                                  </div>
+
+                                  {/* Hover / Quick Actions */}
+                                  <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenEditTool(t)}
+                                      className="p-1 rounded text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"
+                                      title="Configure tool properties"
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => onAddToolToAgent(t)}
+                                      className="p-1 rounded text-purple-400 hover:text-purple-200 hover:bg-purple-900/40 transition-colors cursor-pointer"
+                                      title="Add to selected Agent"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )
                       )}
                     </div>
                   );
