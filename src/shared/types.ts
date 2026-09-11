@@ -128,17 +128,36 @@ export interface StandardAgentConfig {
   };
 }
 
+export type RouterEvaluationMode =
+  | 'boolean'
+  | 'boolean_expression'
+  | 'intent_classifier'
+  | 'llm_classifier'
+  | 'numeric_threshold'
+  | 'threshold_score'
+  | 'pattern_match';
+
 export interface RouterBranch {
   id: string;
-  condition: string;
+  label?: string;
+  condition?: string;
+  conditionExpression?: string;
   targetAgentId?: string;
   isDefault?: boolean;
+  isDefaultFallback?: boolean;
+  description?: string;
 }
 
 export interface RouterAgentConfig {
-  evaluationMode: 'boolean' | 'intent_classifier' | 'numeric_threshold';
+  evaluationMode: RouterEvaluationMode;
   model?: string;
   classifierPrompt?: string;
+  routingPrompt?: string;
+  llmEvaluationPrompt?: string;
+  expressionVariable?: string;
+  thresholdValue?: number;
+  fallbackBranch?: string;
+  routingStrategy?: 'first_match' | 'highest_confidence' | 'all_matching';
   branches: RouterBranch[];
 }
 
