@@ -328,7 +328,7 @@ You MUST output EVERY single one of the following files in the returned JSON arr
 7. `requirements.txt`: Complete pinned dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
 8. `Dockerfile`: Production Python 3.11 container definition.
 9. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests and deploying.
-10. `main.tf`: Complete Terraform configuration deploying google_cloud_run_v2_service.
+10. `main.tf`: Complete Terraform configuration deploying google_cloud_run_v2_service (including google_secret_manager_secret, secret version, and secretAccessor IAM member when tools require OAuth / Bearer secret tokens).
 11. `pyproject.toml`: Modern packaging metadata and dependencies.
 12. `.gitignore`: Git ignore patterns for Python, venv, and cache.
 13. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
@@ -682,6 +682,24 @@ class EscalationChecker(BaseAgent):
         else:
             yield Event(author=self.name)
 ```
+
+### Visual Router Agents (`agentKind: "router"`)
+
+When a workflow node has `agentKind: "router"`, compile it into a custom `BaseAgent` subclass that implements dynamic routing across its configured branches (`routerConfig.branches`):
+1. **Evaluation Modes**:
+   - `boolean_expression`: Evaluates branch conditions (`conditionExpression`) against session state (e.g. `state.status == 'passed'`).
+   - `numeric_threshold`: Compares a numeric metric (`routerConfig.expressionVariable`, e.g. `score`) against `thresholdValue` (e.g. `score >= 0.8`).
+   - `llm_classifier`: Evaluates user query intent against branch category descriptions using `gemini-3.7-flash` or keyword classification.
+2. **Dynamic Branch Dispatching**:
+   - The router class maps branch IDs to target candidate agent instances: `self.branches = { "branch_id": agent_instance }`.
+   - In `_run_async_impl(self, ctx: InvocationContext)`, the router evaluates the condition, looks up the target agent, and delegates execution via:
+     ```python
+     selected_agent = self.branches.get(selected_branch_id, self.default_agent)
+     if selected_agent:
+         async for event in selected_agent.run_async(ctx):
+             yield event
+     ```
+   - Always route to the designated fallback branch (`isDefault: true`) if no explicit conditions match.
 
 ---
 

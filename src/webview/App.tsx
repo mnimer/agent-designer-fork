@@ -59,6 +59,7 @@ import {
   SubAgentRef,
   ToolDefinition,
   PatternType,
+  McpToolConfig,
 } from './types';
 import { AgentWorkflowDocument } from '../shared/types';
 import { INITIAL_NODES, INITIAL_EDGES } from './data/initialGraph';
@@ -178,7 +179,7 @@ function FlowCanvas() {
     initializeTabHistory,
   } = useDiagramHistory(nodes, edges, setNodes, setEdges);
 
-  // Synchronize parent subAgents when edges are deleted
+  // Synchronize parent subAgents when edges are deleted and record snapshot for undo/redo
   const onEdgesChange = useCallback(
     (changes: any) => {
       onEdgesChangeState(changes);
@@ -186,13 +187,17 @@ function FlowCanvas() {
       if (isRemoval) {
         setTimeout(() => {
           setEdges((currentEdges) => {
-            setNodes((currentNodes) => syncAgentSubAgents(currentNodes, currentEdges));
+            setNodes((currentNodes) => {
+              const synced = syncAgentSubAgents(currentNodes, currentEdges);
+              recordSnapshot(synced, currentEdges, { description: 'Remove connection' });
+              return synced;
+            });
             return currentEdges;
           });
         }, 10);
       }
     },
-    [onEdgesChangeState, setEdges, setNodes]
+    [onEdgesChangeState, setEdges, setNodes, recordSnapshot]
   );
 
   // ---------------------------------------------------------------------------
@@ -285,6 +290,160 @@ function FlowCanvas() {
     setSelectedTriggerId,
     setIsTriggerDrawerOpen,
   });
+
+  /**
+   * Handles testing the MCP connection handshake and tool discovery over VS Code RPC bridge.
+   */
+  const handleTestMcpHandshake = useCallback(
+    async (mcpConfig: McpToolConfig) => {
+      const reqTimeout = ((mcpConfig.timeoutSeconds || 30) + 5) * 1000;
+      try {
+        const reply = await bridge.sendRequestWithReply(
+          {
+            type: 'DISCOVER_MCP_TOOLS',
+            payload: {
+              serverName: mcpConfig.serverName,
+              transport: mcpConfig.transport,
+              command: mcpConfig.command,
+              args: mcpConfig.args,
+              cwd: mcpConfig.cwd,
+              url: mcpConfig.serverUrl,
+              serverUrl: mcpConfig.serverUrl,
+              envVars: mcpConfig.envVars,
+              headers: mcpConfig.headers,
+              timeoutSeconds: mcpConfig.timeoutSeconds,
+              authProviderType: mcpConfig.authProviderType,
+              oauthConfig: mcpConfig.oauthConfig,
+              secretConfig: mcpConfig.secretConfig,
+              bearerToken: mcpConfig.secretConfig?.bearerToken,
+            },
+          },
+          'MCP_TOOLS_DISCOVERED',
+          reqTimeout
+        );
+        return reply as {
+          success: boolean;
+          tools: ToolDefinition[];
+          serverInfo?: { name: string; version?: string };
+          latencyMs?: number;
+          error?: string;
+          requiresAuth?: boolean;
+          authType?: string;
+          authUrl?: string;
+        };
+      } catch (err: any) {
+        return {
+          success: false,
+          tools: [],
+          error: err?.message || 'Handshake request timed out',
+        };
+      }
+    },
+    [bridge]
+  );
+
+  /**
+   * Starts a browser-based OAuth 2.0 authorization flow with an ephemeral loopback server.
+   */
+  const handleStartOAuthFlow = useCallback(
+    async (options: {
+      authUrl: string;
+      tokenUrl?: string;
+      clientId?: string;
+      clientSecret?: string;
+      scopes?: string[];
+      secretName?: string;
+      envVar?: string;
+      targetDirectory?: string;
+      timeoutMs?: number;
+    }) => {
+      try {
+        const reply = await bridge.sendRequestWithReply(
+          {
+            type: 'START_MCP_OAUTH_FLOW',
+            payload: options,
+          },
+          'MCP_OAUTH_COMPLETED',
+          180000
+        );
+        return reply as {
+          success: boolean;
+          bearerToken?: string;
+          tokenPreview?: string;
+          error?: string;
+        };
+      } catch (err: any) {
+        return {
+          success: false,
+          error: err?.message || 'OAuth authorization request timed out',
+        };
+      }
+    },
+    [bridge]
+  );
+
+  /**
+   * Persists an MCP secret token into VS Code SecretStorage and workspace .env.
+   */
+  const handleSaveMcpSecret = useCallback(
+    async (secretName: string, envVar: string, token: string) => {
+      try {
+        const reply = await bridge.sendRequestWithReply(
+          {
+            type: 'SAVE_MCP_SECRET',
+            payload: { secretName, envVar, token },
+          },
+          'MCP_SECRET_SAVED',
+          10000
+        );
+        return reply as {
+          success: boolean;
+          secretName?: string;
+          envVar?: string;
+          tokenPreview?: string;
+          error?: string;
+        };
+      } catch (err: any) {
+        return {
+          success: false,
+          error: err?.message || 'Saving secret timed out',
+        };
+      }
+    },
+    [bridge]
+  );
+
+  /**
+   * Retrieves an MCP secret token preview from VS Code SecretStorage or workspace .env.
+   */
+  const handleGetMcpSecret = useCallback(
+    async (secretName: string, envVar?: string) => {
+      try {
+        const reply = await bridge.sendRequestWithReply(
+          {
+            type: 'GET_MCP_SECRET',
+            payload: { secretName, envVar },
+          },
+          'MCP_SECRET_RETRIEVED',
+          10000
+        );
+        return reply as {
+          success: boolean;
+          hasToken: boolean;
+          tokenPreview?: string;
+          bearerToken?: string;
+          error?: string;
+        };
+      } catch (err: any) {
+        return {
+          success: false,
+          hasToken: false,
+          error: err?.message || 'Retrieving secret timed out',
+        };
+      }
+    },
+    [bridge]
+  );
 
   const {
     bottomPanelHeight,
@@ -396,7 +555,7 @@ function FlowCanvas() {
     (agentId: string, tool: ToolDefinition) => {
       const toolInstance: ToolDefinition = JSON.parse(JSON.stringify(tool));
       const nextNodes = nodes.map((n) => {
-        if (n.id === agentId && n.type === 'agentNode') {
+        if (n.id === agentId && (n.type === 'agentNode' || n.type === 'agent')) {
           const currentTools: ToolDefinition[] = (n.data as AgentData).tools || [];
           if (currentTools.some((t) => t.id === toolInstance.id)) return n;
           return {
@@ -418,7 +577,7 @@ function FlowCanvas() {
   const handleRemoveTool = useCallback(
     (agentId: string, toolId: string) => {
       const nextNodes = nodes.map((n) => {
-        if (n.id === agentId && n.type === 'agentNode') {
+        if (n.id === agentId && (n.type === 'agentNode' || n.type === 'agent')) {
           return {
             ...n,
             data: {
@@ -614,6 +773,14 @@ function FlowCanvas() {
 
       if (sourceNode?.type === 'agentNode') {
         if (targetNode?.type !== 'agentNode') return false;
+        if (
+          connection.sourceHandle &&
+          connection.sourceHandle !== 'output' &&
+          connection.sourceHandle !== 'subagent' &&
+          !connection.sourceHandle.startsWith('branch_')
+        ) {
+          return false;
+        }
       }
 
       if (sourceNode?.type === 'triggerNode') {
@@ -814,7 +981,7 @@ function FlowCanvas() {
           ...connection,
           id: `e_router_${connection.source}_${connection.sourceHandle}_${connection.target}`,
           animated: true,
-          style: { stroke: '#3b82f6', strokeWidth: 2 },
+          style: { stroke: '#a855f7', strokeWidth: 2 },
           targetHandle: connection.targetHandle || 'input',
         } as Edge;
 
@@ -862,8 +1029,15 @@ function FlowCanvas() {
       const nextEdges = addEdge(newEdge, edges);
       setEdges(nextEdges);
 
+      const targetNode = nodes.find((n) => n.id === connection.target);
+      const isAgentEdge =
+        sourceNode?.type === 'agentNode' ||
+        sourceNode?.type === 'agent' ||
+        targetNode?.type === 'agentNode' ||
+        targetNode?.type === 'agent';
+
       let nextNodes = nodes;
-      if (sourceNode?.type === 'agentNode') {
+      if (isAgentEdge) {
         nextNodes = syncAgentSubAgents(nodes, nextEdges);
         setNodes(nextNodes);
       }
@@ -1120,8 +1294,14 @@ function FlowCanvas() {
   );
 
   const handleNodeDragStop = useCallback(() => {
-    recordSnapshot(nodes, edges, { description: 'Move element' });
-  }, [nodes, edges, recordSnapshot]);
+    setNodes((currentNodes) => {
+      setEdges((currentEdges) => {
+        recordSnapshot(currentNodes, currentEdges, { description: 'Move element' });
+        return currentEdges;
+      });
+      return currentNodes;
+    });
+  }, [setNodes, setEdges, recordSnapshot]);
 
   const handleAutoLayout = useCallback(() => {
     const layouted = getLayoutedElements(nodes, edges);
@@ -1164,8 +1344,8 @@ function FlowCanvas() {
         data: e.data ? { ...e.data } : undefined,
       })),
       metadata: {
-        outputFolder: config.outputFolder,
-        deploymentTarget: config.deploymentTarget || 'agent_engine',
+        ...(initialInjectedDoc?.metadata?.createdAt ? { createdAt: initialInjectedDoc.metadata.createdAt } : {}),
+        ...(initialInjectedDoc?.metadata?.author ? { author: initialInjectedDoc.metadata.author } : {}),
         updatedAt: new Date().toISOString(),
       },
       deployment: {
@@ -1229,11 +1409,18 @@ function FlowCanvas() {
     });
   }, [currentWorkflowDocument, config.outputFolder, config.deploymentTarget, bridge, isPanelMaximized, bottomPanelHeight, setBottomPanelHeight, panelContainerRef]);
 
+  const handleStopGenerate = useCallback(() => {
+    setIsGenerating(false);
+    bridge.postMessage({
+      type: 'CANCEL_CODE_GENERATION',
+    });
+  }, [bridge]);
+
   const handleUpdateConfig = useCallback((newConf: Partial<GenerationConfig>) => {
     setConfig((prev) => ({ ...prev, ...newConf }));
   }, []);
 
-  const selectedAgentNode = nodes.find((n) => n.id === selectedAgentId && n.type === 'agentNode');
+  const selectedAgentNode = nodes.find((n) => n.id === selectedAgentId && (n.type === 'agentNode' || n.type === 'agent'));
 
   const handleUpdateSelectedAgent = useCallback(
     (partialData: Partial<AgentData>) => {
@@ -1292,7 +1479,7 @@ function FlowCanvas() {
                 target: b.targetAgentId,
                 targetHandle: 'input',
                 animated: true,
-                style: { stroke: '#3b82f6', strokeWidth: 2 },
+                style: { stroke: '#a855f7', strokeWidth: 2 },
               });
             }
           }
@@ -1332,7 +1519,9 @@ function FlowCanvas() {
   }, [chatTriggerNode]);
 
   const agentNodes = useMemo(() =>
-    nodes.filter((n) => n.type === 'agentNode').map((n) => n.data as AgentData),
+    nodes
+      .filter((n) => n.type === 'agentNode' || n.type === 'agent')
+      .map((n) => ({ ...n.data, id: (n.data as AgentData)?.id || n.id } as AgentData)),
     [nodes]
   );
 
@@ -1460,14 +1649,23 @@ function FlowCanvas() {
 
             {/* Slide-out Agent Inspector Drawer */}
             <AgentDrawer
-              agent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
+              agent={
+                selectedAgentNode
+                  ? {
+                      ...(selectedAgentNode.data as AgentData),
+                      id: (selectedAgentNode.data as AgentData)?.id || selectedAgentNode.id,
+                    }
+                  : null
+              }
               allAgents={agentNodes}
+              edges={edges}
               isOpen={!!selectedAgentId && !isToolDrawerOpen && !isTriggerDrawerOpen}
               onClose={() => setSelectedAgentId(null)}
               onUpdateAgent={handleUpdateSelectedAgent}
               onOpenAddTool={() => selectedAgentId && setToolModalAgentId(selectedAgentId)}
               onRemoveTool={(toolId) => selectedAgentId && handleRemoveTool(selectedAgentId, toolId)}
               onEditTool={(tool) => selectedAgentId && handleOpenEditAgentTool(selectedAgentId, tool)}
+              onSelectAgent={(agentId) => setSelectedAgentId(agentId)}
             />
 
             {/* Slide-out Trigger Inspector Drawer */}
@@ -1505,6 +1703,11 @@ function FlowCanvas() {
                   : undefined
               }
               selectedAgent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
+              targetLanguage={config.language || 'python'}
+              onTestMcpHandshake={handleTestMcpHandshake}
+              onStartOAuthFlow={handleStartOAuthFlow}
+              onSaveMcpSecret={handleSaveMcpSecret}
+              onGetMcpSecret={handleGetMcpSecret}
               onAttachToAgent={(agentId, tool) => {
                 handleAddSpecificTool(agentId, tool);
                 setIsToolDrawerOpen(false);
@@ -1545,6 +1748,7 @@ function FlowCanvas() {
               config={config}
               onChangeConfig={handleUpdateConfig}
               onGenerateCode={handleTriggerGenerate}
+              onStopGenerate={handleStopGenerate}
               generatedFiles={generatedFiles}
               isGenerating={isGenerating}
               onOpenMissingAdvisor={() => setIsAdvisorOpen(true)}
@@ -1570,6 +1774,7 @@ function FlowCanvas() {
         existingToolIds={((targetAgentForTool?.data as AgentData)?.tools || []).map((t) => t.id)}
         tools={tools}
         targetAgentName={(targetAgentForTool?.data as AgentData)?.label}
+        onRegisterMcpServer={handleCreateMcpTool}
       />
 
       {/* Architectural Advisor Modal */}

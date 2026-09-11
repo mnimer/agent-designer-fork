@@ -20,6 +20,9 @@
  * - Decision 5: Tool Wrapper Synthesis: Generates typed Python ADK tool functions (call_<id>_a2a)
  *   that allow parent or orchestrator agents to invoke remote A2A agents seamlessly in their tool loops.
  * - Decision 6: Region Safety: Google Vertex AI and ADK components default to global region per guidelines.
+ * - Decision 7: Router Dynamic Branching: Router nodes (agentKind === 'router') compile into custom
+ *   BaseAgent subclasses with an InvocationContext runner that evaluates boolean expressions, threshold metrics,
+ *   or LLM intent categories to yield events from the selected target candidate agent.
  */
 
 import { 
@@ -256,6 +259,21 @@ def query_${safeId}_card() -> dict:
 }
 
 /**
+ * Converts an arbitrary identifier string into PascalCase for Python class names.
+ *
+ * @param str - Input string
+ * @returns PascalCase formatted string
+ */
+export function toPascalCase(str: string): string {
+  const words = str
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1));
+  return words.join('') || 'Agent';
+}
+
+/**
  * PythonAdkGenerator compiles visual workflow graphs into Python Google ADK source code.
  */
 export class PythonAdkGenerator {
@@ -380,8 +398,14 @@ export class PythonAdkGenerator {
   /**
    * Generates agent_workflow.py orchestration file.
    *
-   * @param workflow AgentWorkflowDocument representing the canvas graph
-   * @param options Generator options
+   * Purpose:
+   * Translates visual workflow canvas nodes into Python Google ADK agent instances and
+   * orchestration logic. Supports standard ADK Agent instances, A2A connectors, and
+   * conditional Router nodes that subclass BaseAgent to evaluate state/intent and
+   * dispatch execution to candidate target agents dynamically.
+   *
+   * @param workflow - AgentWorkflowDocument representing the canvas graph
+   * @param options - Generator options including default model and location
    * @returns Complete contents of agent_workflow.py
    */
   public generateWorkflowFile(
@@ -389,6 +413,10 @@ export class PythonAdkGenerator {
     options?: PythonAdkGeneratorOptions
   ): string {
     const defaultModel = options?.defaultModel || 'gemini-3.7-flash';
+    const nodes = workflow.nodes || [];
+    const routerNodes = nodes.filter((n) => n.data && n.data.agentKind === 'router');
+    const hasRouter = routerNodes.length > 0;
+
     const lines: string[] = [
       '"""',
       'agent_workflow.py - Google ADK Workflow Orchestration Engine',
@@ -398,16 +426,234 @@ export class PythonAdkGenerator {
       '"""',
       '',
       'import os',
-      'from typing import Any, Dict',
-      'from google.adk.agents import Agent',
+      'import logging',
+      'from typing import Any, AsyncGenerator, Dict, List, Optional',
+    ];
+
+    if (hasRouter) {
+      lines.push(
+        'from google.adk.agents import Agent, BaseAgent',
+        'from google.adk.agents.invocation_context import InvocationContext',
+        'from google.adk.events import Event'
+      );
+    } else {
+      lines.push('from google.adk.agents import Agent');
+    }
+
+    lines.push(
       'from google.adk.runners import Runner',
       'from tools import setup_agent_tools',
       '',
-    ];
+      'logger = logging.getLogger(__name__)',
+      ''
+    );
 
-    // Instantiate Agents
-    lines.push('# Initialize Workflow Agents');
-    for (const node of workflow.nodes || []) {
+    // If Router nodes exist, inject StateProxy for dot-notation attribute access
+    if (hasRouter) {
+      lines.push(
+        '# ==============================================================================',
+        '# State Proxy for Dot-Notation & Dynamic Condition Resolution',
+        '# ==============================================================================',
+        'class StateProxy(dict):',
+        '    """Allows attribute-style dot notation (state.field) access to session dictionary."""',
+        '    def __getattr__(self, key: str) -> Any:',
+        '        return self.get(key)',
+        '    def __setattr__(self, key: str, value: Any) -> None:',
+        '        self[key] = value',
+        ''
+      );
+
+      // Generate evaluation helper functions and custom BaseAgent router classes
+      for (const routerNode of routerNodes) {
+        const data = routerNode.data || {};
+        const safeVar = sanitizePythonIdentifier(data.label || routerNode.id);
+        let routerClassName = toPascalCase(data.label || routerNode.id);
+        if (!routerClassName.endsWith('Router')) {
+          routerClassName += 'Router';
+        }
+
+        const evalMode = data.routerConfig?.evaluationMode || 'boolean_expression';
+        const branches = data.routerConfig?.branches || [];
+        const defaultBranch =
+          branches.find((b) => b.isDefault || b.isDefaultFallback) || branches[branches.length - 1];
+        const defaultBranchId = defaultBranch?.id || (branches[0]?.id || 'default');
+        const expressionVar =
+          data.routerConfig?.expressionVariable ||
+          (evalMode === 'threshold_score' || evalMode === 'numeric_threshold' ? 'score' : 'status');
+        const thresholdVal = data.routerConfig?.thresholdValue ?? 0.8;
+
+        // 1. Standalone Routing Evaluator Function
+        lines.push(
+          '# ------------------------------------------------------------------------------',
+          `# Routing Evaluator Function: ${data.label || routerNode.id}`,
+          '# ------------------------------------------------------------------------------',
+          `def evaluate_${safeVar}_route(state: Dict[str, Any], user_query: str = "") -> str:`,
+          `    """Evaluates branching conditions for router '${data.label || routerNode.id}'. Mode: ${evalMode}."""`,
+          '    proxy = StateProxy(state or {})',
+          '    state = proxy',
+          `    ${expressionVar} = proxy.get("${expressionVar}")`
+        );
+
+        if (evalMode === 'boolean' || evalMode === 'boolean_expression') {
+          for (const branch of branches) {
+            if (branch.id === defaultBranchId && (branch.isDefault || branch.isDefaultFallback)) {
+              continue;
+            }
+            const rawCondition = branch.conditionExpression || branch.condition || '';
+            if (!rawCondition || rawCondition === 'default') {
+              continue;
+            }
+
+            lines.push(
+              '    try:',
+              `        # Branch: ${branch.label || branch.id}`,
+              `        if ${rawCondition}:`,
+              `            return "${branch.id}"`,
+              '    except Exception as e:',
+              `        logger.warning(f"Error evaluating branch '${branch.id}' condition on '${safeVar}': {e}")`
+            );
+          }
+        } else if (evalMode === 'numeric_threshold' || evalMode === 'threshold_score') {
+          lines.push(
+            '    try:',
+            `        metric_val = float(proxy.get("${expressionVar}", 0.0) or 0.0)`,
+            '    except (ValueError, TypeError):',
+            '        metric_val = 0.0',
+            `    threshold = ${thresholdVal}`
+          );
+
+          let hasExplicitConditions = false;
+          for (const branch of branches) {
+            if (branch.id === defaultBranchId && (branch.isDefault || branch.isDefaultFallback)) {
+              continue;
+            }
+            const rawCondition = branch.conditionExpression || branch.condition || '';
+            if (rawCondition && rawCondition !== 'default') {
+              hasExplicitConditions = true;
+              lines.push(
+                '    try:',
+                `        score = metric_val`,
+                `        if ${rawCondition}:`,
+                `            return "${branch.id}"`,
+                '    except Exception as e:',
+                `        logger.warning(f"Error evaluating threshold branch '${branch.id}': {e}")`
+              );
+            }
+          }
+
+          if (!hasExplicitConditions) {
+            const passBranch = branches.find((b) => !b.isDefault && !b.isDefaultFallback) || branches[0];
+            if (passBranch) {
+              lines.push(
+                `    if metric_val >= threshold:`,
+                `        return "${passBranch.id}"`
+              );
+            }
+          }
+        } else if (evalMode === 'pattern_match') {
+          lines.push(
+            '    import re',
+            `    target_text = str(user_query or proxy.get("${expressionVar}", "") or proxy.get("query", "") or proxy.get("input", ""))`
+          );
+
+          for (const branch of branches) {
+            if (branch.id === defaultBranchId && (branch.isDefault || branch.isDefaultFallback)) {
+              continue;
+            }
+            const rawPattern = branch.conditionExpression || branch.condition || branch.label || '';
+            if (rawPattern && rawPattern !== 'default') {
+              lines.push(
+                '    try:',
+                `        if re.search(r"${rawPattern.replace(/"/g, '\\"')}", target_text, re.IGNORECASE):`,
+                `            return "${branch.id}"`,
+                '    except Exception as e:',
+                `        logger.warning(f"Error evaluating regex pattern for branch '${branch.id}': {e}")`
+              );
+            }
+          }
+        } else {
+          // LLM / Semantic Intent Classifier Mode
+          lines.push(
+            '    query_text = (user_query or str(proxy.get("query", "")) or str(proxy.get("input", ""))).lower()'
+          );
+
+          for (const branch of branches) {
+            if (branch.id === defaultBranchId && (branch.isDefault || branch.isDefaultFallback)) {
+              continue;
+            }
+            const candidateTerms = [
+              branch.label,
+              branch.conditionExpression,
+              branch.condition,
+            ]
+              .filter(Boolean)
+              .map((s) => s!.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim())
+              .filter((s) => s.length > 0 && s !== 'default');
+
+            if (candidateTerms.length > 0) {
+              const termsArrayStr = candidateTerms.map((t) => `"${t}"`).join(', ');
+              lines.push(
+                `    if any(term in query_text for term in [${termsArrayStr}]):`,
+                `        return "${branch.id}"`
+              );
+            }
+          }
+        }
+
+        // Return default fallback branch id
+        lines.push(
+          `    return "${defaultBranchId}"`,
+          ''
+        );
+
+        // 2. Custom BaseAgent Subclass
+        lines.push(
+          '# ------------------------------------------------------------------------------',
+          `# Router Agent Class: ${routerClassName}`,
+          '# ------------------------------------------------------------------------------',
+          `class ${routerClassName}(BaseAgent):`,
+          `    """Conditional routing agent for '${data.label || routerNode.id}'."""`,
+          '    def __init__(',
+          '        self,',
+          '        name: str,',
+          '        branches: Dict[str, Any],',
+          '        default_agent: Optional[Any] = None,',
+          '        tools: Optional[List[Any]] = None,',
+          '    ):',
+          '        super().__init__(name=name)',
+          '        self.branches = branches',
+          '        self.default_agent = default_agent',
+          '        self.tools = tools or []',
+          '',
+          '    async def _run_async_impl(',
+          '        self, ctx: InvocationContext',
+          '    ) -> AsyncGenerator[Event, None]:',
+          '        state = getattr(ctx.session, "state", {}) if hasattr(ctx, "session") and ctx.session else {}',
+          '        user_query = getattr(ctx, "user_content", "") or ""',
+          `        target_branch_id = evaluate_${safeVar}_route(state, user_query)`,
+          '        target_agent = self.branches.get(target_branch_id, self.default_agent)',
+          '',
+          '        if target_agent is not None:',
+          `            logger.info(f"Router '{self.name}' selected branch '{target_branch_id}' -> executing '{target_agent.name}'")`,
+          '            async for event in target_agent.run_async(ctx):',
+          '                yield event',
+          '        else:',
+          `            logger.warning(f"Router '{self.name}' found no agent configured for branch '{target_branch_id}'")`,
+          '            yield Event(',
+          '                source=self.name,',
+          `                content=f"Router '{self.name}' routed to branch '{target_branch_id}', but no candidate agent was attached."`,
+          '            )',
+          ''
+        );
+      }
+    }
+
+    // Instantiate Standard Agents First
+    lines.push('# ==============================================================================');
+    lines.push('# Initialize Standard Agents');
+    lines.push('# ==============================================================================');
+    for (const node of nodes) {
+      if (node.data?.agentKind === 'router') continue;
       const data = node.data;
       const safeVar = sanitizePythonIdentifier(data?.label || node.id);
       const model = data?.model || defaultModel;
@@ -422,11 +668,59 @@ export class PythonAdkGenerator {
       lines.push('');
     }
 
+    // Instantiate Router Agents Next
+    if (hasRouter) {
+      lines.push('# ==============================================================================');
+      lines.push('# Initialize Router Agents & Branch Wiring');
+      lines.push('# ==============================================================================');
+      for (const node of routerNodes) {
+        const data = node.data;
+        const safeVar = sanitizePythonIdentifier(data?.label || node.id);
+        let routerClassName = toPascalCase(data?.label || node.id);
+        if (!routerClassName.endsWith('Router')) {
+          routerClassName += 'Router';
+        }
+        const branches = data?.routerConfig?.branches || [];
+        const defaultBranch =
+          branches.find((b) => b.isDefault || b.isDefaultFallback) || branches[branches.length - 1];
+
+        // Map branch target variables
+        lines.push(`${safeVar}_branches = {`);
+        for (const branch of branches) {
+          let targetVar = 'None';
+          if (branch.targetAgentId) {
+            const targetNode = nodes.find((n) => n.id === branch.targetAgentId);
+            if (targetNode) {
+              targetVar = sanitizePythonIdentifier(targetNode.data?.label || targetNode.id);
+            }
+          }
+          lines.push(`    "${branch.id}": ${targetVar},`);
+        }
+        lines.push('}');
+
+        let defaultVar = 'None';
+        if (defaultBranch?.targetAgentId) {
+          const defaultNode = nodes.find((n) => n.id === defaultBranch.targetAgentId);
+          if (defaultNode) {
+            defaultVar = sanitizePythonIdentifier(defaultNode.data?.label || defaultNode.id);
+          }
+        }
+
+        lines.push(`${safeVar} = ${routerClassName}(`);
+        lines.push(`    name="${data?.label || node.id}",`);
+        lines.push(`    branches=${safeVar}_branches,`);
+        lines.push(`    default_agent=${defaultVar},`);
+        lines.push(`    tools=setup_agent_tools("${node.id}")`);
+        lines.push(')');
+        lines.push('');
+      }
+    }
+
     lines.push('def execute_workflow(user_query: str) -> Dict[str, Any]:');
     lines.push('    """Executes the workflow graph starting from the root agent."""');
     
     // Find start node
-    const startNode = (workflow.nodes || []).find((n) => n.data?.isStartNode) || workflow.nodes?.[0];
+    const startNode = nodes.find((n) => n.data?.isStartNode) || nodes[0];
     const rootVar = startNode ? sanitizePythonIdentifier(startNode.data?.label || startNode.id) : 'agent';
 
     lines.push(`    runner = Runner(agent=${rootVar})`);
@@ -452,9 +746,13 @@ export class PythonAdkGenerator {
     const workflowCode = this.generateWorkflowFile(workflow, options);
 
     const hasA2A = (workflow.nodes || []).some((n: any) => n.data?.agentKind === 'a2a');
+    const hasMcp = (workflow.nodes || []).some((n: any) =>
+      (n.data?.tools || []).some((t: any) => t.type === 'mcp' || t.mcpConfig)
+    );
     const requirementsCode = [
       hasA2A ? 'google-adk[a2a]>=0.1.0' : 'google-adk>=0.1.0',
       ...(hasA2A ? ['a2a-sdk[http-server]>=0.3.4'] : []),
+      ...(hasMcp ? ['mcp>=1.0.0'] : []),
       'google-cloud-aiplatform>=1.70.0',
       'google-auth>=2.30.0',
       'pydantic>=2.0.0',

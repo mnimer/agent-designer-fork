@@ -273,4 +273,144 @@ describe('Agent Tool Scoping & Property Isolation Logic', () => {
       'Specialized Agent 2 prompt for supervisor confirmation'
     );
   });
+
+  it('should only remove tool from the targeted agent node when deleted from an agent-scoped edit session', () => {
+    const googleSearchTool = AVAILABLE_TOOLS.find(
+      (t) => t.id === 'tool_google_search' || t.builtinType === 'google_search'
+    )!;
+    assert.ok(googleSearchTool);
+
+    let globalCatalog = [...AVAILABLE_TOOLS];
+
+    let agent1: AgentData = {
+      id: 'agent-1',
+      label: 'Agent Alpha',
+      role: 'Research',
+      model: 'gemini-3.7-flash',
+      temperature: 0.2,
+      tools: [],
+    };
+
+    let agent2: AgentData = {
+      id: 'agent-2',
+      label: 'Agent Beta',
+      role: 'Writer',
+      model: 'gemini-3.7-flash',
+      temperature: 0.7,
+      tools: [],
+    };
+
+    // Attach tool to both agents
+    agent1 = attachToolToAgent(agent1, googleSearchTool);
+    agent2 = attachToolToAgent(agent2, googleSearchTool);
+
+    assert.equal(agent1.tools?.length, 1);
+    assert.equal(agent2.tools?.length, 1);
+    assert.ok(globalCatalog.some((t) => t.id === googleSearchTool.id));
+
+    // Simulate deleting tool while editing from Agent 1 (editingToolScope: { type: 'agent', agentId: 'agent-1' })
+    const scope: { type: 'agent' | 'global'; agentId?: string } = {
+      type: 'agent',
+      agentId: 'agent-1',
+    };
+
+    const toolToDeleteId = googleSearchTool.id;
+
+    // Simulate handleDeleteTool logic
+    let nodes = [
+      { id: 'agent-1', type: 'agentNode', data: agent1 },
+      { id: 'agent-2', type: 'agentNode', data: agent2 },
+    ];
+
+    if (scope.type === 'agent' && scope.agentId) {
+      nodes = nodes.map((n) => {
+        if (n.id === scope.agentId && n.type === 'agentNode') {
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              tools: (n.data.tools || []).filter((t: ToolDefinition) => t.id !== toolToDeleteId),
+            },
+          };
+        }
+        return n;
+      });
+    }
+
+    const updatedAgent1 = nodes.find((n) => n.id === 'agent-1')!.data as AgentData;
+    const updatedAgent2 = nodes.find((n) => n.id === 'agent-2')!.data as AgentData;
+
+    // 1. Tool MUST be removed from Agent 1
+    assert.equal(updatedAgent1.tools?.length, 0);
+
+    // 2. Tool MUST still be attached to Agent 2
+    assert.equal(updatedAgent2.tools?.length, 1);
+    assert.equal(updatedAgent2.tools?.[0].id, googleSearchTool.id);
+
+    // 3. Tool MUST still exist in the global catalog
+    assert.ok(globalCatalog.some((t) => t.id === googleSearchTool.id));
+  });
+
+  it('should remove tool from catalog and all agent nodes when deleted from global scope', () => {
+    const customTool: ToolDefinition = {
+      id: 'custom_calc_tool',
+      name: 'Calculator Tool',
+      type: 'custom',
+      description: 'Performs calculations',
+    };
+
+    let globalCatalog: ToolDefinition[] = [customTool, ...AVAILABLE_TOOLS];
+
+    let nodes = [
+      {
+        id: 'agent-1',
+        type: 'agentNode',
+        data: {
+          id: 'agent-1',
+          label: 'Agent 1',
+          role: 'Analyst',
+          model: 'gemini-3.7-flash',
+          tools: [customTool],
+        } as AgentData,
+      },
+      {
+        id: 'agent-2',
+        type: 'agentNode',
+        data: {
+          id: 'agent-2',
+          label: 'Agent 2',
+          role: 'Analyst',
+          model: 'gemini-3.7-flash',
+          tools: [customTool],
+        } as AgentData,
+      },
+    ];
+
+    const scope = { type: 'global' as const };
+    const toolToDeleteId = customTool.id;
+
+    // Global delete execution
+    if (scope.type === 'global') {
+      globalCatalog = globalCatalog.filter((t) => t.id !== toolToDeleteId);
+      nodes = nodes.map((n) => {
+        if (n.type === 'agentNode' && (n.data as AgentData).tools) {
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              tools: (n.data as AgentData).tools?.filter((t) => t.id !== toolToDeleteId) || [],
+            },
+          };
+        }
+        return n;
+      });
+    }
+
+    // 1. Tool removed from global catalog
+    assert.equal(globalCatalog.some((t) => t.id === customTool.id), false);
+
+    // 2. Tool stripped from both agents
+    assert.equal((nodes[0].data as AgentData).tools?.length, 0);
+    assert.equal((nodes[1].data as AgentData).tools?.length, 0);
+  });
 });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Code2, 
   Folder, 
@@ -27,6 +27,8 @@ import {
   MessageSquare,
   AlertCircle,
   CheckCircle2,
+  Search,
+  Square,
 } from 'lucide-react';
 import { AgentData, FrameworkType, GeneratedFile, GenerationConfig, LanguageType, TestPrompt } from '../../types';
 import { AgentWorkflowDocument } from '../../../shared/types';
@@ -34,17 +36,90 @@ import { DeploymentTab } from '../deployment/DeploymentTab';
 import { TestRunnerTab } from '../testing/TestRunnerTab';
 import { ChatRunnerTab } from '../chat/ChatRunnerTab';
 import { validateTargetFolder } from '../../../shared/folderValidation';
+import { getFileColorInfo } from './fileTypeColors';
+import { FindInFilesBar } from './FindInFilesBar';
+
+/**
+ * Renders file text with highlighted search occurrences.
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
+function renderHighlightedCode(
+  content: string,
+  query: string,
+  isCaseSensitive: boolean,
+  isWholeWord: boolean,
+  activeMatchIndexInFile: number
+) {
+  if (!query || !query.trim()) {
+    return content;
+  }
+
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = isWholeWord ? `\\b${escaped}\\b` : escaped;
+  const flags = isCaseSensitive ? 'g' : 'gi';
+
+  let regex: RegExp;
+  try {
+    regex = new RegExp(pattern, flags);
+  } catch {
+    return content;
+  }
+
+  const matches: { start: number; end: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(content)) !== null) {
+    matches.push({ start: m.index, end: m.index + m[0].length });
+    if (!m[0].length) break;
+  }
+
+  if (matches.length === 0) {
+    return content;
+  }
+
+  const elements: React.ReactNode[] = [];
+  let lastIdx = 0;
+
+  matches.forEach((item, matchIdx) => {
+    if (item.start > lastIdx) {
+      elements.push(content.substring(lastIdx, item.start));
+    }
+    const isCurrent = matchIdx === activeMatchIndexInFile;
+    elements.push(
+      <mark
+        key={matchIdx}
+        id={isCurrent ? 'active-search-match' : undefined}
+        className={
+          isCurrent
+            ? 'bg-amber-400 text-black font-bold rounded-xs px-0.5'
+            : 'bg-yellow-500/40 text-yellow-100 rounded-xs px-0.5'
+        }
+      >
+        {content.substring(item.start, item.end)}
+      </mark>
+    );
+    lastIdx = item.end;
+  });
+
+  if (lastIdx < content.length) {
+    elements.push(content.substring(lastIdx));
+  }
+
+  return elements;
+}
 
 interface CodeGenerationPanelProps {
   config: GenerationConfig;
   onChangeConfig: (newConfig: Partial<GenerationConfig>) => void;
   onGenerateCode: () => void;
+  onStopGenerate?: () => void;
   generatedFiles: GeneratedFile[];
   isGenerating: boolean;
   onOpenMissingAdvisor?: () => void;
   hasTestSuite?: boolean;
   hasGeneratedCode?: boolean;
   testPrompts?: TestPrompt[];
+  agents?: any[];
   isMaximized?: boolean;
   onToggleMaximize?: () => void;
   document?: AgentWorkflowDocument;
@@ -65,9 +140,10 @@ interface CodeGenerationPanelProps {
  * Architectural Decisions:
  * - Google Agent Engine is set as the default deployment target.
  * - LangGraph and TypeScript options are currently disabled in this version.
- * - Generate Code button is disabled.
- * - Mocked file tabs are hidden when no generated files are present.
  * - Supports Interactive Chat Runner tab when a Chat Trigger node is present on canvas.
+ * - Color-coded source file tabs and badges based on file category and extension.
+ * - Standard Find in Files toolbar with scope toggle (Current File vs. All Files), case/word filters, hit counts, next/prev navigation, and match highlights.
+ * - Red Stop button taking 25% width next to the 75% width Generate Code button.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -75,6 +151,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   config,
   onChangeConfig,
   onGenerateCode,
+  onStopGenerate,
   generatedFiles,
   isGenerating,
   onOpenMissingAdvisor,
@@ -93,10 +170,30 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   const [copied, setCopied] = useState(false);
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
 
+  // Find in files search state
+  const [isFindOpen, setIsFindOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchScope, setSearchScope] = useState<'current' | 'all'>('current');
+  const [isCaseSensitive, setIsCaseSensitive] = useState(false);
+  const [isWholeWord, setIsWholeWord] = useState(false);
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+
+  // Global shortcut for Find in files (Ctrl+F / Cmd+F)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setIsFindOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const folderValidation = validateTargetFolder(config.outputFolder || '');
 
   const sampleFolders = [
-    './src/agents/',
+    './',
     './backend/workflows/',
     './workspace/agent_team/',
     './lib/genai_orchestration/',
@@ -104,6 +201,74 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   ];
 
   const currentFile = generatedFiles[activeFileIndex] || generatedFiles[0];
+
+  // Compute search matches per file
+  const fileSearchStats = useMemo(() => {
+    if (!searchQuery.trim() || !generatedFiles.length) {
+      return {
+        currentFileMatchesCount: 0,
+        totalMatchesAllFiles: 0,
+        filesWithMatches: [],
+      };
+    }
+
+    const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = isWholeWord ? `\\b${escaped}\\b` : escaped;
+    const flags = isCaseSensitive ? 'g' : 'gi';
+
+    let regex: RegExp;
+    try {
+      regex = new RegExp(pattern, flags);
+    } catch {
+      return { currentFileMatchesCount: 0, totalMatchesAllFiles: 0, filesWithMatches: [] };
+    }
+
+    let totalMatchesAllFiles = 0;
+    const filesWithMatches: { fileIndex: number; fileName: string; matchCount: number }[] = [];
+
+    generatedFiles.forEach((file, fIdx) => {
+      const matches = file.content.match(regex);
+      const count = matches ? matches.length : 0;
+      if (count > 0) {
+        totalMatchesAllFiles += count;
+        filesWithMatches.push({
+          fileIndex: fIdx,
+          fileName: file.name,
+          matchCount: count,
+        });
+      }
+    });
+
+    const currentCount = currentFile ? (currentFile.content.match(regex) || []).length : 0;
+
+    return {
+      currentFileMatchesCount: currentCount,
+      totalMatchesAllFiles,
+      filesWithMatches,
+    };
+  }, [searchQuery, generatedFiles, currentFile, isCaseSensitive, isWholeWord]);
+
+  // Scroll active match into view when index or file changes
+  useEffect(() => {
+    if (isFindOpen && searchQuery.trim()) {
+      const el = document.getElementById('active-search-match');
+      if (el) {
+        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }
+  }, [activeMatchIndex, searchQuery, isFindOpen, activeFileIndex]);
+
+  const handleNextMatch = () => {
+    const max = searchScope === 'current' ? fileSearchStats.currentFileMatchesCount : fileSearchStats.totalMatchesAllFiles;
+    if (max === 0) return;
+    setActiveMatchIndex((prev) => (prev + 1) % max);
+  };
+
+  const handlePrevMatch = () => {
+    const max = searchScope === 'current' ? fileSearchStats.currentFileMatchesCount : fileSearchStats.totalMatchesAllFiles;
+    if (max === 0) return;
+    setActiveMatchIndex((prev) => (prev - 1 + max) % max);
+  };
 
   /**
    * Copies current generated file content to the system clipboard.
@@ -379,7 +544,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                     type="text"
                     value={config.outputFolder}
                     onChange={(e) => onChangeConfig({ outputFolder: e.target.value })}
-                    placeholder="./src/agents/"
+                    placeholder="./"
                     className={`flex-1 px-3 py-1.5 bg-[#0d1117] border rounded text-xs font-mono text-gray-300 focus:outline-none ${
                       !folderValidation.isValid
                         ? 'border-amber-500/80 focus:border-amber-500'
@@ -477,14 +642,14 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
               </div>
             </div>
 
-            {/* Generate Code Button */}
-            <div className="pt-3 border-t border-[#30363d] space-y-1.5 shrink-0 mt-2">
+            {/* Generate Code & Stop Buttons */}
+            <div className="pt-3 border-t border-[#30363d] flex items-center gap-2 shrink-0 mt-2">
               <button
                 type="button"
                 onClick={onGenerateCode}
                 disabled={isGenerating}
                 title="Synthesize production repository using Gemini LLM"
-                className={`w-full py-2.5 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg ${
+                className={`w-3/4 py-2.5 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg ${
                   isGenerating
                     ? 'bg-blue-600/40 text-blue-200 border-blue-500/50 cursor-wait'
                     : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400 hover:shadow-emerald-500/20 active:scale-[0.98]'
@@ -502,6 +667,18 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                   </>
                 )}
               </button>
+
+              <button
+                type="button"
+                data-testid="stop-codegen-button"
+                onClick={onStopGenerate}
+                disabled={!isGenerating}
+                title={isGenerating ? 'Stop active code generation' : 'Code generation is not running'}
+                className="w-1/4 py-2.5 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg bg-rose-600 hover:bg-rose-500 text-white border-rose-500 hover:shadow-rose-500/20 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-rose-600"
+              >
+                <Square className="w-3.5 h-3.5 fill-current" />
+                <span>Stop</span>
+              </button>
             </div>
           </div>
 
@@ -511,24 +688,49 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
             {!isGenerating && generatedFiles.length > 0 && (
               <div className="flex items-center justify-between px-3 bg-[#161b22] border-b border-[#30363d] overflow-x-auto shrink-0 h-9">
                 <div className="flex items-center gap-1">
-                  {generatedFiles.map((file, idx) => (
-                    <button
-                      key={file.name}
-                      onClick={() => setActiveFileIndex(idx)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono rounded-t transition-colors cursor-pointer ${
-                        activeFileIndex === idx
-                          ? 'bg-[#0d1117] text-white border-t-2 border-blue-400 font-semibold'
-                          : 'text-gray-400 hover:text-gray-200 hover:bg-[#21262d]'
-                      }`}
-                    >
-                      <FileCode className="w-3 h-3 text-blue-400" />
-                      <span>{file.name}</span>
-                    </button>
-                  ))}
+                  {generatedFiles.map((file, idx) => {
+                    const colorInfo = getFileColorInfo(file.name);
+                    const isActive = activeFileIndex === idx;
+
+                    return (
+                      <button
+                        key={file.name}
+                        onClick={() => {
+                          setActiveFileIndex(idx);
+                          setActiveMatchIndex(0);
+                        }}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono rounded-t transition-colors cursor-pointer group ${
+                          isActive
+                            ? colorInfo.tabActiveClass
+                            : 'text-gray-400 hover:text-gray-200 hover:bg-[#21262d]'
+                        }`}
+                      >
+                        <FileCode className={`w-3.5 h-3.5 ${colorInfo.iconColor}`} />
+                        <span>{file.name}</span>
+                        <span className={`text-[9px] px-1 py-0.2 rounded uppercase font-mono border ${colorInfo.badgeClass}`}>
+                          {colorInfo.badgeLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                {/* Code actions */}
+                {/* Code actions: Find, Copy, Download */}
                 <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsFindOpen((prev) => !prev)}
+                    title="Find in Files (Ctrl+F / Cmd+F)"
+                    className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded border transition-colors cursor-pointer font-medium ${
+                      isFindOpen
+                        ? 'bg-blue-600 text-white border-blue-500'
+                        : 'bg-[#21262d] hover:bg-[#30363d] border-[#30363d] text-gray-200'
+                    }`}
+                  >
+                    <Search className="w-3 h-3" />
+                    <span>Find</span>
+                  </button>
+
                   <button
                     onClick={handleCopyCode}
                     className="flex items-center gap-1 px-2.5 py-1 text-xs rounded bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-gray-200 transition-colors cursor-pointer font-medium"
@@ -557,6 +759,43 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
               </div>
             )}
 
+            {/* Find in Files Bar */}
+            <FindInFilesBar
+              isOpen={isFindOpen && !isGenerating && generatedFiles.length > 0}
+              onClose={() => setIsFindOpen(false)}
+              query={searchQuery}
+              onQueryChange={(q) => {
+                setSearchQuery(q);
+                setActiveMatchIndex(0);
+              }}
+              scope={searchScope}
+              onScopeChange={(s) => {
+                setSearchScope(s);
+                setActiveMatchIndex(0);
+              }}
+              isCaseSensitive={isCaseSensitive}
+              onToggleCaseSensitive={() => {
+                setIsCaseSensitive((prev) => !prev);
+                setActiveMatchIndex(0);
+              }}
+              isWholeWord={isWholeWord}
+              onToggleWholeWord={() => {
+                setIsWholeWord((prev) => !prev);
+                setActiveMatchIndex(0);
+              }}
+              currentMatchIndex={activeMatchIndex}
+              totalMatchesInFile={fileSearchStats.currentFileMatchesCount}
+              totalMatchesAllFiles={fileSearchStats.totalMatchesAllFiles}
+              filesWithMatches={fileSearchStats.filesWithMatches}
+              onNextMatch={handleNextMatch}
+              onPrevMatch={handlePrevMatch}
+              onSelectFile={(fIdx) => {
+                setActiveFileIndex(fIdx);
+                setActiveMatchIndex(0);
+              }}
+              activeFileIndex={activeFileIndex}
+            />
+
             {/* Code Content View */}
             <div className="flex-1 p-4 overflow-auto bg-[#0d1117] font-mono text-xs text-[#c9d1d9] select-text leading-relaxed relative">
               <div className="absolute top-2 right-3 text-[10px] text-gray-400 uppercase font-bold tracking-wider pointer-events-none">
@@ -570,12 +809,28 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                 </div>
               ) : generatedFiles.length > 0 && currentFile ? (
                 <div className="relative">
-                  <div className="text-[10px] text-gray-400 mb-2 pb-1 border-b border-[#21262d] flex items-center justify-between font-sans">
-                    <span>{currentFile.description}</span>
-                    <span className="font-mono text-gray-400">{config.outputFolder}{currentFile.name}</span>
-                  </div>
+                  {(() => {
+                    const fileColor = getFileColorInfo(currentFile.name);
+                    return (
+                      <div className="text-[10px] text-gray-400 mb-2 pb-1 border-b border-[#21262d] flex items-center justify-between font-sans">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[9px] font-mono uppercase px-1.5 py-0.2 rounded border ${fileColor.badgeClass}`}>
+                            {fileColor.badgeLabel}
+                          </span>
+                          <span>{currentFile.description}</span>
+                        </div>
+                        <span className="font-mono text-gray-400">{config.outputFolder}{currentFile.name}</span>
+                      </div>
+                    );
+                  })()}
                   <pre className="text-gray-300 whitespace-pre font-mono selection:bg-blue-900 selection:text-white">
-                    {currentFile.content}
+                    {renderHighlightedCode(
+                      currentFile.content,
+                      isFindOpen ? searchQuery : '',
+                      isCaseSensitive,
+                      isWholeWord,
+                      activeMatchIndex
+                    )}
                   </pre>
                 </div>
               ) : (

@@ -5,6 +5,11 @@
  * Displays "Local Runner" (always) and the specific deployment target selected
  * in the Code Generation tab (Vertex AI Agent Engine or Google Cloud Run).
  *
+ * Architectural Decisions:
+ * 1. Provides a 75% width Run/Deploy/Restart Agent button alongside a 25% width red Stop button.
+ * 2. Stop button cleanly dispatches STOP_LOCAL_RUNNER and resets deployment status.
+ * 3. Adheres strictly to the 8pt UI grid system for all layout dimensions.
+ *
  * @author Mike Nimer <mikenimer@google.com>
  */
 
@@ -134,7 +139,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
     bridge.postMessage({
       type: 'CHECK_FILES_EXIST',
       payload: {
-        targetDirectory: generationConfig.outputFolder || 'src/agents',
+        targetDirectory: generationConfig.outputFolder || './',
       },
     });
     bridge.postMessage({
@@ -227,19 +232,29 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
     setSecretValues((prev) => ({ ...prev, [key]: val }));
   };
 
+  const handleStopAction = () => {
+    if (selectedTarget === 'local') {
+      bridge.postMessage({
+        type: 'STOP_LOCAL_RUNNER',
+        payload: {
+          port: deployConfig.localPort || 8000,
+        },
+      });
+      setDeployStatus('idle');
+      setDeployLogs((prev) => [...prev, '[Local Runner] Stopping runner process...']);
+    }
+  };
+
   const handleTriggerAction = () => {
     if (selectedTarget === 'local') {
       if (deployStatus === 'success') {
-        // Stop currently active local runner
+        // Restart runner: stop existing process first
         bridge.postMessage({
           type: 'STOP_LOCAL_RUNNER',
           payload: {
             port: deployConfig.localPort || 8000,
           },
         });
-        setDeployStatus('idle');
-        setDeployLogs((prev) => [...prev, '[Local Runner] Stopping runner process...']);
-        return;
       }
 
       setDeployStatus('deploying');
@@ -318,7 +333,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
           generatedFiles={generatedFiles}
           secrets={secretValues}
           onSecretChange={(k, v) => setSecretValues((prev) => ({ ...prev, [k]: v }))}
-          targetDirectory={generationConfig.outputFolder || 'src/agents'}
+          targetDirectory={generationConfig.outputFolder || './'}
           onTargetDirectoryChange={(newFolder) => onUpdateGenerationConfig?.({ outputFolder: newFolder })}
           sharedProjectId={sharedProjectId}
           onProjectIdChange={handleSharedProjectIdChange}
@@ -545,7 +560,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
           </div>
         </div>
 
-        {/* Action Button: "Run Agent" / "Stop Local Runner" (if local) or "Deploy Agent" (disabled for cloud targets) */}
+        {/* Action Button: "Run Agent" / "Restart Agent" (75%) and red "Stop" (25%) */}
         <div className="pt-3 border-t border-[#30363d] shrink-0 mt-2">
           {!hasGeneratedCode && isLocalSelected && deployStatus !== 'success' && (
             <div className="p-2 mb-2 rounded bg-amber-950/40 border border-amber-600/40 text-[11px] text-amber-300 flex items-center gap-1.5">
@@ -554,48 +569,66 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
             </div>
           )}
 
-          <button
-            onClick={handleTriggerAction}
-            disabled={deployStatus === 'deploying' || !isLocalSelected || (!hasGeneratedCode && deployStatus !== 'success')}
-            title={
-              !isLocalSelected
-                ? 'Cloud deployment is not implemented yet'
-                : !hasGeneratedCode && deployStatus !== 'success'
-                ? 'Please generate code in the Generated Code tab before running the local agent'
-                : undefined
-            }
-            className={`w-full py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2 text-white ${
-              !isLocalSelected || (!hasGeneratedCode && deployStatus !== 'success')
-                ? 'bg-gray-800 text-gray-500 border border-[#30363d] cursor-not-allowed opacity-60'
-                : deployStatus === 'deploying'
-                ? 'bg-[#238636] opacity-50 cursor-wait'
-                : deployStatus === 'success' && isLocalSelected
-                ? 'bg-rose-600 hover:bg-rose-700 cursor-pointer'
-                : 'bg-[#238636] hover:bg-[#2ea043] cursor-pointer'
-            }`}
-          >
-            {deployStatus === 'deploying' ? (
-              <>
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                <span>Starting Local Agent...</span>
-              </>
-            ) : isLocalSelected && deployStatus === 'success' ? (
-              <>
-                <Square className="w-3.5 h-3.5 fill-current" />
-                <span>Stop Local Runner</span>
-              </>
-            ) : isLocalSelected ? (
-              <>
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Run Agent</span>
-              </>
-            ) : (
-              <>
-                <Rocket className="w-3.5 h-3.5 opacity-50" />
-                <span>Deploy Agent (Not Implemented)</span>
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleTriggerAction}
+              disabled={deployStatus === 'deploying' || !isLocalSelected || (!hasGeneratedCode && deployStatus !== 'success')}
+              title={
+                !isLocalSelected
+                  ? 'Cloud deployment is not implemented yet'
+                  : !hasGeneratedCode && deployStatus !== 'success'
+                  ? 'Please generate code in the Generated Code tab before running the local agent'
+                  : deployStatus === 'success'
+                  ? 'Restart active local runner'
+                  : undefined
+              }
+              className={`w-3/4 py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2 text-white ${
+                !isLocalSelected || (!hasGeneratedCode && deployStatus !== 'success')
+                  ? 'bg-gray-800 text-gray-500 border border-[#30363d] cursor-not-allowed opacity-60'
+                  : deployStatus === 'deploying'
+                  ? 'bg-[#238636] opacity-50 cursor-wait'
+                  : 'bg-[#238636] hover:bg-[#2ea043] cursor-pointer'
+              }`}
+            >
+              {deployStatus === 'deploying' ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Starting Local Agent...</span>
+                </>
+              ) : isLocalSelected && deployStatus === 'success' ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Restart Agent</span>
+                </>
+              ) : isLocalSelected ? (
+                <>
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Run Agent</span>
+                </>
+              ) : (
+                <>
+                  <Rocket className="w-3.5 h-3.5 opacity-50" />
+                  <span>Deploy Agent (Not Implemented)</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              data-testid="stop-deployment-button"
+              onClick={handleStopAction}
+              disabled={deployStatus !== 'success' && deployStatus !== 'deploying'}
+              title={
+                deployStatus === 'success' || deployStatus === 'deploying'
+                  ? 'Stop local runner process'
+                  : 'Runner is not currently running'
+              }
+              className="w-1/4 py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-1.5 text-white bg-rose-600 hover:bg-rose-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-rose-600"
+            >
+              <Square className="w-3.5 h-3.5 fill-current" />
+              <span>Stop</span>
+            </button>
+          </div>
         </div>
       </div>
 

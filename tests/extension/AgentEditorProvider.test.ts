@@ -616,16 +616,18 @@ describe('AgentEditorProvider', { concurrency: 1 }, () => {
     const deploymentDir = provider.resolveTargetDirectory(mockDocWithDeployment, undefined);
     assert.equal(deploymentDir, '/mock/workspace/agents/scratch/custom_deploy_folder');
 
-    // 6. Generic root folder './src/agents/' appends sanitized document basename
+    // 6. Generic root folder './src/agents/' appends sanitized document basename and normalizes to direct subfolder
     const genericDir = provider.resolveTargetDirectory(mockDoc, './src/agents/');
-    assert.equal(genericDir, path.resolve('/mock/workspace/agents/scratch', './src/agents/scratch_agent'));
+    assert.equal(genericDir, path.resolve('/mock/workspace/agents/scratch', './scratch_agent'));
 
-    // 7. createEmptyWorkflowDocument and createDefaultWorkflowDocument include sanitized subfolder
+    // 7. createEmptyWorkflowDocument and createDefaultWorkflowDocument include sanitized subfolder without src/agents
     const emptyDoc = AgentEditorProvider.createEmptyWorkflowDocument('scratch-flow');
-    assert.equal(emptyDoc.deployment?.outputFolder, './src/agents/scratch_flow/');
+    assert.equal(emptyDoc.deployment?.outputFolder, './scratch_flow/');
+    assert.equal((emptyDoc.metadata as any)?.outputFolder, undefined);
 
     const defaultDoc = AgentEditorProvider.createDefaultWorkflowDocument('my-cool-agent');
-    assert.equal(defaultDoc.deployment?.outputFolder, './src/agents/my_cool_agent/');
+    assert.equal(defaultDoc.deployment?.outputFolder, './my_cool_agent/');
+    assert.equal((defaultDoc.metadata as any)?.outputFolder, undefined);
   });
 
   it('should initialize and provide AgentEngineDeployer instance and handle deployment messages', async () => {
@@ -685,6 +687,67 @@ describe('AgentEditorProvider', { concurrency: 1 }, () => {
       type: 'CANCEL_AGENT_ENGINE_DEPLOY',
       payload: { targetDirectory: '/mock/workspace/agents/deploy-agent' },
     });
+  });
+
+  it('should handle DISCOVER_MCP_TOOLS message and reply with MCP_TOOLS_DISCOVERED', async () => {
+    const mockContext: any = {
+      extensionPath: '/mock/extension',
+      extensionUri: vscode.Uri.file('/mock/extension'),
+      subscriptions: [],
+    };
+    const provider = new AgentEditorProvider(mockContext);
+
+    const doc: AgentWorkflowDocument = {
+      version: '1.0.0',
+      name: 'mcp-test',
+      description: 'MCP Test',
+      framework: 'google-adk',
+      language: 'python',
+      nodes: [],
+      edges: [],
+    };
+
+    const mockDoc: any = {
+      uri: vscode.Uri.file('/mock/workspace/mcp-test.agent'),
+      getText: () => JSON.stringify(doc),
+      positionAt: () => new vscode.Position(0, 0),
+    };
+
+    let messageCallback: ((msg: any) => Promise<void>) | null = null;
+    const postedMessages: any[] = [];
+    const mockPanel: any = {
+      webview: {
+        options: {},
+        html: '',
+        postMessage: async (msg: any) => {
+          postedMessages.push(msg);
+          return true;
+        },
+        onDidReceiveMessage: (cb: any) => {
+          messageCallback = cb;
+          return { dispose: () => {} };
+        },
+      },
+      onDidDispose: () => ({ dispose: () => {} }),
+      onDidChangeViewState: () => ({ dispose: () => {} }),
+    };
+
+    await provider.resolveCustomTextEditor(mockDoc, mockPanel as any, {} as any);
+    assert.ok(messageCallback);
+
+    // Send DISCOVER_MCP_TOOLS with missing command to verify response
+    await (messageCallback as any)({
+      type: 'DISCOVER_MCP_TOOLS',
+      payload: {
+        transport: 'stdio',
+        command: '',
+      },
+    });
+
+    const replyMsg = postedMessages.find((m) => m.type === 'MCP_TOOLS_DISCOVERED');
+    assert.ok(replyMsg, 'Should have received MCP_TOOLS_DISCOVERED message');
+    assert.strictEqual(replyMsg.payload.success, false);
+    assert.match(replyMsg.payload.error, /requires a valid command/);
   });
 });
 

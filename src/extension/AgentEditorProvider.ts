@@ -22,6 +22,8 @@
  * 9. Model Selection & Global Region Mandate: Gemini 1.x and 2.x models (including gemini-2.5-flash) are deprecated.
  *    gemini-3.7-flash is the primary model for Vertex AI, but requires the global region (location='global' or
  *    GOOGLE_CLOUD_LOCATION='global'). Regional endpoints return 404 NOT_FOUND for gemini-3.7-flash publisher models.
+ * 10. Pre-Generation Cleanup: Immediately cleans prior generated source files and stale virtual environments from
+ *     the target output directory when GENERATE_CODE is received, before initiating LLM synthesis, preserving .agent, .git, and IDE configurations.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -40,6 +42,8 @@ import { sanitizeFolderBaseName } from '../shared/folderValidation';
 import { GeminiCodeGenEngine } from './GeminiCodeGenEngine';
 import { AgentRunnerManager } from './AgentRunnerManager';
 import { AgentEngineDeployer } from './AgentEngineDeployer';
+import { McpSubprocessManager } from './McpSubprocessManager';
+import { McpOAuthManager } from './McpOAuthManager';
 
 export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'agentFlow.editor';
@@ -48,6 +52,8 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   private readonly codeGenEngine: GeminiCodeGenEngine;
   private readonly runnerManager: AgentRunnerManager;
   private readonly agentEngineDeployer: AgentEngineDeployer;
+  private readonly mcpManager: McpSubprocessManager;
+  private readonly mcpOAuthManager: McpOAuthManager;
   private readonly outputChannel?: vscode.OutputChannel;
   private readonly messageHandlers: Map<
     string,
@@ -66,6 +72,8 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     this.codeGenEngine = new GeminiCodeGenEngine(context.extensionPath);
     this.agentEngineDeployer = new AgentEngineDeployer();
     this.runnerManager = new AgentRunnerManager(context.extensionPath, undefined, this.agentEngineDeployer);
+    this.mcpManager = new McpSubprocessManager();
+    this.mcpOAuthManager = new McpOAuthManager(context);
   }
 
   /**
@@ -321,9 +329,12 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       const config = vscode.workspace.getConfiguration('agentFlow');
       const apiKey = config.get<string>('geminiApiKey') || process.env.GEMINI_API_KEY || '';
 
-      // 1. Resolve target directory
+      // 1. Resolve target directory and immediately clean existing files BEFORE generation
       const targetDirPath = this.resolveTargetDirectory(document, payload.outputFolder);
       const targetDir = vscode.Uri.file(targetDirPath);
+
+      // Clean old generated source files immediately (preserving active .agent document, .git, and config files)
+      await this.cleanTargetDirectory(targetDirPath, document);
 
       // 2. Synthesize new codebase with Gemini LLM
       const deploymentTarget =
@@ -342,9 +353,6 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
 
       if (result.success && result.files.length > 0) {
         try {
-          // Clean old generated source files ONLY when generation succeeds and passes validation
-          await this.cleanTargetDirectory(targetDirPath, document);
-
           // Write all generated files to disk
           for (const file of result.files) {
             const fileUri = vscode.Uri.joinPath(targetDir, file.path);
@@ -563,6 +571,127 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       });
     });
 
+    bridge.onMessage('DISCOVER_MCP_TOOLS', async (payload: any) => {
+      try {
+        this.outputChannel?.appendLine(
+          `[AgentEditorProvider] Discovering MCP tools via ${payload?.transport || 'stdio'} transport (cmd: ${payload?.command || 'N/A'}, url: ${payload?.url || 'N/A'})`
+        );
+        const result = await this.mcpManager.discoverTools(payload);
+        await bridge.postMessage({
+          type: 'MCP_TOOLS_DISCOVERED',
+          payload: {
+            success: result.success,
+            tools: result.tools,
+            serverInfo: result.serverInfo,
+            latencyMs: result.latencyMs,
+            error: result.error,
+            requiresAuth: result.requiresAuth,
+            authType: result.authType,
+            authUrl: result.authUrl,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'MCP_TOOLS_DISCOVERED',
+          payload: {
+            success: false,
+            tools: [],
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('START_MCP_OAUTH_FLOW', async (payload: any) => {
+      try {
+        const workspaceDir = this.resolveTargetDirectory(document, payload?.targetDirectory);
+        this.outputChannel?.appendLine(
+          `[AgentEditorProvider] Starting browser OAuth flow for ${payload?.secretName || 'MCP'} (authUrl: ${payload?.authUrl})`
+        );
+        const result = await this.mcpOAuthManager.startOAuthFlow({
+          authUrl: payload?.authUrl,
+          tokenUrl: payload?.tokenUrl,
+          clientId: payload?.clientId,
+          clientSecret: payload?.clientSecret,
+          scopes: payload?.scopes,
+          secretName: payload?.secretName,
+          envVar: payload?.envVar,
+          workspaceDir,
+          timeoutMs: payload?.timeoutMs,
+        });
+        await bridge.postMessage({
+          type: 'MCP_OAUTH_COMPLETED',
+          payload: result,
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'MCP_OAUTH_COMPLETED',
+          payload: {
+            success: false,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('SAVE_MCP_SECRET', async (payload: any) => {
+      try {
+        const workspaceDir = this.resolveTargetDirectory(document, payload?.targetDirectory);
+        if (!payload?.secretName || !payload?.token) {
+          throw new Error('Secret name and token are required');
+        }
+        const envVar = payload.envVar || payload.secretName.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+        await this.mcpOAuthManager.saveSecret(
+          payload.secretName,
+          envVar,
+          payload.token,
+          workspaceDir
+        );
+        await bridge.postMessage({
+          type: 'MCP_SECRET_SAVED',
+          payload: {
+            success: true,
+            secretName: payload.secretName,
+            envVar,
+            tokenPreview: this.mcpOAuthManager.getRedactedPreview(payload.token),
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'MCP_SECRET_SAVED',
+          payload: {
+            success: false,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('GET_MCP_SECRET', async (payload: any) => {
+      try {
+        const workspaceDir = this.resolveTargetDirectory(document, payload?.targetDirectory);
+        const token = await this.mcpOAuthManager.getSecret(payload?.secretName, payload?.envVar, workspaceDir);
+        await bridge.postMessage({
+          type: 'MCP_SECRET_RETRIEVED',
+          payload: {
+            success: true,
+            hasToken: !!token,
+            tokenPreview: token ? this.mcpOAuthManager.getRedactedPreview(token) : undefined,
+            bearerToken: token,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'MCP_SECRET_RETRIEVED',
+          payload: {
+            success: false,
+            hasToken: false,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
     bridge.onMessage('CANCEL_TESTS', (payload) => {
       if (!payload?.runId) return;
       this.runnerManager.cancelRun(payload.runId);
@@ -579,6 +708,8 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         port: payload.port,
         streaming: payload.streaming ?? true,
         history: payload.history,
+        executionTarget: payload.executionTarget || 'local',
+        deployedResourceId: payload.deployedResourceId,
         bridge,
       });
     });
@@ -839,7 +970,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       deployment: {
         target: 'agent_engine',
         deploymentTarget: 'agent_engine',
-        outputFolder: `./src/agents/${sanitizeFolderBaseName(workflowName || 'workflow')}/`,
+        outputFolder: `./${sanitizeFolderBaseName(workflowName || 'workflow')}/`,
         framework: 'google-adk',
         language: 'python',
       },
@@ -919,7 +1050,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       deployment: {
         target: 'agent_engine',
         deploymentTarget: 'agent_engine',
-        outputFolder: `./src/agents/${sanitizeFolderBaseName(workflowName || 'workflow')}/`,
+        outputFolder: `./${sanitizeFolderBaseName(workflowName || 'workflow')}/`,
         framework: 'google-adk',
         language: 'python',
       },
@@ -1110,8 +1241,10 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       return path.join(docDir, sanitized);
     }
 
-    // If folder is the generic root agents collection, append sanitized agent subfolder
+    // If folder is a generic root agents collection or relative root, append sanitized agent subfolder
     if (
+      folder === './' ||
+      folder === '.' ||
       folder === './src/agents/' ||
       folder === './src/agents' ||
       folder === 'src/agents/' ||
@@ -1121,7 +1254,14 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       folder === 'agents/' ||
       folder === 'agents'
     ) {
-      folder = path.join(folder, sanitized);
+      folder = path.join('./', sanitized);
+    }
+
+    // Strip legacy src/agents/ prefix if present
+    if (folder.startsWith('./src/agents/')) {
+      folder = `./${folder.slice('./src/agents/'.length)}`;
+    } else if (folder.startsWith('src/agents/')) {
+      folder = `./${folder.slice('src/agents/'.length)}`;
     }
 
     if (path.isAbsolute(folder)) {

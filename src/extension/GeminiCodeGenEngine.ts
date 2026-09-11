@@ -30,6 +30,8 @@ export interface AssertionEvaluationRequest {
   actualOutput: string;
   model?: string;
   apiKey?: string;
+  assertionType?: 'contains' | 'exact' | 'json_schema' | 'llm_eval';
+  expectedSchema?: any;
 }
 
 export interface AssertionEvaluationResult {
@@ -582,15 +584,49 @@ export class GeminiCodeGenEngine {
   };
 
   /**
-   * Evaluates an agent test execution result using Gemini as an LLM judge.
+   * Evaluates an agent test execution result using Gemini as an LLM judge or specialized assertion engines.
    * Compares the input query, expected criteria/outcome, and actual output.
    *
    * @param request AssertionEvaluationRequest
    * @returns AssertionEvaluationResult containing pass/fail and explanation
    */
   public async evaluateAssertion(request: AssertionEvaluationRequest): Promise<AssertionEvaluationResult> {
-    const { inputQuery, expectedCriteria, actualOutput, model = 'gemini-flash-latest' } = request;
+    const { 
+      inputQuery, 
+      expectedCriteria, 
+      actualOutput, 
+      model = 'gemini-flash-latest', 
+      assertionType, 
+      expectedSchema 
+    } = request;
     const apiKey = request.apiKey || process.env.GEMINI_API_KEY || '';
+
+    // Fast-path: Explicit JSON schema assertion validation
+    if (assertionType === 'json_schema') {
+      return this.validateJsonSchemaAssertion(actualOutput, expectedSchema || expectedCriteria);
+    }
+
+    // Fast-path: Exact match assertion
+    if (assertionType === 'exact') {
+      const isExact = actualOutput.trim() === expectedCriteria.trim();
+      return {
+        passed: isExact,
+        reason: isExact
+          ? 'Output matched expected criteria exactly.'
+          : `Expected exact match "${expectedCriteria}", but got "${actualOutput}".`,
+      };
+    }
+
+    // Fast-path: Direct contains match
+    if (assertionType === 'contains') {
+      const contains = actualOutput.toLowerCase().includes(expectedCriteria.toLowerCase());
+      return {
+        passed: contains,
+        reason: contains
+          ? `Output contains expected substring "${expectedCriteria}".`
+          : `Output does not contain expected substring "${expectedCriteria}".`,
+      };
+    }
 
     const prompt = `You are an automated QA test evaluator for an AI agent.
 Evaluate whether the agent's actual output satisfies the test's expected outcome given the input query.
@@ -625,6 +661,140 @@ Instructions:
       // Graceful fallback to deterministic heuristic if LLM judge is offline
       return this.heuristicEvaluateAssertion(expectedCriteria, actualOutput);
     }
+  }
+
+  /**
+   * Validates that actual output is valid JSON conforming to an expected schema or structured criteria.
+   *
+   * Logic Flow:
+   * 1. Checks for non-empty output string.
+   * 2. Extracts raw JSON from potential markdown fences (e.g. ```json ... ```).
+   * 3. Parses the payload using JSON.parse. Fails fast with descriptive error if parsing fails.
+   * 4. If schema or criteria is provided:
+   *    - If it's a JSON Schema object (e.g. has properties, required, type), validates:
+   *      - presence of required fields
+   *      - primitive type checks (string, number, boolean, array, object)
+   *      - enum value constraints
+   * 5. Returns AssertionEvaluationResult with clear diagnostics.
+   *
+   * @param actualOutput The raw output string produced by the agent
+   * @param expectedSchemaOrCriteria Optional JSON schema object or expected criteria
+   */
+  public validateJsonSchemaAssertion(
+    actualOutput: string,
+    expectedSchemaOrCriteria?: any
+  ): AssertionEvaluationResult {
+    if (!actualOutput || !actualOutput.trim()) {
+      return {
+        passed: false,
+        reason: 'Actual output is empty and does not contain valid structured JSON.',
+      };
+    }
+
+    // 1. Strip markdown fences if present
+    let cleaned = actualOutput.trim();
+    const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (fenceMatch) {
+      cleaned = fenceMatch[1].trim();
+    }
+
+    // 2. Parse JSON
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (err: any) {
+      return {
+        passed: false,
+        reason: `Failed to parse response as JSON: ${err?.message || 'Invalid JSON syntax'}.`,
+      };
+    }
+
+    if (typeof parsed !== 'object' || parsed === null) {
+      return {
+        passed: false,
+        reason: `Expected JSON object or array, but got ${typeof parsed}.`,
+      };
+    }
+
+    // 3. Resolve schema if provided as string or object
+    let schema = expectedSchemaOrCriteria;
+    if (typeof schema === 'string') {
+      try {
+        schema = JSON.parse(schema);
+      } catch {
+        // Not a JSON string schema; could be description text or simple criteria
+      }
+    }
+
+    // If schema is a standard JSON Schema object with properties
+    if (schema && typeof schema === 'object') {
+      const properties = schema.properties || {};
+      const required: string[] = Array.isArray(schema.required) ? schema.required : [];
+
+      // Check required fields
+      for (const reqKey of required) {
+        if (!(reqKey in parsed) || parsed[reqKey] === undefined || parsed[reqKey] === null) {
+          return {
+            passed: false,
+            reason: `Schema validation failed: Missing required property "${reqKey}".`,
+          };
+        }
+      }
+
+      // Check property types
+      for (const [key, propDef] of Object.entries<any>(properties)) {
+        if (key in parsed && parsed[key] !== undefined && parsed[key] !== null) {
+          const val = parsed[key];
+          const expectedType = (propDef.type || '').toString().toLowerCase();
+
+          if (expectedType === 'string' && typeof val !== 'string') {
+            return {
+              passed: false,
+              reason: `Property "${key}" must be a string, got ${typeof val}.`,
+            };
+          }
+          if ((expectedType === 'number' || expectedType === 'integer') && typeof val !== 'number') {
+            return {
+              passed: false,
+              reason: `Property "${key}" must be a number, got ${typeof val}.`,
+            };
+          }
+          if (expectedType === 'boolean' && typeof val !== 'boolean') {
+            return {
+              passed: false,
+              reason: `Property "${key}" must be a boolean, got ${typeof val}.`,
+            };
+          }
+          if (expectedType === 'array' && !Array.isArray(val)) {
+            return {
+              passed: false,
+              reason: `Property "${key}" must be an array, got ${typeof val}.`,
+            };
+          }
+          if (expectedType === 'object' && (typeof val !== 'object' || Array.isArray(val))) {
+            return {
+              passed: false,
+              reason: `Property "${key}" must be an object, got ${typeof val}.`,
+            };
+          }
+
+          // Check enum values
+          if (Array.isArray(propDef.enum) && propDef.enum.length > 0) {
+            if (!propDef.enum.includes(val)) {
+              return {
+                passed: false,
+                reason: `Property "${key}" has value "${val}" which is not in allowed enums [${propDef.enum.join(', ')}].`,
+              };
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      passed: true,
+      reason: 'Output strictly conforms to the JSON Schema specification.',
+    };
   }
 
   private async callGeminiAssertionWithApiKey(

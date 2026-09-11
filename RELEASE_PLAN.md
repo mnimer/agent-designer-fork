@@ -292,10 +292,16 @@ To ensure fast iteration, robust test coverage, and strict quality gates, engine
      - In-drawer button to execute MCP initialization handshake via extension backend and list exposed tools.
   3. **Python MCP Client Code Generation**:
      - Generates async `mcp` client connectors and attaches negotiated tools to Google ADK agents.
+  4. **Google Cloud MCP Servers Catalog (in Tools Tab)**:
+     - Pre-integrated catalog of all released Google Cloud remote MCP servers (BigQuery, Spanner, Cloud SQL, AlloyDB, Cloud Run, Cloud Storage, Dataplex, Vertex AI, etc.) from `docs.cloud.google.com/mcp/supported-products`.
+     - Rendered as a collapsible category accordion inside the existing Tools Tab, preserving the 4 top-level tabs (`Agents`, `Tools`, `Triggers`, `Samples`).
+     - Organized into 6 lightweight domain sub-accordions (*Databases & Storage*, *Compute & Containers*, *AI & Search*, *Analytics & ETL*, *Management & Security*, *Developer & Workspace*) with auto-expansion on search.
+     - Automatic endpoint resolution, regional routing options, documentation links, and Google Cloud ADC/OAuth bearer token authentication.
 
 * **Acceptance Criteria**:
   - Configuring an MCP tool generates proper async MCP client lifecycle management in `tools.py`.
   - MCP handshake test discovers available tools and displays them in the inspector.
+  - Google Cloud MCP Servers category renders inside the Tools tab with 6 collapsible domain sub-accordions, drag-and-drop support, and automatic Google ADC authorization header generation.
 
 ---
 

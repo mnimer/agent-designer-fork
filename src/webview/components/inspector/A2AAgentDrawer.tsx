@@ -3,18 +3,25 @@
  * 
  * Purpose:
  * Provides configuration drawer for A2A protocols, communication channels,
- * peer delegation patterns, and handshake configurations.
+ * peer delegation patterns, and handshake configurations structured in 4 tabs:
+ * 1. Agent: Standard Agent attributes (Name, Python ID, Delegation Prompt, Structured Output, LLM Engine, Attached Tools).
+ * 2. Card & Skills: Agent Card JSON Spec (Required), Published Skills, and Read-Only Detected Capabilities.
+ * 3. Endpoint & Auth: RPC Endpoint URL (Required), Protocol Spec, Discovery URL, Multi-Scheme Auth, Headers & Resilience.
+ * 4. Sub-Agents: Multi-agent delegation patterns and peer orchestration (dynamically hidden when no sub-agents connected).
  * 
  * Architectural Decisions:
  * - Author: Mike Nimer <mikenimer@google.com>
- * - Peer Delegation Section: Conditionally hidden when subAgents.length === 0.
- * - Pattern Options: Unified with Google ADK orchestration patterns (Sequential, Parallel, Loop, Coordinator).
- * - Loop Configuration: Provides numeric Max Iterations bound (defaulting to 3) when Loop pattern is active.
- * - Synchronization: Keeps peer agent list and order strictly identical with the canvas node card.
+ * - Empty Spec Default: New A2A nodes start with empty JSON spec and endpoint, marked as Required.
+ * - Read-only Capabilities: Advertised capabilities are strictly parsed from agent-card.json (Option A).
+ * - Dynamic Sub-Agents Tab: Automatically hidden when subAgents.length === 0.
+ * - Icon Availability: Wrench and all required Lucide icons explicitly imported.
+ * - Grid System: Follows 8pt grid system for spacing.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Edge } from 'reactflow';
 import { 
+  Bot,
   Globe2, 
   X, 
   Globe, 
@@ -26,7 +33,6 @@ import {
   ChevronDown, 
   Plus, 
   Check, 
-  Code2, 
   Network,
   Key,
   Lock,
@@ -35,11 +41,13 @@ import {
   Sliders,
   Clock,
   AlertCircle,
-  Link,
   Cpu,
   Layers3,
   Play,
-  Scale
+  Scale,
+  Wrench,
+  Pencil,
+  Code2
 } from 'lucide-react';
 import { 
   AgentData, 
@@ -48,12 +56,11 @@ import {
   A2AConfig, 
   A2AAuthType, 
   A2AAgentSkill,
-  AgentKind, 
   StructuredOutputSchema, 
-  DebateConfig, 
   DebateStyle, 
   TieBreakerStrategy,
-  ADK_DELEGATION_PATTERNS 
+  ADK_DELEGATION_PATTERNS,
+  ToolDefinition
 } from '../../types';
 import { StructuredOutputBuilder } from './StructuredOutputBuilder';
 import { parseA2AAgentCard } from '../../../shared/a2aCardParser';
@@ -62,128 +69,70 @@ import { validateAgentIdentifier, sanitizeAgentIdentifier } from '../../../share
 interface A2AAgentDrawerProps {
   agent: AgentData;
   allAgents: AgentData[];
+  edges?: Edge[];
   onClose: () => void;
   onUpdateAgent: (updatedData: Partial<AgentData>) => void;
+  onOpenAddTool?: () => void;
+  onRemoveTool?: (toolId: string) => void;
+  onEditTool?: (tool: ToolDefinition) => void;
+  onSelectAgent?: (agentId: string) => void;
 }
 
 const SUPPORTED_MODELS = [
   { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash (Recommended - Global Region)', desc: 'Next-gen hybrid reasoning with adaptive thinking on Vertex AI' },
   { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', desc: 'Fast, lightweight multimodal reasoning on Vertex AI' },
-  { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)', desc: 'Fast, lightweight, sub-second multimodal reasoning' },
 ];
 
 const PATTERN_OPTIONS = ADK_DELEGATION_PATTERNS;
 
-const PRESET_CAPABILITIES = [
-  'schema_negotiation',
-  'task_handoff',
-  'streaming_artifacts',
-  'state_synchronization',
-  'evaluation_handshake',
-  'rag_vector_query',
-  'code_execution_sandbox',
-  'human_in_the_loop',
-];
-
-const DEFAULT_SAMPLE_PACK = (name: string, endpoint: string) => JSON.stringify({
-  "$schema": "https://a2a-protocol.org/schemas/v1/agent-card.json",
-  "name": name || "Data Analysis Peer Agent",
-  "description": "Specialized A2A agent for statistical computation and data transformations.",
-  "version": "1.0.0",
-  "endpoint": endpoint || "https://api.agent-network.internal/a2a/v1",
-  "protocol": {
-    "version": "1.0.0-a2a",
-    "transport": "jsonrpc-2.0+http"
-  },
-  "authentication": {
-    "type": "bearer",
-    "token_env": "A2A_AGENT_AUTH_TOKEN"
-  },
-  "capabilities": [
-    "schema_negotiation",
-    "task_handoff",
-    "streaming_artifacts"
-  ],
-  "interfaces": [
-    {
-      "method": "execute_task",
-      "params": {
-        "task_id": "string",
-        "input_data": "object",
-        "context": "object"
-      },
-      "returns": "object"
-    }
-  ]
-}, null, 2);
+export type A2ADrawerTab = 'agent' | 'card_skills' | 'endpoint_auth' | 'sub_agents';
+export type ActiveTab = A2ADrawerTab;
 
 export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
   agent,
   allAgents,
+  edges,
   onClose,
   onUpdateAgent,
+  onOpenAddTool,
+  onRemoveTool,
+  onEditTool,
+  onSelectAgent,
 }) => {
+  const [activeTab, setActiveTab] = useState<ActiveTab>('agent');
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [jsonSuccess, setJsonSuccess] = useState<boolean>(false);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
-  const [newCapInput, setNewCapInput] = useState('');
-  const [jsonError, setJsonError] = useState<string | null>(null);
-  const [jsonSuccess, setJsonSuccess] = useState(false);
   const [newHeaderKey, setNewHeaderKey] = useState('');
   const [newHeaderVal, setNewHeaderVal] = useState('');
 
-  const subAgents = agent.subAgents || [];
-  const currentPattern: DelegationPattern = agent.subAgentPattern || 'parallel';
-
-  const currentIdentifier = agent.name ?? sanitizeAgentIdentifier(agent.label || agent.id, 'a2a_agent');
-  const identifierValidation = validateAgentIdentifier(currentIdentifier, 'a2a_agent');
-
-  const handleLabelChange = (newLabel: string) => {
-    const oldSanitized = sanitizeAgentIdentifier(agent.label || agent.id, 'a2a_agent');
-    const updates: Partial<AgentData> = { label: newLabel };
-    if (!agent.name || agent.name === oldSanitized) {
-      updates.name = sanitizeAgentIdentifier(newLabel, 'a2a_agent');
-    }
-    onUpdateAgent(updates);
-  };
-
-  const handleIdentifierChange = (rawName: string) => {
-    const noSpaces = rawName.replace(/\s+/g, '_');
-    onUpdateAgent({ name: noSpaces });
-  };
-  
+  // Fallback safe A2A Configuration
   const a2aConfig: A2AConfig = {
-    connectionMode: agent.a2aConfig?.connectionMode || 'url',
-    endpoint: agent.a2aConfig?.endpoint || 'https://api.agent-network.internal/a2a/v1',
-    protocolVersion: agent.a2aConfig?.protocolVersion || '1.0.0-a2a',
-    agentCardUrl: agent.a2aConfig?.agentCardUrl || '/.well-known/agent-card.json',
-    rawJsonPack: agent.a2aConfig?.rawJsonPack || DEFAULT_SAMPLE_PACK(agent.label, agent.a2aConfig?.endpoint || 'https://api.agent-network.internal/a2a/v1'),
-    authType: agent.a2aConfig?.authType || 'bearer',
-    authTokenSecret: agent.a2aConfig?.authTokenSecret || 'A2A_AGENT_AUTH_TOKEN',
-    headerName: agent.a2aConfig?.headerName || 'Authorization',
-    oauth2Config: agent.a2aConfig?.oauth2Config || {
-      tokenUrl: 'https://auth.company.internal/oauth/v2/token',
-      clientId: 'agent-service-client',
-      clientSecretEnv: 'A2A_OAUTH_CLIENT_SECRET',
-      scope: 'agent.invoke agent.artifacts',
-      audience: 'https://api.agent-network.internal/a2a',
+    endpoint: '',
+    protocolVersion: '',
+    agentCardUrl: '',
+    authType: 'bearer',
+    authTokenSecret: '',
+    headerName: 'X-API-Key',
+    timeoutSeconds: 30,
+    maxRetries: 3,
+    capabilities: [],
+    skills: [],
+    customHeaders: {},
+    rawJsonPack: '',
+    oauth2Config: {
+      tokenUrl: '',
+      clientId: '',
+      clientSecretEnv: '',
+      scopes: [],
     },
-    googleIamConfig: agent.a2aConfig?.googleIamConfig || {
-      targetAudience: 'https://agent-service-731465797158.us-central1.run.app',
-      serviceAccountEnv: 'GOOGLE_APPLICATION_CREDENTIALS',
+    googleIamConfig: {
+      targetAudience: '',
+      serviceAccountEmail: '',
     },
-    customHeaders: agent.a2aConfig?.customHeaders || {
-      'X-Agent-Protocol': 'a2a-v1',
-      'X-Target-Schema': 'application/vnd.a2a.v1+json',
-    },
-    timeoutSeconds: agent.a2aConfig?.timeoutSeconds || 30,
-    maxRetries: agent.a2aConfig?.maxRetries || 3,
-    capabilities: agent.a2aConfig?.capabilities || ['schema_negotiation', 'task_handoff', 'streaming_artifacts'],
-    skills: agent.a2aConfig?.skills || [],
-    iconUrl: agent.a2aConfig?.iconUrl,
-    preferredTransport: agent.a2aConfig?.preferredTransport || 'INTERNAL_HTTP+JSON',
+    ...agent.a2aConfig,
   };
-
-  const descriptionValue = agent.systemPrompt ?? '';
 
   const handleUpdateConfig = (partial: Partial<A2AConfig>) => {
     onUpdateAgent({
@@ -194,40 +143,167 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
     });
   };
 
+  // Sub-agents resolving:
+  // Strictly resolves sub-agents connected FROM this node's bottom handle to downstream agent nodes.
+  // Never treats an incoming connection (where this node is the target / child) as a sub-agent.
+  const currentAgentId = agent.id || (agent as any).name;
+  const currentAgentName = agent.name;
+  const currentAgentIdentifier = agent.identifier;
+  const currentAgentLabel = agent.label;
+
+  const matchesCurrentAgent = (idOrName?: string) => {
+    if (!idOrName) return false;
+    return (
+      idOrName === currentAgentId ||
+      (currentAgentName && idOrName === currentAgentName) ||
+      (currentAgentIdentifier && idOrName === currentAgentIdentifier) ||
+      (currentAgentLabel && idOrName === currentAgentLabel)
+    );
+  };
+
+  const isBottomHandle = (handleId?: string | null) => {
+    if (!handleId) return true;
+    if (handleId === 'output' || handleId === 'subagent' || handleId.startsWith('branch_')) return true;
+    return handleId !== 'input' && handleId !== 'input_left';
+  };
+
+  const connectedOutgoingSubAgentIds = (edges || [])
+    .filter((e) => {
+      const isFromSelf = matchesCurrentAgent(e.source);
+      const isToSelf = matchesCurrentAgent(e.target);
+      const fromBottom = isBottomHandle(e.sourceHandle);
+      return isFromSelf && !isToSelf && fromBottom;
+    })
+    .map((e) => e.target)
+    .filter((targetId) => {
+      if (!targetId || matchesCurrentAgent(targetId)) return false;
+      return allAgents.some(
+        (a) => a.id === targetId || (a as any).name === targetId || (a as any).identifier === targetId || a.label === targetId
+      );
+    });
+
+  const connectedTargetSet = new Set(connectedOutgoingSubAgentIds);
+
+  const rawSubAgentRefs = agent.subAgents || [];
+  // When edges is provided, filter out any references that are not connected from the bottom handle
+  const validSubAgentRefs = edges !== undefined
+    ? rawSubAgentRefs.filter((r) => {
+        const id = typeof r === 'string' ? r : r.agentId;
+        return connectedTargetSet.has(id);
+      })
+    : rawSubAgentRefs;
+
+  const existingSubIds = new Set(
+    validSubAgentRefs.map((r) => (typeof r === 'string' ? r : r.agentId))
+  );
+
+  const mergedRefs: (SubAgentRef | string)[] = [...validSubAgentRefs];
+  connectedOutgoingSubAgentIds.forEach((targetId) => {
+    if (!existingSubIds.has(targetId)) {
+      mergedRefs.push(targetId);
+      existingSubIds.add(targetId);
+    }
+  });
+
+  const effectivePattern: DelegationPattern =
+    agent.subAgentPattern || agent.delegationPattern || 'parallel';
+
+  const subAgents: SubAgentRef[] = mergedRefs.map((ref) => {
+    const id = typeof ref === 'string' ? ref : ref.agentId;
+    const found = allAgents.find(
+      (a) => a.id === id || (a as any).name === id || (a as any).identifier === id || a.label === id
+    );
+    if (typeof ref === 'string') {
+      return {
+        agentId: id,
+        name: found?.label || (found as any)?.name || `Agent ${id.substring(0, 5)}`,
+        role: found?.role,
+        delegationType: effectivePattern,
+      };
+    }
+    return {
+      agentId: id,
+      name: ref.name || found?.label || (found as any)?.name || `Agent ${id.substring(0, 5)}`,
+      role: ref.role || found?.role,
+      delegationType: ref.delegationType || effectivePattern,
+    };
+  });
+
+  // If active tab was sub_agents and subAgents became empty, gracefully fall back to 'agent'
+  useEffect(() => {
+    if (subAgents.length === 0 && activeTab === 'sub_agents') {
+      setActiveTab('agent');
+    }
+  }, [subAgents.length, activeTab]);
+
   const handleMoveSubAgent = (fromIdx: number, toIdx: number) => {
     if (toIdx < 0 || toIdx >= subAgents.length) return;
-    const reordered = [...subAgents];
-    const [moved] = reordered.splice(fromIdx, 1);
-    reordered.splice(toIdx, 0, moved);
-    onUpdateAgent({ subAgents: reordered });
-  };
-
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDraggedIdx(index);
-    e.dataTransfer.setData('text/plain', index.toString());
-    e.dataTransfer.effectAllowed = 'move';
-  };
-
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    if (draggedIdx !== null && draggedIdx !== index) {
-      setDragOverIdx(index);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
-    e.preventDefault();
-    if (draggedIdx !== null && draggedIdx !== dropIndex) {
-      handleMoveSubAgent(draggedIdx, dropIndex);
-    }
-    setDraggedIdx(null);
-    setDragOverIdx(null);
+    const updated = [...subAgents];
+    const [moved] = updated.splice(fromIdx, 1);
+    updated.splice(toIdx, 0, moved);
+    onUpdateAgent({ subAgents: updated });
   };
 
   const handleRemoveSubAgent = (agentId: string) => {
     const updated = subAgents.filter((s) => s.agentId !== agentId);
     onUpdateAgent({ subAgents: updated });
   };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIdx(index);
+    e.dataTransfer.setData('text/plain', `${index}`);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (dragOverIdx !== index) {
+      setDragOverIdx(index);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedIdx === null || draggedIdx === dropIndex) return;
+    handleMoveSubAgent(draggedIdx, dropIndex);
+    setDraggedIdx(null);
+    setDragOverIdx(null);
+  };
+
+  const currentIdentifier = 
+    agent.identifier || 
+    (agent.name ? sanitizeAgentIdentifier(agent.name) : sanitizeAgentIdentifier(agent.label || agent.id));
+  const identifierValidation = validateAgentIdentifier(currentIdentifier);
+
+  // Auto-populate empty identifier on new cards from name/label converted to a valid Python ID
+  useEffect(() => {
+    if (!agent.identifier) {
+      const autoId = sanitizeAgentIdentifier(agent.name || agent.label || agent.id);
+      onUpdateAgent({ identifier: autoId, name: autoId });
+    }
+  }, [agent.identifier, agent.name, agent.label, agent.id, onUpdateAgent]);
+
+  const handleLabelChange = (newLabel: string) => {
+    const currentId = agent.identifier || agent.name || '';
+    const wasAutoGenerated = !currentId || currentId === sanitizeAgentIdentifier(agent.label || agent.id);
+    
+    if (wasAutoGenerated) {
+      const newIdentifier = sanitizeAgentIdentifier(newLabel);
+      onUpdateAgent({ 
+        label: newLabel,
+        identifier: newIdentifier,
+        name: newIdentifier,
+      });
+    } else {
+      onUpdateAgent({ label: newLabel });
+    }
+  };
+
+  const handleIdentifierChange = (rawId: string) => {
+    const noSpaces = rawId.replace(/\s+/g, '_');
+    onUpdateAgent({ identifier: noSpaces, name: noSpaces });
+  };
+
+  const descriptionValue = agent.systemPrompt || '';
 
   const handleDescriptionChange = (newDescription: string) => {
     const firstSentence = newDescription.split('\n')[0].trim();
@@ -250,24 +326,6 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
     }
   };
 
-  const handleToggleCapability = (cap: string) => {
-    const currentCaps = a2aConfig.capabilities || [];
-    const updated = currentCaps.includes(cap)
-      ? currentCaps.filter((c) => c !== cap)
-      : [...currentCaps, cap];
-    handleUpdateConfig({ capabilities: updated });
-  };
-
-  const handleAddCustomCapability = () => {
-    if (!newCapInput.trim()) return;
-    const cap = newCapInput.trim().toLowerCase().replace(/\s+/g, '_');
-    const currentCaps = a2aConfig.capabilities || [];
-    if (!currentCaps.includes(cap)) {
-      handleUpdateConfig({ capabilities: [...currentCaps, cap] });
-    }
-    setNewCapInput('');
-  };
-
   const handleAddHeader = () => {
     if (!newHeaderKey.trim()) return;
     const headers = { ...(a2aConfig.customHeaders || {}) };
@@ -288,11 +346,12 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
     setJsonSuccess(false);
     try {
       if (!a2aConfig.rawJsonPack || !a2aConfig.rawJsonPack.trim()) {
-        throw new Error('Please paste an agent-card.json manifest into the box.');
+        throw new Error('Agent Card JSON specification is required. Please paste an agent-card.json manifest into the box.');
       }
       const parsed = parseA2AAgentCard(a2aConfig.rawJsonPack);
       
       const newLabel = parsed.name || agent.label;
+      const newIdentifier = sanitizeAgentIdentifier(newLabel);
       const newEndpoint = parsed.endpoint || a2aConfig.endpoint;
       const newProtocol = parsed.protocolVersion || a2aConfig.protocolVersion;
       const newCaps = parsed.capabilities.length > 0 ? parsed.capabilities : a2aConfig.capabilities;
@@ -301,6 +360,8 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
 
       onUpdateAgent({
         label: newLabel,
+        identifier: newIdentifier,
+        name: newIdentifier,
         systemPrompt: parsed.suggestedDelegationPrompt || newDescription,
         role: (parsed.description ? parsed.description.split('\n')[0] : agent.role) || 'A2A Protocol Autonomous Agent',
         a2aConfig: {
@@ -383,689 +444,910 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
         </button>
       </div>
 
+      {/* 4-Tab Navigation Bar */}
+      <div className="flex items-center px-3 py-2 bg-[#0d1117] border-b border-[#30363d] gap-1 shrink-0 overflow-x-auto">
+        <button
+          type="button"
+          onClick={() => setActiveTab('agent')}
+          className={`flex-1 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+            activeTab === 'agent'
+              ? 'bg-cyan-600 text-white shadow-xs'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-[#161b22]'
+          }`}
+        >
+          <Bot className="w-3.5 h-3.5" />
+          <span>Agent</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('card_skills')}
+          className={`flex-1 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+            activeTab === 'card_skills'
+              ? 'bg-cyan-600 text-white shadow-xs'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-[#161b22]'
+          }`}
+        >
+          <FileJson className="w-3.5 h-3.5" />
+          <span>Card & Skills</span>
+          {!a2aConfig.rawJsonPack?.trim() && (
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" title="Agent card JSON spec required" />
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('endpoint_auth')}
+          className={`flex-1 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+            activeTab === 'endpoint_auth'
+              ? 'bg-cyan-600 text-white shadow-xs'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-[#161b22]'
+          }`}
+        >
+          <Globe className="w-3.5 h-3.5" />
+          <span>Endpoint & Auth</span>
+          {!a2aConfig.endpoint?.trim() && (
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" title="RPC Endpoint URL required" />
+          )}
+        </button>
+
+        {subAgents.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('sub_agents')}
+            className={`flex-1 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+              activeTab === 'sub_agents'
+                ? 'bg-cyan-600 text-white shadow-xs'
+                : 'text-gray-400 hover:text-gray-200 hover:bg-[#161b22]'
+            }`}
+          >
+            <Network className="w-3.5 h-3.5" />
+            <span>Sub-Agents</span>
+            <span className="text-[9px] px-1 rounded-full bg-cyan-950 text-cyan-300 font-mono">
+              {subAgents.length}
+            </span>
+          </button>
+        )}
+      </div>
+
       {/* Form Body */}
       <div className="flex-1 p-4 space-y-4 overflow-y-auto text-xs text-gray-300">
-        {/* Agent Display Name & Python Identifier */}
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400">
-              A2A Agent Display Name
-            </label>
-            <input
-              type="text"
-              value={agent.label}
-              onChange={(e) => handleLabelChange(e.target.value)}
-              placeholder="e.g. Data Analysis Peer Agent"
-              className="w-full px-3 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded-lg text-xs text-white focus:outline-none"
-            />
-          </div>
 
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400">
-                Agent Identifier (Python ID)
-              </label>
-              <span className="text-[10px] text-gray-400 font-mono">ADK peer name</span>
+        {/* ========================================================================= */}
+        {/* TAB 1: AGENT (Standard Agent Node Card Order)                            */}
+        {/* 1. Agent Display Name                                                    */}
+        {/* 2. Agent Identifier (Python ID)                                          */}
+        {/* 3. Caller Delegation Prompt & Task Instructions                          */}
+        {/* 4. Structured Output Schema Builder                                      */}
+        {/* 5. Underlying LLM Engine                                                 */}
+        {/* 6. Attached Tools Section                                                */}
+        {/* ========================================================================= */}
+        {activeTab === 'agent' && (
+          <>
+            {/* 1. Display Name & Python Identifier */}
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400">
+                  A2A Agent Display Name
+                </label>
+                <input
+                  type="text"
+                  value={agent.label}
+                  onChange={(e) => handleLabelChange(e.target.value)}
+                  placeholder="e.g. Data Analysis Peer Agent"
+                  className="w-full px-3 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded-lg text-xs text-white focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400">
+                    Agent Identifier (Python ID)
+                  </label>
+                  <span className="text-[10px] text-gray-400 font-mono">ADK peer name</span>
+                </div>
+                <input
+                  type="text"
+                  value={currentIdentifier}
+                  onChange={(e) => handleIdentifierChange(e.target.value)}
+                  placeholder="e.g. data_analysis_agent"
+                  className={`w-full px-3 py-1.5 bg-[#0d1117] border rounded-lg text-xs font-mono text-white focus:outline-none ${
+                    identifierValidation.isValid
+                      ? 'border-[#30363d] focus:border-cyan-400'
+                      : 'border-red-500 focus:border-red-500 bg-red-950/20'
+                  }`}
+                />
+                {!identifierValidation.isValid && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-red-400 mt-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{identifierValidation.error}</span>
+                  </div>
+                )}
+                <div className="text-[10px] text-gray-400">
+                  Must be a valid Python identifier (letters, digits, underscores; no spaces or hyphens).
+                </div>
+              </div>
             </div>
-            <input
-              type="text"
-              value={currentIdentifier}
-              onChange={(e) => handleIdentifierChange(e.target.value)}
-              placeholder="e.g. data_analysis_agent"
-              className={`w-full px-3 py-1.5 bg-[#0d1117] border rounded-lg text-xs font-mono text-white focus:outline-none ${
-                identifierValidation.isValid
-                  ? 'border-[#30363d] focus:border-cyan-400'
-                  : 'border-red-500 focus:border-red-500 bg-red-950/20'
-              }`}
+
+            {/* 2. Caller Delegation Prompt & Task Instructions */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold uppercase tracking-tight text-cyan-300 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Caller Delegation Prompt & Task Instructions</span>
+                </label>
+                <span className="text-[10px] text-gray-400 font-mono">
+                  {descriptionValue.length} chars • {descriptionValue.split(/\s+/).filter(Boolean).length} words
+                </span>
+              </div>
+
+              <p className="text-[10px] text-gray-400 leading-normal">
+                Instructs orchestrator / caller agents on <strong className="text-gray-200">when and how</strong> to delegate queries to this A2A agent, and provides prompt context sent with requests. <em>(The remote agent runs its own internal model in the cloud).</em>
+              </p>
+
+              <div className="relative group">
+                <textarea
+                  rows={5}
+                  value={descriptionValue}
+                  onChange={(e) => handleDescriptionChange(e.target.value)}
+                  placeholder="e.g. BigQuery CA agent answering questions about attached data. Provides data analysis assistance. Example query: What is the total sales for the last 3 months?"
+                  className="w-full min-h-[100px] max-h-[300px] px-3 py-2 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded-lg text-xs text-gray-200 focus:outline-none resize-y font-mono leading-relaxed selection:bg-cyan-900 selection:text-white"
+                />
+                <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
+                  <span>Delegation guidance used by parent orchestrator / router to invoke this tool</span>
+                  <span className="text-[9px] font-mono text-gray-400">↕ Expand</span>
+                </div>
+              </div>
+
+              {a2aConfig.skills && a2aConfig.skills.length > 0 && (
+                <div className="flex items-center justify-between pt-0.5">
+                  <span className="text-[9px] text-gray-400 font-mono">Skills detected in agent card</span>
+                  <button
+                    type="button"
+                    onClick={handlePrefillFromSkills}
+                    className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-mono cursor-pointer"
+                  >
+                    <Sparkles className="w-2.5 h-2.5" />
+                    Prefill from Skills & Examples
+                  </button>
+                </div>
+              )}
+
+              {!descriptionValue.trim() && (
+                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 italic pt-0.5">
+                  <Sparkles className="w-3 h-3 text-cyan-400/60 shrink-0" />
+                  <span>Tip: Importing an agent card in Card & Skills tab will auto-populate delegation instructions from declared skills.</span>
+                </div>
+              )}
+            </div>
+
+            {/* 3. Structured Output Schema Builder */}
+            <StructuredOutputBuilder
+              schema={agent.structuredOutput}
+              agentLabel={agent.label}
+              onChange={(newSchema: StructuredOutputSchema) => {
+                onUpdateAgent({
+                  structuredOutput: newSchema,
+                  outputFormat: newSchema.enabled ? 'structured' : 'text',
+                });
+              }}
             />
-            {!identifierValidation.isValid && (
-              <div className="flex items-center gap-1.5 text-[11px] text-red-400 mt-1">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>{identifierValidation.error}</span>
+
+            {/* 4. Underlying LLM Engine */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
+                <Cpu className="w-3 h-3 text-cyan-400" />
+                Underlying LLM Engine
+              </label>
+              <select
+                value={agent.model || 'gemini-flash-latest'}
+                onChange={(e) => onUpdateAgent({ model: e.target.value })}
+                className="w-full px-3 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded-lg text-xs text-white focus:outline-none cursor-pointer"
+              >
+                {SUPPORTED_MODELS.map((m) => (
+                  <option key={m.id} value={m.id} className="bg-[#161b22]">
+                    {m.name} ({m.id})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-gray-500">
+                Model used for local prompt processing or delegation synthesis if this A2A client node participates in reasoning.
+              </p>
+            </div>
+
+            {/* 5. Attached Tools Section */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
+                  <Wrench className="w-3 h-3 text-cyan-400" />
+                  <span>Attached Tools ({(agent.tools || []).length})</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={onOpenAddTool}
+                  className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer shadow-xs"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Add Tool</span>
+                </button>
+              </div>
+
+              {agent.tools && agent.tools.length > 0 ? (
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+                  {agent.tools.map((t: ToolDefinition) => (
+                    <div
+                      key={t.id}
+                      className="p-2 bg-[#0d1117] rounded-lg border border-[#30363d] hover:border-cyan-500/40 transition-colors flex items-center justify-between group"
+                    >
+                      <div className="min-w-0 flex-1 mr-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-gray-200 text-xs truncate">{t.name}</span>
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#161b22] text-cyan-400 border border-cyan-500/30 font-mono uppercase">
+                            {t.type}
+                          </span>
+                        </div>
+                        {t.description && (
+                          <p className="text-[10px] text-gray-400 truncate mt-0.5">{t.description}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                        {onEditTool && (
+                          <button
+                            type="button"
+                            onClick={() => onEditTool(t)}
+                            className="p-1 text-gray-400 hover:text-white hover:bg-[#21262d] rounded cursor-pointer transition-colors"
+                            title="Configure Tool"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onRemoveTool && onRemoveTool(t.id)}
+                          className="p-1 text-gray-400 hover:text-rose-400 hover:bg-rose-950/30 rounded cursor-pointer transition-colors"
+                          title="Remove Tool"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 bg-[#0d1117] rounded-lg border border-dashed border-[#30363d] text-center text-gray-500 text-[11px]">
+                  No local tools attached to this A2A agent.
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 2: CARD & SKILLS                                                     */}
+        {/* 1. Import Agent Card (JSON Spec)                                         */}
+        {/* 2. Published Agent Skills Overview                                       */}
+        {/* 3. Advertised Capabilities                                               */}
+        {/* ========================================================================= */}
+        {activeTab === 'card_skills' && (
+          <div className="space-y-4">
+            {/* SECTION 1: Import Agent Card (JSON Spec) */}
+            <div className={`p-3 bg-[#0d1117] rounded-lg border space-y-2.5 shadow-sm ${
+              !a2aConfig.rawJsonPack?.trim() ? 'border-rose-500/40' : 'border-cyan-500/40'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-xs">
+                  <FileJson className="w-4 h-4 text-cyan-400" />
+                  <span>Import Agent Card (JSON Spec)</span>
+                  <span className="text-rose-400">*</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {!a2aConfig.rawJsonPack?.trim() && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-950/70 text-rose-300 font-mono border border-rose-500/40 font-semibold">
+                      Required
+                    </span>
+                  )}
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950/70 text-cyan-300 font-mono border border-cyan-500/30">
+                    GDA & A2A v1.0
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-gray-400 leading-normal">
+                Paste the published <code className="text-cyan-300">agent-card.json</code> manifest from BigQuery CA, Google Data Analytics, or an A2A peer agent to auto-configure this node.
+              </p>
+
+              <textarea
+                rows={7}
+                value={a2aConfig.rawJsonPack || ''}
+                onChange={(e) => {
+                  handleUpdateConfig({ rawJsonPack: e.target.value });
+                  setJsonError(null);
+                }}
+                placeholder={`{
+  "protocolVersion": "1.0",
+  "name": "stock agent",
+  "url": "https://geminidataanalytics...",
+  "skills": [...]
+}`}
+                className={`w-full px-2.5 py-2 bg-[#161b22] border rounded font-mono text-[10px] text-cyan-200 focus:outline-none resize-y leading-tight ${
+                  !a2aConfig.rawJsonPack?.trim()
+                    ? 'border-rose-500/40 focus:border-rose-400'
+                    : 'border-[#30363d] focus:border-cyan-400'
+                }`}
+              />
+
+              {!a2aConfig.rawJsonPack?.trim() && !jsonError && (
+                <div className="flex items-start gap-1.5 text-[10px] text-rose-300 bg-rose-950/30 p-2 rounded border border-rose-500/30">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400 mt-0.5" />
+                  <span>Agent Card JSON spec is required. Paste the remote agent's <code className="text-cyan-300 font-mono">agent-card.json</code> to configure this agent's endpoint, skills, and delegation instructions.</span>
+                </div>
+              )}
+
+              {jsonError && (
+                <div className="flex items-center gap-1 text-[10px] text-rose-400 bg-rose-950/40 p-1.5 rounded border border-rose-500/30">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{jsonError}</span>
+                </div>
+              )}
+
+              {jsonSuccess && (
+                <div className="text-[10px] text-emerald-300 bg-emerald-950/40 p-2 rounded border border-emerald-500/30 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-emerald-400">
+                    <Check className="w-3.5 h-3.5 shrink-0" />
+                    <span>Agent Card Successfully Applied!</span>
+                  </div>
+                  <div className="text-[9px] text-gray-300 font-mono">
+                    • {agent.label} • {a2aConfig.endpoint ? 'Endpoint configured' : 'No endpoint'}
+                    {a2aConfig.skills && a2aConfig.skills.length > 0 && ` • ${a2aConfig.skills.length} skills`}
+                    {a2aConfig.capabilities && a2aConfig.capabilities.length > 0 && ` • ${a2aConfig.capabilities.length} capabilities`}
+                    {a2aConfig.authType === 'google_iam' && ' • Google Cloud IAM active'}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleParseAndApplyJsonPack}
+                  className="flex-1 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  <FileJson className="w-3.5 h-3.5" />
+                  <span>Parse & Apply Agent Card</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSyncFromFormToJson}
+                  title="Regenerate JSON from current form settings"
+                  className="px-2.5 py-1.5 bg-[#161b22] hover:bg-[#21262d] border border-[#30363d] text-gray-300 hover:text-white rounded text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <RefreshCw className="w-3 h-3 text-cyan-400" />
+                  <span>Export</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Published Skills Overview (when parsed) */}
+            {a2aConfig.skills && a2aConfig.skills.length > 0 ? (
+              <div className="p-3 bg-[#0d1117] rounded-lg border border-cyan-500/30 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-cyan-300 font-bold text-xs">
+                    <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Published Agent Skills ({a2aConfig.skills.length})</span>
+                  </div>
+                  <span className="text-[9px] font-mono text-cyan-400 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-500/20">
+                    Remote Capabilities
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {a2aConfig.skills.map((skill) => (
+                    <div key={skill.id} className="p-2 bg-[#161b22] rounded border border-[#30363d] space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-white text-[11px]">{skill.name}</span>
+                        <span className="text-[9px] text-cyan-400 font-mono">{skill.id}</span>
+                      </div>
+                      {skill.description && (
+                        <p className="text-[10px] text-gray-300">{skill.description}</p>
+                      )}
+                      {skill.examples && skill.examples.length > 0 && (
+                        <div className="pt-1">
+                          <span className="text-[9px] text-gray-400 uppercase font-mono tracking-wider block">Sample Queries:</span>
+                          <ul className="list-disc list-inside text-[9.5px] text-cyan-200/90 font-mono space-y-0.5">
+                            {skill.examples.map((ex, i) => (
+                              <li key={i} className="truncate">{ex}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {skill.tags && skill.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {skill.tags.map((tag) => (
+                            <span key={tag} className="px-1.5 py-0.2 rounded bg-[#0d1117] text-gray-400 border border-[#30363d] text-[8.5px] font-mono">
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 bg-[#0d1117] rounded-lg border border-dashed border-[#30363d] space-y-1 text-center">
+                <div className="flex items-center justify-center gap-1.5 text-gray-400 text-xs font-semibold">
+                  <Sparkles className="w-3.5 h-3.5 text-gray-500" />
+                  <span>Published Agent Skills</span>
+                </div>
+                <p className="text-[10px] text-gray-500 leading-normal">
+                  No skills imported yet. Paste and apply an agent card JSON spec above to inspect advertised skills.
+                </p>
               </div>
             )}
-            <div className="text-[10px] text-gray-400">
-              Must be a valid Python identifier (letters, digits, underscores; no spaces or hyphens).
-            </div>
-          </div>
-        </div>
 
-        {/* SECTION 1: Import Agent Card (JSON Spec) */}
-        <div className="p-3 bg-[#0d1117] rounded-lg border border-cyan-500/40 space-y-2.5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-xs">
-              <FileJson className="w-4 h-4 text-cyan-400" />
-              <span>Import Agent Card (JSON Spec)</span>
-            </div>
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950/70 text-cyan-300 font-mono border border-cyan-500/30">
-              GDA & A2A v1.0
-            </span>
-          </div>
-
-          <p className="text-[10px] text-gray-400 leading-normal">
-            Paste the published <code className="text-cyan-300">agent-card.json</code> manifest from BigQuery CA, Google Data Analytics, or an A2A peer agent to auto-configure this node.
-          </p>
-
-          <textarea
-            rows={7}
-            value={a2aConfig.rawJsonPack || ''}
-            onChange={(e) => {
-              handleUpdateConfig({ rawJsonPack: e.target.value });
-              setJsonError(null);
-            }}
-            placeholder={`{\n  "protocolVersion": "1.0",\n  "name": "stock agent",\n  "url": "https://geminidataanalytics...",\n  "skills": [...]\n}`}
-            className="w-full px-2.5 py-2 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded font-mono text-[10px] text-cyan-200 focus:outline-none resize-y leading-tight"
-          />
-
-          {jsonError && (
-            <div className="flex items-center gap-1 text-[10px] text-rose-400 bg-rose-950/40 p-1.5 rounded border border-rose-500/30">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>{jsonError}</span>
-            </div>
-          )}
-
-          {jsonSuccess && (
-            <div className="text-[10px] text-emerald-300 bg-emerald-950/40 p-2 rounded border border-emerald-500/30 space-y-1">
-              <div className="flex items-center gap-1.5 font-bold text-emerald-400">
-                <Check className="w-3.5 h-3.5 shrink-0" />
-                <span>Agent Card Successfully Applied!</span>
-              </div>
-              <div className="text-[9px] text-gray-300 font-mono">
-                • {agent.label} • {a2aConfig.endpoint ? 'Endpoint configured' : 'No endpoint'}
-                {a2aConfig.skills && a2aConfig.skills.length > 0 && ` • ${a2aConfig.skills.length} skills`}
-                {a2aConfig.capabilities && a2aConfig.capabilities.length > 0 && ` • ${a2aConfig.capabilities.length} capabilities`}
-                {a2aConfig.authType === 'google_iam' && ' • Google Cloud IAM active'}
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleParseAndApplyJsonPack}
-              className="flex-1 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-            >
-              <FileJson className="w-3.5 h-3.5" />
-              <span>Parse & Apply Agent Card</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleSyncFromFormToJson}
-              title="Regenerate JSON from current form settings"
-              className="px-2.5 py-1.5 bg-[#161b22] hover:bg-[#21262d] border border-[#30363d] text-gray-300 hover:text-white rounded text-xs flex items-center gap-1 transition-colors cursor-pointer"
-            >
-              <RefreshCw className="w-3 h-3 text-cyan-400" />
-              <span>Export</span>
-            </button>
-          </div>
-        </div>
-
-        {/* SECTION 2: Caller Delegation Prompt & Task Instructions */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-[11px] font-bold uppercase tracking-tight text-cyan-300 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Caller Delegation Prompt & Task Instructions</span>
-            </label>
-            <span className="text-[10px] text-gray-400 font-mono">
-              {descriptionValue.length} chars • {descriptionValue.split(/\s+/).filter(Boolean).length} words
-            </span>
-          </div>
-
-          <p className="text-[10px] text-gray-400 leading-normal">
-            Instructs orchestrator / caller agents on <strong className="text-gray-200">when and how</strong> to delegate queries to this A2A agent, and provides prompt context sent with requests. <em>(The remote agent runs its own internal model in the cloud).</em>
-          </p>
-
-          <div className="relative group">
-            <textarea
-              rows={5}
-              value={descriptionValue}
-              onChange={(e) => handleDescriptionChange(e.target.value)}
-              placeholder="e.g. BigQuery CA agent answering questions about attached data. Provides data analysis assistance. Example query: What is the total sales for the last 3 months?"
-              className="w-full min-h-[100px] max-h-[300px] px-3 py-2 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded-lg text-xs text-gray-200 focus:outline-none resize-y font-mono leading-relaxed selection:bg-cyan-900 selection:text-white"
-            />
-            <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
-              <span>Delegation guidance used by parent orchestrator / router to invoke this tool</span>
-              <span className="text-[9px] font-mono text-gray-400">↕ Expand</span>
-            </div>
-          </div>
-
-          {a2aConfig.skills && a2aConfig.skills.length > 0 && (
-            <div className="flex items-center justify-between pt-0.5">
-              <span className="text-[9px] text-gray-400 font-mono">Skills detected in agent card</span>
-              <button
-                type="button"
-                onClick={handlePrefillFromSkills}
-                className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-mono cursor-pointer"
-              >
-                <Sparkles className="w-2.5 h-2.5" />
-                Prefill from Skills & Examples
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Published Skills Overview (when parsed) */}
-        {a2aConfig.skills && a2aConfig.skills.length > 0 && (
-          <div className="p-3 bg-[#0d1117] rounded-lg border border-cyan-500/30 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-cyan-300 font-bold text-xs">
-                <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Published Agent Skills ({a2aConfig.skills.length})</span>
-              </div>
-              <span className="text-[9px] font-mono text-cyan-400 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-500/20">
-                Remote Capabilities
-              </span>
-            </div>
-
+            {/* SECTION 5: Advertised Capabilities */}
             <div className="space-y-2">
-              {a2aConfig.skills.map((skill) => (
-                <div key={skill.id} className="p-2 bg-[#161b22] rounded border border-[#30363d] space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-white text-[11px]">{skill.name}</span>
-                    <span className="text-[9px] text-cyan-400 font-mono">{skill.id}</span>
-                  </div>
-                  {skill.description && (
-                    <p className="text-[10px] text-gray-300">{skill.description}</p>
-                  )}
-                  {skill.examples && skill.examples.length > 0 && (
-                    <div className="pt-1">
-                      <span className="text-[9px] text-gray-400 uppercase font-mono tracking-wider block">Sample Queries:</span>
-                      <ul className="list-disc list-inside text-[9.5px] text-cyan-200/90 font-mono space-y-0.5">
-                        {skill.examples.map((ex, i) => (
-                          <li key={i} className="truncate">{ex}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {skill.tags && skill.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-1">
-                      {skill.tags.map((tag) => (
-                        <span key={tag} className="px-1.5 py-0.2 rounded bg-[#0d1117] text-gray-400 border border-[#30363d] text-[8.5px] font-mono">
-                          #{tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3 text-cyan-400" />
+                  <span>Detected Capabilities ({(a2aConfig.capabilities || []).length})</span>
+                </label>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#161b22] text-gray-400 font-mono border border-[#30363d]">
+                  Read-only • From Agent Card
+                </span>
+              </div>
+
+              <p className="text-[10px] text-gray-400 leading-normal">
+                Capabilities and protocol extensions automatically detected from the remote agent's published <code className="text-cyan-300">agent-card.json</code> manifest.
+              </p>
+
+              {/* Read-only Detected Capability Badges */}
+              {a2aConfig.capabilities && a2aConfig.capabilities.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {a2aConfig.capabilities.map((cap) => (
+                    <span
+                      key={cap}
+                      className="text-[10px] px-2 py-0.8 rounded-md bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 font-mono flex items-center gap-1"
+                    >
+                      <Check className="w-2.5 h-2.5 text-cyan-400" />
+                      <span>{cap}</span>
+                    </span>
+                  ))}
                 </div>
-              ))}
+              ) : (
+                <div className="text-[10px] text-gray-500 italic p-2.5 bg-[#0d1117] rounded-lg border border-dashed border-[#30363d] text-center">
+                  No capabilities detected yet. Auto-detected from agent-card.json when parsed.
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* STRUCTURED OUTPUT SCHEMA BUILDER */}
-        <StructuredOutputBuilder
-          schema={agent.structuredOutput}
-          agentLabel={agent.label}
-          onChange={(newSchema: StructuredOutputSchema) => {
-            onUpdateAgent({
-              structuredOutput: newSchema,
-              outputFormat: newSchema.enabled ? 'structured' : 'text',
-            });
-          }}
-        />
-
-        {/* Underlying LLM Engine */}
-        <div className="space-y-1">
-          <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
-            <Cpu className="w-3 h-3 text-cyan-400" />
-            Underlying LLM Engine
-          </label>
-          <select
-            value={agent.model || 'gemini-flash-latest'}
-            onChange={(e) => onUpdateAgent({ model: e.target.value })}
-            className="w-full px-3 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded-lg text-xs text-white focus:outline-none cursor-pointer"
-          >
-            {SUPPORTED_MODELS.map((m) => (
-              <option key={m.id} value={m.id} className="bg-[#161b22]">
-                {m.name} ({m.id})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* SECTION 3: A2A Connection Details */}
-        <div className="p-3 bg-[#0d1117] rounded-lg border border-cyan-500/30 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-xs">
-              <Globe className="w-3.5 h-3.5" />
-              <span>A2A Connection Details</span>
-            </div>
-            {a2aConfig.endpoint.includes('googleapis.com') && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-950/70 text-blue-300 font-mono border border-blue-500/30">
-                Google Cloud Service
-              </span>
-            )}
-          </div>
-
-          <div className="space-y-2.5">
-            {/* RPC Endpoint URL */}
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center justify-between">
-                <span>RPC Endpoint URL (Agent Service)</span>
-                <span className="text-[9px] text-cyan-400 font-mono">POST / JSON-RPC</span>
-              </label>
-              <input
-                type="text"
-                value={a2aConfig.endpoint}
-                onChange={(e) => handleUpdateConfig({ endpoint: e.target.value })}
-                placeholder="https://geminidataanalytics.us.rep.googleapis.com/..."
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-300 focus:outline-none"
-              />
-            </div>
-
-            {/* Protocol Version & Agent Card Discovery URL */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-                  Protocol Spec
-                </label>
-                <input
-                  type="text"
-                  value={a2aConfig.protocolVersion}
-                  onChange={(e) => handleUpdateConfig({ protocolVersion: e.target.value })}
-                  className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
-                />
+        {/* ========================================================================= */}
+        {/* TAB 3: ENDPOINT & AUTH                                                   */}
+        {/* 1. A2A Connection Details                                                */}
+        {/* 2. Sub-Agent Authentication & Security Configuration                     */}
+        {/* 3. Custom Headers Pass-through                                           */}
+        {/* 4. Runtime Resilience                                                    */}
+        {/* ========================================================================= */}
+        {activeTab === 'endpoint_auth' && (
+          <div className="space-y-4">
+            {/* SECTION 2: A2A Connection Details */}
+            <div className="p-3 bg-[#0d1117] rounded-lg border border-cyan-500/30 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-xs">
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>A2A Connection Details</span>
+                </div>
+                {a2aConfig.endpoint.includes('googleapis.com') && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-950/70 text-blue-300 font-mono border border-blue-500/30">
+                    Google Cloud Service
+                  </span>
+                )}
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-                  Discovery URL
-                </label>
-                <input
-                  type="text"
-                  value={a2aConfig.agentCardUrl}
-                  onChange={(e) => handleUpdateConfig({ agentCardUrl: e.target.value })}
-                  placeholder="/.well-known/agent-card.json"
-                  className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {a2aConfig.preferredTransport && (
-              <div className="text-[10px] text-gray-400 flex items-center justify-between pt-0.5">
-                <span className="font-mono">Preferred Transport:</span>
-                <span className="font-mono text-cyan-300">{a2aConfig.preferredTransport}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* SECTION 2: Sub-Agent Authentication & Security Configuration */}
-        <div className="p-3 bg-[#0d1117] rounded-lg border border-cyan-500/30 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-xs">
-              <Key className="w-3.5 h-3.5" />
-              <span>Sub-Agent Invocation Authentication</span>
-            </div>
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950/70 text-cyan-300 font-mono border border-cyan-500/30">
-              Parent-to-Sub Auth
-            </span>
-          </div>
-
-          <p className="text-[10px] text-gray-400 leading-normal">
-            Specifies how the orchestrator or parent agent authorizes requests when invoking this A2A agent as a sub-agent.
-          </p>
-
-          {/* Authentication Mechanism Selector */}
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-              Authentication Method
-            </label>
-            <select
-              value={a2aConfig.authType}
-              onChange={(e) => handleUpdateConfig({ authType: e.target.value as A2AAuthType })}
-              className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-xs text-gray-200 focus:outline-none cursor-pointer"
-            >
-              <option value="bearer">Bearer Token (JWT / API Secret)</option>
-              <option value="oauth2">OAuth2 Client Credentials (OIDC)</option>
-              <option value="google_iam">Google Cloud IAM / Workload Identity</option>
-              <option value="api_key">Custom API Key Header</option>
-              <option value="mutual_tls">Mutual TLS (mTLS)</option>
-              <option value="none">Open Schema / No Auth (Internal VPC)</option>
-            </select>
-          </div>
-
-          {/* Conditional Auth Fields based on selected Auth Type */}
-          {a2aConfig.authType === 'bearer' && (
-            <div className="space-y-2 pt-1 border-t border-[#30363d]/60">
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-                  Token Secret Env Var Name
-                </label>
-                <input
-                  type="text"
-                  value={a2aConfig.authTokenSecret || ''}
-                  onChange={(e) => handleUpdateConfig({ authTokenSecret: e.target.value })}
-                  placeholder="A2A_AGENT_AUTH_TOKEN"
-                  className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-300 focus:outline-none"
-                />
-              </div>
-              <div className="text-[10px] text-gray-400 font-mono bg-[#161b22] p-1.5 rounded border border-[#30363d]">
-                Header: <span className="text-cyan-300">Authorization: Bearer ${'{'}{a2aConfig.authTokenSecret || 'TOKEN'}{'}'}</span>
-              </div>
-            </div>
-          )}
-
-          {a2aConfig.authType === 'oauth2' && (
-            <div className="space-y-2 pt-1 border-t border-[#30363d]/60">
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-                  OAuth2 Token Endpoint URL
-                </label>
-                <input
-                  type="text"
-                  value={a2aConfig.oauth2Config?.tokenUrl || ''}
-                  onChange={(e) =>
-                    handleUpdateConfig({
-                      oauth2Config: { ...a2aConfig.oauth2Config, tokenUrl: e.target.value },
-                    })
-                  }
-                  placeholder="https://auth.example.com/oauth/v2/token"
-                  className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[10px] font-mono text-cyan-300 focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2.5">
+                {/* RPC Endpoint URL */}
                 <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-                    Client ID
+                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <span>RPC Endpoint URL (Agent Service)</span>
+                      <span className="text-rose-400">*</span>
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {!a2aConfig.endpoint?.trim() && (
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-rose-950/70 text-rose-300 font-mono border border-rose-500/40 font-semibold">
+                          Required
+                        </span>
+                      )}
+                      <span className="text-[9px] text-cyan-400 font-mono">POST / JSON-RPC</span>
+                    </div>
                   </label>
                   <input
                     type="text"
-                    value={a2aConfig.oauth2Config?.clientId || ''}
-                    onChange={(e) =>
-                      handleUpdateConfig({
-                        oauth2Config: { ...a2aConfig.oauth2Config, clientId: e.target.value },
-                      })
-                    }
-                    placeholder="agent-client-id"
-                    className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[10px] font-mono text-gray-200 focus:outline-none"
+                    value={a2aConfig.endpoint}
+                    onChange={(e) => handleUpdateConfig({ endpoint: e.target.value })}
+                    placeholder="https://geminidataanalytics.us.rep.googleapis.com/..."
+                    className={`w-full px-2.5 py-1.5 bg-[#161b22] border rounded text-[11px] font-mono text-cyan-300 focus:outline-none ${
+                      !a2aConfig.endpoint?.trim()
+                        ? 'border-rose-500/40 focus:border-rose-400'
+                        : 'border-[#30363d] focus:border-cyan-400'
+                    }`}
                   />
+                  {!a2aConfig.endpoint?.trim() && (
+                    <div className="flex items-center gap-1.5 text-[10px] text-rose-300 bg-rose-950/30 p-1.5 rounded border border-rose-500/30 mt-1">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                      <span>RPC Endpoint URL is required. Paste an agent-card.json in the Card & Skills tab or enter the service URL directly.</span>
+                    </div>
+                  )}
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-                    Secret Env Var
-                  </label>
-                  <input
-                    type="text"
-                    value={a2aConfig.oauth2Config?.clientSecretEnv || ''}
-                    onChange={(e) =>
-                      handleUpdateConfig({
-                        oauth2Config: { ...a2aConfig.oauth2Config, clientSecretEnv: e.target.value },
-                      })
-                    }
-                    placeholder="A2A_CLIENT_SECRET"
-                    className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[10px] font-mono text-cyan-300 focus:outline-none"
-                  />
-                </div>
-              </div>
+                {/* Protocol Version & Agent Card Discovery URL */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                      Protocol Spec
+                    </label>
+                    <input
+                      type="text"
+                      value={a2aConfig.protocolVersion}
+                      onChange={(e) => handleUpdateConfig({ protocolVersion: e.target.value })}
+                      placeholder="1.0.0-a2a"
+                      className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
+                    />
+                  </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-                    Scopes
-                  </label>
-                  <input
-                    type="text"
-                    value={a2aConfig.oauth2Config?.scope || ''}
-                    onChange={(e) =>
-                      handleUpdateConfig({
-                        oauth2Config: { ...a2aConfig.oauth2Config, scope: e.target.value },
-                      })
-                    }
-                    placeholder="agent.invoke"
-                    className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[10px] font-mono text-gray-200 focus:outline-none"
-                  />
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                      Discovery URL
+                    </label>
+                    <input
+                      type="text"
+                      value={a2aConfig.agentCardUrl}
+                      onChange={(e) => handleUpdateConfig({ agentCardUrl: e.target.value })}
+                      placeholder="/.well-known/agent-card.json"
+                      className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
+                    />
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-                    Audience
-                  </label>
-                  <input
-                    type="text"
-                    value={a2aConfig.oauth2Config?.audience || ''}
-                    onChange={(e) =>
-                      handleUpdateConfig({
-                        oauth2Config: { ...a2aConfig.oauth2Config, audience: e.target.value },
-                      })
-                    }
-                    placeholder="https://agent.internal"
-                    className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[10px] font-mono text-gray-200 focus:outline-none"
-                  />
-                </div>
+                {a2aConfig.preferredTransport && (
+                  <div className="text-[10px] text-gray-400 flex items-center justify-between pt-0.5">
+                    <span className="font-mono">Preferred Transport:</span>
+                    <span className="font-mono text-cyan-300">{a2aConfig.preferredTransport}</span>
+                  </div>
+                )}
               </div>
             </div>
-          )}
 
-          {a2aConfig.authType === 'google_iam' && (
-            <div className="space-y-2 pt-1 border-t border-[#30363d]/60">
+            {/* SECTION 3: Sub-Agent Authentication & Security Configuration */}
+            <div className="p-3 bg-[#0d1117] rounded-lg border border-cyan-500/30 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-xs">
+                  <Key className="w-3.5 h-3.5" />
+                  <span>Sub-Agent Invocation Authentication</span>
+                </div>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950/70 text-cyan-300 font-mono border border-cyan-500/30">
+                  Parent-to-Sub Auth
+                </span>
+              </div>
+
+              <p className="text-[10px] text-gray-400 leading-normal">
+                Specifies how the orchestrator or parent agent authorizes requests when invoking this A2A agent as a sub-agent.
+              </p>
+
+              {/* Authentication Mechanism Selector */}
               <div className="space-y-1">
                 <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-                  Target Cloud Service Audience URL
+                  Authentication Method
                 </label>
+                <select
+                  value={a2aConfig.authType}
+                  onChange={(e) => handleUpdateConfig({ authType: e.target.value as A2AAuthType })}
+                  className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-xs text-gray-200 focus:outline-none cursor-pointer"
+                >
+                  <option value="bearer">Bearer Token (JWT / API Secret)</option>
+                  <option value="oauth2">OAuth2 Client Credentials (OIDC)</option>
+                  <option value="google_iam">Google Cloud IAM / Workload Identity</option>
+                  <option value="api_key">Custom API Key Header</option>
+                  <option value="mutual_tls">Mutual TLS (mTLS)</option>
+                  <option value="none">Open Schema / No Auth (Internal VPC)</option>
+                </select>
+              </div>
+
+              {/* Conditional Auth Fields based on selected Auth Type */}
+              {a2aConfig.authType === 'bearer' && (
+                <div className="space-y-2 pt-1 border-t border-[#30363d]/60">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                      Token Secret Env Var Name
+                    </label>
+                    <input
+                      type="text"
+                      value={a2aConfig.authTokenSecret || ''}
+                      onChange={(e) => handleUpdateConfig({ authTokenSecret: e.target.value })}
+                      placeholder="A2A_AGENT_AUTH_TOKEN"
+                      className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-300 focus:outline-none"
+                    />
+                    <span className="text-[9.5px] text-gray-500 font-mono">
+                      Environment variable containing bearer JWT token passed in Authorization: Bearer &lt;token&gt; header.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {a2aConfig.authType === 'api_key' && (
+                <div className="space-y-2 pt-1 border-t border-[#30363d]/60">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                      API Key Secret Env Var Name
+                    </label>
+                    <input
+                      type="text"
+                      value={a2aConfig.authTokenSecret || ''}
+                      onChange={(e) => handleUpdateConfig({ authTokenSecret: e.target.value })}
+                      placeholder="A2A_API_KEY"
+                      className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-300 focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                      Custom Header Name
+                    </label>
+                    <input
+                      type="text"
+                      value={a2aConfig.headerName || 'X-API-Key'}
+                      onChange={(e) => handleUpdateConfig({ headerName: e.target.value })}
+                      placeholder="X-API-Key"
+                      className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {a2aConfig.authType === 'oauth2' && (
+                <div className="space-y-2 pt-1 border-t border-[#30363d]/60">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                      Token Endpoint URL
+                    </label>
+                    <input
+                      type="text"
+                      value={a2aConfig.oauth2Config?.tokenUrl || ''}
+                      onChange={(e) => handleUpdateConfig({
+                        oauth2Config: { ...(a2aConfig.oauth2Config || { clientId: '', clientSecretEnv: '', scopes: [] }), tokenUrl: e.target.value }
+                      })}
+                      placeholder="https://oauth2.googleapis.com/token"
+                      className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-300 focus:outline-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                        Client ID
+                      </label>
+                      <input
+                        type="text"
+                        value={a2aConfig.oauth2Config?.clientId || ''}
+                        onChange={(e) => handleUpdateConfig({
+                          oauth2Config: { ...(a2aConfig.oauth2Config || { tokenUrl: '', clientSecretEnv: '', scopes: [] }), clientId: e.target.value }
+                        })}
+                        placeholder="client-id"
+                        className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                        Client Secret Env
+                      </label>
+                      <input
+                        type="text"
+                        value={a2aConfig.oauth2Config?.clientSecretEnv || ''}
+                        onChange={(e) => handleUpdateConfig({
+                          oauth2Config: { ...(a2aConfig.oauth2Config || { tokenUrl: '', clientId: '', scopes: [] }), clientSecretEnv: e.target.value }
+                        })}
+                        placeholder="OAUTH2_CLIENT_SECRET"
+                        className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-300 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {a2aConfig.authType === 'google_iam' && (
+                <div className="space-y-2 pt-1 border-t border-[#30363d]/60">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                      Target Audience / Client Service URI
+                    </label>
+                    <input
+                      type="text"
+                      value={a2aConfig.googleIamConfig?.targetAudience || ''}
+                      onChange={(e) => handleUpdateConfig({
+                        googleIamConfig: { ...(a2aConfig.googleIamConfig || {}), targetAudience: e.target.value }
+                      })}
+                      placeholder="https://cloud-run-service.a.run.app"
+                      className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-300 focus:outline-none"
+                    />
+                    <span className="text-[9.5px] text-gray-500 font-mono">
+                      Target service audience used by google-auth or Google Compute / Cloud Run IAM token exchange.
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                      Impersonate Service Account (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={a2aConfig.googleIamConfig?.serviceAccountEmail || ''}
+                      onChange={(e) => handleUpdateConfig({
+                        googleIamConfig: { ...(a2aConfig.googleIamConfig || {}), serviceAccountEmail: e.target.value }
+                      })}
+                      placeholder="caller-agent@project.iam.gserviceaccount.com"
+                      className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {a2aConfig.authType === 'mutual_tls' && (
+                <div className="text-[10px] text-gray-400 bg-[#161b22] p-2 rounded border border-[#30363d] flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-cyan-400 shrink-0" />
+                  <span>
+                    Mutual TLS requires client certificates configured in deployment environment (e.g., Anthos Service Mesh or SPIFFE).
+                  </span>
+                </div>
+              )}
+
+              {a2aConfig.authType === 'none' && (
+                <div className="text-[10px] text-amber-300/80 bg-amber-950/30 p-2 rounded border border-amber-500/20 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    No authorization header will be attached. Use only for internal VPCs or localhost development.
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* SECTION 4: Custom Headers Pass-through */}
+            <div className="p-3 bg-[#0d1117] rounded-lg border border-cyan-500/30 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
+                  <Code2 className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Custom HTTP Headers</span>
+                </label>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#161b22] text-gray-400 font-mono border border-[#30363d]">
+                  RPC Interceptors
+                </span>
+              </div>
+
+              {/* Active Headers List */}
+              {a2aConfig.customHeaders && Object.keys(a2aConfig.customHeaders).length > 0 ? (
+                <div className="space-y-1.5">
+                  {Object.entries(a2aConfig.customHeaders).map(([key, val]) => (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between p-1.5 bg-[#161b22] rounded border border-[#30363d]"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-mono text-cyan-300 text-[10px] font-bold">{key}:</span>
+                        <span className="font-mono text-gray-300 text-[10px] truncate max-w-[170px]">{val}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveHeader(key)}
+                        className="p-1 text-gray-500 hover:text-rose-400 hover:bg-rose-950/30 rounded transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-[10px] text-gray-500 italic">No custom headers configured.</div>
+              )}
+
+              {/* Add New Header */}
+              <div className="flex items-center gap-1.5 pt-1">
                 <input
                   type="text"
-                  value={a2aConfig.googleIamConfig?.targetAudience || ''}
-                  onChange={(e) =>
-                    handleUpdateConfig({
-                      googleIamConfig: { ...a2aConfig.googleIamConfig, targetAudience: e.target.value },
-                    })
-                  }
-                  placeholder="https://agent-service.us-central1.run.app"
-                  className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[10px] font-mono text-cyan-300 focus:outline-none"
+                  value={newHeaderKey}
+                  onChange={(e) => setNewHeaderKey(e.target.value)}
+                  placeholder="Header Name"
+                  className="flex-1 px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[10px] font-mono text-gray-200 focus:outline-none"
                 />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-                  Service Account / Credentials Env
-                </label>
                 <input
                   type="text"
-                  value={a2aConfig.googleIamConfig?.serviceAccountEnv || ''}
-                  onChange={(e) =>
-                    handleUpdateConfig({
-                      googleIamConfig: { ...a2aConfig.googleIamConfig, serviceAccountEnv: e.target.value },
-                    })
-                  }
-                  placeholder="GOOGLE_APPLICATION_CREDENTIALS"
-                  className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[10px] font-mono text-gray-200 focus:outline-none"
+                  value={newHeaderVal}
+                  onChange={(e) => setNewHeaderVal(e.target.value)}
+                  placeholder="Value"
+                  className="flex-1 px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[10px] font-mono text-gray-200 focus:outline-none"
                 />
-              </div>
-            </div>
-          )}
-
-          {a2aConfig.authType === 'api_key' && (
-            <div className="space-y-2 pt-1 border-t border-[#30363d]/60">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-                    Header Name
-                  </label>
-                  <input
-                    type="text"
-                    value={a2aConfig.headerName || 'x-api-key'}
-                    onChange={(e) => handleUpdateConfig({ headerName: e.target.value })}
-                    placeholder="x-api-key"
-                    className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[10px] font-mono text-gray-200 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
-                    Key Secret Env Var
-                  </label>
-                  <input
-                    type="text"
-                    value={a2aConfig.authTokenSecret || ''}
-                    onChange={(e) => handleUpdateConfig({ authTokenSecret: e.target.value })}
-                    placeholder="A2A_API_KEY"
-                    className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[10px] font-mono text-cyan-300 focus:outline-none"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Invocation SLA & Retries */}
-          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#30363d]/60">
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center gap-1">
-                <Clock className="w-2.5 h-2.5 text-cyan-400" />
-                Timeout (Seconds)
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="300"
-                value={a2aConfig.timeoutSeconds || 30}
-                onChange={(e) => handleUpdateConfig({ timeoutSeconds: parseInt(e.target.value) || 30 })}
-                className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center gap-1">
-                <RefreshCw className="w-2.5 h-2.5 text-cyan-400" />
-                Max Retries
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="10"
-                value={a2aConfig.maxRetries ?? 3}
-                onChange={(e) => handleUpdateConfig({ maxRetries: parseInt(e.target.value) || 0 })}
-                className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* SECTION 3: Custom Headers Pass-through */}
-        <div className="space-y-2 p-3 bg-[#0d1117] rounded-lg border border-[#30363d]">
-          <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center justify-between">
-            <span>Custom HTTP Headers</span>
-            <span className="text-[9px] text-gray-400 font-mono">{Object.keys(a2aConfig.customHeaders || {}).length} configured</span>
-          </label>
-
-          <div className="space-y-1 max-h-24 overflow-y-auto">
-            {Object.entries(a2aConfig.customHeaders || {}).map(([k, v]) => (
-              <div key={k} className="flex items-center justify-between bg-[#161b22] px-2 py-1 rounded border border-[#30363d] text-[10px] font-mono">
-                <span className="text-cyan-300">{k}:</span>
-                <span className="text-gray-300 truncate max-w-[120px] mx-1">{v}</span>
                 <button
                   type="button"
-                  onClick={() => handleRemoveHeader(k)}
-                  className="text-gray-400 hover:text-rose-400 cursor-pointer"
+                  onClick={handleAddHeader}
+                  disabled={!newHeaderKey.trim()}
+                  className="p-1 bg-[#21262d] hover:bg-cyan-600 disabled:opacity-40 text-white rounded transition-colors cursor-pointer"
                 >
-                  <X className="w-3 h-3" />
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
-            ))}
-          </div>
+            </div>
 
-          <div className="flex gap-1 pt-1">
-            <input
-              type="text"
-              value={newHeaderKey}
-              onChange={(e) => setNewHeaderKey(e.target.value)}
-              placeholder="Header (e.g. X-Trace-ID)"
-              className="flex-1 px-1.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[10px] font-mono text-gray-200 focus:outline-none"
-            />
-            <input
-              type="text"
-              value={newHeaderVal}
-              onChange={(e) => setNewHeaderVal(e.target.value)}
-              placeholder="Value"
-              className="flex-1 px-1.5 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[10px] font-mono text-gray-200 focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={handleAddHeader}
-              className="px-2 py-1 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] rounded text-[10px] text-cyan-300 font-medium cursor-pointer"
-            >
-              Add
-            </button>
-          </div>
-        </div>
+            {/* SECTION 6: Protocol Version & Runtime Resilience */}
+            <div className="p-3 bg-[#0d1117] rounded-lg border border-cyan-500/30 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Runtime Resilience & Timeouts</span>
+                </label>
+              </div>
 
-        {/* SECTION 4: Advertised Capabilities */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3 text-cyan-400" />
-              Advertised A2A Capabilities ({(a2aConfig.capabilities || []).length})
-            </label>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                    Timeout (sec)
+                  </label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={300}
+                    value={a2aConfig.timeoutSeconds}
+                    onChange={(e) => handleUpdateConfig({ timeoutSeconds: parseInt(e.target.value, 10) || 30 })}
+                    className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                    Max Retries
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={a2aConfig.maxRetries}
+                    onChange={(e) => handleUpdateConfig({ maxRetries: parseInt(e.target.value, 10) || 0 })}
+                    className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-gray-200 focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
+        )}
 
-          {/* Preset Capability Chips */}
-          <div className="flex flex-wrap gap-1.5">
-            {PRESET_CAPABILITIES.map((cap) => {
-              const isSelected = (a2aConfig.capabilities || []).includes(cap);
-              return (
-                <button
-                  key={cap}
-                  type="button"
-                  onClick={() => handleToggleCapability(cap)}
-                  className={`text-[10px] px-2 py-0.8 rounded-md border font-mono transition-colors cursor-pointer flex items-center gap-1 ${
-                    isSelected
-                      ? 'bg-cyan-950/60 border-cyan-400 text-cyan-300 font-semibold'
-                      : 'bg-[#0d1117] border-[#30363d] text-gray-400 hover:text-gray-200'
-                  }`}
-                >
-                  {isSelected && <Check className="w-2.5 h-2.5 text-cyan-400" />}
-                  <span>{cap}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Add custom capability input */}
-          <div className="flex gap-1.5 pt-1">
-            <input
-              type="text"
-              value={newCapInput}
-              onChange={(e) => setNewCapInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAddCustomCapability()}
-              placeholder="Add custom capability..."
-              className="flex-1 px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded text-[10px] font-mono text-gray-200 focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={handleAddCustomCapability}
-              className="px-2 py-1 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] rounded text-[10px] text-cyan-300 font-medium cursor-pointer"
-            >
-              Add
-            </button>
-          </div>
-        </div>
-
-        {/* SECTION 5: Sub-Agent / Peer Delegation (only rendered when peer agents are connected) */}
-        {subAgents.length > 0 && (
-          <div className="space-y-2.5 pt-2 border-t border-[#30363d]">
+        {/* ========================================================================= */}
+        {/* TAB 4: SUB-AGENTS (Hidden when no sub-agents connected)                  */}
+        {/* ========================================================================= */}
+        {activeTab === 'sub_agents' && subAgents.length > 0 && (
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
-                <Network className="w-3 h-3 text-cyan-400" />
-                Connected Peer Agents ({subAgents.length})
+                <Layers className="w-3 h-3 text-cyan-400" />
+                <span>Connected Sub-Agents ({subAgents.length})</span>
               </label>
-              <span className="text-[10px] text-gray-500 font-normal">drag to reorder</span>
+              <span className="text-[10px] text-gray-400 font-mono">
+                Order determines execution flow
+              </span>
             </div>
+
+            <p className="text-[10px] text-gray-400 leading-normal">
+              Organize multi-agent peer delegation patterns and execution sequences. Sub-agents execute tasks under this A2A agent's coordination.
+            </p>
 
             {/* Pattern Dropdown placed directly above the list */}
             <div className="space-y-1 bg-[#0d1117] p-2.5 rounded-lg border border-cyan-500/30">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-bold uppercase tracking-tight text-cyan-300">
-                  A2A Coordination Topology
+                  Orchestration Pattern
                 </label>
               </div>
               <select
-                value={currentPattern}
+                value={effectivePattern}
                 onChange={(e) => {
                   const newPattern = e.target.value as DelegationPattern;
-                  const updates: Partial<AgentData> = { subAgentPattern: newPattern };
+                  const updates: Partial<AgentData> = {
+                    subAgentPattern: newPattern,
+                    delegationPattern: newPattern,
+                  };
                   if (newPattern === 'loop' && agent.maxIterations === undefined) {
                     updates.maxIterations = 3;
                   }
@@ -1093,7 +1375,7 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
             </div>
 
             {/* Loop Pattern Max Iterations Configuration */}
-            {currentPattern === 'loop' && (
+            {effectivePattern === 'loop' && (
               <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#0d1117] border border-cyan-500/30">
                 <div>
                   <label className="text-xs font-semibold text-cyan-200">Max Iterations</label>
@@ -1113,155 +1395,118 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
               </div>
             )}
 
-          {/* Debate & Consensus Pattern Configuration Panel */}
-          {(currentPattern === 'debate' || agent.debateConfig) && (
-            <div className="space-y-3 bg-[#0d1117] p-3 rounded-lg border border-pink-500/40 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-pink-300">
-                  <Scale className="w-3.5 h-3.5 text-pink-400" />
-                  A2A Peer Debate & Consensus Settings
-                </div>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-300 border border-pink-500/30 font-mono">
-                  Multi-Peer Arbitration
-                </span>
-              </div>
+            {/* Coordinator / Debate Configuration */}
+            {(effectivePattern === 'coordinator' || effectivePattern === 'debate' || agent.debateConfig) && (
+                <div className="pt-2 border-t border-[#30363d]/60 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] uppercase font-bold tracking-tight text-pink-300 flex items-center gap-1">
+                      <Scale className="w-3 h-3 text-pink-400" />
+                      <span>Debate Rounds & Consensus</span>
+                    </label>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-pink-950/70 text-pink-300 font-mono border border-pink-500/30">
+                      Multi-Agent Deliberation
+                    </span>
+                  </div>
 
-              {/* Max Rounds / Turn Bound */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <label className="text-[11px] text-gray-300 font-medium">Max Debate Rounds</label>
-                  <span className="font-mono text-xs text-pink-400 font-bold">
-                    {agent.debateConfig?.maxRounds ?? 2} {agent.debateConfig?.maxRounds === 1 ? 'Round' : 'Rounds'}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="6"
-                  step="1"
-                  value={agent.debateConfig?.maxRounds ?? 2}
-                  onChange={(e) => onUpdateAgent({
-                    debateConfig: {
-                      maxRounds: parseInt(e.target.value) || 2,
-                      consensusThreshold: agent.debateConfig?.consensusThreshold ?? 0.85,
-                      earlyStoppingEnabled: agent.debateConfig?.earlyStoppingEnabled ?? true,
-                      debateStyle: agent.debateConfig?.debateStyle ?? 'structured_rebuttal',
-                      tieBreakerStrategy: agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval',
-                      requireEvidenceCitations: agent.debateConfig?.requireEvidenceCitations ?? true,
-                      minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
-                    }
-                  })}
-                  className="w-full h-1.5 bg-[#21262d] rounded-lg appearance-none cursor-pointer accent-pink-500"
-                />
-              </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-medium text-gray-400">Max Rounds</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={agent.debateConfig?.maxRounds ?? 2}
+                        onChange={(e) => onUpdateAgent({
+                          debateConfig: {
+                            maxRounds: Math.max(1, parseInt(e.target.value, 10) || 1),
+                            consensusThreshold: agent.debateConfig?.consensusThreshold ?? 0.85,
+                            earlyStoppingEnabled: agent.debateConfig?.earlyStoppingEnabled ?? true,
+                            debateStyle: agent.debateConfig?.debateStyle ?? 'structured_rebuttal',
+                            tieBreakerStrategy: agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval',
+                            requireEvidenceCitations: agent.debateConfig?.requireEvidenceCitations ?? true,
+                            minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
+                          }
+                        })}
+                        className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-pink-500 rounded text-xs text-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-medium text-gray-400">Agreement (%)</label>
+                      <input
+                        type="number"
+                        min={50}
+                        max={100}
+                        step={5}
+                        value={Math.round((agent.debateConfig?.consensusThreshold ?? 0.85) * 100)}
+                        onChange={(e) => onUpdateAgent({
+                          debateConfig: {
+                            maxRounds: agent.debateConfig?.maxRounds ?? 2,
+                            consensusThreshold: Math.min(1.0, Math.max(0.5, (parseInt(e.target.value, 10) || 85) / 100)),
+                            earlyStoppingEnabled: agent.debateConfig?.earlyStoppingEnabled ?? true,
+                            debateStyle: agent.debateConfig?.debateStyle ?? 'structured_rebuttal',
+                            tieBreakerStrategy: agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval',
+                            requireEvidenceCitations: agent.debateConfig?.requireEvidenceCitations ?? true,
+                            minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
+                          }
+                        })}
+                        className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-pink-500 rounded text-xs text-white"
+                      />
+                    </div>
+                  </div>
 
-              {/* Consensus Confidence Threshold */}
-              <div className="space-y-1.5 pt-2 border-t border-[#21262d]">
-                <div className="flex items-center justify-between text-xs">
-                  <label className="text-[11px] text-gray-300 font-medium">Consensus Threshold</label>
-                  <span className="font-mono text-xs text-emerald-400 font-bold">
-                    {Math.round((agent.debateConfig?.consensusThreshold ?? 0.85) * 100)}% Agreement
-                  </span>
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#21262d]">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-medium text-gray-400">Interaction Style</label>
+                      <select
+                        value={agent.debateConfig?.debateStyle ?? 'structured_rebuttal'}
+                        onChange={(e) => onUpdateAgent({
+                          debateConfig: {
+                            maxRounds: agent.debateConfig?.maxRounds ?? 2,
+                            consensusThreshold: agent.debateConfig?.consensusThreshold ?? 0.85,
+                            earlyStoppingEnabled: agent.debateConfig?.earlyStoppingEnabled ?? true,
+                            debateStyle: e.target.value as DebateStyle,
+                            tieBreakerStrategy: agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval',
+                            requireEvidenceCitations: agent.debateConfig?.requireEvidenceCitations ?? true,
+                            minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
+                          }
+                        })}
+                        className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-pink-500 rounded text-xs text-white cursor-pointer"
+                      >
+                        <option value="structured_rebuttal">Structured Rebuttal</option>
+                        <option value="socratic">Socratic Dialectic</option>
+                        <option value="free_form">Free-Form Exchange</option>
+                        <option value="panel_scoring">Panel Scoring</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-medium text-gray-400">Stalemate Policy</label>
+                      <select
+                        value={agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval'}
+                        onChange={(e) => onUpdateAgent({
+                          debateConfig: {
+                            maxRounds: agent.debateConfig?.maxRounds ?? 2,
+                            consensusThreshold: agent.debateConfig?.consensusThreshold ?? 0.85,
+                            earlyStoppingEnabled: agent.debateConfig?.earlyStoppingEnabled ?? true,
+                            debateStyle: agent.debateConfig?.debateStyle ?? 'structured_rebuttal',
+                            tieBreakerStrategy: e.target.value as TieBreakerStrategy,
+                            requireEvidenceCitations: agent.debateConfig?.requireEvidenceCitations ?? true,
+                            minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
+                          }
+                        })}
+                        className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-pink-500 rounded text-xs text-white cursor-pointer"
+                      >
+                        <option value="conditional_approval">Conditional Approval</option>
+                        <option value="conservative_veto">Conservative Veto</option>
+                        <option value="moderator_vote">Moderator Decides</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
-                <input
-                  type="range"
-                  min="50"
-                  max="99"
-                  step="1"
-                  value={Math.round((agent.debateConfig?.consensusThreshold ?? 0.85) * 100)}
-                  onChange={(e) => onUpdateAgent({
-                    debateConfig: {
-                      maxRounds: agent.debateConfig?.maxRounds ?? 2,
-                      consensusThreshold: (parseInt(e.target.value) || 85) / 100,
-                      earlyStoppingEnabled: agent.debateConfig?.earlyStoppingEnabled ?? true,
-                      debateStyle: agent.debateConfig?.debateStyle ?? 'structured_rebuttal',
-                      tieBreakerStrategy: agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval',
-                      requireEvidenceCitations: agent.debateConfig?.requireEvidenceCitations ?? true,
-                      minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
-                    }
-                  })}
-                  className="w-full h-1.5 bg-[#21262d] rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                />
-              </div>
+              )}
 
-              {/* Early Stopping Toggle */}
-              <div className="flex items-start gap-2 pt-2 border-t border-[#21262d]">
-                <input
-                  type="checkbox"
-                  id="a2aEarlyStoppingCheckbox"
-                  checked={agent.debateConfig?.earlyStoppingEnabled !== false}
-                  onChange={(e) => onUpdateAgent({
-                    debateConfig: {
-                      maxRounds: agent.debateConfig?.maxRounds ?? 2,
-                      consensusThreshold: agent.debateConfig?.consensusThreshold ?? 0.85,
-                      earlyStoppingEnabled: e.target.checked,
-                      debateStyle: agent.debateConfig?.debateStyle ?? 'structured_rebuttal',
-                      tieBreakerStrategy: agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval',
-                      requireEvidenceCitations: agent.debateConfig?.requireEvidenceCitations ?? true,
-                      minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
-                    }
-                  })}
-                  className="w-3.5 h-3.5 mt-0.5 accent-pink-500 rounded cursor-pointer shrink-0"
-                />
-                <label htmlFor="a2aEarlyStoppingCheckbox" className="text-[11px] text-gray-300 cursor-pointer">
-                  <span className="font-semibold text-pink-300">Early Termination:</span> Exit peer debate early if agreement threshold is satisfied.
-                </label>
-              </div>
-
-              {/* Debate Style & Tie-Breaker Strategy */}
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#21262d]">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-gray-400">Interaction Style</label>
-                  <select
-                    value={agent.debateConfig?.debateStyle ?? 'structured_rebuttal'}
-                    onChange={(e) => onUpdateAgent({
-                      debateConfig: {
-                        maxRounds: agent.debateConfig?.maxRounds ?? 2,
-                        consensusThreshold: agent.debateConfig?.consensusThreshold ?? 0.85,
-                        earlyStoppingEnabled: agent.debateConfig?.earlyStoppingEnabled ?? true,
-                        debateStyle: e.target.value as DebateStyle,
-                        tieBreakerStrategy: agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval',
-                        requireEvidenceCitations: agent.debateConfig?.requireEvidenceCitations ?? true,
-                        minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
-                      }
-                    })}
-                    className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-pink-500 rounded text-xs text-white cursor-pointer"
-                  >
-                    <option value="structured_rebuttal">Structured Rebuttal</option>
-                    <option value="socratic">Socratic Dialectic</option>
-                    <option value="free_form">Free-Form Exchange</option>
-                    <option value="panel_scoring">Panel Scoring</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-gray-400">Stalemate Policy</label>
-                  <select
-                    value={agent.debateConfig?.tieBreakerStrategy ?? 'conditional_approval'}
-                    onChange={(e) => onUpdateAgent({
-                      debateConfig: {
-                        maxRounds: agent.debateConfig?.maxRounds ?? 2,
-                        consensusThreshold: agent.debateConfig?.consensusThreshold ?? 0.85,
-                        earlyStoppingEnabled: agent.debateConfig?.earlyStoppingEnabled ?? true,
-                        debateStyle: agent.debateConfig?.debateStyle ?? 'structured_rebuttal',
-                        tieBreakerStrategy: e.target.value as TieBreakerStrategy,
-                        requireEvidenceCitations: agent.debateConfig?.requireEvidenceCitations ?? true,
-                        minWordLimitPerBrief: agent.debateConfig?.minWordLimitPerBrief ?? 250,
-                      }
-                    })}
-                    className="w-full px-2 py-1 bg-[#161b22] border border-[#30363d] focus:border-pink-500 rounded text-xs text-white cursor-pointer"
-                  >
-                    <option value="conditional_approval">Conditional Approval</option>
-                    <option value="conservative_veto">Conservative Veto</option>
-                    <option value="moderator_vote">Moderator Decides</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Orderable Peer Agents List */}
-          <div className="space-y-1.5">
-            {subAgents.map((sub: SubAgentRef, idx: number) => (
+            {/* Orderable Peer Agents List */}
+            <div className="space-y-1.5">
+              {subAgents.map((sub: SubAgentRef, idx: number) => (
                 <div
                   key={sub.agentId || idx}
                   draggable
@@ -1298,7 +1543,18 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1">
+                    {onSelectAgent && (
+                      <button
+                        type="button"
+                        onClick={() => onSelectAgent(sub.agentId)}
+                        title={`Configure ${sub.name}`}
+                        className="p-1 text-gray-400 hover:text-cyan-400 hover:bg-[#161b22] rounded transition-colors cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
+                      type="button"
                       onClick={() => handleMoveSubAgent(idx, idx - 1)}
                       disabled={idx === 0}
                       title="Move Up"
@@ -1307,6 +1563,7 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
                       <ChevronUp className="w-3 h-3" />
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleMoveSubAgent(idx, idx + 1)}
                       disabled={idx === subAgents.length - 1}
                       title="Move Down"
@@ -1315,6 +1572,7 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
                       <ChevronDown className="w-3 h-3" />
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleRemoveSubAgent(sub.agentId)}
                       title="Remove Peer Link"
                       className="p-1 text-gray-400 hover:text-rose-400 transition-colors cursor-pointer ml-1"
@@ -1327,6 +1585,7 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
             </div>
           </div>
         )}
+
       </div>
     </div>
   );

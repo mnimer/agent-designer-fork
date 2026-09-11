@@ -49,18 +49,19 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const { zoomIn, zoomOut, fitView } = useReactFlow();
 
   return (
-    <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-2 pointer-events-auto">
+    <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-2.5 pointer-events-auto select-none">
       {/* Control Button Toolbar Strip */}
-      <div className="flex items-center gap-1 p-1 bg-[#161b22]/95 backdrop-blur-md border border-[#30363d] rounded-lg shadow-xl text-xs text-[#c9d1d9]">
+      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#161b22]/95 backdrop-blur-md border border-[#30363d] rounded-xl shadow-xl text-xs text-[#c9d1d9]">
         {/* Undo Action */}
         <button
           type="button"
           onClick={onUndo}
           disabled={!canUndo}
           title="Undo (Cmd+Z / Ctrl+Z)"
-          className="p-1.5 rounded hover:bg-[#21262d] disabled:opacity-30 disabled:cursor-not-allowed text-gray-300 hover:text-white transition-colors cursor-pointer"
+          data-testid="canvas-undo-button"
+          className="p-1.5 rounded-lg hover:bg-[#21262d] disabled:opacity-30 disabled:cursor-not-allowed text-gray-200 hover:text-white transition-colors cursor-pointer"
         >
-          <Undo2 className="w-3.5 h-3.5" />
+          <Undo2 className="w-4 h-4" />
         </button>
 
         {/* Redo Action */}
@@ -69,34 +70,37 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
           onClick={onRedo}
           disabled={!canRedo}
           title="Redo (Cmd+Shift+Z / Ctrl+Y)"
-          className="p-1.5 rounded hover:bg-[#21262d] disabled:opacity-30 disabled:cursor-not-allowed text-gray-300 hover:text-white transition-colors cursor-pointer"
+          data-testid="canvas-redo-button"
+          className="p-1.5 rounded-lg hover:bg-[#21262d] disabled:opacity-30 disabled:cursor-not-allowed text-gray-200 hover:text-white transition-colors cursor-pointer"
         >
-          <Redo2 className="w-3.5 h-3.5" />
+          <Redo2 className="w-4 h-4" />
         </button>
 
-        <div className="w-px h-4 bg-[#30363d] my-auto" />
+        <div className="w-px h-5 bg-[#30363d] mx-1" />
 
         {/* Auto Layout Action */}
         <button
           type="button"
           onClick={onAutoLayout}
           title="Auto Layout Diagram"
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded hover:bg-[#21262d] text-gray-300 hover:text-white font-medium text-[11px] transition-colors cursor-pointer"
+          data-testid="canvas-autolayout-button"
+          className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-[#21262d] text-gray-100 hover:text-white font-semibold text-xs transition-colors cursor-pointer"
         >
-          <LayoutGrid className="w-3.5 h-3.5 text-blue-400" />
+          <LayoutGrid className="w-4 h-4 text-[#38bdf8]" />
           <span>Auto Layout</span>
         </button>
 
-        <div className="w-px h-4 bg-[#30363d] my-auto" />
+        <div className="w-px h-5 bg-[#30363d] mx-1" />
 
         {/* Zoom In Action */}
         <button
           type="button"
           onClick={() => zoomIn()}
           title="Zoom In"
-          className="p-1.5 rounded hover:bg-[#21262d] text-gray-300 hover:text-white transition-colors cursor-pointer"
+          data-testid="canvas-zoomin-button"
+          className="p-1.5 rounded-lg hover:bg-[#21262d] text-gray-300 hover:text-white transition-colors cursor-pointer"
         >
-          <ZoomIn className="w-3.5 h-3.5" />
+          <ZoomIn className="w-4 h-4" />
         </button>
 
         {/* Zoom Out Action */}
@@ -104,9 +108,10 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
           type="button"
           onClick={() => zoomOut()}
           title="Zoom Out"
-          className="p-1.5 rounded hover:bg-[#21262d] text-gray-300 hover:text-white transition-colors cursor-pointer"
+          data-testid="canvas-zoomout-button"
+          className="p-1.5 rounded-lg hover:bg-[#21262d] text-gray-300 hover:text-white transition-colors cursor-pointer"
         >
-          <ZoomOut className="w-3.5 h-3.5" />
+          <ZoomOut className="w-4 h-4" />
         </button>
 
         {/* Zoom to Fit Action */}
@@ -114,9 +119,10 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
           type="button"
           onClick={() => fitView({ padding: 0.2 })}
           title="Zoom to Fit"
-          className="flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-[#21262d] text-gray-300 hover:text-white font-medium text-[11px] transition-colors cursor-pointer"
+          data-testid="canvas-fitview-button"
+          className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-[#21262d] text-gray-100 hover:text-white font-semibold text-xs transition-colors cursor-pointer"
         >
-          <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
+          <Maximize2 className="w-4 h-4 text-[#10b981]" />
           <span>Zoom to Fit</span>
         </button>
       </div>
@@ -133,8 +139,8 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             return '#10b981';
           }}
           nodeStrokeWidth={2}
-          className="!static !m-0 !h-[110px] !w-[170px] border border-[#30363d] rounded-lg shadow-xl overflow-hidden"
-          maskColor="rgba(0, 0, 0, 0.65)"
+          className="!static !m-0 !h-[120px] !w-[180px] border border-[#30363d] rounded-xl shadow-xl overflow-hidden !bg-[#161b22]"
+          maskColor="rgba(13, 17, 23, 0.75)"
         />
       )}
     </div>

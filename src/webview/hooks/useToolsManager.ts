@@ -23,10 +23,61 @@ import { useState, useEffect, useCallback } from 'react';
 import { Node, Edge } from '@xyflow/react';
 import { ToolDefinition, AgentData } from '../types';
 import { AVAILABLE_TOOLS } from '../data/defaultTools';
+import { isDeprecatedMockTool } from '../data/builtinTools';
 
 export const STORAGE_TOOLS_KEY = 'ais_agent_studio_tools_v1';
 
 export type ToolScope = { type: 'global' | 'agent'; agentId?: string } | null;
+
+/**
+ * Reconciles saved tools loaded from localStorage with the latest AVAILABLE_TOOLS catalog.
+ * Filters out any deprecated mock tools and ensures that all native ADK tools are available,
+ * while preserving custom tools, MCP servers, and modified configurations.
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ * @param savedTools Array of tools loaded from localStorage
+ * @returns Reconciled array of ToolDefinition objects
+ */
+export function reconcileToolsCatalog(savedTools: ToolDefinition[]): ToolDefinition[] {
+  if (!Array.isArray(savedTools)) {
+    return AVAILABLE_TOOLS;
+  }
+
+  // 1. Filter out deprecated mock tools
+  const activeSaved = savedTools.filter((t) => !isDeprecatedMockTool(t));
+
+  // 2. Index and deduplicate existing tools by ID and custom function singleton
+  const seenIds = new Set<string>();
+  let seenCustomFunction = false;
+  const dedupedSaved: ToolDefinition[] = [];
+
+  for (const tool of activeSaved) {
+    if (seenIds.has(tool.id)) continue;
+    if (tool.id === 'tool_custom_function' || tool.name === 'Custom Python/TS Function') {
+      if (seenCustomFunction) continue;
+      seenCustomFunction = true;
+    }
+    seenIds.add(tool.id);
+    dedupedSaved.push(tool);
+  }
+
+  const existingBuiltinTypes = new Set(
+    dedupedSaved.map((t) => t.builtinType).filter(Boolean)
+  );
+
+  // 3. Merge in any missing native ADK tools from AVAILABLE_TOOLS
+  const missingBuiltins = AVAILABLE_TOOLS.filter((t) => {
+    // If id already exists, not missing
+    if (seenIds.has(t.id)) return false;
+    // If builtinType already exists, not missing (e.g., tool_google_search vs builtin_google_search)
+    if (t.builtinType && existingBuiltinTypes.has(t.builtinType)) return false;
+    // If custom function already exists, not missing
+    if ((t.id === 'tool_custom_function' || t.name === 'Custom Python/TS Function') && seenCustomFunction) return false;
+    return true;
+  });
+
+  return [...dedupedSaved, ...missingBuiltins];
+}
 
 export interface UseToolsManagerOptions {
   nodes: Node<any>[];
@@ -69,12 +120,13 @@ export function useToolsManager(options: UseToolsManagerOptions): UseToolsManage
     setIsTriggerDrawerOpen,
   } = options;
 
-  // Initialize tools from localStorage with fallback to default catalog
+  // Initialize tools from localStorage with fallback to default catalog and catalog reconciliation
   const [tools, setTools] = useState<ToolDefinition[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_TOOLS_KEY);
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        return reconcileToolsCatalog(parsed);
       }
     } catch (e) {
       console.warn('Failed to load saved tools from localStorage:', e);
@@ -158,18 +210,25 @@ export function useToolsManager(options: UseToolsManagerOptions): UseToolsManage
       name: 'New MCP Server',
       type: 'mcp',
       description: 'Model Context Protocol (MCP) server providing tools and resources.',
-      codePrompt: 'Connect to MCP server via stdio/sse and invoke exposed tool capabilities.',
+      codePrompt: 'Connect to remote MCP server via Streamable HTTP and invoke exposed tool capabilities.',
       enabled: true,
       mcpConfig: {
-        serverName: 'custom-mcp-server',
-        transport: 'stdio',
-        command: 'npx',
-        args: ['-y', '@modelcontextprotocol/server-everything'],
-        envVars: {
-          MCP_AUTH_TOKEN: 'your-token-if-needed',
-        },
+        serverName: 'bigquery-mcp',
+        transport: 'http',
+        serverUrl: 'https://bigquery.googleapis.com/mcp',
+        headers: {},
         exposedTools: ['*'],
-        autoApproveTools: ['read_*'],
+        autoApproveTools: [],
+        authProviderType: 'google_credentials',
+        oauthConfig: {
+          scopes: [
+            'https://www.googleapis.com/auth/cloud-platform',
+            'https://www.googleapis.com/auth/bigquery',
+          ],
+          projectId: '',
+        },
+        timeoutSeconds: 30,
+        discoveredTools: [],
       },
     };
     setEditingToolScope({ type: 'global' });
@@ -190,7 +249,7 @@ export function useToolsManager(options: UseToolsManagerOptions): UseToolsManage
         // Save the modified properties into the JSON under this agent node only
         let updated = false;
         const nextNodes = nodes.map((n) => {
-          if (n.id === targetAgentId && n.type === 'agentNode') {
+          if (n.id === targetAgentId && (n.type === 'agentNode' || n.type === 'agent')) {
             const agentData = n.data as AgentData;
             updated = true;
             return {
@@ -232,34 +291,69 @@ export function useToolsManager(options: UseToolsManagerOptions): UseToolsManage
   );
 
   /**
-   * Deletes a tool from the catalog and strips references from all agent nodes.
+   * Deletes a tool from either an agent-scoped instance or the global catalog.
+   *
+   * Architectural Decisions:
+   * - Agent-Scoped Delete: When editing a tool attached to a specific agent node (editingToolScope?.type === 'agent'),
+   *   clicking delete must ONLY remove that tool instance from the targeted agent's node.data.tools array.
+   *   The tool is NOT removed from the global tools catalog or from any other agent nodes.
+   * - Global Catalog Delete: When editing from the global tools catalog (editingToolScope?.type === 'global'),
+   *   the tool is removed from the catalog and stripped from agent nodes referencing it.
    */
   const handleDeleteTool = useCallback(
     (toolId: string) => {
-      // 1. Remove from tools catalog
-      setTools((prev) => prev.filter((t) => t.id !== toolId));
+      if (editingToolScope?.type === 'agent' && editingToolScope.agentId) {
+        const targetAgentId = editingToolScope.agentId;
+        // Strip the tool ONLY from this specific agent node
+        let updated = false;
+        const nextNodes = nodes.map((n) => {
+          if (n.id === targetAgentId && (n.type === 'agentNode' || n.type === 'agent')) {
+            const agentData = n.data as AgentData;
+            updated = true;
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                tools: (agentData.tools || []).filter((t) => t.id !== toolId),
+              },
+            };
+          }
+          return n;
+        });
 
-      // 2. Strip from any agent node that contains it
-      const nextNodes = nodes.map((n) => {
-        if (n.type === 'agentNode' && (n.data as AgentData).tools) {
-          return {
-            ...n,
-            data: {
-              ...n.data,
-              tools: (n.data as AgentData).tools?.filter((t) => t.id !== toolId) || [],
-            },
-          };
+        if (updated) {
+          setNodes(nextNodes);
+          recordSnapshot(nextNodes, edges, {
+            description: `Removed tool from agent`,
+          });
         }
-        return n;
-      });
+      } else {
+        // 1. Remove from tools catalog
+        setTools((prev) => prev.filter((t) => t.id !== toolId));
 
-      setNodes(nextNodes);
-      recordSnapshot(nextNodes, edges, { description: 'Deleted tool from catalog' });
+        // 2. Strip from any agent node that contains it
+        const nextNodes = nodes.map((n) => {
+          if ((n.type === 'agentNode' || n.type === 'agent') && (n.data as AgentData).tools) {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                tools: (n.data as AgentData).tools?.filter((t) => t.id !== toolId) || [],
+              },
+            };
+          }
+          return n;
+        });
+
+        setNodes(nextNodes);
+        recordSnapshot(nextNodes, edges, { description: 'Deleted tool from catalog' });
+      }
+
       setIsToolDrawerOpen(false);
       setEditingTool(null);
       setEditingToolScope(null);
     },
-    [nodes, edges, setNodes, recordSnapshot]
+    [editingToolScope, nodes, edges, setNodes, setTools, recordSnapshot]
   );
 
   return {

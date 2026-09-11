@@ -28,9 +28,11 @@ import {
   categorizeTools,
   isDeprecatedMockTool,
   sanitizeToolList,
-  DEPRECATED_MOCK_TOOL_IDS
+  DEPRECATED_MOCK_TOOL_IDS,
+  isNativeAdkTool
 } from '../../src/webview/data/builtinTools';
-import { AVAILABLE_TOOLS } from '../../src/webview/data/defaultTools';
+import { AVAILABLE_TOOLS, ADK_DEFAULT_TOOLS } from '../../src/webview/data/defaultTools';
+import { reconcileToolsCatalog } from '../../src/webview/hooks/useToolsManager';
 import { ToolDefinition } from '../../src/webview/types';
 
 describe('ADK Built-in Tools Registry', () => {
@@ -230,5 +232,178 @@ describe('ADK Built-in Tools Registry', () => {
     assert.equal(categorized.custom[0].id, 'tool_custom_function');
     assert.ok(!categorized.custom.some((t) => t.id === 'tool_google_places'));
     assert.ok(!categorized.custom.some((t) => t.id === 'tool_sql_query'));
+  });
+
+  it('should identify all 8 native ADK tools with isNativeAdkTool()', () => {
+    // 7 built-in tools + 1 custom FunctionTool
+    for (const tool of ADK_DEFAULT_TOOLS) {
+      assert.ok(isNativeAdkTool(tool), `Tool ${tool.name} (${tool.id}) should be identified as a Native ADK tool`);
+    }
+
+    // Custom external tools and MCP servers should NOT be identified as native ADK
+    assert.equal(isNativeAdkTool({ id: 'tool_mcp_test', name: 'Test MCP', type: 'mcp', description: '' } as ToolDefinition), false);
+    assert.equal(isNativeAdkTool({ id: 'tool_api_weather', name: 'Weather API', type: 'api', description: '' } as ToolDefinition), false);
+    assert.equal(isNativeAdkTool({ id: 'tool_custom_endpoint', name: 'Custom REST Endpoint', type: 'custom', endpointUrl: 'https://api.example.com', description: '' } as ToolDefinition), false);
+  });
+
+  it('should group all 8 ADK tools under native_adk in categorizeTools()', () => {
+    const categorized = categorizeTools(AVAILABLE_TOOLS);
+    assert.equal(categorized.native_adk.length, 8);
+    assert.equal(categorized.google_cloud_mcp.length, 68);
+
+    const ids = categorized.native_adk.map((t) => t.id);
+    assert.ok(ids.includes('tool_google_search'), 'Missing Google Search');
+    assert.ok(ids.includes('builtin_vertex_ai_search'), 'Missing Vertex AI Search');
+    assert.ok(ids.includes('builtin_load_web_page'), 'Missing Web Page Reader');
+    assert.ok(ids.includes('builtin_request_input'), 'Missing Human Clarification');
+    assert.ok(ids.includes('builtin_preload_memory'), 'Missing Preload Memory');
+    assert.ok(ids.includes('tool_code_interpreter'), 'Missing Python Code Sandbox');
+    assert.ok(ids.includes('builtin_agent_as_tool'), 'Missing Sub-Agent as Tool');
+    assert.ok(ids.includes('tool_custom_function'), 'Missing Custom Python/TS Function');
+  });
+
+  it('should reconcile localStorage to restore missing ADK tools when user had only 3 cached', () => {
+    // Simulate user state from an older session where only 3 tools were cached
+    const oldCachedTools: ToolDefinition[] = [
+      {
+        id: 'tool_google_search',
+        name: 'Google Search Grounding',
+        type: 'search',
+        category: 'grounding',
+        builtinType: 'google_search',
+        description: 'Existing cached config',
+      },
+      {
+        id: 'tool_code_interpreter',
+        name: 'Python Code Sandbox',
+        type: 'code',
+        category: 'system',
+        builtinType: 'code_execution',
+        description: 'Existing cached config',
+      },
+      {
+        id: 'tool_custom_function',
+        name: 'Custom Python/TS Function',
+        type: 'custom',
+        category: 'custom',
+        description: 'Existing cached config',
+      },
+    ];
+
+    const reconciled = reconcileToolsCatalog(oldCachedTools);
+
+    // Reconciled catalog must now have all 8 native ADK tools plus default GCP MCP tools
+    const nativeAdkTools = reconciled.filter(isNativeAdkTool);
+    assert.equal(nativeAdkTools.length, 8);
+    assert.ok(reconciled.length >= 76);
+
+    // Existing configs preserved
+    const search = reconciled.find((t) => t.id === 'tool_google_search');
+    assert.equal(search?.description, 'Existing cached config');
+
+    // Missing tools added
+    assert.ok(reconciled.some((t) => t.builtinType === 'vertex_ai_search'));
+    assert.ok(reconciled.some((t) => t.builtinType === 'load_web_page'));
+    assert.ok(reconciled.some((t) => t.builtinType === 'request_input'));
+    assert.ok(reconciled.some((t) => t.builtinType === 'preload_memory'));
+    assert.ok(reconciled.some((t) => t.builtinType === 'agent_as_tool'));
+  });
+
+  it('should handle edge cases in reconcileToolsCatalog', () => {
+    // Null / non-array input
+    const fromNull = reconcileToolsCatalog(null as any);
+    assert.equal(fromNull.length, AVAILABLE_TOOLS.length);
+
+    // Empty array input
+    const fromEmpty = reconcileToolsCatalog([]);
+    assert.equal(fromEmpty.length, AVAILABLE_TOOLS.length);
+
+    // Cached tools with a user MCP server and deprecated mock tool
+    const userWorkspace: ToolDefinition[] = [
+      {
+        id: 'mcp_bigquery',
+        name: 'BigQuery MCP',
+        type: 'mcp',
+        description: 'Custom user registered MCP',
+        mcpConfig: {
+          serverName: 'bigquery',
+          transport: 'http',
+          url: 'https://bigquery.googleapis.com/mcp',
+          authProvider: 'adc',
+        },
+      },
+      {
+        id: 'tool_financial_calc',
+        name: 'Procurement & Margin Calculator',
+        type: 'custom',
+        description: 'Deprecated tool',
+      },
+    ];
+
+    const reconciled = reconcileToolsCatalog(userWorkspace);
+
+    // Deprecated mock tool purged
+    assert.ok(!reconciled.some((t) => t.id === 'tool_financial_calc'));
+
+    // User MCP tool preserved
+    const mcp = reconciled.find((t) => t.id === 'mcp_bigquery');
+    assert.ok(mcp);
+    assert.equal(mcp?.mcpConfig?.serverName, 'bigquery');
+
+    // All 8 native ADK tools present
+    for (const adkTool of AVAILABLE_TOOLS) {
+      assert.ok(
+        reconciled.some((t) => t.id === adkTool.id || (t.builtinType && t.builtinType === adkTool.builtinType)),
+        `ADK tool ${adkTool.name} should be present in reconciled output`
+      );
+    }
+  });
+
+  it('should deduplicate multiple instances of Custom Python/TS Function in reconcileToolsCatalog', () => {
+    const dirtyCatalog: ToolDefinition[] = [
+      {
+        id: 'tool_custom_function',
+        name: 'Custom Python/TS Function',
+        type: 'custom',
+        description: 'First instance',
+      },
+      {
+        id: 'tool_custom_duplicate_999',
+        name: 'Custom Python/TS Function',
+        type: 'custom',
+        description: 'Second duplicate instance',
+      },
+      {
+        id: 'tool_custom_function',
+        name: 'Custom Python/TS Function',
+        type: 'custom',
+        description: 'Third duplicate with same id',
+      },
+    ];
+
+    const reconciled = reconcileToolsCatalog(dirtyCatalog);
+
+    // Exactly one Custom Python/TS Function in the entire catalog
+    const customFunctionMatches = reconciled.filter(
+      (t) => t.id === 'tool_custom_function' || t.name === 'Custom Python/TS Function'
+    );
+    assert.equal(customFunctionMatches.length, 1);
+  });
+
+  it('should ensure Custom Python/TS Function is only in native_adk and excluded from custom section', () => {
+    const categorized = categorizeTools(AVAILABLE_TOOLS);
+
+    // Present in native_adk
+    const adkCustom = categorized.native_adk.find((t) => t.id === 'tool_custom_function');
+    assert.ok(adkCustom, 'Should be in native_adk');
+
+    // Filter used in PaletteCard and AddToolModal
+    const customSectionTools = categorized.custom.filter(
+      (t) => !isNativeAdkTool(t) && t.type !== 'mcp' && !t.mcpConfig && !t.id.startsWith('tool_mcp_')
+    );
+
+    // Custom Python/TS Function MUST NOT be in the customSectionTools
+    const duplicateInCustom = customSectionTools.find((t) => t.id === 'tool_custom_function' || t.name === 'Custom Python/TS Function');
+    assert.equal(duplicateInCustom, undefined, 'Custom Python/TS Function must not appear in Custom & External Tools section');
   });
 });

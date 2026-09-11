@@ -180,4 +180,57 @@ describe('useExtensionSync Protocol & Lifecycle Logic', () => {
     assert.equal(updatedDoc.name, 'CustomEnterpriseWorkflow');
     assert.equal(updatedDoc.description, 'Production Multi-Agent Coordinator');
   });
+
+  it('should only serialize outputFolder under deployment and not duplicate under metadata', () => {
+    const rawLoadedMetadata = {
+      outputFolder: './legacy_folder/',
+      createdAt: '2026-09-01T00:00:00.000Z',
+      author: 'Mike Nimer <mikenimer@google.com>',
+    };
+
+    // Filter out outputFolder and deploymentTarget
+    const { outputFolder: _discardOutput, deploymentTarget: _discardTarget, ...cleanedMetadata } = rawLoadedMetadata as any;
+
+    const config = {
+      deploymentTarget: 'agent_engine',
+      outputFolder: './game_20_questions/',
+      framework: 'google_adk',
+      language: 'python',
+      includeTests: true,
+      includeDocker: false,
+      useStreaming: true,
+    };
+
+    const updatedDoc = {
+      version: '1.0.0',
+      name: 'game_20_questions',
+      description: '20 Questions Agent',
+      framework: 'google-adk',
+      language: 'python',
+      nodes: [],
+      edges: [],
+      metadata: {
+        ...cleanedMetadata,
+        updatedAt: new Date().toISOString(),
+      },
+      deployment: {
+        target: config.deploymentTarget,
+        deploymentTarget: config.deploymentTarget,
+        outputFolder: config.outputFolder,
+        framework: 'google-adk',
+        language: config.language,
+        includeTests: config.includeTests,
+        includeDocker: config.includeDocker,
+        useStreaming: config.useStreaming,
+      },
+    };
+
+    assert.equal(updatedDoc.deployment.outputFolder, './game_20_questions/');
+    assert.equal((updatedDoc.metadata as any).outputFolder, undefined);
+    assert.equal((updatedDoc.metadata as any).deploymentTarget, undefined);
+    assert.equal(updatedDoc.metadata.createdAt, '2026-09-01T00:00:00.000Z');
+    assert.equal(updatedDoc.metadata.author, 'Mike Nimer <mikenimer@google.com>');
+    assert.ok(updatedDoc.metadata.updatedAt);
+  });
 });
+

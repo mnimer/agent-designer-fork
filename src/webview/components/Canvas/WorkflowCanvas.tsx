@@ -17,8 +17,6 @@ import React, { useMemo, useCallback } from 'react';
 import {
   ReactFlow,
   Background,
-  Controls,
-  MiniMap,
   BackgroundVariant,
   ReactFlowProvider,
   Node,
@@ -29,6 +27,8 @@ import { TriggerNode } from './nodes/TriggerNode';
 import { AgentNode } from './nodes/AgentNode';
 import { WorkflowEdge } from './edges/WorkflowEdge';
 import { CanvasControls } from './CanvasControls';
+import { CanvasToolbar } from './CanvasToolbar';
+import { getLayoutedElements } from '../../utils/layout';
 import {
   WorkflowNode,
   WorkflowEdge as AgentWorkflowEdge,
@@ -49,6 +49,11 @@ export interface WorkflowCanvasProps {
   onAddTool?: (agentId: string) => void;
   onRemoveTool?: (agentId: string, toolId: string) => void;
   onLayoutChange: (nodes: WorkflowNode[]) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  showMiniMap?: boolean;
 }
 
 // Static custom node and edge types defined outside component to preserve React Flow store
@@ -146,20 +151,17 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
           onLayoutChange={onLayoutChange}
         />
 
-        {/* MiniMap */}
-        <MiniMap
-          nodeColor={(node) => {
-            if (node.type === 'trigger') return '#f59e0b';
-            return '#3b82f6';
+        {/* Floating Canvas Action Toolbar (Top-Right) */}
+        <CanvasToolbar
+          canUndo={canUndo || false}
+          canRedo={canRedo || false}
+          onUndo={onUndo || (() => {})}
+          onRedo={onRedo || (() => {})}
+          onAutoLayout={() => {
+            const layouted = getLayoutedElements(nodes, edges);
+            onLayoutChange(layouted.nodes as WorkflowNode[]);
           }}
-          maskColor="rgba(13, 17, 23, 0.75)"
-          className="!bg-[#161b22] !border !border-[#30363d] !rounded-lg !bottom-4 !right-4 shadow-xl"
-        />
-
-        {/* Built-in Controls */}
-        <Controls
-          showInteractive={false}
-          className="!bg-[#161b22] !border !border-[#30363d] !rounded-lg !bottom-4 !left-4 shadow-xl !text-white"
+          showMiniMap={showMiniMap !== false}
         />
       </ReactFlow>
     </div>

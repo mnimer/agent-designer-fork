@@ -74,9 +74,15 @@ export function syncWorkflowSubAgents(nodes: WorkflowNode[], edges: WorkflowEdge
 
     const currentSubAgents: any[] = (node.data as any)?.subAgents || [];
 
-    // Find all outgoing edges where target is an existing agent node
+    const isBottomHandle = (handleId?: string | null) => {
+      if (!handleId) return true;
+      if (handleId === 'output' || handleId === 'subagent' || handleId.startsWith('branch_')) return true;
+      return handleId !== 'input' && handleId !== 'input_left';
+    };
+
+    // Find all outgoing edges from bottom handle where target is an existing agent node
     const outgoingAgentEdges = edges.filter(
-      (e) => e.source === node.id && nodeMap.has(e.target) && (nodeMap.get(e.target)!.type === 'agentNode' || nodeMap.get(e.target)!.type === 'agent')
+      (e) => e.source === node.id && isBottomHandle(e.sourceHandle) && nodeMap.has(e.target) && (nodeMap.get(e.target)!.type === 'agentNode' || nodeMap.get(e.target)!.type === 'agent')
     );
     const connectedTargetIds = Array.from(new Set(outgoingAgentEdges.map((e) => e.target)));
 

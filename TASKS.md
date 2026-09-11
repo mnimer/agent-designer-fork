@@ -24,24 +24,26 @@
 | **TASK-109** | v1.0.0 | Quality | End-to-End Test Suite & 100% Coverage Suite | **Complete** | TASK-100 to TASK-108 |
 | **TASK-110** | v1.0.1 | Triggers | Chat Trigger Node & Interactive Chat Runner Panel | **Complete** | TASK-107 |
 | **TASK-111** | v1.0.1 | Deployment | Cloud Infrastructure IaC Panel (Cloud Run & Shared GCP Resources) | **Not Started** | TASK-106 |
-| **TASK-112** | v1.0.2 | Canvas | Multi-Agent Wiring, Sockets & Connection Validation | **Not Started** | TASK-103 |
-| **TASK-113** | v1.0.2 | Patterns | Sequential Pipeline & Parallel Fan-Out Patterns | **Not Started** | TASK-112 |
-| **TASK-114** | v1.0.2 | Codegen | Multi-Agent DAG Python ADK Code Generation & Tracing | **Not Started** | TASK-113 |
+| **TASK-112** | v1.0.2 | Canvas | Multi-Agent Wiring, Sockets & Connection Validation | **Complete** | TASK-103 |
+| **TASK-113** | v1.0.2 | Patterns | Sequential Pipeline & Parallel Fan-Out Patterns | **Complete** | TASK-112 |
+| **TASK-114** | v1.0.2 | Codegen | Multi-Agent DAG Python ADK Code Generation & Tracing | **Complete** | TASK-113 |
 | **TASK-115** | v1.0.3 | Memory | In-Memory & Cloud Firestore Checkpointer Configuration | **Not Started** | TASK-103, TASK-111 |
-| **TASK-116** | v1.0.4 | A2A | Agent-to-Agent (A2A) Protocol Node & JSON-RPC Client | **In Progress** | TASK-112, TASK-115 |
+| **TASK-116** | v1.0.4 | A2A | Agent-to-Agent (A2A) Protocol Node & JSON-RPC Client | **Complete** | TASK-112, TASK-115 |
 | **TASK-117** | v1.0.5 | Router | Router Node & Dynamic Branching Logic | **Not Started** | TASK-112 |
 | **TASK-118** | v1.0.6 | Tools | Custom REST API Tool Builder & Python Code Sandbox | **Not Started** | TASK-104 |
-| **TASK-119** | v1.0.7 | Schema | Structured Output Schema Builder & Pydantic Validation | **Not Started** | TASK-103, TASK-106 |
-| **TASK-120** | v1.0.8 | MCP | Model Context Protocol (MCP) Client & Handshake Test | **Not Started** | TASK-104, TASK-107 |
+| **TASK-119** | v1.0.7 | Schema | Structured Output Schema Builder & Pydantic Validation | **Complete** | TASK-103, TASK-106 |
+| **TASK-120** | v1.0.8 | MCP | Model Context Protocol (MCP) Client & Handshake Test | **Complete** | TASK-104, TASK-107 |
 | **TASK-121** | v1.0.9 | Triggers & IAM | Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise IAM OIDC Auth | **Not Started** | TASK-105, TASK-111, TASK-116 |
 | **TASK-122** | v1.1.0 | Framework | LangGraph Framework Support (Python StateGraph Target) | **Not Started** | TASK-106, TASK-114 |
 | **TASK-123** | v1.1.1 | Runtime | TypeScript Runtime Support (@google/genai SDK & Vitest) | **Not Started** | TASK-106, TASK-122 |
 | **TASK-124** | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Not Started** | TASK-113, TASK-117 |
-| **TASK-125** | v1.0.1 | Deployment | Native Vertex AI Agent Engine (Agent Runtime) Container Deployment & Lifecycle Management | **Not Started** | TASK-106, TASK-110 |
+| **TASK-125** | v1.0.1 | Deployment | Native Vertex AI Agent Engine (Agent Runtime) Container Deployment & Lifecycle Management | **In Progress** | TASK-106, TASK-110 |
 | **TASK-126** | v1.0.0 | Extension Host | VS Code Activity Bar Container & Sidebar Workflows Explorer | **Done** | TASK-100, TASK-108 |
 | **TASK-127** | v1.0.0 | Release & CI | Automated VSIX Packaging & Tag-Triggered GitHub Actions Release Workflow | **Done** | TASK-100, TASK-109 |
 | **TASK-128** | v1.0.1 | Blueprints | Visual Samples & Blueprints Gallery (Samples Tab & Palette) | **Not Started** | TASK-103, TASK-108 |
 | **TASK-129** | v1.0.6 | Tools | ADK Built-in Tools Registry & Cross-Harness Tool Adapter Architecture | **Done** | TASK-104, TASK-118 |
+| **TASK-130** | v1.0.8 | MCP / Tools | Google Cloud Remote MCP Servers Registry in Tools Tab | **Completed** | TASK-120, TASK-129 |
+| **TASK-131** | v1.1.3 | i18n | Extension Host & Webview Internationalization (i18n / l10n) | **Not Started** | TASK-100, TASK-102 |
 
 ---
 
@@ -757,3 +759,184 @@
   ```
 * **Verification**:
   - Unit tests verify all built-in tools render in PaletteCard, can be attached to Agent nodes, serialize cleanly, and emit valid ADK/LangGraph code.
+
+---
+
+### [TASK-130] Google Cloud Remote MCP Servers Registry & Tools Panel Group (COMPLETED)
+* **Release**: `v1.0.8`
+* **Target Package/Files**:
+  - `src/shared/types.ts`
+  - `src/webview/data/googleCloudMcpServers.ts`
+  - `src/webview/components/Canvas/PaletteCard.tsx`
+  - `src/webview/components/inspector/ToolDrawer.tsx`
+  - `src/shared/codegen/toolAdapters.ts`
+  - `src/extension/McpSubprocessManager.ts`
+* **Context**:
+  Add a dedicated **"Google Cloud MCP Servers"** collapsible category accordion inside the existing **Tools Tab** in `PaletteCard.tsx` (preserving the 4 existing top-level tabs: Agents, Tools, Triggers, Samples) and populate it with all released remote MCP servers documented at `https://docs.cloud.google.com/mcp/supported-products`. Unlike generic local `stdio` MCP processes, Google Cloud Remote MCP servers run on Google infrastructure, accessible via HTTP/SSE endpoints with Google Cloud Application Default Credentials (ADC) or OAuth access tokens.
+  1. **"Google Cloud MCP Servers" Section inside the Tools Tab (Option A Hierarchy)**:
+     - Render as a collapsible accordion category section directly inside the existing **Tools Tab** alongside *Built-in Grounding*, *Enterprise Search*, *System Tools*, and *Custom & Community Tools*.
+     - Preserves the existing compact 4-tab bar layout (`Agents`, `Tools`, `Triggers`, `Samples`) without introducing any new top-level tabs.
+     - **Two-Tier Lightweight Sub-Accordions**: Inside the Google Cloud MCP Servers category, organize the ~45 servers into 6 domain sub-groups:
+       1. `Databases & Storage` (15 servers)
+       2. `Compute & Containers` (6 servers)
+       3. `AI, Search & Agent Platform` (5 servers)
+       4. `Analytics, ETL & Governance` (6 servers)
+       5. `Management, Observability & Security` (12 servers)
+       6. `Developer & Google Workspace` (13 servers)
+     - **Sub-Accordion UX & Styling**:
+       * Sub-accordions are **collapsed by default**, showing only 6 clean single-line rows (with domain icon, title, and count badge), preventing infinite scrolling in the 320px palette.
+       * Minimal 8pt grid indentation (`pl-2` / 8px) to maximize horizontal card width for descriptions and drag handles.
+       * **Auto-Expand on Search**: Typing in the unified search bar automatically expands only the sub-groups containing matching servers.
+     - Each tool card displays product name, launch stage badge (`GA`, `Preview`, `Beta`), service icon, default endpoint, and drag handle.
+  2. **Complete Pre-Configured Server Catalog (`googleCloudMcpServers.ts`)**:
+     - **Databases & Storage**:
+       * **BigQuery**: `https://bigquery.googleapis.com/mcp`
+       * **Bigtable**: `https://bigtableadmin.googleapis.com/mcp`
+       * **Spanner**: `https://spanner.googleapis.com/mcp`
+       * **Cloud SQL** (MySQL, PostgreSQL, SQL Server): `https://sqladmin.googleapis.com/mcp`
+       * **AlloyDB for PostgreSQL**: Global `https://alloydb.googleapis.com/mcp` and Regional `https://alloydb.<REGION>.rep.googleapis.com/mcp`
+       * **Firestore**: `https://firestore.googleapis.com/mcp`
+       * **Memorystore** (Redis/Redis Cluster: `https://redis.googleapis.com/mcp`, Valkey: `https://memorystore.googleapis.com/mcp`)
+       * **Cloud Storage**: `https://storage.googleapis.com/storage/mcp`
+       * **Filestore**: `https://file.googleapis.com/mcp`
+       * **Google Cloud NetApp Volumes**: `https://netapp.googleapis.com/mcp`
+       * **Oracle Database@Google Cloud (Preview)**: `https://oracledatabase.googleapis.com/mcp`
+       * **Database Center**: `https://databasecenter.googleapis.com/mcp`
+       * **Database Insights**: `https://databaseinsights.googleapis.com/mcp`
+       * **Database Migration Service (Preview)**: `https://datamigration.googleapis.com/mcp`
+       * **Datastream (Preview)**: `https://datastream.googleapis.com/mcp`
+     - **Analytics, ETL & Data Governance**:
+       * **Dataform**: `https://dataform.googleapis.com/mcp`
+       * **Managed Service for Apache Spark (Dataproc)**: `https://dataproc.googleapis.com/mcp`
+       * **BigQuery Data Transfer Service (Preview)**: `https://bigquerydatatransfer.googleapis.com/mcp`
+       * **BigQuery Migration Service**: `https://bigquerymigration.googleapis.com/mcp`
+       * **Knowledge Catalog (Dataplex, Preview)**: `https://dataplex.googleapis.com/mcp`
+       * **Data Lineage (Dataplex, Preview)**: Global `https://datalineage.googleapis.com/mcp` and Regional endpoints
+     - **Compute, Containers & Messaging**:
+       * **Cloud Run**: `https://run.googleapis.com/mcp`
+       * **Compute Engine**: `https://compute.googleapis.com/mcp`
+       * **Google Kubernetes Engine (GKE)**: `https://container.googleapis.com/mcp`
+       * **Managed Service for Apache Airflow (Cloud Composer)**: Regional `https://composer.<REGION>.rep.googleapis.com/mcp`
+       * **Managed Service for Apache Kafka**: `https://managedkafka.googleapis.com/mcp`
+       * **Pub/Sub**: `https://pubsub.googleapis.com/mcp`
+     - **AI, Agent Orchestration & Search**:
+       * **Gemini Enterprise Agent Platform**: Multi-endpoint toolsets (`generate`, `predict`, `notebook`, `endpoints`, `models`, `tuning`, `retrieval`, `evaluation`, `prompts`)
+       * **Agent Search**: `https://discoveryengine.googleapis.com/mcp`
+       * **Agent Registry**: `https://agentregistry.googleapis.com/mcp`
+       * **Customer Experience (CX) Agent Studio**: `https://ces.us.rep.googleapis.com/mcp`
+       * **Gemini Cloud Assist (Preview)**: `https://geminicloudassist.googleapis.com/mcp`
+     - **Management, Observability & Security**:
+       * **Cloud Logging**: `https://logging.googleapis.com/mcp`
+       * **Cloud Monitoring**: `https://monitoring.googleapis.com/mcp`
+       * **Cloud Trace**: `https://cloudtrace.googleapis.com/mcp`
+       * **Error Reporting**: `https://clouderrorreporting.googleapis.com/mcp`
+       * **Personalized Service Health**: `https://servicehealth.googleapis.com/mcp`
+       * **Cloud Quotas**: `https://cloudquotas.googleapis.com/mcp`
+       * **Recommender**: `https://recommender.googleapis.com/mcp`
+       * **Resource Manager**: `https://cloudresourcemanager.googleapis.com/mcp`
+       * **Cloud Asset Inventory (Preview)**: `https://cloudasset.googleapis.com/mcp`
+       * **Cloud Billing (Preview)**: `https://cloudbilling.googleapis.com/mcp`
+       * **Audit Manager**: Regional `https://auditmanager.<REGION>.rep.googleapis.com/mcp`
+       * **Backup and DR Service**: `https://backupdr.googleapis.com/mcp`
+       * **Google Security Operations (Chronicle)**: Regional `https://chronicle.<REGION>.rep.googleapis.com/mcp`
+       * **Policy Analyzer**: `https://cloudasset.googleapis.com/mcp`
+       * **Policy Troubleshooter**: `https://policytroubleshooter.googleapis.com/mcp`
+       * **Secure Source Manager (Preview)**: Regional endpoints (`code_review`, `pull_request`, `branch_rule`, `repository`, `instance`, `hook`)
+       * **Cloud Location Finder (Preview)**: `https://cloudlocationfinder.googleapis.com/mcp`
+       * **Cloud Product Registry (Preview)**: `https://cloudproductregistry.googleapis.com/mcp`
+       * **Unified Maintenance (Preview)**: `https://maintenance.googleapis.com/mcp`
+       * **Cloud Support API (Preview)**: `https://cloudsupport.googleapis.com/mcp`
+       * **App Lifecycle Manager (Preview)**: `https://saasservicemgmt.googleapis.com/mcp`
+       * **Apigee API hub**: `https://apihub.googleapis.com/mcp`
+     - **Developer Tools, Google & Workspace MCP Ecosystem**:
+       * **Developer Knowledge API**: `https://developerknowledge.googleapis.com/mcp`
+       * **Cloud CLI Execution (Preview)**: `https://cloudcli.googleapis.com/mcp`
+       * **Google Drive (Preview)**: `https://drivemcp.googleapis.com/mcp/v1`
+       * **Gmail (Preview)**: `https://gmailmcp.googleapis.com/mcp/v1`
+       * **Google Calendar (Preview)**: `https://calendarmcp.googleapis.com/mcp/v1`
+       * **Google Chat (Preview)**: `https://chatmcp.googleapis.com/mcp/v1`
+       * **People API (Preview)**: `https://people.googleapis.com/mcp/v1`
+       * **Android Management API**: `https://androidmanagement.googleapis.com/mcp`
+       * **Maps Grounding Lite**: `https://mapstools.googleapis.com/mcp`
+       * **Maps Code Assist (Preview)**: `https://mapscodeassist.googleapis.com/mcp`
+       * **Google Pay and Wallet (Preview)**: `https://paydeveloper.googleapis.com/mcp`
+       * **Google Home Developer**: `https://homedevelopers.googleapis.com/mcp`
+       * **Stitch (Beta)**: `https://stitch.googleapis.com/mcp`
+       * **Design MCP (Preview)**: `https://design.googleapis.com/mcp`
+  3. **Tool Configuration & Inspector Drawer (`ToolDrawer.tsx`)**:
+     - Pre-filled endpoint with dropdown for regional endpoints where applicable (e.g. `us-central1`, `europe-west1`).
+     - Toolset selector for multi-toolset services (e.g. Gemini Enterprise Agent Platform, Secure Source Manager, Memorystore).
+     - Authentication configuration: Defaults to Google Cloud Application Default Credentials (ADC) with automatic token header injection (`Authorization: Bearer <token>`).
+     - In-drawer "Test Connection" button invoking `McpSubprocessManager` / remote HTTP ping with `gcloud auth print-access-token`.
+  4. **Code Generation (`toolAdapters.ts`)**:
+     - Google ADK Python: Emits async remote MCP client using `google-auth` to automatically attach bearer tokens to SSE/HTTP requests, binding remote tools to `Agent(tools=[...])`.
+     - LangGraph Python: Emits remote MCP client wrapper or LangChain adapter.
+* **Sub-Agent Prompt**:
+  ```
+  Implement Google Cloud Remote MCP Servers Registry in Tools Tab:
+  1. Create src/webview/data/googleCloudMcpServers.ts defining all Google Cloud and Google Workspace remote MCP servers from docs.cloud.google.com/mcp/supported-products with endpoints, doc links, and preview badges.
+  2. Add 'google_cloud_mcp' category in src/shared/types.ts and update PaletteCard.tsx to render a collapsible 'Google Cloud MCP Servers' category accordion inside the existing Tools tab (keeping the 4 top-level tabs: Agents, Tools, Triggers, Samples unchanged).
+  3. Update ToolDrawer.tsx to configure region overrides, multi-endpoint toolsets, and ADC authentication for Google Cloud MCP servers.
+  4. Implement code generation in toolAdapters.ts emitting authenticated async HTTP/SSE MCP client connectors.
+  ```
+* **Verification**:
+  - Unit tests verify all cataloged Google Cloud MCP servers are valid, render in PaletteCard, can be attached to Agent nodes, serialize cleanly, and emit valid authenticated Python client code.
+
+---
+
+### [TASK-131] Extension Host & Webview Internationalization (i18n / l10n)
+* **Release**: `v1.1.3`
+* **Target Package/Files**:
+  - `package.json` (root)
+  - `package.nls.json` (default English strings)
+  - `package.nls.<lang>.json` (Spanish, Japanese, German, French, Simplified Chinese)
+  - `src/extension/i18n.ts`
+  - `src/shared/rpcProtocol.ts`
+  - `src/extension/WebviewBridge.ts`
+  - `src/webview/i18n/` (Locale provider, translation dictionary, `useTranslation` hook)
+  - `src/webview/components/` (Header, PaletteCard, Inspector drawers, Test Runner, Modals)
+  - `tests/extension/i18n.test.ts`
+  - `tests/webview/i18n.test.ts`
+* **Context**:
+  Internationalize the entire Visual Agent Designer plugin across both the VS Code Extension Host and the Webview SPA to support global developers in their native languages.
+  
+  1. **VS Code Extension Host Localization (`vscode.l10n`)**:
+     - Extract all user-facing strings in `package.json` (commands, configuration titles, view titles, menu items) into `%...%` replacement tokens backed by `package.nls.json`.
+     - Provide localized bundles for:
+       * English (`en`) - Default / Fallback
+       * Spanish (`es`)
+       * Japanese (`ja`)
+       * German (`de`)
+       * French (`fr`)
+       * Simplified Chinese (`zh-cn`)
+     - Use the official `vscode.l10n.t()` API for all runtime extension host notifications, error messages, and dialog prompts.
+  2. **Webview UI Localization Engine**:
+     - Implement a lightweight, type-safe webview translation engine (`useTranslation` hook / `LocaleProvider`) with zero heavy runtime overhead.
+     - Automatically synchronize the active locale from VS Code's `vscode.env.language` sent across `WebviewBridge` during initialization (`LOAD_DOCUMENT` / `SETTINGS_SYNC` / `LOCALE_CHANGED`).
+     - Support explicit language overrides in the extension settings (`agentDesigner.languagePreference`: `auto`, `en`, `es`, `ja`, `de`, `fr`, `zh-cn`).
+  3. **UI String Extraction & Coverage**:
+     - Systematically replace hardcoded user-facing strings across:
+       * **Header Bar**: Project name, Undo/Redo, Code Gen, Test Runner, Export, Deploy, Settings.
+       * **Palette Drawer**: Tabs (Agents, Tools, Triggers, Samples), category headers, item descriptions.
+       * **Inspector Drawers**: Agent configuration, Tool parameters, Trigger settings, Schema Builder, Memory, IaC.
+       * **Canvas & Context Menus**: Node action buttons, delete, duplicate, align, connection helper tooltips.
+       * **Test Runner & Chat Panels**: Test scenarios, assertion results, latency, chat input placeholder, execution logs.
+       * **Modals & Dialogs**: Discard changes, file overwrite confirmation, reset canvas.
+  4. **Fallback & Robustness**:
+     - Enforce strict graceful fallback to English (`en`) whenever a translation key is missing in a target language.
+     - Include parameter interpolation for dynamic strings (e.g., `t('agent.deleted', { name: agent.name })`).
+* **Sub-Agent Prompt**:
+  ```
+  Implement comprehensive internationalization (i18n / l10n) for the Visual Agent Designer extension:
+  1. Localize package.json contributions using package.nls.json and create translation files for es, ja, de, fr, zh-cn.
+  2. Implement extension-host runtime string localization using vscode.l10n.
+  3. Build a React i18n provider and useTranslation hook in src/webview/i18n/ supporting parameter interpolation and en fallback.
+  4. Transmit vscode.env.language via WebviewBridge on startup and when display language changes.
+  5. Replace hardcoded UI strings in canvas, palette, inspector, header, and test runner with translation keys.
+  6. Add unit tests for both extension and webview i18n ensuring complete key coverage and fallback resilience.
+  ```
+* **Verification**:
+  - `npm test` runs with 100% coverage on i18n utilities and translation key resolution.
+  - Switching VS Code display language or setting `agentDesigner.languagePreference` dynamically updates all labels, menus, drawer fields, and status messages without restarting.
+
+

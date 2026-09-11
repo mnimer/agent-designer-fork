@@ -1,3 +1,9 @@
+/**
+ * types.ts - Core Webview Data Models & Protocol Definitions
+ *
+ * Author: Mike Nimer <mikenimer@google.com>
+ */
+
 export type FrameworkType = 'google_adk' | 'langgraph';
 export type LanguageType = 'python' | 'typescript';
 export type AgentKind = 'standard' | 'a2a' | 'router';
@@ -90,17 +96,71 @@ export interface TriggerData extends Record<string, unknown> {
 
 export type McpTransportType = 'stdio' | 'sse' | 'http';
 
+export type McpAuthProviderType = 'none' | 'google_credentials' | 'bearer_token';
+
+export interface McpOAuthConfig {
+  scopes?: string[];
+  projectId?: string;
+}
+
+export interface McpSecretConfig {
+  secretName?: string;
+  envVar?: string;
+  authUrl?: string;
+  tokenUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scopes?: string[];
+  hasToken?: boolean;
+  tokenPreview?: string;
+  bearerToken?: string;
+}
+
 export interface McpToolConfig {
   serverName: string;
   transport: McpTransportType;
   command?: string;
   args?: string[];
+  cwd?: string;
   serverUrl?: string;
   envVars?: Record<string, string>;
   headers?: Record<string, string>;
   exposedTools?: string[];
   autoApproveTools?: string[];
   timeoutSeconds?: number;
+  authProviderType?: McpAuthProviderType;
+  oauthConfig?: McpOAuthConfig;
+  secretConfig?: McpSecretConfig;
+  discoveredTools?: ToolDefinition[];
+  region?: string;
+  selectedToolset?: string;
+  launchStage?: GoogleCloudLaunchStage;
+}
+
+export type GoogleCloudMcpDomain =
+  | 'databases_storage'
+  | 'compute_containers'
+  | 'ai_search_agent'
+  | 'analytics_etl_governance'
+  | 'management_observability_security'
+  | 'developer_workspace';
+
+export type GoogleCloudLaunchStage = 'GA' | 'Preview' | 'Beta';
+
+export interface GoogleCloudMcpServerDefinition {
+  id: string;
+  name: string;
+  description: string;
+  domain: GoogleCloudMcpDomain;
+  launchStage: GoogleCloudLaunchStage;
+  defaultEndpoint: string;
+  regionalEndpointPattern?: string;
+  supportedRegions?: string[];
+  toolsets?: string[];
+  docUrl?: string;
+  icon?: string;
+  defaultScopes?: string[];
+  isMultiEndpoint?: boolean;
 }
 
 export type ToolCategory = 
@@ -113,7 +173,8 @@ export type ToolCategory =
   | 'db' 
   | 'code' 
   | 'rag' 
-  | 'builtin';
+  | 'builtin'
+  | 'google_cloud_mcp';
 
 export type AdkBuiltinToolType = 
   | 'google_search' 
@@ -260,8 +321,11 @@ export interface A2AConfig {
 }
 
 export type RouterEvaluationMode = 
+  | 'boolean'
   | 'boolean_expression' 
+  | 'intent_classifier'
   | 'llm_classifier' 
+  | 'numeric_threshold'
   | 'threshold_score' 
   | 'pattern_match';
 
@@ -269,6 +333,7 @@ export interface RouterBranchCondition {
   id: string;
   label: string;
   conditionExpression?: string;
+  condition?: string;
   targetAgentId?: string;
   isDefault?: boolean;
   isDefaultFallback?: boolean;
@@ -278,6 +343,7 @@ export interface RouterBranchCondition {
 export interface RouterConfig {
   evaluationMode: RouterEvaluationMode;
   routingPrompt?: string;
+  classifierPrompt?: string;
   llmEvaluationPrompt?: string;
   expressionVariable?: string;
   thresholdValue?: number;
@@ -330,6 +396,7 @@ export interface AgentData extends Record<string, unknown> {
   id: string;
   label: string;
   name?: string;
+  identifier?: string;
   role: string;
   model: string;
   systemPrompt: string;

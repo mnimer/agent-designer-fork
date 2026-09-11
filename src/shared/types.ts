@@ -12,7 +12,33 @@ export type FrameworkTarget = 'google-adk' | 'langgraph';
 export type LanguageTarget = 'python' | 'typescript';
 export type MemoryType = 'none' | 'buffer' | 'firestore' | 'redis' | 'postgres' | 'sqlite' | 'vector_rag' | 'langgraph_in_memory' | string;
 
-export type ToolCategory = 'grounding' | 'enterprise_search' | 'system' | 'custom' | 'mcp' | 'api' | 'db' | 'code' | 'rag' | 'builtin';
+export type ToolCategory = 'grounding' | 'enterprise_search' | 'system' | 'custom' | 'mcp' | 'api' | 'db' | 'code' | 'rag' | 'builtin' | 'google_cloud_mcp';
+
+export type GoogleCloudMcpDomain =
+  | 'databases_storage'
+  | 'compute_containers'
+  | 'ai_search_agent'
+  | 'analytics_etl_governance'
+  | 'management_observability_security'
+  | 'developer_workspace';
+
+export type GoogleCloudLaunchStage = 'GA' | 'Preview' | 'Beta';
+
+export interface GoogleCloudMcpServerDefinition {
+  id: string;
+  name: string;
+  description: string;
+  domain: GoogleCloudMcpDomain;
+  launchStage: GoogleCloudLaunchStage;
+  defaultEndpoint: string;
+  regionalEndpointPattern?: string;
+  supportedRegions?: string[];
+  toolsets?: string[];
+  docUrl?: string;
+  icon?: string;
+  defaultScopes?: string[];
+  isMultiEndpoint?: boolean;
+}
 
 export type AdkBuiltinToolType = 
   | 'google_search' 
@@ -47,6 +73,49 @@ export interface AgentAsToolConfig {
   subAgentDescription?: string;
 }
 
+export type McpTransportType = 'stdio' | 'sse' | 'http';
+
+export type McpAuthProviderType = 'none' | 'google_credentials' | 'bearer_token';
+
+export interface McpOAuthConfig {
+  scopes?: string[];
+  projectId?: string;
+}
+
+export interface McpSecretConfig {
+  secretName?: string;
+  envVar?: string;
+  authUrl?: string;
+  tokenUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scopes?: string[];
+  hasToken?: boolean;
+  tokenPreview?: string;
+  bearerToken?: string;
+}
+
+export interface McpToolConfig {
+  serverName: string;
+  transport: McpTransportType;
+  command?: string;
+  args?: string[];
+  cwd?: string;
+  serverUrl?: string;
+  envVars?: Record<string, string>;
+  headers?: Record<string, string>;
+  exposedTools?: string[];
+  autoApproveTools?: string[];
+  timeoutSeconds?: number;
+  authProviderType?: McpAuthProviderType;
+  oauthConfig?: McpOAuthConfig;
+  secretConfig?: McpSecretConfig;
+  discoveredTools?: ToolDefinition[];
+  region?: string;
+  selectedToolset?: string;
+  launchStage?: GoogleCloudLaunchStage;
+}
+
 export interface ToolDefinition {
   id: string;
   name: string;
@@ -55,6 +124,7 @@ export interface ToolDefinition {
   category?: ToolCategory | string;
   builtinType?: AdkBuiltinToolType;
   config?: Record<string, unknown>;
+  mcpConfig?: McpToolConfig;
   vertexAiSearchConfig?: VertexAiSearchConfig;
   googleSearchConfig?: GoogleSearchConfig;
   requestInputConfig?: RequestInputConfig;
@@ -101,17 +171,36 @@ export interface StandardAgentConfig {
   };
 }
 
+export type RouterEvaluationMode =
+  | 'boolean'
+  | 'boolean_expression'
+  | 'intent_classifier'
+  | 'llm_classifier'
+  | 'numeric_threshold'
+  | 'threshold_score'
+  | 'pattern_match';
+
 export interface RouterBranch {
   id: string;
-  condition: string;
+  label?: string;
+  condition?: string;
+  conditionExpression?: string;
   targetAgentId?: string;
   isDefault?: boolean;
+  isDefaultFallback?: boolean;
+  description?: string;
 }
 
 export interface RouterAgentConfig {
-  evaluationMode: 'boolean' | 'intent_classifier' | 'numeric_threshold';
+  evaluationMode: RouterEvaluationMode;
   model?: string;
   classifierPrompt?: string;
+  routingPrompt?: string;
+  llmEvaluationPrompt?: string;
+  expressionVariable?: string;
+  thresholdValue?: number;
+  fallbackBranch?: string;
+  routingStrategy?: 'first_match' | 'highest_confidence' | 'all_matching';
   branches: RouterBranch[];
 }
 
@@ -167,6 +256,8 @@ export interface TestSuiteScenario {
   inputQuery: string;
   expectedOutputPattern?: string;
   expectedOutput?: string;
+  assertionType?: 'contains' | 'exact' | 'json_schema' | 'llm_eval';
+  expectedSchema?: any;
   [key: string]: any;
 }
 

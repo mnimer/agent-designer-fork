@@ -1,3 +1,14 @@
+/**
+ * patterns.ts - Predefined Agent Architectures, Workflows, and Node Initializers
+ *
+ * Purpose:
+ * Defines preset workflow architectures (sequential, parallel, router, coordinator),
+ * default node factories, and topology initializers. Automatically computes valid Python
+ * identifiers for new nodes so that agent names and identifiers are strictly valid.
+ *
+ * Author: Mike Nimer <mikenimer@google.com>
+ */
+
 import { Node, Edge } from '@xyflow/react';
 import { AgentData, PatternDefinition, PatternType, AgentKind, TriggerData, TriggerType } from '../types';
 import { AVAILABLE_TOOLS } from './defaultTools';
@@ -85,7 +96,7 @@ export function createSingleAgentNode(
 ): Node<AgentData> {
   const id = getNextId(agentKind === 'a2a' ? 'a2a_agent' : agentKind === 'router' ? 'router_node' : 'agent');
   const agentLabel = customLabel || (agentKind === 'router' ? `Router (if/else) ${++idCounter}` : agentKind === 'a2a' ? `A2A Agent ${++idCounter}` : `Agent ${++idCounter}`);
-  const agentName = sanitizeAgentIdentifier(defaults?.name || customLabel || id);
+  const agentName = sanitizeAgentIdentifier(defaults?.identifier || defaults?.name || agentLabel || id);
 
   if (agentKind === 'router') {
     return {
@@ -96,6 +107,7 @@ export function createSingleAgentNode(
         id,
         label: agentLabel,
         name: agentName,
+        identifier: agentName,
         role: customRole || 'Conditional router evaluating workflow branching logic (if/else)',
         model: defaults?.model || 'gemini-flash-latest',
         systemPrompt: 'You evaluate the execution context and state variables to route execution flow to the appropriate downstream agent branch.',
@@ -147,20 +159,25 @@ export function createSingleAgentNode(
         id,
         label: agentLabel,
         name: agentName,
-        role: customRole || 'Exposes A2A Agent Card & standard JSON-RPC protocol endpoint for decentralized agent communication.',
+        identifier: agentName,
+        role: customRole || defaults?.role || '',
         model: defaults?.model || 'gemini-flash-latest',
-        systemPrompt: 'You are an interoperable Agent-to-Agent (A2A) protocol node. You negotiate structured task schemas, accept authenticated RPC delegations, and return verified result artifacts.',
+        systemPrompt: defaults?.systemPrompt || '',
         temperature: defaults?.temperature !== undefined ? defaults.temperature : 0.2,
         maxIterations: 10,
         agentKind: 'a2a',
         a2aConfig: {
-          endpoint: 'https://api.agent-network.internal/a2a/v1',
-          protocolVersion: '1.0.0-a2a',
-          agentCardUrl: '/.well-known/agent-card.json',
+          endpoint: '',
+          protocolVersion: '',
+          agentCardUrl: '',
+          rawJsonPack: '',
           authType: 'bearer',
-          capabilities: ['schema_negotiation', 'task_handoff', 'streaming_artifacts'],
+          authTokenSecret: '',
+          capabilities: [],
+          skills: [],
+          customHeaders: {},
         },
-        tools: [AVAILABLE_TOOLS[4], AVAILABLE_TOOLS[0]], // REST API + Web Search
+        tools: defaults?.tools || [],
         subAgents: [],
         subAgentPattern: defaults?.subAgentPattern || 'parallel',
         memoryType: defaults?.memoryType || 'none',
@@ -182,6 +199,7 @@ export function createSingleAgentNode(
       id,
       label: agentLabel,
       name: agentName,
+      identifier: agentName,
       role: customRole || 'Specialized AI Assistant',
       model: defaults?.model || 'gemini-flash-latest',
       systemPrompt: defaults?.systemPrompt || '',

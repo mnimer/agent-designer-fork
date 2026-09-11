@@ -12,16 +12,21 @@
  * 5. Preload Memory Tool (`preload_memory`)
  * 6. Python Code Sandbox (`code_execution`)
  * 7. Sub-Agent as Tool (`agent_as_tool`)
- *
  * Plus:
  * 8. Custom Function (`custom`)
+ * 9. Google Cloud Remote MCP Servers (`google_cloud_mcp`)
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
 
 import { ToolDefinition } from '../types';
+import { GOOGLE_CLOUD_MCP_SERVERS, createToolDefinitionFromGcpMcpServer } from './googleCloudMcpServers';
 
-export const AVAILABLE_TOOLS: ToolDefinition[] = [
+export const GOOGLE_CLOUD_MCP_DEFAULT_TOOLS: ToolDefinition[] = GOOGLE_CLOUD_MCP_SERVERS.map((server) =>
+  createToolDefinitionFromGcpMcpServer(server)
+);
+
+export const ADK_DEFAULT_TOOLS: ToolDefinition[] = [
   {
     id: 'tool_google_search',
     name: 'Google Search Grounding',
@@ -148,4 +153,9 @@ export const AVAILABLE_TOOLS: ToolDefinition[] = [
     },
     enabled: true,
   },
+];
+
+export const AVAILABLE_TOOLS: ToolDefinition[] = [
+  ...ADK_DEFAULT_TOOLS,
+  ...GOOGLE_CLOUD_MCP_DEFAULT_TOOLS,
 ];

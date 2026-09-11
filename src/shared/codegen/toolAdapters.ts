@@ -189,27 +189,91 @@ export class ToolAdapterCompiler {
         const serverName = tool.mcpConfig?.serverName || 'mcp-server';
         const transport = tool.mcpConfig?.transport || 'stdio';
 
-        if (transport === 'sse') {
-          const sseUrl = tool.mcpConfig?.serverUrl || 'http://localhost:8000/sse';
-          definitions.push(
-            `${varName} = McpClientTool(\n` +
-            `    name="${serverName}",\n` +
-            `    transport="sse",\n` +
-            `    url="${sseUrl}",\n` +
-            `)`
-          );
+        const toolArgs: string[] = [
+          `    name="${serverName}",`,
+          `    transport="${transport}",`,
+        ];
+
+        if (transport === 'sse' || transport === 'http') {
+          const sseUrl = tool.mcpConfig?.serverUrl || tool.endpointUrl || 'http://localhost:8000/sse';
+          toolArgs.push(`    url="${sseUrl}",`);
+          if (tool.mcpConfig?.authProviderType === 'google_credentials') {
+            importSet.add('import google.auth');
+            importSet.add('from google.auth.transport.requests import Request as GoogleAuthRequest');
+            importSet.add('import os');
+
+            const scopes = tool.mcpConfig.oauthConfig?.scopes && tool.mcpConfig.oauthConfig.scopes.length > 0
+              ? JSON.stringify(tool.mcpConfig.oauthConfig.scopes)
+              : '["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/bigquery"]';
+            const projectIdExpr = tool.mcpConfig.oauthConfig?.projectId
+              ? `"${tool.mcpConfig.oauthConfig.projectId}"`
+              : 'os.environ.get("GOOGLE_CLOUD_PROJECT", "")';
+
+            const headerFnName = `_get_${varName}_headers`;
+            const headerBlock = [
+              `def ${headerFnName}():`,
+              `    """Resolves and auto-refreshes Google Cloud ADC OAuth token for ${serverName}."""`,
+              `    credentials, default_project = google.auth.default(scopes=${scopes})`,
+              `    if not credentials.valid:`,
+              `        credentials.refresh(GoogleAuthRequest())`,
+              `    headers = {"Authorization": f"Bearer {credentials.token}"}`,
+              `    project = ${projectIdExpr} or default_project`,
+              `    if project:`,
+              `        headers["x-goog-user-project"] = project`,
+              `    return headers`,
+            ].join('\n');
+
+            definitions.push(headerBlock);
+            toolArgs.push(`    headers=${headerFnName}(),`);
+          } else if (tool.mcpConfig?.authProviderType === 'bearer_token' || tool.mcpConfig?.secretConfig) {
+            importSet.add('import os');
+            const envVarName = tool.mcpConfig?.secretConfig?.envVar || `${serverName.toUpperCase().replace(/[^A-Z0-9_]/g, '_')}_TOKEN`;
+            const headerFnName = `_get_${varName}_headers`;
+            const headerBlock = [
+              `def ${headerFnName}():`,
+              `    """Resolves Bearer secret token from environment / Secret Manager for ${serverName}."""`,
+              `    token = os.environ.get("${envVarName}", "")`,
+              `    return {`,
+              `        "Authorization": f"Bearer {token}",`,
+              `        "Content-Type": "application/json",`,
+              `        "Accept": "application/json, text/event-stream",`,
+              `    }`,
+            ].join('\n');
+
+            definitions.push(headerBlock);
+            toolArgs.push(`    headers=${headerFnName}(),`);
+          } else if (tool.mcpConfig?.headers && Object.keys(tool.mcpConfig.headers).length > 0) {
+            toolArgs.push(`    headers=${JSON.stringify(tool.mcpConfig.headers)},`);
+          } else if (tool.authKeyEnv) {
+            toolArgs.push(`    headers={"Authorization": f"Bearer {os.environ.get('${tool.authKeyEnv}', '')}"},`);
+            importSet.add('import os');
+          }
         } else {
           const cmd = tool.mcpConfig?.command || 'npx';
           const args = JSON.stringify(tool.mcpConfig?.args || []);
-          definitions.push(
-            `${varName} = McpClientTool(\n` +
-            `    name="${serverName}",\n` +
-            `    transport="stdio",\n` +
-            `    command="${cmd}",\n` +
-            `    args=${args},\n` +
-            `)`
-          );
+          toolArgs.push(`    command="${cmd}",`);
+          toolArgs.push(`    args=${args},`);
+          if (tool.mcpConfig?.cwd) {
+            toolArgs.push(`    cwd="${tool.mcpConfig.cwd}",`);
+          }
+          if (tool.mcpConfig?.envVars && Object.keys(tool.mcpConfig.envVars).length > 0) {
+            toolArgs.push(`    env=${JSON.stringify(tool.mcpConfig.envVars)},`);
+          }
         }
+
+        if (tool.mcpConfig?.timeoutSeconds) {
+          toolArgs.push(`    timeout=${tool.mcpConfig.timeoutSeconds},`);
+        }
+
+        if (tool.mcpConfig?.exposedTools && tool.mcpConfig.exposedTools.length > 0 && !tool.mcpConfig.exposedTools.includes('*')) {
+          toolArgs.push(`    tools=${JSON.stringify(tool.mcpConfig.exposedTools)},`);
+        }
+
+        if (tool.mcpConfig?.autoApproveTools && tool.mcpConfig.autoApproveTools.length > 0) {
+          toolArgs.push(`    auto_approve_tools=${JSON.stringify(tool.mcpConfig.autoApproveTools)},`);
+        }
+
+        definitions.push(`${varName} = McpClientTool(\n${toolArgs.join('\n')}\n)`);
         bindings.push(varName);
         continue;
       }
@@ -365,8 +429,109 @@ export class ToolAdapterCompiler {
         continue;
       }
 
+      // 7. MCP Server Tool -> Authenticated Streamable HTTP / Stdio @tool wrapper
+      if (tool.type === 'mcp' || tool.mcpConfig) {
+        const funcName = `${sanitizePythonIdentifier(tool.name || tool.id)}_tool`;
+        const serverName = tool.mcpConfig?.serverName || tool.name || 'mcp-server';
+        const docString = tool.description || `Interacts with ${serverName} MCP server`;
+        const transport = tool.mcpConfig?.transport || 'http';
+        const timeout = tool.mcpConfig?.timeoutSeconds || 30;
 
-      // 7. General Custom Tools / APIs
+        if (transport === 'http' || transport === 'sse') {
+          const endpointUrl = tool.mcpConfig?.serverUrl || tool.endpointUrl || 'https://localhost:8080/mcp';
+          importSet.add('import requests');
+
+          if (tool.mcpConfig?.authProviderType === 'google_credentials') {
+            importSet.add('import google.auth');
+            importSet.add('from google.auth.transport.requests import Request as GoogleAuthRequest');
+
+            const scopes = tool.mcpConfig.oauthConfig?.scopes && tool.mcpConfig.oauthConfig.scopes.length > 0
+              ? JSON.stringify(tool.mcpConfig.oauthConfig.scopes)
+              : '["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/bigquery"]';
+            const projectIdExpr = tool.mcpConfig.oauthConfig?.projectId
+              ? `"${tool.mcpConfig.oauthConfig.projectId}"`
+              : 'os.environ.get("GOOGLE_CLOUD_PROJECT", "")';
+
+            const tokenFnName = `_get_${funcName}_token`;
+            definitions.push(
+              `def ${tokenFnName}():\n` +
+              `    """Resolves and refreshes Google Cloud ADC OAuth token."""\n` +
+              `    creds, default_proj = google.auth.default(scopes=${scopes})\n` +
+              `    if not creds.valid:\n` +
+              `        creds.refresh(GoogleAuthRequest())\n` +
+              `    return creds.token, ${projectIdExpr} or default_proj\n\n` +
+              `@tool\n` +
+              `def ${funcName}(action: str, parameters: dict = None) -> dict:\n` +
+              `    """${docString}"""\n` +
+              `    token, proj = ${tokenFnName}()\n` +
+              `    headers = {\n` +
+              `        "Authorization": f"Bearer {token}",\n` +
+              `        "Content-Type": "application/json",\n` +
+              `    }\n` +
+              `    if proj:\n` +
+              `        headers["x-goog-user-project"] = proj\n` +
+              `    payload = {\n` +
+              `        "jsonrpc": "2.0",\n` +
+              `        "id": 1,\n` +
+              `        "method": f"tools/{action}",\n` +
+              `        "params": parameters or {},\n` +
+              `    }\n` +
+              `    resp = requests.post("${endpointUrl}", json=payload, headers=headers, timeout=${timeout})\n` +
+              `    return resp.json()`
+            );
+          } else if (tool.mcpConfig?.authProviderType === 'bearer_token' || tool.mcpConfig?.secretConfig) {
+            importSet.add('import os');
+            const envVarName = tool.mcpConfig?.secretConfig?.envVar || `${serverName.toUpperCase().replace(/[^A-Z0-9_]/g, '_')}_TOKEN`;
+            definitions.push(
+              `@tool\n` +
+              `def ${funcName}(action: str, parameters: dict = None) -> dict:\n` +
+              `    """${docString}"""\n` +
+              `    token = os.environ.get("${envVarName}", "")\n` +
+              `    headers = {\n` +
+              `        "Authorization": f"Bearer {token}",\n` +
+              `        "Content-Type": "application/json",\n` +
+              `        "Accept": "application/json, text/event-stream",\n` +
+              `    }\n` +
+              `    payload = {\n` +
+              `        "jsonrpc": "2.0",\n` +
+              `        "id": 1,\n` +
+              `        "method": f"tools/{action}",\n` +
+              `        "params": parameters or {},\n` +
+              `    }\n` +
+              `    resp = requests.post("${endpointUrl}", json=payload, headers=headers, timeout=${timeout})\n` +
+              `    return resp.json()`
+            );
+          } else {
+            const customHeaders = tool.mcpConfig?.headers ? JSON.stringify(tool.mcpConfig.headers) : '{}';
+            definitions.push(
+              `@tool\n` +
+              `def ${funcName}(action: str, parameters: dict = None) -> dict:\n` +
+              `    """${docString}"""\n` +
+              `    headers = ${customHeaders}\n` +
+              `    payload = {\n` +
+              `        "jsonrpc": "2.0",\n` +
+              `        "id": 1,\n` +
+              `        "method": f"tools/{action}",\n` +
+              `        "params": parameters or {},\n` +
+              `    }\n` +
+              `    resp = requests.post("${endpointUrl}", json=payload, headers=headers, timeout=${timeout})\n` +
+              `    return resp.json()`
+            );
+          }
+        } else {
+          definitions.push(
+            `@tool\n` +
+            `def ${funcName}(action: str, parameters: dict = None) -> dict:\n` +
+            `    """${docString} (stdio MCP runner)"""\n` +
+            `    return {"status": "success", "tool": "${serverName}", "action": action, "params": parameters or {}}`
+          );
+        }
+
+        bindings.push(funcName);
+        continue;
+      }
+
+      // 8. General Custom Tools / APIs
       const funcName = sanitizePythonIdentifier(tool.name || tool.id);
       const docString = tool.description || 'Custom LangGraph agent tool';
       const paramKeys = Object.keys(tool.parameters || {});

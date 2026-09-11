@@ -212,11 +212,35 @@ export function isBuiltinTool(tool: ToolDefinition): boolean {
   );
 }
 
+/**
+ * Checks whether a given tool belongs to the official Google ADK tools suite
+ * (including built-in ADK tools and native FunctionTool custom functions).
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ * @param tool The tool to inspect
+ * @returns boolean
+ */
+export function isNativeAdkTool(tool: ToolDefinition): boolean {
+  if (!tool) return false;
+  return (
+    tool.builtinType !== undefined ||
+    tool.id.startsWith('builtin_') ||
+    tool.id === 'tool_google_search' ||
+    tool.id === 'tool_code_interpreter' ||
+    tool.id === 'tool_custom_function' ||
+    tool.name === 'Custom Python/TS Function'
+  );
+}
+
 export interface CategorizedTools {
+  native_adk: ToolDefinition[];
+  google_cloud_mcp: ToolDefinition[];
+  mcp: ToolDefinition[];
+  custom: ToolDefinition[];
+  // Backwards compatibility for existing sub-category consumers & tests
   grounding: ToolDefinition[];
   enterprise_search: ToolDefinition[];
   system: ToolDefinition[];
-  custom: ToolDefinition[];
 }
 
 /**
@@ -283,27 +307,47 @@ export function sanitizeToolList(tools: ToolDefinition[]): ToolDefinition[] {
 }
 
 /**
- * Segregates an array of tools into the 4 canonical visual designer categories:
- * 1. Built-in Grounding (Google Search, Web Page Reader)
- * 2. Enterprise Search (Vertex AI Search, Knowledge Vector RAG)
- * 3. System Tools (Code Sandbox, Human Clarification, Memory, Sub-Agent)
- * 4. Custom & Community Tools (REST API, SQL Database, MCP Servers, Custom Functions)
+ * Segregates an array of tools into designer categories:
+ * - Native ADK Tools: Official Google ADK built-in tools and FunctionTool definitions
+ * - Google Cloud MCP Servers: Official remote Google Cloud & Workspace MCP servers
+ * - MCP Servers: Standard Model Context Protocol servers
+ * - Custom & External: Third-party REST APIs and custom integrations
  *
+ * Also maintains legacy sub-categories (grounding, enterprise_search, system, custom)
+ * for backward compatibility with existing tests and sub-filtering workflows.
+ *
+ * @author Mike Nimer <mikenimer@google.com>
  * @param tools List of tools to categorize
  * @returns CategorizedTools object
  */
 export function categorizeTools(tools: ToolDefinition[]): CategorizedTools {
   const categorized: CategorizedTools = {
+    native_adk: [],
+    google_cloud_mcp: [],
+    mcp: [],
+    custom: [],
     grounding: [],
     enterprise_search: [],
     system: [],
-    custom: [],
   };
 
   const cleanTools = sanitizeToolList(tools);
 
   for (const tool of cleanTools) {
-    // 1. Explicit category takes priority
+    const isGoogleCloudMcp = tool.category === 'google_cloud_mcp' || tool.id.startsWith('gcp_mcp_');
+    const isMcp = !isGoogleCloudMcp && (tool.type === 'mcp' || tool.mcpConfig !== undefined || tool.id.startsWith('tool_mcp_'));
+    const isAdk = !isGoogleCloudMcp && !isMcp && isNativeAdkTool(tool);
+
+    // 1. Group into Native ADK vs Google Cloud MCP vs generic MCP
+    if (isGoogleCloudMcp) {
+      categorized.google_cloud_mcp.push(tool);
+    } else if (isAdk) {
+      categorized.native_adk.push(tool);
+    } else if (isMcp) {
+      categorized.mcp.push(tool);
+    }
+
+    // 2. Populate legacy 4 categories exactly as before
     if (tool.category === 'grounding') {
       categorized.grounding.push(tool);
     } else if (tool.category === 'enterprise_search') {
@@ -323,7 +367,7 @@ export function categorizeTools(tools: ToolDefinition[]): CategorizedTools {
       tool.type === 'code'
     ) {
       categorized.system.push(tool);
-    } else {
+    } else if (!isGoogleCloudMcp) {
       categorized.custom.push(tool);
     }
   }

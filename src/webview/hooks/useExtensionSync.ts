@@ -71,6 +71,7 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
   const lastSentJsonRef = useRef<string>('');
   const docNameRef = useRef<string>('');
   const docDescriptionRef = useRef<string>('');
+  const docMetadataRef = useRef<Record<string, any>>({});
 
   // NOTE: Signal to the VS Code extension host that the webview is mounted and ready to receive the document
   useEffect(() => {
@@ -103,6 +104,10 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
       }
       if (doc.description) {
         docDescriptionRef.current = doc.description;
+      }
+      if (doc.metadata) {
+        const { outputFolder: _discardOutput, deploymentTarget: _discardTarget, ...restMetadata } = doc.metadata as any;
+        docMetadataRef.current = restMetadata;
       }
 
       const docMetadata = doc.metadata || {};
@@ -329,7 +334,7 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
       nodes: documentNodes,
       edges: documentEdges,
       metadata: {
-        outputFolder: config.outputFolder,
+        ...docMetadataRef.current,
         updatedAt: new Date().toISOString(),
       },
       deployment: {

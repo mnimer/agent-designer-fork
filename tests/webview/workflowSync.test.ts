@@ -259,22 +259,29 @@ describe('workflowSync Domain Utilities', () => {
       assert.equal(resolveAgentOutputFolder('./scratch_flow/', 'scratch-flow.agent'), './scratch_flow/');
       assert.equal(resolveAgentOutputFolder('./custom_dir', 'scratch-flow.agent'), './custom_dir/');
       assert.equal(resolveAgentOutputFolder('/absolute/path/to/agent/', 'scratch-flow.agent'), '/absolute/path/to/agent/');
+      assert.equal(resolveAgentOutputFolder('./game_20_questions/', 'game_20_questions.agent'), './game_20_questions/');
     });
 
-    it('should append sanitized agent subfolder when outputFolder is generic root agents folder', () => {
-      // User scenario: outputFolder was generic "./src/agents/" -> appends "scratch_flow/"
-      assert.equal(resolveAgentOutputFolder('./src/agents/', 'scratch-flow.agent'), './src/agents/scratch_flow/');
-      assert.equal(resolveAgentOutputFolder('./src/agents', 'scratch-flow.agent'), './src/agents/scratch_flow/');
-      assert.equal(resolveAgentOutputFolder('src/agents/', 'scratch-flow.agent'), 'src/agents/scratch_flow/');
-      assert.equal(resolveAgentOutputFolder('src/agents', 'scratch-flow.agent'), 'src/agents/scratch_flow/');
-      assert.equal(resolveAgentOutputFolder('./agents/', 'scratch-flow.agent'), './agents/scratch_flow/');
+    it('should strip legacy src/agents/ prefix from outputFolder', () => {
+      assert.equal(resolveAgentOutputFolder('./src/agents/agent_20_questions_game/', 'agent_20_questions_game.agent'), './agent_20_questions_game/');
+      assert.equal(resolveAgentOutputFolder('src/agents/agent_20_questions_game/', 'agent_20_questions_game.agent'), './agent_20_questions_game/');
     });
 
-    it('should fall back to ./src/agents/<sanitized_name>/ when outputFolder is empty or undefined', () => {
-      assert.equal(resolveAgentOutputFolder(undefined, 'scratch-flow.agent'), './src/agents/scratch_flow/');
-      assert.equal(resolveAgentOutputFolder('', 'scratch-flow.agent'), './src/agents/scratch_flow/');
-      assert.equal(resolveAgentOutputFolder(undefined, 'agents/scratch/scratch-agent.agent'), './src/agents/scratch_agent/');
-      assert.equal(resolveAgentOutputFolder(undefined, ''), './src/agents/workflow/');
+    it('should resolve to ./<sanitized_agent_subfolder>/ when outputFolder is generic root agents folder', () => {
+      // User scenario: outputFolder was generic "./src/agents/" -> resolves to "./scratch_flow/"
+      assert.equal(resolveAgentOutputFolder('./src/agents/', 'scratch-flow.agent'), './scratch_flow/');
+      assert.equal(resolveAgentOutputFolder('./src/agents', 'scratch-flow.agent'), './scratch_flow/');
+      assert.equal(resolveAgentOutputFolder('src/agents/', 'scratch-flow.agent'), './scratch_flow/');
+      assert.equal(resolveAgentOutputFolder('src/agents', 'scratch-flow.agent'), './scratch_flow/');
+      assert.equal(resolveAgentOutputFolder('./agents/', 'scratch-flow.agent'), './scratch_flow/');
+      assert.equal(resolveAgentOutputFolder('./', 'scratch-flow.agent'), './scratch_flow/');
+    });
+
+    it('should fall back to ./<sanitized_name>/ when outputFolder is empty or undefined', () => {
+      assert.equal(resolveAgentOutputFolder(undefined, 'scratch-flow.agent'), './scratch_flow/');
+      assert.equal(resolveAgentOutputFolder('', 'scratch-flow.agent'), './scratch_flow/');
+      assert.equal(resolveAgentOutputFolder(undefined, 'agents/scratch/scratch-agent.agent'), './scratch_agent/');
+      assert.equal(resolveAgentOutputFolder(undefined, ''), './workflow/');
     });
   });
 
