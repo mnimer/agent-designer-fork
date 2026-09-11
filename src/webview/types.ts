@@ -277,8 +277,11 @@ export interface A2AConfig {
 }
 
 export type RouterEvaluationMode = 
+  | 'boolean'
   | 'boolean_expression' 
+  | 'intent_classifier'
   | 'llm_classifier' 
+  | 'numeric_threshold'
   | 'threshold_score' 
   | 'pattern_match';
 
@@ -286,6 +289,7 @@ export interface RouterBranchCondition {
   id: string;
   label: string;
   conditionExpression?: string;
+  condition?: string;
   targetAgentId?: string;
   isDefault?: boolean;
   isDefaultFallback?: boolean;
@@ -295,6 +299,7 @@ export interface RouterBranchCondition {
 export interface RouterConfig {
   evaluationMode: RouterEvaluationMode;
   routingPrompt?: string;
+  classifierPrompt?: string;
   llmEvaluationPrompt?: string;
   expressionVariable?: string;
   thresholdValue?: number;

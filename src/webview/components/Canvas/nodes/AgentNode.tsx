@@ -450,13 +450,13 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                   <span>Evaluation Logic</span>
                 </span>
                 <span className="text-[9px] text-purple-300 font-mono px-1 py-0.2 rounded bg-purple-500/20">
-                  {data.routerConfig?.evaluationMode === 'boolean_expression'
-                    ? 'State Expression'
-                    : data.routerConfig?.evaluationMode === 'llm_classifier'
-                    ? 'LLM Classifier'
-                    : data.routerConfig?.evaluationMode === 'threshold_score'
-                    ? 'Quality Gate'
-                    : 'Regex Match'}
+                  {data.routerConfig?.evaluationMode === 'boolean_expression' || data.routerConfig?.evaluationMode === 'boolean'
+                    ? 'Boolean Expression'
+                    : data.routerConfig?.evaluationMode === 'llm_classifier' || data.routerConfig?.evaluationMode === 'intent_classifier'
+                    ? 'LLM Intent Classifier'
+                    : data.routerConfig?.evaluationMode === 'threshold_score' || data.routerConfig?.evaluationMode === 'numeric_threshold'
+                    ? 'Numeric Threshold'
+                    : 'Pattern Match'}
                 </span>
               </div>
               <p className="text-[11px] text-gray-300 line-clamp-2 leading-relaxed">
@@ -508,10 +508,15 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                       <span className="text-[10px] font-bold text-gray-200 truncate max-w-[110px]">
                         {branch.label}
                       </span>
+                      {(branch.isDefault || branch.isDefaultFallback) && (
+                        <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          Else
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <span className="text-[9px] font-mono text-purple-300 truncate max-w-[90px] bg-[#161b22] px-1 py-0.2 rounded border border-[#30363d]">
-                        {branch.conditionExpression || 'default'}
+                        {branch.conditionExpression || branch.condition || (branch.isDefault ? 'default' : 'unassigned')}
                       </span>
                     </div>
                   </div>
@@ -892,10 +897,10 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                 style={{ left: `${leftPercent}%` }}
                 className={`!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-all cursor-crosshair z-20 hover:scale-125 ${
                   isConnected
-                    ? '!bg-blue-500 ring-2 ring-blue-400/80 shadow-md shadow-blue-500/50'
-                    : '!bg-[#21262d] !border-blue-400 hover:!bg-blue-500'
+                    ? '!bg-purple-500 ring-2 ring-purple-400/80 shadow-md shadow-purple-500/50'
+                    : '!bg-[#21262d] !border-purple-400 hover:!bg-purple-500'
                 }`}
-                title={`Branch #${idx + 1}: ${branch.label} (${branch.conditionExpression || 'default'})${
+                title={`Branch #${idx + 1}: ${branch.label} (${branch.conditionExpression || branch.condition || 'default'})${
                   branch.targetAgentId ? ' (Connected)' : ' → Drag to connect target agent'
                 }`}
               />

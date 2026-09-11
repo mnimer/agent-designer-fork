@@ -165,7 +165,41 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
       return node;
     }
 
-    const currentSubAgents: SubAgentRef[] = (node.data as AgentData)?.subAgents || [];
+    let currentAgentData = (node.data as AgentData) || {};
+    let routerConfigUpdated = false;
+    let syncedRouterConfig = currentAgentData.routerConfig;
+
+    // NOTE: Synchronize router branches if this agent is a router node
+    if (currentAgentData.agentKind === 'router' && currentAgentData.routerConfig?.branches) {
+      const branches = currentAgentData.routerConfig.branches;
+      let branchChanged = false;
+      const updatedBranches = branches.map((branch) => {
+        // Find outgoing edge matching this router node and branch handle
+        const matchingEdge = edges.find(
+          (e) =>
+            e.source === node.id &&
+            e.sourceHandle === branch.id &&
+            nodeMap.has(e.target) &&
+            (nodeMap.get(e.target)!.type === 'agentNode' || nodeMap.get(e.target)!.type === 'agent')
+        );
+        const targetId = matchingEdge ? matchingEdge.target : undefined;
+        if (branch.targetAgentId !== targetId) {
+          branchChanged = true;
+          return { ...branch, targetAgentId: targetId };
+        }
+        return branch;
+      });
+
+      if (branchChanged) {
+        routerConfigUpdated = true;
+        syncedRouterConfig = {
+          ...currentAgentData.routerConfig,
+          branches: updatedBranches,
+        };
+      }
+    }
+
+    const currentSubAgents: SubAgentRef[] = currentAgentData.subAgents || [];
 
     const isBottomHandle = (handleId?: string | null) => {
       if (!handleId) return true;
@@ -182,7 +216,7 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
         (nodeMap.get(e.target)!.type === 'agentNode' || nodeMap.get(e.target)!.type === 'agent')
     );
     const connectedTargetIds = Array.from(new Set(outgoingAgentEdges.map((e) => e.target)));
-    const parentPattern = (node.data as AgentData)?.subAgentPattern || 'parallel';
+    const parentPattern = currentAgentData.subAgentPattern || 'parallel';
 
     // 1. Keep existing subAgents that are still connected, updating name, role, and delegationType
     const updatedExisting: SubAgentRef[] = [];
@@ -230,7 +264,7 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
           sub.delegationType === finalSubAgents[idx].delegationType
       );
 
-    if (isSameContent) {
+    if (isSameContent && !routerConfigUpdated) {
       return node;
     }
 
@@ -239,6 +273,7 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
       data: {
         ...node.data,
         subAgents: finalSubAgents,
+        ...(routerConfigUpdated ? { routerConfig: syncedRouterConfig } : {}),
       },
     };
   });

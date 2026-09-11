@@ -873,7 +873,7 @@ function FlowCanvas() {
           ...connection,
           id: `e_router_${connection.source}_${connection.sourceHandle}_${connection.target}`,
           animated: true,
-          style: { stroke: '#3b82f6', strokeWidth: 2 },
+          style: { stroke: '#a855f7', strokeWidth: 2 },
           targetHandle: connection.targetHandle || 'input',
         } as Edge;
 
@@ -1371,7 +1371,7 @@ function FlowCanvas() {
                 target: b.targetAgentId,
                 targetHandle: 'input',
                 animated: true,
-                style: { stroke: '#3b82f6', strokeWidth: 2 },
+                style: { stroke: '#a855f7', strokeWidth: 2 },
               });
             }
           }
