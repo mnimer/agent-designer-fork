@@ -148,6 +148,8 @@ export interface AgentEngineTestOptions {
   remoteRuntimeId?: string;
   bridge?: WebviewBridge;
   abortSignal?: AbortSignal;
+  onChunk?: (chunkText: string) => void;
+  remoteSessionId?: string;
 }
 
 /**
@@ -158,6 +160,7 @@ export interface AgentEngineTestResult {
   query: string;
   response?: string;
   durationMs: number;
+  remoteSessionId?: string;
   error?: string;
 }
 
@@ -168,6 +171,7 @@ export class AgentEngineDeployer implements vscode.Disposable {
   private pythonResolver: PythonEnvResolver;
   private cachedAccessToken: string | null = null;
   private cachedAccessTokenExpiresAt = 0;
+  private resolvedGcloudPath?: string;
 
   /**
    * Initializes the AgentEngineDeployer.
@@ -496,12 +500,16 @@ region: ${region}
 create_params:
   deployment_target: agent_runtime
   is_a2a: false
+  env_vars:
+    GOOGLE_GENAI_USE_VERTEXAI: "1"
+    GOOGLE_CLOUD_LOCATION: "global"
 `;
       fs.writeFileSync(manifestPath, manifestContent, 'utf8');
     } else {
-      // If manifest exists, verify deployment_target is configured as agent_runtime
+      // If manifest exists, verify deployment_target is configured as agent_runtime and env_vars are set
       try {
         let content = fs.readFileSync(manifestPath, 'utf8');
+        let modified = false;
         if (!content.includes('agent_runtime')) {
           if (content.includes('deployment_target:')) {
             content = content.replace(/deployment_target:\s*['"]?[a-zA-Z0-9_-]+['"]?/, 'deployment_target: agent_runtime');
@@ -510,11 +518,64 @@ create_params:
           } else {
             content += '\ncreate_params:\n  deployment_target: agent_runtime\n  is_a2a: false\n';
           }
+          modified = true;
+        }
+        if (!content.includes('GOOGLE_CLOUD_LOCATION')) {
+          if (content.includes('env_vars:')) {
+            content = content.replace('env_vars:', 'env_vars:\n    GOOGLE_GENAI_USE_VERTEXAI: "1"\n    GOOGLE_CLOUD_LOCATION: "global"');
+          } else if (content.includes('create_params:')) {
+            content = content.replace('create_params:', 'create_params:\n  env_vars:\n    GOOGLE_GENAI_USE_VERTEXAI: "1"\n    GOOGLE_CLOUD_LOCATION: "global"');
+          } else {
+            content += '\ncreate_params:\n  env_vars:\n    GOOGLE_GENAI_USE_VERTEXAI: "1"\n    GOOGLE_CLOUD_LOCATION: "global"\n';
+          }
+          modified = true;
+        }
+        if (modified) {
           fs.writeFileSync(manifestPath, content, 'utf8');
         }
       } catch {
         // Fallback silently if manifest is binary or unreadable
       }
+    }
+  }
+
+  /**
+   * Ensures .agent_engine_config.json exists with env_vars injecting GOOGLE_CLOUD_LOCATION="global"
+   * and GOOGLE_GENAI_USE_VERTEXAI="1". When deploying via `adk deploy agent_engine`, ADK reads
+   * .agent_engine_config.json and passes env_vars to ReasoningEngine / AgentEngine create/update API,
+   * guaranteeing the deployed container runtime in Vertex AI has the global model endpoint configured.
+   *
+   * @param targetDirectory Target folder containing agent code
+   * @author Mike Nimer <mikenimer@google.com>
+   */
+  public ensureAgentEngineConfig(targetDirectory: string): void {
+    const configPath = path.join(targetDirectory, '.agent_engine_config.json');
+    try {
+      if (fs.existsSync(configPath)) {
+        const raw = fs.readFileSync(configPath, 'utf8');
+        let parsed: any;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          parsed = {};
+        }
+        if (!parsed.env_vars || typeof parsed.env_vars !== 'object') {
+          parsed.env_vars = {};
+        }
+        parsed.env_vars['GOOGLE_GENAI_USE_VERTEXAI'] = '1';
+        parsed.env_vars['GOOGLE_CLOUD_LOCATION'] = 'global';
+        fs.writeFileSync(configPath, JSON.stringify(parsed, null, 2) + '\n', 'utf8');
+      } else {
+        const defaultConfig = {
+          env_vars: {
+            GOOGLE_GENAI_USE_VERTEXAI: '1',
+            GOOGLE_CLOUD_LOCATION: 'global',
+          },
+        };
+        fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2) + '\n', 'utf8');
+      }
+    } catch (err) {
+      console.warn('[AgentEngineDeployer] Failed to ensure .agent_engine_config.json:', err);
     }
   }
 
@@ -628,19 +689,61 @@ package = false
   }
 
   /**
-   * Ensures agent_runtime_app.py is present in the target directory.
+   * Ensures agent_runtime_app.py is present in the target directory with Vertex AI global location mandate.
    * `agents-cli deploy` introspects `agent_runtime_app.agent_runtime` via subprocess
    * to extract the class methods and schemas required by Vertex AI Agent Engine.
    *
    * @param targetDirectory Target folder containing agent code
+   * @author Mike Nimer <mikenimer@google.com>
    */
   public ensureAgentRuntimeApp(targetDirectory: string): void {
     const runtimeAppPath = path.join(targetDirectory, 'agent_runtime_app.py');
+    const globalRegionBlock = `# Mandate Vertex AI Global Region for gemini-3.7-flash and publisher models
+os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"
+os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
+`;
+
     if (fs.existsSync(runtimeAppPath)) {
+      try {
+        let content = fs.readFileSync(runtimeAppPath, 'utf8');
+        let modified = false;
+
+        // If GOOGLE_CLOUD_LOCATION is missing, inject it right after import os
+        if (!content.includes('GOOGLE_CLOUD_LOCATION')) {
+          if (content.includes('import os')) {
+            content = content.replace('import os', `import os\n\n${globalRegionBlock}`);
+          } else {
+            content = `import os\n\n${globalRegionBlock}\n` + content;
+          }
+          modified = true;
+        } else if (content.includes('os.environ.setdefault("GOOGLE_CLOUD_LOCATION"')) {
+          content = content.replace(
+            /os\.environ\.setdefault\(["']GOOGLE_CLOUD_LOCATION["'],\s*["'][^"']+["']\)/g,
+            'os.environ["GOOGLE_CLOUD_LOCATION"] = "global"'
+          );
+          modified = true;
+        }
+
+        if (content.includes('os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI"')) {
+          content = content.replace(
+            /os\.environ\.setdefault\(["']GOOGLE_GENAI_USE_VERTEXAI["'],\s*["'][^"']+["']\)/g,
+            'os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"'
+          );
+          modified = true;
+        }
+
+        if (modified) {
+          fs.writeFileSync(runtimeAppPath, content, 'utf8');
+        }
+      } catch (err) {
+        console.warn('[AgentEngineDeployer] Failed to patch agent_runtime_app.py:', err);
+      }
       return;
     }
 
     const content = `import os
+
+${globalRegionBlock}
 from dotenv import load_dotenv
 from google.adk.artifacts import GcsArtifactService, InMemoryArtifactService
 from vertexai.agent_engines.templates.adk import AdkApp
@@ -668,11 +771,10 @@ agent_runtime = AdkApp(
   }
 
   /**
-   * Ensures agent.py explicitly adds its directory to sys.path if not already present.
-   * In containerized environments like Vertex AI Agent Engine, ADK api_server mounts /app/agents
-   * and loads agents as submodules (e.g. `importlib.import_module(f"{agent_name}.agent")`),
-   * which does not include the agent subdirectory in sys.path. Adding the directory to sys.path
-   * ensures top-level imports of local sibling modules (e.g. pydantic_models.py, tools/*.py) succeed.
+   * Ensures agent.py explicitly adds its directory to sys.path if not already present,
+   * removes any deprecated AgentBase imports, and enforces direct assignment of Vertex AI
+   * global region variables (`GOOGLE_CLOUD_LOCATION = "global"`) to prevent 404 NOT_FOUND
+   * publisher model errors when running inside regional Agent Engine containers.
    *
    * @param targetDirectory Target folder containing agent code
    * @author Mike Nimer <mikenimer@google.com>
@@ -713,11 +815,40 @@ if _agent_dir not in sys.path:
         modified = true;
       }
 
+      // 3. Ensure Vertex AI global location is directly assigned rather than using setdefault
+      // (setdefault fails to overwrite container runtime env vars like GOOGLE_CLOUD_LOCATION=us-central1)
+      if (content.includes('os.environ.setdefault("GOOGLE_CLOUD_LOCATION"')) {
+        content = content.replace(
+          /os\.environ\.setdefault\(["']GOOGLE_CLOUD_LOCATION["'],\s*["'][^"']+["']\)/g,
+          'os.environ["GOOGLE_CLOUD_LOCATION"] = "global"'
+        );
+        modified = true;
+      }
+      if (content.includes('os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI"')) {
+        content = content.replace(
+          /os\.environ\.setdefault\(["']GOOGLE_GENAI_USE_VERTEXAI["'],\s*["'][^"']+["']\)/g,
+          'os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"'
+        );
+        modified = true;
+      }
+      if (!content.includes('GOOGLE_CLOUD_LOCATION')) {
+        const locationPatch = `# Mandate Vertex AI Global Region for gemini-3.7-flash and publisher models
+os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"
+os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
+`;
+        if (content.includes('import os')) {
+          content = content.replace('import os', `import os\n\n${locationPatch}`);
+        } else {
+          content = `import os\n\n${locationPatch}\n` + content;
+        }
+        modified = true;
+      }
+
       if (modified) {
         fs.writeFileSync(agentPyPath, content, 'utf8');
       }
     } catch (err) {
-      console.warn('[AgentEngineDeployer] Failed to patch sys.path in agent.py:', err);
+      console.warn('[AgentEngineDeployer] Failed to patch imports and region in agent.py:', err);
     }
   }
 
@@ -982,6 +1113,7 @@ if _agent_dir not in sys.path:
     this.ensurePyProjectToml(targetDirectory, options);
     this.ensureAgentRuntimeApp(targetDirectory);
     this.ensureAgentImports(targetDirectory);
+    this.ensureAgentEngineConfig(targetDirectory);
 
     // 4. Check for existing deployment metadata or configured engine ID to determine update vs create
     const existingMeta = this.readDeploymentMetadata(targetDirectory);
@@ -1076,6 +1208,8 @@ if _agent_dir not in sys.path:
     const env: NodeJS.ProcessEnv = this.getExtendedEnv({
       GOOGLE_CLOUD_PROJECT: projectId,
       CLOUDSDK_CORE_PROJECT: projectId,
+      GOOGLE_GENAI_USE_VERTEXAI: '1',
+      GOOGLE_CLOUD_LOCATION: 'global',
       ...(options.envVars || {}),
     });
 
@@ -1408,11 +1542,24 @@ if _agent_dir not in sys.path:
     const extraPaths = [
       path.join(home, '.local', 'bin'),
       path.join(home, '.cargo', 'bin'),
+      path.join(home, 'Development', 'libraries', 'google-cloud-sdk', 'bin'),
+      path.join(home, 'google-cloud-sdk', 'bin'),
+      path.join(home, '.google-cloud-sdk', 'bin'),
+      path.join(home, 'Applications', 'google-cloud-sdk', 'bin'),
       '/opt/homebrew/bin',
+      '/opt/homebrew/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/bin',
       '/usr/local/bin',
+      '/usr/local/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/bin',
       '/usr/bin',
       '/bin',
     ];
+
+    if (this.resolvedGcloudPath && this.resolvedGcloudPath !== 'gcloud') {
+      const gcloudDir = path.dirname(this.resolvedGcloudPath);
+      if (!extraPaths.includes(gcloudDir)) {
+        extraPaths.unshift(gcloudDir);
+      }
+    }
 
     const currentPath = process.env.PATH || '';
     const existingParts = currentPath.split(path.delimiter);
@@ -1433,6 +1580,63 @@ if _agent_dir not in sys.path:
       PYTHONUNBUFFERED: '1',
       ...(extraEnv || {}),
     };
+  }
+
+  /**
+   * Resolves the path to the `gcloud` binary across PATH, common SDK directories,
+   * or by querying the user's interactive login shell on macOS/Linux.
+   *
+   * @returns Executable path for gcloud (e.g. '/path/to/gcloud' or 'gcloud')
+   * @author Mike Nimer <mikenimer@google.com>
+   */
+  public resolveGcloudPath(): string {
+    if (this.resolvedGcloudPath && (this.resolvedGcloudPath === 'gcloud' || fs.existsSync(this.resolvedGcloudPath))) {
+      return this.resolvedGcloudPath;
+    }
+
+    const home = process.env.HOME || '';
+    const candidatePaths = [
+      path.join(home, 'Development', 'libraries', 'google-cloud-sdk', 'bin', 'gcloud'),
+      path.join(home, 'google-cloud-sdk', 'bin', 'gcloud'),
+      path.join(home, '.google-cloud-sdk', 'bin', 'gcloud'),
+      path.join(home, 'Applications', 'google-cloud-sdk', 'bin', 'gcloud'),
+      '/opt/homebrew/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/bin/gcloud',
+      '/opt/homebrew/bin/gcloud',
+      '/usr/local/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/bin/gcloud',
+      '/usr/local/bin/gcloud',
+    ];
+
+    for (const candidate of candidatePaths) {
+      if (fs.existsSync(candidate)) {
+        this.resolvedGcloudPath = candidate;
+        return candidate;
+      }
+    }
+
+    // Try detecting via PATH with extendedEnv
+    if (this.hasBinary('gcloud')) {
+      this.resolvedGcloudPath = 'gcloud';
+      return 'gcloud';
+    }
+
+    // Fallback on macOS/Linux: query login shell with user profile
+    if (process.platform !== 'win32') {
+      try {
+        const shell = process.env.SHELL || '/bin/zsh';
+        const stdout = require('child_process').execSync(`${shell} -lc 'which gcloud'`, {
+          encoding: 'utf8',
+          timeout: 4000,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        const trimmed = stdout.trim();
+        if (trimmed && fs.existsSync(trimmed)) {
+          this.resolvedGcloudPath = trimmed;
+          return trimmed;
+        }
+      } catch {}
+    }
+
+    return 'gcloud';
   }
 
   /**
@@ -1592,10 +1796,20 @@ if _agent_dir not in sys.path:
       return `Bearer ${this.cachedAccessToken}`;
     }
 
-    try {
-      const extendedEnv = this.getExtendedEnv();
-      const token = await new Promise<string>((resolve, reject) => {
-        const cp = spawn('gcloud', ['auth', 'print-access-token'], {
+    // 1. Check environment variable token overrides
+    const envToken = process.env.GOOGLE_OAUTH_ACCESS_TOKEN || process.env.CLOUDSDK_AUTH_ACCESS_TOKEN;
+    if (envToken && envToken.trim().length > 0) {
+      this.cachedAccessToken = envToken.trim();
+      this.cachedAccessTokenExpiresAt = now + 10 * 60 * 1000;
+      return `Bearer ${this.cachedAccessToken}`;
+    }
+
+    const gcloudBinary = this.resolveGcloudPath();
+    const extendedEnv = this.getExtendedEnv();
+
+    const fetchToken = async (args: string[]): Promise<string> => {
+      return new Promise<string>((resolve, reject) => {
+        const cp = spawn(gcloudBinary, args, {
           env: extendedEnv,
           stdio: ['ignore', 'pipe', 'ignore'],
         });
@@ -1605,30 +1819,43 @@ if _agent_dir not in sys.path:
         });
         cp.on('error', reject);
         cp.on('close', (code) => {
-          if (code === 0) {
+          if (code === 0 && stdout.trim().length > 0) {
             resolve(stdout.trim());
           } else {
-            reject(new Error(`gcloud auth print-access-token exited with code ${code}`));
+            reject(new Error(`${gcloudBinary} ${args.join(' ')} exited with code ${code}`));
           }
         });
-        // Timeout after 4000ms
+        // 15 second timeout to allow OAuth token refresh flows to complete without premature timeouts
         const timer = setTimeout(() => {
           try {
             cp.kill('SIGTERM');
           } catch {}
-          reject(new Error('gcloud token retrieval timed out'));
-        }, 4000);
+          reject(new Error(`gcloud token command timed out: ${args.join(' ')}`));
+        }, 15000);
         cp.on('close', () => clearTimeout(timer));
       });
+    };
 
+    // 2. Try user credentials ('gcloud auth print-access-token')
+    try {
+      const token = await fetchToken(['auth', 'print-access-token']);
       if (token && token.length > 0) {
         this.cachedAccessToken = token;
         this.cachedAccessTokenExpiresAt = now + 10 * 60 * 1000; // 10 minutes
         return `Bearer ${token}`;
       }
-    } catch {
-      // NOTE: Fall back cleanly if gcloud CLI is not configured or times out
-    }
+    } catch {}
+
+    // 3. Fall back to Application Default Credentials ('gcloud auth application-default print-access-token')
+    try {
+      const token = await fetchToken(['auth', 'application-default', 'print-access-token']);
+      if (token && token.length > 0) {
+        this.cachedAccessToken = token;
+        this.cachedAccessTokenExpiresAt = now + 10 * 60 * 1000; // 10 minutes
+        return `Bearer ${token}`;
+      }
+    } catch {}
+
     return '';
   }
 
@@ -1697,7 +1924,13 @@ if _agent_dir not in sys.path:
     try {
       this.logToBridge(bridge, `[Test] Sending query to ${serviceUrl}...`, 'system');
 
-      const responseText = await this.performHttpQuery(serviceUrl, query, options.abortSignal);
+      const { response: responseText, remoteSessionId: resolvedSessionId } = await this.performHttpQuery(
+        serviceUrl,
+        query,
+        options.abortSignal,
+        options.onChunk,
+        options.remoteSessionId
+      );
       const durationMs = Date.now() - startTime;
 
       if (bridge) {
@@ -1717,6 +1950,7 @@ if _agent_dir not in sys.path:
         query,
         response: responseText,
         durationMs,
+        remoteSessionId: resolvedSessionId,
       };
     } catch (err: any) {
       const durationMs = Date.now() - startTime;
@@ -1851,10 +2085,18 @@ if _agent_dir not in sys.path:
    * @param serviceUrl Destination service URL
    * @param query User prompt query
    * @param abortSignal Optional AbortSignal to cancel query execution
-   * @returns Promise resolving to response text
+   * @param onChunk Optional streaming callback for real-time text chunks
+   * @param existingSessionId Optional remote reasoning engine session ID
+   * @returns Promise resolving to response text and session id
    * @author Mike Nimer <mikenimer@google.com>
    */
-  private async performHttpQuery(serviceUrl: string, query: string, abortSignal?: AbortSignal): Promise<string> {
+  private async performHttpQuery(
+    serviceUrl: string,
+    query: string,
+    abortSignal?: AbortSignal,
+    onChunk?: (chunkText: string) => void,
+    existingSessionId?: string
+  ): Promise<{ response: string; remoteSessionId?: string }> {
     let normalizedUrl = serviceUrl;
     if (normalizedUrl.includes('/api/run_sse')) {
       try {
@@ -1887,9 +2129,16 @@ if _agent_dir not in sys.path:
       // NOTE: Token retrieval failed; proceeding without explicit auth header (e.g. mock or local proxy)
     }
 
+    // Fail fast with clear actionable error message if calling remote Google Cloud Reasoning Engine without credentials
+    if (isAgentEngine && !authHeader) {
+      throw new Error(
+        `Google Cloud authentication failed: Missing required OAuth 2 access token for remote Vertex AI Reasoning Engine. Please ensure the Google Cloud SDK (gcloud) is installed and authenticated by running 'gcloud auth login' and 'gcloud auth application-default login' in your terminal.`
+      );
+    }
+
     // NOTE: For live Vertex AI Reasoning Engines, initialize a session to allow stateful execution
-    let sessionId: string | undefined;
-    if (isAgentEngine) {
+    let sessionId: string | undefined = existingSessionId;
+    if (!sessionId && isAgentEngine) {
       try {
         const sessionUrl = normalizedUrl.replace(/:streamQuery.*$/, ':query');
         sessionId = await this.createReasoningEngineSession(sessionUrl, authHeader, abortSignal);
@@ -1917,7 +2166,7 @@ if _agent_dir not in sys.path:
           }
     );
 
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<{ response: string; remoteSessionId?: string }>((resolve, reject) => {
       try {
         if (abortSignal?.aborted) {
           reject(new Error('Remote request was cancelled by user.'));
@@ -1947,8 +2196,43 @@ if _agent_dir not in sys.path:
             });
 
             let body = '';
+            let streamBuffer = '';
+
             res.on('data', (chunk) => {
-              body += chunk;
+              const str = chunk.toString();
+              body += str;
+
+              if (onChunk) {
+                streamBuffer += str;
+                const lines = streamBuffer.split('\n');
+                // Keep the last partial line in buffer
+                streamBuffer = lines.pop() || '';
+
+                for (const line of lines) {
+                  const trimmed = line.trim();
+                  if (trimmed.startsWith('data:')) {
+                    const jsonCandidate = trimmed.slice(5).trim();
+                    try {
+                      const evt = JSON.parse(jsonCandidate);
+                      let chunkPiece = '';
+                      if (evt.content?.parts) {
+                        for (const part of evt.content.parts) {
+                          if (part.text) chunkPiece += part.text;
+                        }
+                      } else if (Array.isArray(evt.parts)) {
+                        for (const part of evt.parts) {
+                          if (part.text) chunkPiece += part.text;
+                        }
+                      } else if (evt.output && typeof evt.output === 'string') {
+                        chunkPiece = evt.output;
+                      }
+                      if (chunkPiece) {
+                        onChunk(chunkPiece);
+                      }
+                    } catch {}
+                  }
+                }
+              }
             });
 
             res.on('end', () => {
@@ -1963,6 +2247,27 @@ if _agent_dir not in sys.path:
                     )
                   );
                   return;
+                }
+
+                if (onChunk && streamBuffer.trim().startsWith('data:')) {
+                  try {
+                    const evt = JSON.parse(streamBuffer.trim().slice(5).trim());
+                    let chunkPiece = '';
+                    if (evt.content?.parts) {
+                      for (const part of evt.content.parts) {
+                        if (part.text) chunkPiece += part.text;
+                      }
+                    } else if (Array.isArray(evt.parts)) {
+                      for (const part of evt.parts) {
+                        if (part.text) chunkPiece += part.text;
+                      }
+                    } else if (evt.output && typeof evt.output === 'string') {
+                      chunkPiece = evt.output;
+                    }
+                    if (chunkPiece) {
+                      onChunk(chunkPiece);
+                    }
+                  } catch {}
                 }
 
                 try {
@@ -1999,7 +2304,7 @@ if _agent_dir not in sys.path:
                   }
 
                   if (hasParsedEvents && accumulatedText.trim().length > 0) {
-                    resolve(accumulatedText.trim());
+                    resolve({ response: accumulatedText.trim(), remoteSessionId: sessionId });
                   } else {
                     const fallbackParsed = JSON.parse(body);
                     const finalOutput =
@@ -2008,16 +2313,19 @@ if _agent_dir not in sys.path:
                       fallbackParsed.choices?.[0]?.message?.content ||
                       fallbackParsed.text;
                     if (finalOutput) {
-                      resolve(typeof finalOutput === 'string' ? finalOutput : JSON.stringify(finalOutput));
+                      resolve({
+                        response: typeof finalOutput === 'string' ? finalOutput : JSON.stringify(finalOutput),
+                        remoteSessionId: sessionId,
+                      });
                     } else if (body.trim().length > 0) {
-                      resolve(body.trim());
+                      resolve({ response: body.trim(), remoteSessionId: sessionId });
                     } else {
                       reject(new Error('Remote Reasoning Engine returned an empty response.'));
                     }
                   }
                 } catch {
                   if (body.trim().length > 0) {
-                    resolve(body.trim());
+                    resolve({ response: body.trim(), remoteSessionId: sessionId });
                   } else {
                     reject(new Error('Remote Reasoning Engine returned an empty response.'));
                   }

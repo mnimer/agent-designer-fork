@@ -616,16 +616,18 @@ describe('AgentEditorProvider', { concurrency: 1 }, () => {
     const deploymentDir = provider.resolveTargetDirectory(mockDocWithDeployment, undefined);
     assert.equal(deploymentDir, '/mock/workspace/agents/scratch/custom_deploy_folder');
 
-    // 6. Generic root folder './src/agents/' appends sanitized document basename
+    // 6. Generic root folder './src/agents/' appends sanitized document basename and normalizes to direct subfolder
     const genericDir = provider.resolveTargetDirectory(mockDoc, './src/agents/');
-    assert.equal(genericDir, path.resolve('/mock/workspace/agents/scratch', './src/agents/scratch_agent'));
+    assert.equal(genericDir, path.resolve('/mock/workspace/agents/scratch', './scratch_agent'));
 
-    // 7. createEmptyWorkflowDocument and createDefaultWorkflowDocument include sanitized subfolder
+    // 7. createEmptyWorkflowDocument and createDefaultWorkflowDocument include sanitized subfolder without src/agents
     const emptyDoc = AgentEditorProvider.createEmptyWorkflowDocument('scratch-flow');
-    assert.equal(emptyDoc.deployment?.outputFolder, './src/agents/scratch_flow/');
+    assert.equal(emptyDoc.deployment?.outputFolder, './scratch_flow/');
+    assert.equal((emptyDoc.metadata as any)?.outputFolder, undefined);
 
     const defaultDoc = AgentEditorProvider.createDefaultWorkflowDocument('my-cool-agent');
-    assert.equal(defaultDoc.deployment?.outputFolder, './src/agents/my_cool_agent/');
+    assert.equal(defaultDoc.deployment?.outputFolder, './my_cool_agent/');
+    assert.equal((defaultDoc.metadata as any)?.outputFolder, undefined);
   });
 
   it('should initialize and provide AgentEngineDeployer instance and handle deployment messages', async () => {

@@ -77,6 +77,8 @@ export type WebviewToExtensionMessage =
         document?: AgentWorkflowDocument;
         targetDirectory?: string;
         port?: number;
+        executionTarget?: 'local' | 'remote';
+        deployedResourceId?: string;
       };
     }
   | {

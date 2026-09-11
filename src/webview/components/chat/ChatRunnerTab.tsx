@@ -19,6 +19,9 @@
  *    passing context to the runner and allowing complete session resets.
  * 6. Keyboard Ergonomics: Supports Enter to send, Shift+Enter for multiline inputs,
  *    and ESC or Stop button to halt streaming.
+ * 7. Dual Execution Target (Local Runner vs Remote Agent): Provides target switcher matching
+ *    Test Runner tab, routing requests to either local HTTP runner or deployed Vertex AI Reasoning
+ *    Engine on Agent Engine, with live target readiness status and persistent localStorage preferences.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -38,7 +41,10 @@ import {
   Sparkles,
   Zap,
   ArrowRight,
+  ExternalLink,
 } from 'lucide-react';
+import { ChatMessageRenderer } from './ChatMessageRenderer';
+import { VisualAgentDocument } from '../../../shared/types';
 import { AgentData, GenerationConfig } from '../../types';
 import { AgentWorkflowDocument } from '../../../shared/types';
 import { useWebviewBridge } from '../../hooks/useWebviewBridge';
@@ -79,21 +85,11 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
   const bridge = useWebviewBridge();
   const sessionIdRef = useRef<string>(`session-${Date.now()}`);
 
-  const defaultWelcome =
-    chatConfig?.initialMessage ||
-    'Hello! I am your AI agent assistant. How can I help you today?';
+  // NOTE: Start with an empty conversation history (no hard-coded response before server starts)
+  const [messages, setMessages] = useState<ChatMessageTurn[]>([]);
 
-  // NOTE: Initialize conversation with the configured welcome prompt
-  const [messages, setMessages] = useState<ChatMessageTurn[]>([
-    {
-      id: 'welcome-0',
-      role: 'assistant',
-      content: defaultWelcome,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    },
-  ]);
-
-  const [inputPrompt, setInputPrompt] = useState<string>('');
+  // Default initial message prompt in the input field
+  const [inputPrompt, setInputPrompt] = useState<string>('Hello, what can you do?');
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -103,6 +99,65 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
   >('idle');
   const [localRunnerPort, setLocalRunnerPort] = useState<number>(8000);
   const [isCheckingHealth, setIsCheckingHealth] = useState<boolean>(false);
+
+  // NOTE: Remote deployment status tracking matching TestRunnerTab
+  const [remoteEngineId, setRemoteEngineId] = useState<string | null>(null);
+
+  // Check propDocument, generation config, and discovered remote engine ID
+  const deployedResourceId =
+    (propDocument as any)?.deployment?.deployedResourceId ||
+    (config as any)?.deployedResourceId ||
+    remoteEngineId;
+  const isDeployed = Boolean(deployedResourceId);
+
+  const [executionTarget, setExecutionTarget] = useState<'local' | 'remote'>(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('vad_chat_runner_target') : null;
+    if (saved === 'remote' || saved === 'local') return saved;
+    return isDeployed ? 'remote' : 'local';
+  });
+
+  // Persist execution target selection to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('vad_chat_runner_target', executionTarget);
+    } catch {}
+  }, [executionTarget]);
+
+  // Automatically select remote execution if deployed and local runner is offline
+  useEffect(() => {
+    if (isDeployed && localRunnerStatus !== 'running') {
+      setExecutionTarget('remote');
+    }
+  }, [isDeployed, localRunnerStatus]);
+
+  // Request Agent Engine deployment status to discover deployed instances from workspace metadata
+  useEffect(() => {
+    if (!bridge) return;
+    const targetDir = config?.outputFolder || config?.targetDirectory;
+    bridge.postMessage({
+      type: 'GET_AGENT_ENGINE_STATUS',
+      payload: { targetDirectory: targetDir },
+    });
+  }, [bridge, config?.outputFolder, config?.targetDirectory]);
+
+  // Subscribe to Agent Engine deployment status updates
+  useEffect(() => {
+    if (!bridge) return;
+    const unsubDeploy = bridge.subscribe('AGENT_ENGINE_DEPLOY_STATUS', (payload) => {
+      const discoveredId =
+        payload?.metadata?.remote_agent_runtime_id ||
+        payload?.remoteRuntimeId;
+      if (discoveredId) {
+        setRemoteEngineId(discoveredId);
+      } else if (payload?.status === 'idle') {
+        setRemoteEngineId(null);
+      }
+      setIsCheckingHealth(false);
+    });
+    return () => {
+      unsubDeploy();
+    };
+  }, [bridge]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -120,16 +175,29 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
   }, [messages, isStreaming, scrollToBottom]);
 
   /**
-   * Health check callback to query extension host for local runner state.
+   * Health check callback (invoked on tab open, target change, or manual user refresh).
+   * Dynamically queries GET_AGENT_ENGINE_STATUS when targeting remote Agent Engine,
+   * or GET_LOCAL_RUNNER_STATUS when targeting the local uvicorn runner.
    * Matches the exact checkRunnerHealth implementation in TestRunnerTab.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
    */
   const checkRunnerHealth = useCallback(() => {
     setIsCheckingHealth(true);
-    bridge.postMessage({ type: 'GET_LOCAL_RUNNER_STATUS' });
-    setTimeout(() => setIsCheckingHealth(false), 1200);
-  }, [bridge]);
+    if (executionTarget === 'remote') {
+      const targetDir = config?.outputFolder || config?.targetDirectory;
+      bridge.postMessage({
+        type: 'GET_AGENT_ENGINE_STATUS',
+        payload: { targetDirectory: targetDir },
+      });
+      setTimeout(() => setIsCheckingHealth(false), 1500);
+    } else {
+      bridge.postMessage({ type: 'GET_LOCAL_RUNNER_STATUS' });
+      setTimeout(() => setIsCheckingHealth(false), 1500);
+    }
+  }, [bridge, executionTarget, config?.outputFolder, config?.targetDirectory]);
 
-  // NOTE: Check health once on tab mount
+  // Check health once on tab mount or whenever execution target changes
   useEffect(() => {
     checkRunnerHealth();
   }, [checkRunnerHealth]);
@@ -152,6 +220,10 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
   }, [bridge]);
 
   const isServerRunning = localRunnerStatus === 'running';
+  // Target is ready if either:
+  // - local execution target and local runner is 'running'
+  // - remote execution target and remote agent is deployed
+  const isTargetReady = executionTarget === 'remote' ? isDeployed : isServerRunning;
 
   // NOTE: Listen for real-time streaming chunks over RPC
   useEffect(() => {
@@ -188,15 +260,16 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
   }, [bridge]);
 
   /**
-   * Handles sending a new user message turn to the running agent.
-   * Strictly enforces that the agent server must be running before dispatching.
+   * Handles sending a new user message turn to the running agent (Local or Remote).
+   * Strictly enforces that the target runtime must be ready before dispatching.
    *
    * @param textToSend Optional text overriding the current inputPrompt
+   * @author Mike Nimer <mikenimer@google.com>
    */
   const handleSendMessage = useCallback(
     async (textToSend?: string) => {
-      // NOTE: Strictly reject sending when runner is not running or already streaming
-      if (!isServerRunning || isStreaming) return;
+      // NOTE: Strictly reject sending when runner is not ready or already streaming
+      if (!isTargetReady || isStreaming) return;
 
       const text = (textToSend !== undefined ? textToSend : inputPrompt).trim();
       if (!text) return;
@@ -243,12 +316,14 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
             .filter((m) => m.role === 'user' || m.role === 'assistant')
             .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
           document: propDocument,
-          targetDirectory: config?.targetDirectory,
+          targetDirectory: config?.targetDirectory || config?.outputFolder,
           port: localRunnerPort,
+          executionTarget,
+          deployedResourceId: executionTarget === 'remote' ? deployedResourceId : undefined,
         },
       });
     },
-    [isServerRunning, isStreaming, inputPrompt, messages, bridge, chatConfig, propDocument, config, localRunnerPort]
+    [isTargetReady, isStreaming, inputPrompt, messages, bridge, chatConfig, propDocument, config, localRunnerPort, executionTarget, deployedResourceId]
   );
 
   /**
@@ -275,15 +350,9 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
       payload: { sessionId: sessionIdRef.current },
     });
 
-    setMessages([
-      {
-        id: `welcome-${Date.now()}`,
-        role: 'assistant',
-        content: defaultWelcome,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      },
-    ]);
-  }, [bridge, defaultWelcome]);
+    setMessages([]);
+    setInputPrompt('Hello, what can you do?');
+  }, [bridge]);
 
   /**
    * Clears the current message turns on screen without resetting session memory.
@@ -354,26 +423,26 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
 
         {/* Right Status Controls - Exactly matching TestRunnerTab */}
         <div className="flex items-center gap-2">
-          {/* Server Status Indicator */}
-          {isServerRunning ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Agent Online (:{localRunnerPort})</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-950/70 border border-amber-500/40 text-amber-300 text-xs font-medium">
-              <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span>{localRunnerStatus === 'starting' ? 'Agent Starting...' : 'Agent Offline'}</span>
-              <button
-                type="button"
-                onClick={checkRunnerHealth}
-                className="ml-1 p-0.5 rounded hover:bg-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer"
-                title="Check agent health"
+          {/* Execution Target Selector */}
+          <div className="flex items-center gap-1.5 bg-[#0d1117] px-2.5 py-1.5 rounded-lg border border-[#30363d] text-xs">
+            <span className="text-gray-400 font-medium shrink-0">Target:</span>
+            <select
+              value={executionTarget}
+              onChange={(e) => setExecutionTarget(e.target.value as 'local' | 'remote')}
+              className="bg-transparent text-white text-xs font-medium focus:outline-none cursor-pointer"
+            >
+              <option value="local" className="bg-[#161b22] text-white">
+                Local Runner ({isServerRunning ? `:${localRunnerPort}` : 'Offline'})
+              </option>
+              <option
+                value="remote"
+                disabled={!isDeployed}
+                className="bg-[#161b22] text-white disabled:text-gray-500"
               >
-                <RotateCcw className={`w-3 h-3 ${isCheckingHealth ? 'animate-spin text-amber-400' : ''}`} />
-              </button>
-            </div>
-          )}
+                Remote Agent {isDeployed ? `(${deployedResourceId?.split('/').pop()})` : '(Not Deployed)'}
+              </option>
+            </select>
+          </div>
 
           {/* Reset Session Button */}
           <button
@@ -395,18 +464,73 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
+
+          {/* Target Status Indicator */}
+          {executionTarget === 'remote' ? (
+            isDeployed ? (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-950/80 border border-indigo-500/40 text-indigo-300 text-xs font-mono font-medium">
+                <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+                <span>Remote Agent Ready</span>
+                <button
+                  type="button"
+                  onClick={checkRunnerHealth}
+                  className="ml-1 p-0.5 rounded hover:bg-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer"
+                  title="Check remote agent status"
+                >
+                  <RotateCcw className={`w-3 h-3 ${isCheckingHealth ? 'animate-spin text-indigo-400' : ''}`} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-950/70 border border-amber-500/40 text-amber-300 text-xs font-medium">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Remote Not Deployed</span>
+                <button
+                  type="button"
+                  onClick={checkRunnerHealth}
+                  className="ml-1 p-0.5 rounded hover:bg-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer"
+                  title="Check remote deployment status"
+                >
+                  <RotateCcw className={`w-3 h-3 ${isCheckingHealth ? 'animate-spin text-amber-400' : ''}`} />
+                </button>
+              </div>
+            )
+          ) : isServerRunning ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-medium">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Agent Online (:{localRunnerPort})</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-950/70 border border-amber-500/40 text-amber-300 text-xs font-medium">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>{localRunnerStatus === 'starting' ? 'Agent Starting...' : 'Agent Offline'}</span>
+              <button
+                type="button"
+                onClick={checkRunnerHealth}
+                className="ml-1 p-0.5 rounded hover:bg-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer"
+                title="Check agent health"
+              >
+                <RotateCcw className={`w-3 h-3 ${isCheckingHealth ? 'animate-spin text-amber-400' : ''}`} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Offline Warning Banner (8pt grid: mx-4 mt-3 = 16px margins, matching TestRunnerTab) */}
-      {!isServerRunning && (
+      {/* Offline / Not Deployed Warning Banner (8pt grid: mx-4 mt-3 = 16px margins, matching TestRunnerTab) */}
+      {!isTargetReady && (
         <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-md shrink-0">
           <div className="flex items-center gap-2.5">
             <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
             <div>
-              <span className="font-semibold text-white">Local Agent Server is Offline.</span>
+              <span className="font-semibold text-white">
+                {executionTarget === 'remote' ? 'Remote Agent is Not Deployed.' : 'Local Agent Server is Offline.'}
+              </span>
               <span className="text-amber-200/90 ml-1">
-                Start the local agent on the <strong>Deployment</strong> tab to enable interactive chat.
+                {executionTarget === 'remote' ? (
+                  <>Deploy to Agent Engine on the <strong>Deployment</strong> tab to enable interactive chat.</>
+                ) : (
+                  <>Start the local agent on the <strong>Deployment</strong> tab to enable interactive chat.</>
+                )}
               </span>
             </div>
           </div>
@@ -474,9 +598,20 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
                   </div>
 
                   {/* Message Content */}
-                  <div className="whitespace-pre-wrap break-words font-sans">
+                  <div className="break-words font-sans">
                     {turn.content ? (
-                      turn.content
+                      <>
+                        <ChatMessageRenderer
+                          content={turn.content}
+                          isUser={isUser}
+                          isStreaming={turn.isStreaming}
+                          onActionClick={(actionText) => handleSendMessage(actionText)}
+                        />
+                        {/* Blinking streaming cursor */}
+                        {turn.isStreaming && (
+                          <span className="inline-block w-1.5 h-3.5 ml-1 bg-emerald-400 animate-pulse align-middle" />
+                        )}
+                      </>
                     ) : turn.isStreaming ? (
                       <span className="flex items-center gap-1 text-emerald-400 font-mono text-[11px]">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" />
@@ -486,11 +621,6 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
                       </span>
                     ) : (
                       <span className="text-gray-500 italic">Empty response</span>
-                    )}
-
-                    {/* Blinking streaming cursor */}
-                    {turn.isStreaming && turn.content && (
-                      <span className="inline-block w-1.5 h-3.5 ml-1 bg-emerald-400 animate-pulse align-middle" />
                     )}
                   </div>
 
@@ -562,8 +692,14 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
               key={idx}
               type="button"
               onClick={() => handleSendMessage(prompt)}
-              disabled={!isServerRunning || isStreaming}
-              title={!isServerRunning ? 'Local agent server is offline. Start the agent in the Deployment tab.' : prompt}
+              disabled={!isTargetReady || isStreaming}
+              title={
+                !isTargetReady
+                  ? executionTarget === 'remote'
+                    ? 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab.'
+                    : 'Local agent server is offline. Start the agent in the Deployment tab.'
+                  : prompt
+              }
               className="px-2.5 py-1 rounded-full bg-[#21262d] hover:bg-emerald-950/30 hover:border-emerald-500/40 border border-[#30363d] text-xs text-gray-300 hover:text-emerald-300 transition-colors whitespace-nowrap cursor-pointer shrink-0 disabled:opacity-40 disabled:hover:bg-[#21262d] disabled:hover:border-[#30363d] disabled:hover:text-gray-300 disabled:cursor-not-allowed"
             >
               {prompt}
@@ -576,8 +712,10 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
       <div className="p-3 border-t border-[#30363d] bg-[#161b22] shrink-0">
         <div
           className={`flex items-end gap-2 bg-[#0d1117] rounded-xl border p-2 transition-all shadow-inner ${
-            !isServerRunning
+            !isTargetReady
               ? 'border-[#21262d] opacity-60'
+              : executionTarget === 'remote'
+              ? 'border-[#30363d] focus-within:border-indigo-500/60 focus-within:ring-1 focus-within:ring-indigo-500/40'
               : 'border-[#30363d] focus-within:border-emerald-500/60 focus-within:ring-1 focus-within:ring-emerald-500/40'
           }`}
         >
@@ -588,13 +726,15 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
             onChange={handleTextareaChange}
             onKeyDown={handleInputKeyDown}
             placeholder={
-              !isServerRunning
-                ? localRunnerStatus === 'starting'
+              !isTargetReady
+                ? executionTarget === 'remote'
+                  ? 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab to chat...'
+                  : localRunnerStatus === 'starting'
                   ? 'Local agent server is starting...'
                   : 'Local agent server is offline. Start the agent in the Deployment tab to chat...'
                 : 'Type a message (Enter to send, Shift+Enter for newline)...'
             }
-            disabled={!isServerRunning || isStreaming}
+            disabled={!isTargetReady || isStreaming}
             className="flex-1 bg-transparent border-0 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-0 resize-none max-h-28 py-1.5 px-2 font-sans disabled:cursor-not-allowed"
           />
 
@@ -611,17 +751,21 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
             <button
               type="button"
               onClick={() => handleSendMessage()}
-              disabled={!isServerRunning || !inputPrompt.trim()}
+              disabled={!isTargetReady || !inputPrompt.trim()}
               title={
-                !isServerRunning
-                  ? 'Local agent server is offline. Start the agent in the Deployment tab to send messages.'
+                !isTargetReady
+                  ? executionTarget === 'remote'
+                    ? 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab to send messages.'
+                    : 'Local agent server is offline. Start the agent in the Deployment tab to send messages.'
                   : !inputPrompt.trim()
                   ? 'Enter a message first'
                   : 'Send message'
               }
               className={`p-2 rounded-lg transition-colors shrink-0 shadow-sm ${
-                isServerRunning && inputPrompt.trim()
-                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                isTargetReady && inputPrompt.trim()
+                  ? executionTarget === 'remote'
+                    ? 'bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
                   : 'bg-[#21262d] text-gray-500 cursor-not-allowed'
               }`}
             >
@@ -630,13 +774,17 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
           )}
         </div>
 
-        {/* Offline Runner Hint Bar */}
-        {!isServerRunning && (
+        {/* Offline / Not Deployed Runner Hint Bar */}
+        {!isTargetReady && (
           <div className="flex items-center justify-between mt-2 px-1 text-[10px] text-gray-400">
             <span className="flex items-center gap-1">
               <AlertCircle className="w-3 h-3 text-amber-400 shrink-0" />
               <span>
-                Agent server is currently <strong>{localRunnerStatus}</strong>. Start the runner in the Deployment tab to enable chat.
+                {executionTarget === 'remote' ? (
+                  <>Remote Agent Engine is currently <strong>not deployed</strong>. Deploy to Agent Engine on the Deployment tab to enable chat.</>
+                ) : (
+                  <>Agent server is currently <strong>{localRunnerStatus}</strong>. Start the runner in the Deployment tab to enable chat.</>
+                )}
               </span>
             </span>
             {onNavigateToDeployment && (

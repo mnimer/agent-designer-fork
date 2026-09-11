@@ -107,6 +107,7 @@ export const AddToolModal: React.FC<AddToolModalProps> = ({
   existingToolIds,
   tools = AVAILABLE_TOOLS,
   targetAgentName,
+  onRegisterMcpServer,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({

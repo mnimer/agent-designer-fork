@@ -8,7 +8,8 @@ import {
   FileJson, 
   ChevronDown, 
   ChevronUp, 
-  ListTree
+  ListTree,
+  Code2
 } from 'lucide-react';
 import { 
   StructuredOutputSchema, 
@@ -39,12 +40,107 @@ const DEFAULT_SCHEMA = (agentLabel: string): StructuredOutputSchema => {
   };
 };
 
+/**
+ * Generates Pydantic v2 BaseModel Python code conforming to the StructuredOutputSchema.
+ * 
+ * Logic Flow:
+ * 1. Checks if fields exist; if empty, emits a pass BaseModel.
+ * 2. Emits standard Pydantic v2 and typing imports (BaseModel, Field, Optional, List, Literal).
+ * 3. Sanitizes class name and field identifiers into valid Python identifiers.
+ * 4. Maps field types to Python type annotations:
+ *    - string -> str
+ *    - number -> float
+ *    - boolean -> bool
+ *    - array -> List[itemType]
+ *    - enum -> Literal["val1", "val2"]
+ *    - object -> dict
+ * 5. Handles optionality (Optional[...]) and Field(description=..., default=None).
+ * 
+ * @param schema StructuredOutputSchema
+ * @returns Formatted Python code string
+ */
+export function buildPydanticCode(schema: StructuredOutputSchema): string {
+  const className = (schema.name || 'ResponseSchema').replace(/[^a-zA-Z0-9_]/g, '') || 'ResponseSchema';
+  const lines: string[] = [
+    'from typing import List, Optional, Literal',
+    'from pydantic import BaseModel, Field',
+    '',
+    `class ${className}(BaseModel):`,
+  ];
+
+  if (!schema.fields || schema.fields.length === 0) {
+    lines.push('    pass');
+    return lines.join('\n');
+  }
+
+  for (const f of schema.fields) {
+    let rawName = f.name?.trim() || 'unnamed_field';
+    let fieldName = rawName.replace(/[^a-zA-Z0-9_]/g, '_');
+    if (/^[0-9]/.test(fieldName)) {
+      fieldName = `field_${fieldName}`;
+    }
+
+    let typeStr = 'str';
+    switch (f.type) {
+      case 'string':
+        typeStr = 'str';
+        break;
+      case 'number':
+        typeStr = 'float';
+        break;
+      case 'boolean':
+        typeStr = 'bool';
+        break;
+      case 'array': {
+        const itemType = f.arrayItemType === 'number' 
+          ? 'float' 
+          : f.arrayItemType === 'boolean' 
+          ? 'bool' 
+          : f.arrayItemType === 'object' 
+          ? 'dict' 
+          : 'str';
+        typeStr = `List[${itemType}]`;
+        break;
+      }
+      case 'enum': {
+        const enumVals = (f.enumValues && f.enumValues.length > 0 ? f.enumValues : ['option1', 'option2'])
+          .map((v) => JSON.stringify(v))
+          .join(', ');
+        typeStr = `Literal[${enumVals}]`;
+        break;
+      }
+      case 'object':
+        typeStr = 'dict';
+        break;
+      default:
+        typeStr = 'str';
+    }
+
+    const fieldArgs: string[] = [];
+    if (!f.required) {
+      typeStr = `Optional[${typeStr}]`;
+      fieldArgs.push('default=None');
+    }
+    if (f.description && f.description.trim()) {
+      fieldArgs.push(`description=${JSON.stringify(f.description.trim())}`);
+    }
+
+    if (fieldArgs.length > 0) {
+      lines.push(`    ${fieldName}: ${typeStr} = Field(${fieldArgs.join(', ')})`);
+    } else {
+      lines.push(`    ${fieldName}: ${typeStr}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = ({
   schema: initialSchema,
   agentLabel,
   onChange,
 }) => {
-  const [activeTab, setActiveTab] = useState<'builder' | 'json'>('builder');
+  const [activeTab, setActiveTab] = useState<'builder' | 'json' | 'pydantic'>('builder');
   const [copied, setCopied] = useState(false);
   const [jsonError, setJsonError] = useState<string | null>(null);
 
@@ -162,6 +258,7 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
   };
 
   const jsonSchemaString = JSON.stringify(buildJsonSchemaObject(), null, 2);
+  const pydanticCodeString = buildPydanticCode(currentSchema);
 
   const handleCopyCode = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -254,7 +351,7 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
       {/* Main Container when Enabled */}
       {currentSchema.enabled ? (
         <div className="bg-[#0d1117] rounded-lg border border-purple-500/40 p-3 space-y-3 shadow-inner">
-          {/* Tab Navigation: Field Builder vs JSON Schema */}
+          {/* Tab Navigation: Field Builder vs JSON Schema vs Pydantic v2 */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1 bg-[#161b22] p-0.5 rounded-md border border-[#30363d]">
               <button
@@ -282,12 +379,25 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
                 <FileJson className="w-3 h-3" />
                 <span>JSON Schema</span>
               </button>
-            </div>
 
-            {activeTab === 'json' && (
               <button
                 type="button"
-                onClick={() => handleCopyCode(jsonSchemaString)}
+                onClick={() => setActiveTab('pydantic')}
+                className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeTab === 'pydantic'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                <Code2 className="w-3 h-3" />
+                <span>Pydantic v2</span>
+              </button>
+            </div>
+
+            {(activeTab === 'json' || activeTab === 'pydantic') && (
+              <button
+                type="button"
+                onClick={() => handleCopyCode(activeTab === 'json' ? jsonSchemaString : pydanticCodeString)}
                 className="flex items-center gap-1 px-2 py-1 rounded bg-[#161b22] hover:bg-[#21262d] text-purple-300 border border-purple-500/30 text-[10px] font-medium transition-colors cursor-pointer"
               >
                 {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
@@ -466,6 +576,22 @@ export const StructuredOutputBuilder: React.FC<StructuredOutputBuilderProps> = (
                   ⚠️ {jsonError}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* TAB 3: PYDANTIC V2 BASEMODEL PREVIEW */}
+          {activeTab === 'pydantic' && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] text-gray-400">
+                <span>Pydantic v2 BaseModel Python Definition</span>
+                <span className="text-[9px] font-mono text-emerald-400">pydantic_models.py</span>
+              </div>
+              <textarea
+                readOnly
+                value={pydanticCodeString}
+                rows={10}
+                className="w-full p-2.5 rounded bg-[#161b22] border border-[#30363d] text-[10px] font-mono text-emerald-300 focus:border-purple-500 focus:outline-none leading-relaxed selection:bg-purple-900 resize-y"
+              />
             </div>
           )}
         </div>

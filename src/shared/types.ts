@@ -194,6 +194,8 @@ export interface TestSuiteScenario {
   inputQuery: string;
   expectedOutputPattern?: string;
   expectedOutput?: string;
+  assertionType?: 'contains' | 'exact' | 'json_schema' | 'llm_eval';
+  expectedSchema?: any;
   [key: string]: any;
 }
 

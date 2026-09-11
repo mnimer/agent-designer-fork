@@ -289,30 +289,42 @@ export const computeTargetFolder = (filePathOrName: string, baseDir: string = '.
  * Resolves the final target output folder for an agent workflow document.
  *
  * Logic Flow:
- * 1. Check if an explicit folder is provided in deployment or metadata:
+ * 1. Normalize and strip legacy 'src/agents/' or './src/agents/' prefixes if present.
+ * 2. Check if an explicit folder is provided in deployment or metadata:
  *    a. If explicitFolder is defined and is NOT a generic root directory
- *       (e.g., './src/agents/', 'src/agents/', './agents/', 'agents/'),
+ *       (e.g., './', '.', './src/agents/', 'src/agents/', './agents/', 'agents/'),
  *       return explicitFolder directly (ensuring trailing slash).
  *    b. If explicitFolder is empty, undefined, or equals a generic root folder,
  *       derive a dedicated subfolder using the sanitized agent filename:
- *       e.g., "./src/agents/" + "scratch-flow.agent" -> "./src/agents/scratch_flow/".
- * 2. Ensure the resulting path ends with a forward slash for directory consistency.
+ *       e.g., "./" + "agent_20_questions_game.agent" -> "./agent_20_questions_game/".
+ * 3. Ensure the resulting path ends with a forward slash for directory consistency.
  *
  * @param explicitFolder - Configured output folder from deployment node or metadata
  * @param filePathOrName - File path or name of the .agent document (e.g. "scratch-flow.agent")
- * @param defaultBaseDir - Default base folder (defaults to './src/agents/')
+ * @param defaultBaseDir - Default base folder (defaults to './')
  * @returns Final resolved output folder string with trailing slash
  */
 export const resolveAgentOutputFolder = (
   explicitFolder?: string,
   filePathOrName?: string,
-  defaultBaseDir: string = './src/agents/'
+  defaultBaseDir: string = './'
 ): string => {
-  const trimmed = explicitFolder?.trim();
+  let trimmed = explicitFolder?.trim();
+
+  // Strip legacy src/agents prefixes if present
+  if (trimmed) {
+    if (trimmed.startsWith('./src/agents/')) {
+      trimmed = `./${trimmed.slice('./src/agents/'.length)}`;
+    } else if (trimmed.startsWith('src/agents/')) {
+      trimmed = `./${trimmed.slice('src/agents/'.length)}`;
+    }
+  }
 
   // Generic folders that represent the root collection rather than an agent-specific folder
   const isGenericRoot =
     !trimmed ||
+    trimmed === './' ||
+    trimmed === '.' ||
     trimmed === './src/agents/' ||
     trimmed === './src/agents' ||
     trimmed === 'src/agents/' ||
@@ -323,12 +335,12 @@ export const resolveAgentOutputFolder = (
     trimmed === 'agents';
 
   if (!isGenericRoot && trimmed) {
-    // User or document explicitly specified a custom or agent-specific target folder (e.g. './scratch_flow/')
+    // User or document explicitly specified a custom or agent-specific target folder (e.g. './game_20_questions/')
     return trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
   }
 
-  // Derive target folder using defaultBaseDir and sanitized agent file name
-  const effectiveBase = trimmed && isGenericRoot ? trimmed : defaultBaseDir;
+  // Derive target folder using defaultBaseDir (defaulting to './') and sanitized agent file name
+  const effectiveBase = defaultBaseDir || './';
   return computeTargetFolder(filePathOrName || 'workflow.agent', effectiveBase);
 };
 

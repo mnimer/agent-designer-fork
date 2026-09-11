@@ -8,11 +8,6 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 
 ### Deployment Target: Google Vertex Agent Engine
 
-### CRITICAL MANDATE: COMPLETE REPOSITORY GENERATION (ALL FILES REQUIRED, STARTING WITH agent.py)
-- `agent.py` IS THE CORE WORKFLOW FILE AND MUST ALWAYS BE GENERATED AS THE FIRST FILE IN THE RETURNED JSON ARRAY. It defines `root_agent`, all sub-agents, tools, callbacks, and orchestration logic. Every other file (main.py, test_agent.py, agent_runtime_app.py) directly imports `root_agent` from `agent.py`.
-- You MUST generate the COMPLETE repository and emit EVERY required file in the output JSON array.
-- Emitting only a partial project or omitting core files like `agent.py` is strictly forbidden and breaks testing and deployment.
-- Every response MUST include the full project manifest: `agent.py` (with `root_agent`), runtime adapter (`agent_runtime_app.py`), packaging, CLI runner, test suite, evaluation dataset and script, dependencies, Dockerfile, CI/CD pipeline, Terraform infrastructure, and documentation.
 
 ### WORKFLOW SPECIFICATION:
 ```json
@@ -22,6 +17,13 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 ---
 
 ### REQUIREMENTS & ARCHITECTURE:
+
+### CRITICAL MANDATE: COMPLETE REPOSITORY GENERATION (ALL FILES REQUIRED, STARTING WITH agent.py)
+- `agent.py` IS THE CORE WORKFLOW FILE AND MUST ALWAYS BE GENERATED AS THE FIRST FILE IN THE RETURNED JSON ARRAY. It defines `root_agent`, all sub-agents, tools, callbacks, and orchestration logic. Every other file (`test_agent.py`, `Dockerfile`, `main.tf`) directly uses `agent.py`.
+- You MUST generate the COMPLETE repository and emit EVERY required file in the output JSON array.
+- Emitting only a partial project or omitting core files like `agent.py` is strictly forbidden and breaks testing and deployment.
+- Every response MUST include the standard project manifest: `agent.py` (with `root_agent`), `requirements.txt`, `Dockerfile`, `main.tf`, `cloudbuild.yaml`, `test_agent.py`, `.env.example`, `.gitignore`, `.gcloudignore`, and `README.md`.
+
 
 1. **Agent Harness & Agent Architecture (Google ADK)**:
    - You MUST implement agents using the official Google ADK SDK (`from google.adk.agents import Agent, SequentialAgent, ParallelAgent, LoopAgent` and `from google.adk.agents.remote_a2a_agent import RemoteA2aAgent`).
@@ -69,10 +71,17 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 2. **CRITICAL: LLM MODEL CONSTRAINTS & GLOBAL REGION MANDATE**:
    - Under NO circumstances should any generated code (in `agent.py`, `tools/*.py`, etc.) reference deprecated Gemini models such as `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.0-flash`, `gemini-1.5-flash`, `gemini-1.5-pro`, or `gemini-flash-latest`. Gemini 1.x and 2.x models are deprecated.
    - ALWAYS use `gemini-3.7-flash` (or `gemini-3.5-flash` or the configured node model, or `gemini-pro-latest` if specified). The global default model across all agent definitions AND all custom tool helper implementations MUST be `gemini-3.7-flash`.
-   - **MANDATORY GLOBAL REGION CONFIGURATION**: In Vertex AI, `gemini-3.7-flash` is hosted under the `global` region (`location="global"`). Regional endpoints (such as `us-central1`) will reject `gemini-3.7-flash` with a `404 NOT_FOUND` publisher model error! Therefore, generated code MUST configure the Vertex AI client or environment for the global location:
+   - **MANDATORY GLOBAL REGION CONFIGURATION**: In Vertex AI, `gemini-3.7-flash` is hosted under the `global` region (`location="global"`). Regional endpoints (such as `us-central1`) will reject `gemini-3.7-flash` with a `404 NOT_FOUND` publisher model error!
+     * **CRITICAL RULE**: In containerized Vertex AI Agent Engine environments, the container runtime already has `GOOGLE_CLOUD_LOCATION` set to the regional host (e.g. `us-central1`). NEVER use `os.environ.setdefault(...)` because `setdefault` fails to overwrite existing environment variables and leaves the region as `us-central1`!
+     * ALWAYS use direct assignment at the top of `agent.py`:
      ```python
-     os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "1")
-     os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+     os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"
+     os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
+     ```
+     * In addition to environment variables, ALWAYS instantiate the Gemini model explicitly with `client_kwargs={"location": "global"}` so the model endpoint is hardcoded to global and never relies on ambient environment variables:
+     ```python
+     from google.adk.models.google_llm import Gemini
+     model = Gemini(model="gemini-3.7-flash", client_kwargs={"location": "global"})
      ```
    - If the node configuration in the workflow JSON specifies a model, use that model (mapping legacy aliases `gemini-flash-latest`, `gemini-1.5-flash`, `gemini-2.5-flash`, etc. to `gemini-3.7-flash`).
    - **CRITICAL ADK & VERTEX AI SEARCH TOOL CONSTRAINTS**:
@@ -118,8 +127,8 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
    - **Only generate Pydantic models if structured output is explicitly defined**: If an agent node specifies `outputFormat: "json"` (or explicitly defines a JSON schema), generate `pydantic_models.py` with that schema model and configure `output_schema=ResponseSchema`.
    - **Plain Text Output (`outputFormat: "text"` or unconfigured)**: If `outputFormat` is `"text"` or not explicitly set to JSON schema, DO NOT generate artificial domain Pydantic models (such as inventing a custom domain result class like `StockAnalysisResult`). The agent or synthesizer MUST return plain text or markdown without `output_schema`.
    - **ZERO TEST-SUITE LEAKAGE (CRITICAL MANDATE)**:
-     * Nodes of type `triggerNode` with `triggerType: "tester"`, `testPrompts`, `testPayload`, and `expectedOutput` are strictly and exclusively for generating `tests/test_agent.py` and `eval_dataset.jsonl`.
-     * UNDER NO CIRCUMSTANCES should any test queries, expected assertion strings, sample values, or specific entities (e.g., specific stock ticker symbols like MRNA, DELL, MU, product names, or test outputs) be leaked, referenced, hinted at, or hardcoded into `agent.py`, `agent_runtime_app.py`, agent system instructions, or synthesizer instructions!
+     * Nodes of type `triggerNode` with `triggerType: "tester"`, `testPrompts`, `testPayload`, and `expectedOutput` are strictly and exclusively for generating `test_agent.py`.
+     * UNDER NO CIRCUMSTANCES should any test queries, expected assertion strings, sample values, or specific entities (e.g., specific stock ticker symbols like MRNA, DELL, MU, product names, or test outputs) be leaked, referenced, hinted at, or hardcoded into `agent.py`, agent system instructions, or synthesizer instructions!
      * Agent instructions MUST strictly reflect ONLY the `systemPrompt` defined in that specific agent node. If an agent node's `systemPrompt` is "Select the right sub-agent that can answer the question.", its instruction must be exactly that. NEVER embellish or inject domain knowledge from test cases into agent prompts.
      * If an orchestrator or synthesizer agent is generated for parallel/sequential pipelines, its instructions must be general (e.g., "Synthesize and consolidate the responses provided by the sub-agents to answer the user request.") and MUST NOT mention any domain specifics or entities from test cases.
    - For Sequential, Parallel, and Loop with explicit schemas: Create a tool-free synthesizer `Agent` evaluating sub-agent state. If `outputFormat` is text, the synthesizer outputs text/markdown.
@@ -128,7 +137,7 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 5. **Observability: Logging, Tracing & Metrics (ADK & OpenTelemetry Strategy)**:
    - **NO Hardcoded `print()` or Custom Agent Subclasses**: Under NO circumstances should you use `print()` for tracing/logging or subclass `Agent` / override `_run_async_impl` to intercept execution. ADK natively implements OpenTelemetry GenAI Semantic Conventions for end-to-end observability.
    - **Structured Logging (Python `logging`)**:
-     * Configure Python's standard `logging` in execution entrypoints (`main.py`, `agent.py`):
+     * Configure Python's standard `logging` in execution entrypoint (`agent.py`):
        ```python
        import logging
        logging.basicConfig(
@@ -145,7 +154,7 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
        ```
    - **Distributed Tracing & Metrics (OpenTelemetry & Google Cloud)**:
      * ADK automatically emits hierarchical trace spans (`invoke_agent`, `invoke_workflow`, `execute_tool`, `generate_content`) and metrics (`gen_ai.invoke_agent.duration`, `gen_ai.client.token.usage`, `gen_ai.invoke_agent.tool_calls`).
-      * In `agent.py` / `main.py`, initialize ADK telemetry providers for Cloud Trace, Cloud Logging, and Cloud Monitoring when deployed:
+      * In `agent.py`, initialize ADK telemetry providers for Cloud Trace, Cloud Logging, and Cloud Monitoring when deployed:
         ```python
         import os
         from google.adk.telemetry.google_cloud import get_gcp_exporters
@@ -180,103 +189,109 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
        if _agent_dir not in sys.path:
            sys.path.insert(0, _agent_dir)
        ```
-   - `agent_runtime_app.py`: Vertex AI Agent Engine entrypoint adapter:
-     ```python
-     import os
-     from dotenv import load_dotenv
-     from google.adk.artifacts import GcsArtifactService, InMemoryArtifactService
-     from vertexai.agent_engines.templates.adk import AdkApp
+   - `requirements.txt`: Dependencies needed locally and for deployment: Must include `google-adk>=2.0.0`, `google-cloud-aiplatform>=1.60.0`, `google-genai>=1.0.0`, `pydantic>=2.0.0`, `pytest>=8.0.0`, `pytest-asyncio>=0.23.0`, `python-dotenv>=1.0.0`. When any node in the workflow is an A2A agent (`agentKind: "a2a"`), `requirements.txt` MUST ALSO include `google-adk[a2a]>=2.0.0` and `a2a-sdk[http-server]>=0.3.4`.
+   - `Dockerfile`: Minimal, clean production Python 3.11-slim container definition executing Google ADK's native API server:
+     ```dockerfile
+     FROM python:3.11-slim
 
-     load_dotenv()
+     WORKDIR /app
 
-     try:
-         from agent import root_agent
-     except ImportError:
-         from agent import app as root_agent
+     ENV PYTHONUNBUFFERED=1 \
+         PORT=8080
 
-     logs_bucket_name = os.environ.get("LOGS_BUCKET_NAME")
+     COPY requirements.txt .
+     RUN pip install --no-cache-dir -r requirements.txt
 
-     # Check if root_agent is an App instance or a BaseAgent instance
-     from google.adk.apps import App
-     if isinstance(root_agent, App):
-         agent_runtime = AdkApp(
-             app=root_agent,
-             artifact_service_builder=lambda: (
-                 GcsArtifactService(bucket_name=logs_bucket_name)
-                 if logs_bucket_name
-                 else InMemoryArtifactService()
-             ),
-         )
-     else:
-         agent_runtime = AdkApp(
-             agent=root_agent,
-             artifact_service_builder=lambda: (
-                 GcsArtifactService(bucket_name=logs_bucket_name)
-                 if logs_bucket_name
-                 else InMemoryArtifactService()
-             ),
-         )
+     COPY . .
+
+     EXPOSE 8080
+
+     CMD ["adk", "api_server", "--host=0.0.0.0", "--port=8080", "."]
      ```
-   - `agents-cli-manifest.yaml`: Google ADK manifest configuring project name, `agent_directory: .`, `region: us-central1`, and `create_params: { deployment_target: "agent_runtime", is_a2a: false }` required for `agents-cli deploy`.
-   - `pyproject.toml`: Modern packaging metadata for `uv sync` and `agents-cli deploy`:
-     ```toml
-     [project]
-     name = "<project_name>"
-     version = "0.1.0"
-     description = "Vertex AI Agent Engine Service"
-     dependencies = [
-         "google-adk>=2.0.0",
-         "google-cloud-aiplatform[evaluation,agent-engines]>=1.150.0",
-         "google-genai>=1.0.0",
-         "fastapi>=0.110.0",
-         "uvicorn>=0.28.0",
-         "pydantic>=2.0.0",
-         "cloudpickle>=3.0.0",
-         "pytest>=8.0.0",
-         "pytest-asyncio>=0.23.0",
-         "python-dotenv>=1.0.0",
-     ]
-     requires-python = ">=3.11"
-
-     [build-system]
-     requires = ["hatchling"]
-     build-backend = "hatchling.build"
-
-     [tool.uv]
-     package = false
-     ```
-   - `fast_api_app.py`: Production FastAPI server mounting ADK HTTP routes (`/run_sse`, `/apps/...`), A2A endpoints (`/a2a/{app_name}`), and reasoning engine adapter routes (`/api/reasoning_engine`, `/api/stream_reasoning_engine`).
-   - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs (when defined in nodes).
-   - `tools/*.py`: Custom tools and functions passed to the agents. Group tools logically by category/source.
-   - `deploy.py`: Deployment script to register and deploy the agent to Vertex AI Agent Runtime / Agent Engine using `agentplatform.Client` / `client.agent_engines.create()` or `adk deploy agent_engine` (NOTE: `vertexai.Client` is deprecated in favor of `agentplatform.Client`).
-   - `cloudbuild.yaml`: Cloud Build pipeline configured with:
+   - `main.tf`: Complete Terraform configuration provisioning:
+     * Dedicated Service Account with least-privilege IAM bindings (`roles/aiplatform.user`, `roles/logging.logWriter`).
+     * Automated container build: `null_resource.build_container` with `local-exec` provisioner running `gcloud builds submit --config=cloudbuild-buildonly.yaml ...` when `var.build_image` is `true`.
+     * `google_vertex_ai_reasoning_engine` configuring `spec.container_spec.image_uri` (with `depends_on = [null_resource.build_container]`, `agent_framework = "google-adk"`, and `lifecycle { ignore_changes = [spec[0].container_spec[0].image_uri] }`).
+     * **CONDITIONAL Pub/Sub**: ONLY generate `google_pubsub_topic`, `google_pubsub_subscription`, and `roles/pubsub.subscriber` if the workflow contains a trigger node with `triggerType: "pubsub"`. If there are NO Pub/Sub triggers in the workflow, DO NOT generate any Pub/Sub resources in `main.tf`.
+   - `cloudbuild-buildonly.yaml`: Targeted Cloud Build configuration for container building and testing:
      * Step 1: Run pytest unit tests (`pytest test_agent.py`) in `python:3.11-slim`.
-     * Step 2: Automatically run native container deployment (`adk deploy agent_engine --project ${_PROJECT_ID} --region ${_REGION}` or `python deploy.py`) targeting Vertex AI Agent Runtime with substitutions `_PROJECT_ID` and `_REGION: 'us-central1'`.
-   - `Dockerfile`: Multi-stage distroless Python 3.11 runtime container definition mounting `fast_api_app:app`.
-   - `.gcloudignore` and `.gitignore`: Package strictly necessary agent assets, excluding virtualenvs (`.venv/`), `__pycache__`, `.pytest_cache`, `.agent` diagram files, and local credentials.
-   - `main.py`: Local CLI test runner allowing developers to test `run_agent()` and `root_agent` locally before deployment using ADK `Runner`.
-   - `test_agent.py`: Comprehensive `pytest` test suite executing all test scenarios and assertions against `root_agent`.
-   - `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios for Vertex AI Agent Evaluation. Do not add additional tests; you should only use tests defined by the user in the "Test Suite" node (attached to the root agent) in the workflow JSON.
-   - `evaluate.py`: Vertex AI Agent Evaluation script utilizing the official `vertexai.evaluation` SDK and `EvalTask`.
-   - `requirements.txt`: Dependencies needed locally and for deployment: Must include `google-adk>=2.0.0`, `google-cloud-agentplatform>=0.1.0`, `google-cloud-aiplatform[evaluation,reasoningengine]>=1.60.0`, `google-genai>=1.0.0`, `fastapi>=0.110.0`, `uvicorn>=0.28.0`, `pydantic>=2.0.0`, `cloudpickle>=3.0.0`, `pytest>=8.0.0`, `pytest-asyncio>=0.23.0`, `python-dotenv>=1.0.0`. When any node in the workflow is an A2A agent (`agentKind: "a2a"`), `requirements.txt` MUST ALSO include `google-adk[a2a]>=2.0.0` and `a2a-sdk[http-server]>=0.3.4`.
-   - `main.tf`: Terraform deployment file that will use the google_vertex_ai_reasoning_engine resource to deploy Agent to GCP Agent Engine, this should deploy to existing project, but will include everything else required for the different triggers (event, topics, service accounts, enable apis, etc.)
-   - `README.md`: Architecture overview, local execution with `main.py`, deployment with `python deploy.py` or Cloud Build, and invoking the deployed Agent Engine resource from Gemini Enterprise or Python SDK.
+     * Step 2: Build container image with Docker and push to Artifact Registry (`${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/${_AGENT_NAME}:$SHORT_SHA` and `:latest`).
+     * Called automatically by Terraform during initial `terraform apply` Day 0 setup!
+   - `cloudbuild.yaml`: CI/CD Cloud Build pipeline for ongoing automated continuous deployment:
+     * Step 1: Run pytest unit tests (`pytest test_agent.py`) in `python:3.11-slim`.
+     * Step 2: Build container image with Docker and push to Artifact Registry (`${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/${_AGENT_NAME}:$SHORT_SHA` and `:latest`).
+     * Step 3: Continuous deployment: Update the Reasoning Engine container image using `gcloud beta ai reasoning-engines update` when `_REASONING_ENGINE_ID` is provided.
+   - `test_agent.py`: Comprehensive `pytest` test suite executing all workflow test scenarios and assertions against `root_agent`.
+   - `.env.example`: Template for environment variables (`GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION=global`, etc.).
+   - `.gitignore` and `.gcloudignore`: Package strictly necessary agent assets, excluding virtualenvs (`.venv/`), `__pycache__`, `.pytest_cache`, `.agent` diagram files, and local credentials.
+   - `README.md`: Architecture overview, local execution with `adk run .` or `adk api_server`, initial Day 0 setup instructions (`terraform init && terraform apply`), and CI/CD deployment instructions.
+   - Auxiliary files as needed:
+     * `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs (when defined in nodes).
+     * `tools/*.py`: Custom tools and functions passed to the agents. Group tools logically by category/source.
+     * `*_card.json`: A2A agent card metadata JSON files (when A2A agent nodes are in the workflow).
 
 7. **Containerization & Cloud Build Configuration**:
-   - `fast_api_app.py`:
-     * Instantiate FastAPI: `app = FastAPI(title="Vertex AI Agent Engine Service")`.
-     * Expose health check at `/` and `/healthz`.
-     * Mount ADK routes including `/run_sse`, `/apps/{app}/query`, and event-driven trigger endpoints.
-     * Mount Vertex AI Reasoning Engine adapter routes (`/api/reasoning_engine`, `/api/stream_reasoning_engine`) executing queries against `root_agent`.
-     * Expose Agent-to-Agent (A2A) protocol endpoint (`/a2a/{app_name}`).
+   - `Dockerfile`:
+     * Minimal `python:3.11-slim` image.
+     * Copies `requirements.txt` and installs packages without cache.
+     * Copies application source code into `/app`.
+     * Exposes port 8080.
+     * Runs `CMD ["adk", "api_server", "--host=0.0.0.0", "--port=8080", "."]`.
+   - `cloudbuild-buildonly.yaml`:
+     * Minimal container build and verification pipeline for Day 0 bootstrapping:
+       ```yaml
+       steps:
+         - name: 'python:3.11-slim'
+           id: 'unit-tests'
+           entrypoint: 'bash'
+           args:
+             - '-c'
+             - |
+               pip install --no-cache-dir -r requirements.txt
+               pytest test_agent.py -v
+
+         - name: 'gcr.io/cloud-builders/docker'
+           id: 'docker-build-push'
+           entrypoint: 'bash'
+           args:
+             - '-c'
+             - |
+               docker build -t "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/${_AGENT_NAME}:$SHORT_SHA" .
+               docker tag "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/${_AGENT_NAME}:$SHORT_SHA" "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/${_AGENT_NAME}:latest"
+               docker push "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/${_AGENT_NAME}:$SHORT_SHA"
+               docker push "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/${_AGENT_NAME}:latest"
+
+       substitutions:
+         _PROJECT_ID: ''
+         _REGION: 'us-central1'
+         _REPO: 'agents'
+         _AGENT_NAME: ''
+
+       options:
+         logging: CLOUD_LOGGING_ONLY
+       ```
    - `cloudbuild.yaml`:
      * Step 1 (`unit-tests`): In `python:3.11-slim`, installs requirements and executes `pytest test_agent.py -v`.
-     * Step 2 (`agent-engine-deploy`): Deploys the agent runtime using `agents-cli deploy --project ${_PROJECT_ID} --region ${_REGION} --no-confirm-project` (or `python deploy.py`).
-     * Substitutions: Declare `_PROJECT_ID: ''` and `_REGION: 'us-central1'`.
-   - `Dockerfile`:
-     * Multi-stage container build starting with `python:3.11-slim` as builder to compile wheels and dependencies.
-     * Runtime stage copying installed packages and application source code, setting `ENV PORT=8080` and `EXPOSE 8080`.
-     * Entrypoint: `uvicorn fast_api_app:app --host 0.0.0.0 --port 8080`.
+     * Step 2 (`docker-build-push`): Builds and pushes container image to Artifact Registry (`${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/${_AGENT_NAME}:$SHORT_SHA` and `:latest`).
+     * Step 3 (`agent-engine-deploy`): In `gcr.io/google.com/cloudsdktool/cloud-sdk:slim`, updates the deployed reasoning engine container image when `_REASONING_ENGINE_ID` is set:
+       ```yaml
+       - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+         id: 'agent-engine-deploy'
+         entrypoint: 'bash'
+         args:
+           - '-c'
+           - |
+             if [ -n "${_REASONING_ENGINE_ID}" ]; then
+               gcloud beta ai reasoning-engines update \
+                 --project="${_PROJECT_ID}" \
+                 --region="${_REGION}" \
+                 "projects/${_PROJECT_ID}/locations/${_REGION}/reasoningEngines/${_REASONING_ENGINE_ID}" \
+                 --container-image-uri="${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/${_AGENT_NAME}:$SHORT_SHA"
+             else
+               echo "Initial deployment: Run 'terraform apply' to provision the Reasoning Engine infrastructure, or provide _REASONING_ENGINE_ID for continuous updates."
+             fi
+       ```
+     * Substitutions: Declare `_PROJECT_ID: ''`, `_REGION: 'us-central1'`, `_REPO: 'agents'`, `_AGENT_NAME: '<agent_name>'`, `_REASONING_ENGINE_ID: ''`.
    - `.gcloudignore` & `.gitignore`:
      * Exclude `.git`, `.github`, `.venv`, `venv`, `__pycache__`, `*.pyc`, `.pytest_cache`, `.agent`, `*.agent`, `.env`, and local caches.
 
@@ -284,24 +299,20 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 Every response MUST create the complete project. Emitting only 1 or 2 files is strictly prohibited.
 You MUST output EVERY single one of the following files in the returned JSON array:
 1. `agent.py`: Complete Google ADK root_agent, sub-agents, and state flow.
-2. `agent_runtime_app.py`: Vertex AI Agent Engine entrypoint adapter using AdkApp.
-3. `agents-cli-manifest.yaml`: Google ADK manifest for agents-cli deployment.
-4. `pyproject.toml`: Modern packaging metadata and dependencies.
-5. `fast_api_app.py`: Production FastAPI server with ADK and Reasoning Engine adapter endpoints.
-6. `main.py`: Local CLI test runner using ADK Runner.
-7. `test_agent.py`: Pytest test suite covering all workflow test scenarios.
-8. `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios.
-9. `evaluate.py`: Vertex AI Agent Evaluation script using vertexai.evaluation.
-10. `requirements.txt`: Complete pinned runtime dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
-11. `Dockerfile`: Multi-stage Python 3.11 container definition.
-12. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests and deploying.
-13. `main.tf`: Complete Terraform configuration deploying google_vertex_ai_reasoning_engine.
-14. `.gitignore`: Git ignore patterns for Python, venv, and cache.
-15. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
-16. `README.md`: Architecture overview, local execution, and deployment instructions.
-17. Auxiliary files as needed:
+2. `requirements.txt`: Complete pinned runtime dependencies (including google-adk[a2a] if an A2A agent is present, google-cloud-aiplatform, pydantic, pytest).
+3. `Dockerfile`: Clean production container definition using python:3.11-slim running native `adk api_server --host=0.0.0.0 --port=8080 .`.
+4. `main.tf`: Complete Terraform configuration deploying google_vertex_ai_reasoning_engine with container_spec, Service Account, IAM bindings, and null_resource build_container invoking cloudbuild-buildonly.yaml (only generate Pub/Sub resources if a pubsub trigger node is present).
+5. `cloudbuild-buildonly.yaml`: Focused Cloud Build configuration running unit tests, building the container image, and pushing to Artifact Registry for initial Day 0 Terraform setup.
+6. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building the container image, pushing to Artifact Registry, and updating the Reasoning Engine container.
+7. `.env.example`: Template for environment variables (project ID, location, etc.).
+8. `test_agent.py`: Pytest test suite covering all workflow test scenarios.
+9. `.gitignore`: Git ignore patterns for Python, venv, and cache.
+10. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
+11. `README.md`: Architecture overview, local execution via `adk run .`, and Terraform deployment instructions (`terraform init && terraform apply`).
+12. Auxiliary files as needed:
     - `pydantic_models.py` (when structured output schemas or Pydantic models are used)
     - `tools/*.py` (when custom tools are defined)
+    - `*_card.json` (when A2A agent card metadata is specified)
 
 ---
 
@@ -1196,7 +1207,7 @@ Runnable samples: https://github.com/google/A2UI/tree/main/samples/agent/adk
 
 Ambient agents process events (Pub/Sub, Eventarc, schedules) autonomously. ADK provides built-in trigger endpoints that handle payload decoding, session creation, concurrency, and retries.
 
-> **Deployment:** `trigger_sources` registers `/apps/{app}/trigger/*` on the standard FastAPI app, so it works on **all** targets. On **Cloud Run** / **GKE** the endpoints are public HTTP routes you point a Pub/Sub push subscription or Eventarc trigger at. On **Agent Runtime** the same routes are reachable through Agent Engine's `/api` passthrough (`https://{location}-aiplatform.googleapis.com/reasoningEngines/v1/{resource}/api/apps/{app}/trigger/pubsub`). The scaffolded `fast_api_app.py` does not pass `trigger_sources` by default — add it to enable these endpoints.
+> **Deployment:** `trigger_sources` registers `/apps/{app}/trigger/*` on the standard FastAPI app, so it works on **all** targets. On **Cloud Run** / **GKE** the endpoints are public HTTP routes you point a Pub/Sub push subscription or Eventarc trigger at. On **Agent Runtime** the same routes are reachable through Agent Engine's `/api` passthrough (`https://{location}-aiplatform.googleapis.com/reasoningEngines/v1/{resource}/api/apps/{app}/trigger/pubsub`). When deployed as a container, `adk api_server` enables trigger endpoints via `--trigger_sources "pubsub,eventarc"`.
 
 ```python
 from google.adk.cli.fast_api import get_fast_api_app
@@ -1883,88 +1894,154 @@ my_workflow/
 
 ---
 
-# Agent Runtime Infrastructure
-
-> **Assumes /google-agents-cli-scaffold scaffolding.** If your project isn't scaffolded yet, see /google-agents-cli-scaffold first.
+# Agent Infrastructure & Terraform Deployment
 
 ## Deployment Architecture
 
-Agent Runtime uses **container-based deployment**: `agents-cli deploy` packages your project and Agent Engine builds a container image from your project's `Dockerfile` (required at the project root; scaffolded projects ship one).
+Agent Engine deployments follow a **Terraform-first, container-based deployment** model:
+1. The project includes a minimal, standard `Dockerfile` based on `python:3.11-slim` that copies dependencies, installs `requirements.txt`, and runs native `adk api_server`:
+   ```dockerfile
+   FROM python:3.11-slim
+   WORKDIR /app
+   ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PORT=8080
+   COPY requirements.txt .
+   RUN pip install --no-cache-dir -r requirements.txt
+   COPY . .
+   EXPOSE 8080
+   CMD ["adk", "api_server", "--host=0.0.0.0", "--port=8080", "."]
+   ```
+2. Cloud Build builds the Docker image and pushes it to Google Cloud Artifact Registry (`{region}-docker.pkg.dev/{project_id}/agents/{agent_name}:{tag}`).
+3. Terraform provisions all required cloud infrastructure via `google_vertex_ai_reasoning_engine` with `spec.container_spec.image_uri`, along with dedicated Service Accounts, IAM role bindings (`roles/aiplatform.user`, `roles/logging.logWriter`), and trigger resources (such as Pub/Sub topics and subscriptions for event ingestion).
 
-File selection honors the project-root `.gcloudignore`, else the project-root `.gitignore` (nested `.gitignore` files are not consulted).
+## Terraform Resource (`main.tf`)
 
-**App object:** `fast_api_app.py` builds a single FastAPI `app` via
-`get_fast_api_app(web=True, lifespan=...)`. The lifespan builds one `Runner`
-from the shared session/artifact services (`app_utils/services.py`) and mounts
-A2A routes (`attach_a2a_routes`); `attach_reasoning_engine_routes(app)` adds the
-reasoning_engine contract routes. There is no top-level `AgentEngineApp`/`AdkApp`
-deployment entrypoint anymore — the container serves HTTP directly (the
-reasoning_engine adapter still constructs an `AdkApp` internally to dispatch the
-native `:streamQuery`/`:query` contract).
+```hcl
+terraform {
+  required_version = ">= 1.5.0"
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 5.0"
+    }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
+  }
+}
 
-The container serves the ADK HTTP surface (`/run_sse`, `/apps/...`), the A2A
-routes under `/a2a/{app_name}` (JSON-RPC + agent card), and the
-reasoning_engine adapter routes `/api/reasoning_engine` +
-`/api/stream_reasoning_engine` (the native `:streamQuery`/`:query` contract used
-by the Console Playground and Gemini Enterprise ADK registration). It deploys as
-the `google-adk` agent framework (see `service.tf`).
+variable "project_id" {
+  type        = string
+  description = "Google Cloud Project ID"
+}
 
-### The `/api` HTTP passthrough
+variable "region" {
+  type        = string
+  default     = "us-central1"
+  description = "Google Cloud Region for regional resources"
+}
 
-Agent Engine exposes the container's HTTP routes externally under an
-`/api` prefix, so deployed agents are reachable without a public Cloud Run URL:
+variable "agent_name" {
+  type        = string
+  default     = "animal-agent"
+  description = "Deployment name for the agent"
+}
 
-```
-https://{location}-aiplatform.googleapis.com/reasoningEngines/v1/{resource}/api/{container_path}
-```
+variable "repo_name" {
+  type        = string
+  default     = "agents"
+  description = "Artifact Registry Docker repository name"
+}
 
-where `{resource}` is the full `projects/.../reasoningEngines/...` name. For
-example, the A2A agent card (container route `/a2a/{agent_directory}/.well-known/agent-card.json`)
-is reachable at:
+variable "image_uri" {
+  type        = string
+  default     = ""
+  description = "Container image URI in Artifact Registry (defaults to latest tag in Artifact Registry)"
+}
 
-```
-https://{location}-aiplatform.googleapis.com/reasoningEngines/v1/{resource}/api/a2a/{agent_directory}/.well-known/agent-card.json
-```
+variable "build_image" {
+  type        = bool
+  default     = true
+  description = "Trigger Cloud Build to build and push container image before creating Reasoning Engine (set false in CI/CD)"
+}
 
-`{agent_directory}` is the app name (the project's `agent_directory`, recorded in
-`deployment_metadata.json`). This is the exact URL `deploy` advertises on
-success and `run` constructs for `--mode a2a` against an Agent Runtime URL — both
-authenticate with your Google credentials. On Agent Runtime, `publish` registers
-with **ADK** (`:streamQuery` against the reasoning-engine resource name), not
-this card URL.
+provider "google" {
+  project = var.project_id
+  region  = var.region
+}
 
-## Deploying
+# --- Service Account & IAM ---
+resource "google_service_account" "agent_sa" {
+  account_id   = "${var.agent_name}-sa"
+  display_name = "Service Account for ${var.agent_name}"
+}
 
-Deploy with `agents-cli deploy` (run `agents-cli deploy --help` for the full flag reference). CI/CD pipelines invoke the same command.
+resource "google_project_iam_member" "vertex_user" {
+  project = var.project_id
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.agent_sa.email}"
+}
 
-**Deployment flow:**
-1. `agents-cli deploy` packages the project files (honoring `.gcloudignore`/`.gitignore`)
-2. Agent Engine builds the container image and creates/updates the Agent Runtime instance
-3. Writes `deployment_metadata.json` with the engine resource ID
+resource "google_project_iam_member" "log_writer" {
+  project = var.project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.agent_sa.email}"
+}
 
-## Terraform Resource
+# --- Automated Container Build via Cloud Build ---
+resource "null_resource" "build_container" {
+  count = var.build_image ? 1 : 0
 
-Agent Runtime uses `google_vertex_ai_reasoning_engine` in `deployment/terraform/single-project/service.tf` (and the `cicd/service.tf` variant for CI/CD-managed deployments). Check those files for current scaling, concurrency, and resource limit settings.
+  triggers = {
+    dir_sha1 = sha1(join("", [for f in fileset(path.module, "{*.py,Dockerfile,requirements.txt,cloudbuild-buildonly.yaml}") : filesha1(f)]))
+  }
 
-Key difference from Cloud Run: the `lifecycle.ignore_changes` (covering `container_spec`, `source_code_spec`, and `deployment_spec`) is critical — the image and source are updated by `agents-cli deploy` / CI/CD, not Terraform.
+  provisioner "local-exec" {
+    command = "gcloud builds submit --config=cloudbuild-buildonly.yaml --substitutions=_PROJECT_ID=${var.project_id},_REGION=${var.region},_REPO=${var.repo_name},_AGENT_NAME=${var.agent_name} ."
+  }
+}
 
-## deployment_metadata.json
+# --- Pub/Sub Trigger Scaffolding (CONDITIONAL: Generate ONLY if a Pub/Sub trigger node is present in the workflow) ---
+# When triggerType == "pubsub":
+# resource "google_pubsub_topic" "agent_trigger_topic" {
+#   name = "${var.agent_name}-triggers"
+# }
+# resource "google_pubsub_subscription" "agent_trigger_sub" {
+#   name                 = "${var.agent_name}-sub"
+#   topic                = google_pubsub_topic.agent_trigger_topic.id
+#   ack_deadline_seconds = 60
+# }
+# resource "google_project_iam_member" "pubsub_subscriber" {
+#   project = var.project_id
+#   role    = "roles/pubsub.subscriber"
+#   member  = "serviceAccount:${google_service_account.agent_sa.email}"
+# }
 
-Written by `agents-cli deploy` after a successful deployment:
+# --- Vertex AI Reasoning Engine Deployment ---
+resource "google_vertex_ai_reasoning_engine" "agent" {
+  depends_on   = [null_resource.build_container]
+  display_name = var.agent_name
+  description  = "Vertex AI Reasoning Engine for ${var.agent_name} managed by Terraform."
+  project      = var.project_id
+  location     = var.region
 
-```json
-{
-  "remote_agent_runtime_id": "projects/PROJECT/locations/LOCATION/reasoningEngines/ENGINE_ID",
-  "deployment_target": "agent_runtime",
-  "is_a2a": true,
-  "agent_directory": "app",
-  "deployment_timestamp": "2025-02-25T10:30:00.000+00:00"
+  spec {
+    agent_framework = "google-adk"
+    container_spec {
+      image_uri = var.image_uri != "" ? var.image_uri : "${var.region}-docker.pkg.dev/${var.project_id}/${var.repo_name}/${var.agent_name}:latest"
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].container_spec[0].image_uri,
+    ]
+  }
 }
 ```
 
-Used by: subsequent deploys (update vs create), `agents-cli run --url`, and `agents-cli publish` (reads the runtime ID for the default ADK registration on Agent Runtime, and constructs the A2A card URL only when A2A registration is explicitly chosen). Cloud Run does not use this file.
-
-If deployment times out but the engine was created, manually populate this file with the engine resource ID.
+## State & Metadata Persistence
+Deployment resource state (`deployedResourceId`, `serviceUrl`, `consoleUrl`, `deployedAt`) is stored directly in the `.agent` flow document inside the `"deployment"` block. Generated source code directories remain clean, isolated, and free of redundant sidecar JSON metadata files.
 
 ## CI/CD Differences from Cloud Run
 
@@ -2002,7 +2079,7 @@ async for event in agent.async_stream_query(message="Hello!", user_id="test"):
 
 ## Session & Artifact Services
 
-Agent Runtime always uses in-memory sessions at scaffold time; at runtime `app_utils/services.py` upgrades to `VertexAiSessionService` when Agent Engine injects `GOOGLE_CLOUD_AGENT_ENGINE_ID`. `get_fast_api_app` receives the `shared://session` URI, resolved by `services.py`.
+Agent Runtime always uses in-memory sessions at scaffold time; at runtime `app_utils/services.py` upgrades to `VertexAiSessionService` when Agent Engine injects `GOOGLE_CLOUD_AGENT_ENGINE_ID`.
 
 Artifacts use `GcsArtifactService` when `LOGS_BUCKET_NAME` is set, otherwise `InMemoryArtifactService`.
 

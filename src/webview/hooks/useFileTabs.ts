@@ -245,7 +245,7 @@ export function useFileTabs(
     const defaultTabConfig: GenerationConfig = {
       framework: (defaultFramework as any) || 'google_adk',
       language: (defaultLanguage as any) || 'python',
-      outputFolder: `./src/agents/agent_${num}/`,
+      outputFolder: `./agent_${num}/`,
       includeTests: true,
       includeDocker: false,
       useStreaming: useStreamingByDefault ?? true,
@@ -331,7 +331,7 @@ export function useFileTabs(
             config: {
               framework: 'google_adk',
               language: 'python',
-              outputFolder: './src/agents/',
+              outputFolder: './workflow/',
               includeTests: true,
               includeDocker: false,
               useStreaming: true,

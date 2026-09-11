@@ -12,6 +12,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { StructuredOutputSchema, SchemaField } from '../../src/shared/types';
+import { buildPydanticCode } from '../../src/webview/components/inspector/StructuredOutputBuilder';
 
 describe('StructuredOutputBuilder Schema Logic', () => {
   it('should format a basic structured schema with string, number, and array properties', () => {
@@ -82,5 +83,42 @@ describe('StructuredOutputBuilder Schema Logic', () => {
     assert.equal(moveUp[0].name, 'second');
     assert.equal(moveUp[1].name, 'first');
     assert.equal(moveUp[2].name, 'third');
+  });
+
+  it('should generate valid Pydantic v2 BaseModel code with typed fields', () => {
+    const schema: any = {
+      enabled: true,
+      name: 'AnalysisResult',
+      fields: [
+        { id: '1', name: 'headline', type: 'string', required: true, description: 'Summary headline' },
+        { id: '2', name: 'confidence', type: 'number', required: true },
+        { id: '3', name: 'is_verified', type: 'boolean', required: true },
+        { id: '4', name: 'tags', type: 'array', arrayItemType: 'string', required: false },
+        { id: '5', name: 'status', type: 'enum', enumValues: ['draft', 'published'], required: true },
+        { id: '6', name: 'extra_meta', type: 'object', required: false, description: 'Metadata dict' },
+      ],
+    };
+
+    const pythonCode = buildPydanticCode(schema);
+    assert.match(pythonCode, /from pydantic import BaseModel, Field/);
+    assert.match(pythonCode, /from typing import List, Optional, Literal/);
+    assert.match(pythonCode, /class AnalysisResult\(BaseModel\):/);
+    assert.match(pythonCode, /headline: str = Field\(description="Summary headline"\)/);
+    assert.match(pythonCode, /confidence: float/);
+    assert.match(pythonCode, /is_verified: bool/);
+    assert.match(pythonCode, /tags: Optional\[List\[str\]\] = Field\(default=None\)/);
+    assert.match(pythonCode, /status: Literal\["draft", "published"\]/);
+    assert.match(pythonCode, /extra_meta: Optional\[dict\] = Field\(default=None, description="Metadata dict"\)/);
+  });
+
+  it('should generate pass for empty schema fields', () => {
+    const emptySchema: any = {
+      enabled: true,
+      name: 'EmptySchema',
+      fields: [],
+    };
+    const code = buildPydanticCode(emptySchema);
+    assert.match(code, /class EmptySchema\(BaseModel\):/);
+    assert.match(code, /pass/);
   });
 });

@@ -22,6 +22,8 @@
  * 9. Model Selection & Global Region Mandate: Gemini 1.x and 2.x models (including gemini-2.5-flash) are deprecated.
  *    gemini-3.7-flash is the primary model for Vertex AI, but requires the global region (location='global' or
  *    GOOGLE_CLOUD_LOCATION='global'). Regional endpoints return 404 NOT_FOUND for gemini-3.7-flash publisher models.
+ * 10. Pre-Generation Cleanup: Immediately cleans prior generated source files and stale virtual environments from
+ *     the target output directory when GENERATE_CODE is received, before initiating LLM synthesis, preserving .agent, .git, and IDE configurations.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -324,9 +326,12 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       const config = vscode.workspace.getConfiguration('agentFlow');
       const apiKey = config.get<string>('geminiApiKey') || process.env.GEMINI_API_KEY || '';
 
-      // 1. Resolve target directory
+      // 1. Resolve target directory and immediately clean existing files BEFORE generation
       const targetDirPath = this.resolveTargetDirectory(document, payload.outputFolder);
       const targetDir = vscode.Uri.file(targetDirPath);
+
+      // Clean old generated source files immediately (preserving active .agent document, .git, and config files)
+      await this.cleanTargetDirectory(targetDirPath, document);
 
       // 2. Synthesize new codebase with Gemini LLM
       const deploymentTarget =
@@ -345,9 +350,6 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
 
       if (result.success && result.files.length > 0) {
         try {
-          // Clean old generated source files ONLY when generation succeeds and passes validation
-          await this.cleanTargetDirectory(targetDirPath, document);
-
           // Write all generated files to disk
           for (const file of result.files) {
             const fileUri = vscode.Uri.joinPath(targetDir, file.path);
@@ -610,6 +612,8 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         port: payload.port,
         streaming: payload.streaming ?? true,
         history: payload.history,
+        executionTarget: payload.executionTarget || 'local',
+        deployedResourceId: payload.deployedResourceId,
         bridge,
       });
     });
@@ -870,7 +874,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       deployment: {
         target: 'agent_engine',
         deploymentTarget: 'agent_engine',
-        outputFolder: `./src/agents/${sanitizeFolderBaseName(workflowName || 'workflow')}/`,
+        outputFolder: `./${sanitizeFolderBaseName(workflowName || 'workflow')}/`,
         framework: 'google-adk',
         language: 'python',
       },
@@ -950,7 +954,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       deployment: {
         target: 'agent_engine',
         deploymentTarget: 'agent_engine',
-        outputFolder: `./src/agents/${sanitizeFolderBaseName(workflowName || 'workflow')}/`,
+        outputFolder: `./${sanitizeFolderBaseName(workflowName || 'workflow')}/`,
         framework: 'google-adk',
         language: 'python',
       },
@@ -1141,8 +1145,10 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       return path.join(docDir, sanitized);
     }
 
-    // If folder is the generic root agents collection, append sanitized agent subfolder
+    // If folder is a generic root agents collection or relative root, append sanitized agent subfolder
     if (
+      folder === './' ||
+      folder === '.' ||
       folder === './src/agents/' ||
       folder === './src/agents' ||
       folder === 'src/agents/' ||
@@ -1152,7 +1158,14 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       folder === 'agents/' ||
       folder === 'agents'
     ) {
-      folder = path.join(folder, sanitized);
+      folder = path.join('./', sanitized);
+    }
+
+    // Strip legacy src/agents/ prefix if present
+    if (folder.startsWith('./src/agents/')) {
+      folder = `./${folder.slice('./src/agents/'.length)}`;
+    } else if (folder.startsWith('src/agents/')) {
+      folder = `./${folder.slice('src/agents/'.length)}`;
     }
 
     if (path.isAbsolute(folder)) {

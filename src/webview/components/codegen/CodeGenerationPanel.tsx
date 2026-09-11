@@ -193,7 +193,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   const folderValidation = validateTargetFolder(config.outputFolder || '');
 
   const sampleFolders = [
-    './src/agents/',
+    './',
     './backend/workflows/',
     './workspace/agent_team/',
     './lib/genai_orchestration/',
@@ -544,7 +544,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                     type="text"
                     value={config.outputFolder}
                     onChange={(e) => onChangeConfig({ outputFolder: e.target.value })}
-                    placeholder="./src/agents/"
+                    placeholder="./"
                     className={`flex-1 px-3 py-1.5 bg-[#0d1117] border rounded text-xs font-mono text-gray-300 focus:outline-none ${
                       !folderValidation.isValid
                         ? 'border-amber-500/80 focus:border-amber-500'
