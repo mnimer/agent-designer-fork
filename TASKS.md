@@ -28,11 +28,11 @@
 | **TASK-113** | v1.0.2 | Patterns | Sequential Pipeline & Parallel Fan-Out Patterns | **Complete** | TASK-112 |
 | **TASK-114** | v1.0.2 | Codegen | Multi-Agent DAG Python ADK Code Generation & Tracing | **Complete** | TASK-113 |
 | **TASK-115** | v1.0.3 | Memory | In-Memory & Cloud Firestore Checkpointer Configuration | **Not Started** | TASK-103, TASK-111 |
-| **TASK-116** | v1.0.4 | A2A | Agent-to-Agent (A2A) Protocol Node & JSON-RPC Client | **In Progress** | TASK-112, TASK-115 |
+| **TASK-116** | v1.0.4 | A2A | Agent-to-Agent (A2A) Protocol Node & JSON-RPC Client | **Complete** | TASK-112, TASK-115 |
 | **TASK-117** | v1.0.5 | Router | Router Node & Dynamic Branching Logic | **Not Started** | TASK-112 |
 | **TASK-118** | v1.0.6 | Tools | Custom REST API Tool Builder & Python Code Sandbox | **Not Started** | TASK-104 |
 | **TASK-119** | v1.0.7 | Schema | Structured Output Schema Builder & Pydantic Validation | **Complete** | TASK-103, TASK-106 |
-| **TASK-120** | v1.0.8 | MCP | Model Context Protocol (MCP) Client & Handshake Test | **In Progress** | TASK-104, TASK-107 |
+| **TASK-120** | v1.0.8 | MCP | Model Context Protocol (MCP) Client & Handshake Test | **Complete** | TASK-104, TASK-107 |
 | **TASK-121** | v1.0.9 | Triggers & IAM | Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise IAM OIDC Auth | **Not Started** | TASK-105, TASK-111, TASK-116 |
 | **TASK-122** | v1.1.0 | Framework | LangGraph Framework Support (Python StateGraph Target) | **Not Started** | TASK-106, TASK-114 |
 | **TASK-123** | v1.1.1 | Runtime | TypeScript Runtime Support (@google/genai SDK & Vitest) | **Not Started** | TASK-106, TASK-122 |
@@ -42,7 +42,8 @@
 | **TASK-127** | v1.0.0 | Release & CI | Automated VSIX Packaging & Tag-Triggered GitHub Actions Release Workflow | **Done** | TASK-100, TASK-109 |
 | **TASK-128** | v1.0.1 | Blueprints | Visual Samples & Blueprints Gallery (Samples Tab & Palette) | **Not Started** | TASK-103, TASK-108 |
 | **TASK-129** | v1.0.6 | Tools | ADK Built-in Tools Registry & Cross-Harness Tool Adapter Architecture | **Done** | TASK-104, TASK-118 |
-| **TASK-130** | v1.0.8 | MCP / Tools | Google Cloud Remote MCP Servers Registry in Tools Tab | **Not Started** | TASK-120, TASK-129 |
+| **TASK-130** | v1.0.8 | MCP / Tools | Google Cloud Remote MCP Servers Registry in Tools Tab | **In Progress** | TASK-120, TASK-129 |
+| **TASK-131** | v1.1.3 | i18n | Extension Host & Webview Internationalization (i18n / l10n) | **Not Started** | TASK-100, TASK-102 |
 
 ---
 
@@ -880,4 +881,62 @@
   ```
 * **Verification**:
   - Unit tests verify all cataloged Google Cloud MCP servers are valid, render in PaletteCard, can be attached to Agent nodes, serialize cleanly, and emit valid authenticated Python client code.
+
+---
+
+### [TASK-131] Extension Host & Webview Internationalization (i18n / l10n)
+* **Release**: `v1.1.3`
+* **Target Package/Files**:
+  - `package.json` (root)
+  - `package.nls.json` (default English strings)
+  - `package.nls.<lang>.json` (Spanish, Japanese, German, French, Simplified Chinese)
+  - `src/extension/i18n.ts`
+  - `src/shared/rpcProtocol.ts`
+  - `src/extension/WebviewBridge.ts`
+  - `src/webview/i18n/` (Locale provider, translation dictionary, `useTranslation` hook)
+  - `src/webview/components/` (Header, PaletteCard, Inspector drawers, Test Runner, Modals)
+  - `tests/extension/i18n.test.ts`
+  - `tests/webview/i18n.test.ts`
+* **Context**:
+  Internationalize the entire Visual Agent Designer plugin across both the VS Code Extension Host and the Webview SPA to support global developers in their native languages.
+  
+  1. **VS Code Extension Host Localization (`vscode.l10n`)**:
+     - Extract all user-facing strings in `package.json` (commands, configuration titles, view titles, menu items) into `%...%` replacement tokens backed by `package.nls.json`.
+     - Provide localized bundles for:
+       * English (`en`) - Default / Fallback
+       * Spanish (`es`)
+       * Japanese (`ja`)
+       * German (`de`)
+       * French (`fr`)
+       * Simplified Chinese (`zh-cn`)
+     - Use the official `vscode.l10n.t()` API for all runtime extension host notifications, error messages, and dialog prompts.
+  2. **Webview UI Localization Engine**:
+     - Implement a lightweight, type-safe webview translation engine (`useTranslation` hook / `LocaleProvider`) with zero heavy runtime overhead.
+     - Automatically synchronize the active locale from VS Code's `vscode.env.language` sent across `WebviewBridge` during initialization (`LOAD_DOCUMENT` / `SETTINGS_SYNC` / `LOCALE_CHANGED`).
+     - Support explicit language overrides in the extension settings (`agentDesigner.languagePreference`: `auto`, `en`, `es`, `ja`, `de`, `fr`, `zh-cn`).
+  3. **UI String Extraction & Coverage**:
+     - Systematically replace hardcoded user-facing strings across:
+       * **Header Bar**: Project name, Undo/Redo, Code Gen, Test Runner, Export, Deploy, Settings.
+       * **Palette Drawer**: Tabs (Agents, Tools, Triggers, Samples), category headers, item descriptions.
+       * **Inspector Drawers**: Agent configuration, Tool parameters, Trigger settings, Schema Builder, Memory, IaC.
+       * **Canvas & Context Menus**: Node action buttons, delete, duplicate, align, connection helper tooltips.
+       * **Test Runner & Chat Panels**: Test scenarios, assertion results, latency, chat input placeholder, execution logs.
+       * **Modals & Dialogs**: Discard changes, file overwrite confirmation, reset canvas.
+  4. **Fallback & Robustness**:
+     - Enforce strict graceful fallback to English (`en`) whenever a translation key is missing in a target language.
+     - Include parameter interpolation for dynamic strings (e.g., `t('agent.deleted', { name: agent.name })`).
+* **Sub-Agent Prompt**:
+  ```
+  Implement comprehensive internationalization (i18n / l10n) for the Visual Agent Designer extension:
+  1. Localize package.json contributions using package.nls.json and create translation files for es, ja, de, fr, zh-cn.
+  2. Implement extension-host runtime string localization using vscode.l10n.
+  3. Build a React i18n provider and useTranslation hook in src/webview/i18n/ supporting parameter interpolation and en fallback.
+  4. Transmit vscode.env.language via WebviewBridge on startup and when display language changes.
+  5. Replace hardcoded UI strings in canvas, palette, inspector, header, and test runner with translation keys.
+  6. Add unit tests for both extension and webview i18n ensuring complete key coverage and fallback resilience.
+  ```
+* **Verification**:
+  - `npm test` runs with 100% coverage on i18n utilities and translation key resolution.
+  - Switching VS Code display language or setting `agentDesigner.languagePreference` dynamically updates all labels, menus, drawer fields, and status messages without restarting.
+
 
