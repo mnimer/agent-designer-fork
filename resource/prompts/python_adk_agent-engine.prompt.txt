@@ -301,7 +301,7 @@ You MUST output EVERY single one of the following files in the returned JSON arr
 1. `agent.py`: Complete Google ADK root_agent, sub-agents, and state flow.
 2. `requirements.txt`: Complete pinned runtime dependencies (including google-adk[a2a] if an A2A agent is present, google-cloud-aiplatform, pydantic, pytest).
 3. `Dockerfile`: Clean production container definition using python:3.11-slim running native `adk api_server --host=0.0.0.0 --port=8080 .`.
-4. `main.tf`: Complete Terraform configuration deploying google_vertex_ai_reasoning_engine with container_spec, Service Account, IAM bindings, and null_resource build_container invoking cloudbuild-buildonly.yaml (only generate Pub/Sub resources if a pubsub trigger node is present).
+4. `main.tf`: Complete Terraform configuration deploying google_vertex_ai_reasoning_engine with container_spec, Service Account, IAM bindings, and null_resource build_container invoking cloudbuild-buildonly.yaml (including google_secret_manager_secret, secret version, and secretAccessor IAM member when tools require OAuth / Bearer secret tokens; only generate Pub/Sub resources if a pubsub trigger node is present).
 5. `cloudbuild-buildonly.yaml`: Focused Cloud Build configuration running unit tests, building the container image, and pushing to Artifact Registry for initial Day 0 Terraform setup.
 6. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building the container image, pushing to Artifact Registry, and updating the Reasoning Engine container.
 7. `.env.example`: Template for environment variables (project ID, location, etc.).

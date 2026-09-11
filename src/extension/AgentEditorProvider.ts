@@ -43,6 +43,7 @@ import { GeminiCodeGenEngine } from './GeminiCodeGenEngine';
 import { AgentRunnerManager } from './AgentRunnerManager';
 import { AgentEngineDeployer } from './AgentEngineDeployer';
 import { McpSubprocessManager } from './McpSubprocessManager';
+import { McpOAuthManager } from './McpOAuthManager';
 
 export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'agentFlow.editor';
@@ -52,6 +53,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   private readonly runnerManager: AgentRunnerManager;
   private readonly agentEngineDeployer: AgentEngineDeployer;
   private readonly mcpManager: McpSubprocessManager;
+  private readonly mcpOAuthManager: McpOAuthManager;
   private readonly outputChannel?: vscode.OutputChannel;
   private readonly messageHandlers: Map<
     string,
@@ -71,6 +73,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     this.agentEngineDeployer = new AgentEngineDeployer();
     this.runnerManager = new AgentRunnerManager(context.extensionPath, undefined, this.agentEngineDeployer);
     this.mcpManager = new McpSubprocessManager();
+    this.mcpOAuthManager = new McpOAuthManager(context);
   }
 
   /**
@@ -582,6 +585,9 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
             serverInfo: result.serverInfo,
             latencyMs: result.latencyMs,
             error: result.error,
+            requiresAuth: result.requiresAuth,
+            authType: result.authType,
+            authUrl: result.authUrl,
           },
         });
       } catch (err: any) {
@@ -590,6 +596,96 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           payload: {
             success: false,
             tools: [],
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('START_MCP_OAUTH_FLOW', async (payload: any) => {
+      try {
+        const workspaceDir = this.resolveTargetDirectory(document, payload?.targetDirectory);
+        this.outputChannel?.appendLine(
+          `[AgentEditorProvider] Starting browser OAuth flow for ${payload?.secretName || 'MCP'} (authUrl: ${payload?.authUrl})`
+        );
+        const result = await this.mcpOAuthManager.startOAuthFlow({
+          authUrl: payload?.authUrl,
+          tokenUrl: payload?.tokenUrl,
+          clientId: payload?.clientId,
+          clientSecret: payload?.clientSecret,
+          scopes: payload?.scopes,
+          secretName: payload?.secretName,
+          envVar: payload?.envVar,
+          workspaceDir,
+          timeoutMs: payload?.timeoutMs,
+        });
+        await bridge.postMessage({
+          type: 'MCP_OAUTH_COMPLETED',
+          payload: result,
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'MCP_OAUTH_COMPLETED',
+          payload: {
+            success: false,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('SAVE_MCP_SECRET', async (payload: any) => {
+      try {
+        const workspaceDir = this.resolveTargetDirectory(document, payload?.targetDirectory);
+        if (!payload?.secretName || !payload?.token) {
+          throw new Error('Secret name and token are required');
+        }
+        const envVar = payload.envVar || payload.secretName.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+        await this.mcpOAuthManager.saveSecret(
+          payload.secretName,
+          envVar,
+          payload.token,
+          workspaceDir
+        );
+        await bridge.postMessage({
+          type: 'MCP_SECRET_SAVED',
+          payload: {
+            success: true,
+            secretName: payload.secretName,
+            envVar,
+            tokenPreview: this.mcpOAuthManager.getRedactedPreview(payload.token),
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'MCP_SECRET_SAVED',
+          payload: {
+            success: false,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('GET_MCP_SECRET', async (payload: any) => {
+      try {
+        const workspaceDir = this.resolveTargetDirectory(document, payload?.targetDirectory);
+        const token = await this.mcpOAuthManager.getSecret(payload?.secretName, payload?.envVar, workspaceDir);
+        await bridge.postMessage({
+          type: 'MCP_SECRET_RETRIEVED',
+          payload: {
+            success: true,
+            hasToken: !!token,
+            tokenPreview: token ? this.mcpOAuthManager.getRedactedPreview(token) : undefined,
+            bearerToken: token,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'MCP_SECRET_RETRIEVED',
+          payload: {
+            success: false,
+            hasToken: false,
             error: err?.message || String(err),
           },
         });

@@ -12,7 +12,33 @@ export type FrameworkTarget = 'google-adk' | 'langgraph';
 export type LanguageTarget = 'python' | 'typescript';
 export type MemoryType = 'none' | 'buffer' | 'firestore' | 'redis' | 'postgres' | 'sqlite' | 'vector_rag' | 'langgraph_in_memory' | string;
 
-export type ToolCategory = 'grounding' | 'enterprise_search' | 'system' | 'custom' | 'mcp' | 'api' | 'db' | 'code' | 'rag' | 'builtin';
+export type ToolCategory = 'grounding' | 'enterprise_search' | 'system' | 'custom' | 'mcp' | 'api' | 'db' | 'code' | 'rag' | 'builtin' | 'google_cloud_mcp';
+
+export type GoogleCloudMcpDomain =
+  | 'databases_storage'
+  | 'compute_containers'
+  | 'ai_search_agent'
+  | 'analytics_etl_governance'
+  | 'management_observability_security'
+  | 'developer_workspace';
+
+export type GoogleCloudLaunchStage = 'GA' | 'Preview' | 'Beta';
+
+export interface GoogleCloudMcpServerDefinition {
+  id: string;
+  name: string;
+  description: string;
+  domain: GoogleCloudMcpDomain;
+  launchStage: GoogleCloudLaunchStage;
+  defaultEndpoint: string;
+  regionalEndpointPattern?: string;
+  supportedRegions?: string[];
+  toolsets?: string[];
+  docUrl?: string;
+  icon?: string;
+  defaultScopes?: string[];
+  isMultiEndpoint?: boolean;
+}
 
 export type AdkBuiltinToolType = 
   | 'google_search' 
@@ -49,11 +75,24 @@ export interface AgentAsToolConfig {
 
 export type McpTransportType = 'stdio' | 'sse' | 'http';
 
-export type McpAuthProviderType = 'none' | 'google_credentials';
+export type McpAuthProviderType = 'none' | 'google_credentials' | 'bearer_token';
 
 export interface McpOAuthConfig {
   scopes?: string[];
   projectId?: string;
+}
+
+export interface McpSecretConfig {
+  secretName?: string;
+  envVar?: string;
+  authUrl?: string;
+  tokenUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scopes?: string[];
+  hasToken?: boolean;
+  tokenPreview?: string;
+  bearerToken?: string;
 }
 
 export interface McpToolConfig {
@@ -70,7 +109,11 @@ export interface McpToolConfig {
   timeoutSeconds?: number;
   authProviderType?: McpAuthProviderType;
   oauthConfig?: McpOAuthConfig;
+  secretConfig?: McpSecretConfig;
   discoveredTools?: ToolDefinition[];
+  region?: string;
+  selectedToolset?: string;
+  launchStage?: GoogleCloudLaunchStage;
 }
 
 export interface ToolDefinition {

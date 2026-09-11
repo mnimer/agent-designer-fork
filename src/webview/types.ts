@@ -96,11 +96,24 @@ export interface TriggerData extends Record<string, unknown> {
 
 export type McpTransportType = 'stdio' | 'sse' | 'http';
 
-export type McpAuthProviderType = 'none' | 'google_credentials';
+export type McpAuthProviderType = 'none' | 'google_credentials' | 'bearer_token';
 
 export interface McpOAuthConfig {
   scopes?: string[];
   projectId?: string;
+}
+
+export interface McpSecretConfig {
+  secretName?: string;
+  envVar?: string;
+  authUrl?: string;
+  tokenUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scopes?: string[];
+  hasToken?: boolean;
+  tokenPreview?: string;
+  bearerToken?: string;
 }
 
 export interface McpToolConfig {
@@ -117,7 +130,37 @@ export interface McpToolConfig {
   timeoutSeconds?: number;
   authProviderType?: McpAuthProviderType;
   oauthConfig?: McpOAuthConfig;
+  secretConfig?: McpSecretConfig;
   discoveredTools?: ToolDefinition[];
+  region?: string;
+  selectedToolset?: string;
+  launchStage?: GoogleCloudLaunchStage;
+}
+
+export type GoogleCloudMcpDomain =
+  | 'databases_storage'
+  | 'compute_containers'
+  | 'ai_search_agent'
+  | 'analytics_etl_governance'
+  | 'management_observability_security'
+  | 'developer_workspace';
+
+export type GoogleCloudLaunchStage = 'GA' | 'Preview' | 'Beta';
+
+export interface GoogleCloudMcpServerDefinition {
+  id: string;
+  name: string;
+  description: string;
+  domain: GoogleCloudMcpDomain;
+  launchStage: GoogleCloudLaunchStage;
+  defaultEndpoint: string;
+  regionalEndpointPattern?: string;
+  supportedRegions?: string[];
+  toolsets?: string[];
+  docUrl?: string;
+  icon?: string;
+  defaultScopes?: string[];
+  isMultiEndpoint?: boolean;
 }
 
 export type ToolCategory = 
@@ -130,7 +173,8 @@ export type ToolCategory =
   | 'db' 
   | 'code' 
   | 'rag' 
-  | 'builtin';
+  | 'builtin'
+  | 'google_cloud_mcp';
 
 export type AdkBuiltinToolType = 
   | 'google_search' 

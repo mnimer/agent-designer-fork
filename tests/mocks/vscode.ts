@@ -50,7 +50,12 @@ export function resetAllMocks() {
   workspace.fs.delete.calls = [];
   commands.registerCommand.calls = [];
   commands.executeCommand.calls = [];
+  env.openExternal.calls = [];
 }
+
+export const env = {
+  openExternal: createSpy(async () => true),
+};
 
 export enum ColorThemeKind {
   Dark = 1,

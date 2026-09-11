@@ -314,6 +314,8 @@ function FlowCanvas() {
               timeoutSeconds: mcpConfig.timeoutSeconds,
               authProviderType: mcpConfig.authProviderType,
               oauthConfig: mcpConfig.oauthConfig,
+              secretConfig: mcpConfig.secretConfig,
+              bearerToken: mcpConfig.secretConfig?.bearerToken,
             },
           },
           'MCP_TOOLS_DISCOVERED',
@@ -325,12 +327,118 @@ function FlowCanvas() {
           serverInfo?: { name: string; version?: string };
           latencyMs?: number;
           error?: string;
+          requiresAuth?: boolean;
+          authType?: string;
+          authUrl?: string;
         };
       } catch (err: any) {
         return {
           success: false,
           tools: [],
           error: err?.message || 'Handshake request timed out',
+        };
+      }
+    },
+    [bridge]
+  );
+
+  /**
+   * Starts a browser-based OAuth 2.0 authorization flow with an ephemeral loopback server.
+   */
+  const handleStartOAuthFlow = useCallback(
+    async (options: {
+      authUrl: string;
+      tokenUrl?: string;
+      clientId?: string;
+      clientSecret?: string;
+      scopes?: string[];
+      secretName?: string;
+      envVar?: string;
+      targetDirectory?: string;
+      timeoutMs?: number;
+    }) => {
+      try {
+        const reply = await bridge.sendRequestWithReply(
+          {
+            type: 'START_MCP_OAUTH_FLOW',
+            payload: options,
+          },
+          'MCP_OAUTH_COMPLETED',
+          180000
+        );
+        return reply as {
+          success: boolean;
+          bearerToken?: string;
+          tokenPreview?: string;
+          error?: string;
+        };
+      } catch (err: any) {
+        return {
+          success: false,
+          error: err?.message || 'OAuth authorization request timed out',
+        };
+      }
+    },
+    [bridge]
+  );
+
+  /**
+   * Persists an MCP secret token into VS Code SecretStorage and workspace .env.
+   */
+  const handleSaveMcpSecret = useCallback(
+    async (secretName: string, envVar: string, token: string) => {
+      try {
+        const reply = await bridge.sendRequestWithReply(
+          {
+            type: 'SAVE_MCP_SECRET',
+            payload: { secretName, envVar, token },
+          },
+          'MCP_SECRET_SAVED',
+          10000
+        );
+        return reply as {
+          success: boolean;
+          secretName?: string;
+          envVar?: string;
+          tokenPreview?: string;
+          error?: string;
+        };
+      } catch (err: any) {
+        return {
+          success: false,
+          error: err?.message || 'Saving secret timed out',
+        };
+      }
+    },
+    [bridge]
+  );
+
+  /**
+   * Retrieves an MCP secret token preview from VS Code SecretStorage or workspace .env.
+   */
+  const handleGetMcpSecret = useCallback(
+    async (secretName: string, envVar?: string) => {
+      try {
+        const reply = await bridge.sendRequestWithReply(
+          {
+            type: 'GET_MCP_SECRET',
+            payload: { secretName, envVar },
+          },
+          'MCP_SECRET_RETRIEVED',
+          10000
+        );
+        return reply as {
+          success: boolean;
+          hasToken: boolean;
+          tokenPreview?: string;
+          bearerToken?: string;
+          error?: string;
+        };
+      } catch (err: any) {
+        return {
+          success: false,
+          hasToken: false,
+          error: err?.message || 'Retrieving secret timed out',
         };
       }
     },
@@ -1597,6 +1705,9 @@ function FlowCanvas() {
               selectedAgent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
               targetLanguage={config.language || 'python'}
               onTestMcpHandshake={handleTestMcpHandshake}
+              onStartOAuthFlow={handleStartOAuthFlow}
+              onSaveMcpSecret={handleSaveMcpSecret}
+              onGetMcpSecret={handleGetMcpSecret}
               onAttachToAgent={(agentId, tool) => {
                 handleAddSpecificTool(agentId, tool);
                 setIsToolDrawerOpen(false);

@@ -328,7 +328,7 @@ You MUST output EVERY single one of the following files in the returned JSON arr
 7. `requirements.txt`: Complete pinned dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
 8. `Dockerfile`: Production Python 3.11 container definition.
 9. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests and deploying.
-10. `main.tf`: Complete Terraform configuration deploying google_cloud_run_v2_service.
+10. `main.tf`: Complete Terraform configuration deploying google_cloud_run_v2_service (including google_secret_manager_secret, secret version, and secretAccessor IAM member when tools require OAuth / Bearer secret tokens).
 11. `pyproject.toml`: Modern packaging metadata and dependencies.
 12. `.gitignore`: Git ignore patterns for Python, venv, and cache.
 13. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.

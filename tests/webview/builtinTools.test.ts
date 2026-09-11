@@ -31,7 +31,7 @@ import {
   DEPRECATED_MOCK_TOOL_IDS,
   isNativeAdkTool
 } from '../../src/webview/data/builtinTools';
-import { AVAILABLE_TOOLS } from '../../src/webview/data/defaultTools';
+import { AVAILABLE_TOOLS, ADK_DEFAULT_TOOLS } from '../../src/webview/data/defaultTools';
 import { reconcileToolsCatalog } from '../../src/webview/hooks/useToolsManager';
 import { ToolDefinition } from '../../src/webview/types';
 
@@ -236,7 +236,7 @@ describe('ADK Built-in Tools Registry', () => {
 
   it('should identify all 8 native ADK tools with isNativeAdkTool()', () => {
     // 7 built-in tools + 1 custom FunctionTool
-    for (const tool of AVAILABLE_TOOLS) {
+    for (const tool of ADK_DEFAULT_TOOLS) {
       assert.ok(isNativeAdkTool(tool), `Tool ${tool.name} (${tool.id}) should be identified as a Native ADK tool`);
     }
 
@@ -249,6 +249,7 @@ describe('ADK Built-in Tools Registry', () => {
   it('should group all 8 ADK tools under native_adk in categorizeTools()', () => {
     const categorized = categorizeTools(AVAILABLE_TOOLS);
     assert.equal(categorized.native_adk.length, 8);
+    assert.equal(categorized.google_cloud_mcp.length, 68);
 
     const ids = categorized.native_adk.map((t) => t.id);
     assert.ok(ids.includes('tool_google_search'), 'Missing Google Search');
@@ -291,8 +292,10 @@ describe('ADK Built-in Tools Registry', () => {
 
     const reconciled = reconcileToolsCatalog(oldCachedTools);
 
-    // Reconciled catalog must now have all 8 tools
-    assert.equal(reconciled.length, 8);
+    // Reconciled catalog must now have all 8 native ADK tools plus default GCP MCP tools
+    const nativeAdkTools = reconciled.filter(isNativeAdkTool);
+    assert.equal(nativeAdkTools.length, 8);
+    assert.ok(reconciled.length >= 76);
 
     // Existing configs preserved
     const search = reconciled.find((t) => t.id === 'tool_google_search');
