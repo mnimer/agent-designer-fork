@@ -99,6 +99,15 @@
 | **TASK-184** | v1.2.0 | Samples / Patterns | Reverse Engineer `oauth-user-consent-flow` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
 | **TASK-185** | v1.2.0 | Samples / Patterns | Reverse Engineer `rag-agent-search` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
 | **TASK-186** | v1.2.0 | Samples / Patterns | Reverse Engineer `rag-vector-search` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| **TASK-187** | v1.1.2 | Agent Types | Synthesizer Agent Type (Basic Agent Node & Schema Reducer) | **Not Started** | TASK-103, TASK-119 |
+| **TASK-188** | v1.1.2 | Agent Types | Human-in-the-Loop (HITL / Approval Gate) Agent Type | **Not Started** | TASK-103, TASK-115 |
+| **TASK-189** | v1.1.2 | Agent Types | Fallback & Circuit Breaker Agent Type (Resilience & Quota Safety) | **Not Started** | TASK-103, TASK-117 |
+| **TASK-190** | v1.1.2 | Agent Types | Guardrail & Filter Shield Agent Type (Pre/Post-Flight Safety) | **Not Started** | TASK-103, TASK-114 |
+| **TASK-191** | v1.1.2 | Palette | Multi-Agent Patterns Palette Catalog Integration in Agents Tab | **Not Started** | TASK-113, TASK-124 |
+| **TASK-192** | v1.1.2 | Patterns | Evaluator-Optimizer (LoopAgent) Pattern & Refinement Code Generation | **Not Started** | TASK-114, TASK-191 |
+| **TASK-193** | v1.1.2 | Patterns | Multi-Agent Debate & Consensus Panel Pattern & Code Generation | **Not Started** | TASK-114, TASK-191 |
+| **TASK-194** | v1.1.2 | Patterns | Hierarchical Delegation (Supervisor-Workers) Pattern & Code Generation | **Not Started** | TASK-114, TASK-191 |
+| **TASK-195** | v1.1.2 | Patterns | Review & Critique Triad Pattern & Editorial Code Generation | **Not Started** | TASK-114, TASK-191 |
 
 ---
 
@@ -2892,4 +2901,219 @@ Each task specifies reverse-engineering the sample Python code into a production
   - Execute test runner against the trigger test scenarios to verify execution flow.
 
 ---
+
+### [TASK-187] Synthesizer Agent Type (Basic Agent Node & Schema Reducer)
+* **Release**: `v1.1.2`
+* **Target Package/Files**:
+  - `src/shared/types.ts`
+  - `src/webview/types.ts`
+  - `src/webview/components/Canvas/nodes/AgentNode.tsx`
+  - `src/webview/components/Canvas/PaletteCard.tsx`
+  - `src/webview/components/inspector/SynthesizerDrawer.tsx`
+  - `src/shared/codegen/pythonAdkGenerator.ts`
+* **Context**:
+  In multi-agent architectures (especially following parallel fan-outs), raw research and data from upstream workers must be collated and synthesized into a structured response. Vertex AI Gemini restricts combining search tools with controlled generation (`output_schema`) on the same agent. The Synthesizer Agent provides a dedicated leaf agent node with no tools, specialized input state key mapping, and tight integration with the Structured Output Schema Builder to guarantee deterministic JSON output schemas.
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Synthesizer Agent Type:
+  1. Add 'synthesizer' to AgentKind in src/shared/types.ts and src/webview/types.ts.
+  2. Add Synthesizer Agent to Basic Agent Types in PaletteCard.tsx with emerald styling, Layers icon, and one-click/drag insertion.
+  3. Render AgentNode with distinct emerald accent and 'Synthesizer' badge.
+  4. Create SynthesizerDrawer.tsx allowing users to configure input state keys to aggregate, synthesis system prompt, and structured Pydantic output schema.
+  5. Update pythonAdkGenerator.ts to generate an Agent with output_schema, instruction referencing upstream state keys, and no tools.
+  6. Add unit tests for synthesizer node creation, drawer state changes, and Python ADK codegen.
+  ```
+* **Verification**:
+  - Dragging Synthesizer Agent onto canvas renders emerald card with proper handles.
+  - Generating code produces an ADK Agent configured with `output_schema` and state references.
+  - Tests pass with 100% coverage.
+
+---
+
+### [TASK-188] Human-in-the-Loop (HITL / Approval Gate) Agent Type
+* **Release**: `v1.1.2`
+* **Target Package/Files**:
+  - `src/shared/types.ts`
+  - `src/webview/types.ts`
+  - `src/webview/components/Canvas/nodes/AgentNode.tsx`
+  - `src/webview/components/Canvas/PaletteCard.tsx`
+  - `src/webview/components/inspector/ApprovalDrawer.tsx`
+  - `src/shared/codegen/pythonAdkGenerator.ts`
+* **Context**:
+  Enterprise multi-agent workflows require governance and human authorization before executing high-risk tool actions (financial disbursements, database modifications, external communications). The Human-in-the-Loop (HITL) Approval Agent provides an asynchronous gatekeeper node that pauses workflow execution using ADK's `request_input` tool and `ResumabilityConfig(is_resumable=True)` until an operator approves or rejects the action via webhook or UI.
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Human-in-the-Loop (Approval Gate) Agent Type:
+  1. Add 'hitl' to AgentKind in src/shared/types.ts and src/webview/types.ts.
+  2. Add Approval Gate Agent to Basic Agent Types in PaletteCard.tsx with amber styling, ShieldAlert icon, and drag/click insertion.
+  3. Render AgentNode with amber border, paused/resumed badge status, and dual approved/rejected output sockets.
+  4. Create ApprovalDrawer.tsx allowing configuration of approval condition expression, timeout hours, auto-reject fallback, and notification payload.
+  5. Update pythonAdkGenerator.ts to generate ADK code utilizing ResumabilityConfig(is_resumable=True) and request_input tool handler.
+  6. Add comprehensive unit tests.
+  ```
+* **Verification**:
+  - Canvas correctly renders the Approval Gate node with approved and rejected output sockets.
+  - Code generator generates resumable ADK agent with `request_input` tool.
+
+---
+
+### [TASK-189] Fallback & Circuit Breaker Agent Type (Resilience & Quota Safety)
+* **Release**: `v1.1.2`
+* **Target Package/Files**:
+  - `src/shared/types.ts`
+  - `src/webview/types.ts`
+  - `src/webview/components/Canvas/nodes/AgentNode.tsx`
+  - `src/webview/components/Canvas/PaletteCard.tsx`
+  - `src/webview/components/inspector/FallbackDrawer.tsx`
+  - `src/shared/codegen/pythonAdkGenerator.ts`
+* **Context**:
+  To maintain enterprise SLAs against model rate limits (HTTP 429 quota exhaustion), context window overflows, or remote A2A endpoint dropouts, workflows need graceful degradation. The Fallback Agent acts as a structural control-flow node extending `BaseAgent` with `primary` and `fallback` execution paths, automatic retry counters, and error-catching fallbacks.
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Fallback & Circuit Breaker Agent Type:
+  1. Add 'fallback' to AgentKind in src/shared/types.ts and src/webview/types.ts.
+  2. Add Fallback Agent to Basic Agent Types in PaletteCard.tsx with rose styling, LifeBuoy icon, and drag/click insertion.
+  3. Render AgentNode with distinct primary and fallback output sockets.
+  4. Create FallbackDrawer.tsx to configure retry attempts, caught error codes (429, 503, timeout, schema validation failure), and fallback behavior.
+  5. Update pythonAdkGenerator.ts to generate a custom BaseAgent fallback wrapper catching runtime exceptions and delegating to the fallback candidate.
+  6. Add unit tests for node wiring and code generation.
+  ```
+* **Verification**:
+  - Fallback node connects primary and fallback branches to child agents.
+  - Generated Python ADK script catches execution failures and switches to fallback agent.
+
+---
+
+### [TASK-190] Guardrail & Filter Shield Agent Type (Pre/Post-Flight Safety)
+* **Release**: `v1.1.2`
+* **Target Package/Files**:
+  - `src/shared/types.ts`
+  - `src/webview/types.ts`
+  - `src/webview/components/Canvas/nodes/AgentNode.tsx`
+  - `src/webview/components/Canvas/PaletteCard.tsx`
+  - `src/webview/components/inspector/GuardrailDrawer.tsx`
+  - `src/shared/codegen/pythonAdkGenerator.ts`
+* **Context**:
+  Enterprise applications mandate input prompt inspection (jailbreak defense, prompt injection detection) and output scrubbing (PII redaction, secret leakage prevention, hallucination validation). The Guardrail Agent acts as a fast, lightweight security filter node that can be placed at ingress or egress of an agent workflow.
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Guardrail & Filter Shield Agent Type:
+  1. Add 'guardrail' to AgentKind in src/shared/types.ts and src/webview/types.ts.
+  2. Add Guardrail Agent to Basic Agent Types in PaletteCard.tsx with teal styling, ShieldCheck icon, and drag/click insertion.
+  3. Render AgentNode with teal accent and pass/block output handles.
+  4. Create GuardrailDrawer.tsx configuring inspection direction (ingress/egress), safety policy presets (PII, Prompt Injection, Toxicity), regex filters, and action on violation (block with message vs redact).
+  5. Update pythonAdkGenerator.ts to implement ADK before_agent_callback / after_agent_callback or inline classifier guardrail.
+  6. Add full unit tests.
+  ```
+* **Verification**:
+  - Guardrail node renders on canvas and connects seamlessly into ingress/egress flows.
+  - Generated code enforces policy verification before and after agent turns.
+
+---
+
+### [TASK-191] Multi-Agent Patterns Palette Catalog Integration in Agents Tab
+* **Release**: `v1.1.2`
+* **Target Package/Files**:
+  - `src/webview/components/Canvas/PaletteCard.tsx`
+  - `src/webview/data/patterns.ts`
+* **Context**:
+  The PaletteCard's "Agents" tab currently has an accordion for "Multi-Agent Patterns (0)" displaying an empty placeholder ("No multi-agent patterns available in this release"), despite `PATTERN_DEFINITIONS` already having 8 complete pattern templates in `src/webview/data/patterns.ts`. This task integrates the pattern catalog into the UI with full drag-and-drop and '+' insertion support.
+* **Sub-Agent Prompt**:
+  ```
+  Integrate Multi-Agent Patterns into the PaletteCard Agents Tab:
+  1. Update PaletteCard.tsx to read PATTERN_DEFINITIONS and render all 8 pattern items in the Multi-Agent Patterns accordion.
+  2. Implement drag-and-drop (handleDragStartPattern) and one-click add button (onAddPattern).
+  3. Display pattern icon, badge, name, agent count, and descriptive subtitle for each item.
+  4. Update accordion header count to dynamically show the number of available patterns.
+  5. Ensure spacing complies with the 8pt grid system.
+  6. Add unit tests for pattern dragging and canvas insertion events.
+  ```
+* **Verification**:
+  - Expanding the "Multi-Agent Patterns" accordion reveals all 8 pattern cards.
+  - Dragging or clicking '+' on a pattern drops the multi-node cluster onto the canvas.
+
+---
+
+### [TASK-192] Evaluator-Optimizer (LoopAgent) Pattern & Refinement Code Generation
+* **Release**: `v1.1.2`
+* **Target Package/Files**:
+  - `src/webview/data/patterns.ts`
+  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `src/webview/components/Canvas/edges/`
+* **Context**:
+  The Evaluator-Optimizer pattern implements an iterative self-correction loop where a Generator agent produces an output and an Evaluator agent critiques it against a rubric or tests. In Google ADK, this maps directly to `LoopAgent(sub_agents=[generator, evaluator], max_iterations=N)`. This task wires canvas cyclic edge validation and implements `LoopAgent` code generation in the Python ADK generator.
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Evaluator-Optimizer (LoopAgent) Topology & Codegen:
+  1. Ensure patterns.ts initializes 2 nodes (Generator and Evaluator) connected with forward execution and feedback loop edges.
+  2. Add cyclic connection validation support specifically for LoopAgent topologies in edge validation.
+  3. Update pythonAdkGenerator.ts to import LoopAgent from google.adk.agents and generate a LoopAgent composite instance with max_iterations and evaluation state threshold logic.
+  4. Add unit tests validating that the generated Python code executes iterative evaluation loops.
+  ```
+* **Verification**:
+  - Dragging Evaluator-Optimizer pattern onto canvas loads the 2-agent loop.
+  - Generated code compiles into a valid Google ADK `LoopAgent` setup with feedback handoff.
+
+---
+
+### [TASK-193] Multi-Agent Debate & Consensus Panel Pattern & Code Generation
+* **Release**: `v1.1.2`
+* **Target Package/Files**:
+  - `src/webview/data/patterns.ts`
+  - `src/shared/codegen/pythonAdkGenerator.ts`
+* **Context**:
+  The Multi-Agent Debate pattern coordinates 2 opposing agents (Proponent and Opponent) debating a complex subject across structured rounds, culminating in a Judge/Consensus agent synthesizing the arguments and delivering a balanced verdict. This task implements full topology setup, multi-round state passing, and ADK Python code generation.
+* **Sub-Agent Prompt**:
+  ```
+  Implement Multi-Agent Debate Pattern Topology & Codegen:
+  1. Update patterns.ts with configured Proponent, Opponent, and Judge agents with prompt archetypes for adversarial analysis.
+  2. Implement code generation in pythonAdkGenerator.ts coordinating the debate turns, round state history, and Judge synthesis turn.
+  3. Add test scenarios testing diverse reasoning prompts and consensus assertion validation.
+  4. Write unit tests for debate code generation.
+  ```
+* **Verification**:
+  - Debate pattern drops 3 agents onto canvas with clear debate and adjudication wiring.
+  - Python ADK runner executes debate turns and passes intermediate arguments to the judge.
+
+---
+
+### [TASK-194] Hierarchical Delegation (Supervisor-Workers) Pattern & Code Generation
+* **Release**: `v1.1.2`
+* **Target Package/Files**:
+  - `src/webview/data/patterns.ts`
+  - `src/shared/codegen/pythonAdkGenerator.ts`
+* **Context**:
+  Large-scale agentic workflows require a multi-tier hierarchy: an Executive Supervisor that breaks problems into high-level milestones, Domain Leads that coordinate functional areas, and leaf Workers that execute specific tasks with tools. This task formalizes the supervisor-worker pattern in ADK using hierarchical `sub_agents` delegation.
+* **Sub-Agent Prompt**:
+  ```
+  Implement Hierarchical Delegation (Supervisor-Workers) Pattern & Codegen:
+  1. Configure 6-node hierarchical topology in patterns.ts: Executive Director -> 2 Domain Leads -> 3 leaf Workers.
+  2. Update pythonAdkGenerator.ts to generate nested sub_agents wiring where the supervisor delegates to leads, and leads delegate to workers using ADK agent transfer semantics.
+  3. Add multi-tier trace visualization support in the test runner.
+  4. Add unit tests for recursive hierarchical code generation.
+  ```
+* **Verification**:
+  - Hierarchical pattern loads with clean Dagre tree layout.
+  - Generated Python ADK script correctly sets up recursive `sub_agents=[...]` delegation.
+
+---
+
+### [TASK-195] Review & Critique Triad Pattern & Editorial Code Generation
+* **Release**: `v1.1.2`
+* **Target Package/Files**:
+  - `src/webview/data/patterns.ts`
+  - `src/shared/codegen/pythonAdkGenerator.ts`
+* **Context**:
+  The Review & Critique Triad pattern consists of an Author (drafts technical or legal content), an Adversarial Critic (rigorously checks against compliance, accuracy, and style rules), and an Editor (revises the draft based on the critique to produce the final deliverable). This task implements this pattern's canvas presets and linear-with-review code generation.
+* **Sub-Agent Prompt**:
+  ```
+  Implement Review & Critique Triad Pattern & Codegen:
+  1. Configure 3-node Triad topology in patterns.ts: Author -> Adversarial Critic -> Editor.
+  2. Setup prompt defaults with dedicated drafting instructions, critique rubric schemas, and editorial reconciliation instructions.
+  3. Update pythonAdkGenerator.ts to pass draft and critique payloads sequentially through state keys.
+  4. Add unit tests.
+  ```
+* **Verification**:
+  - Triad pattern drops 3 nodes onto canvas with sequential critique state handoff.
+  - Generated ADK Python pipeline executes author, critic, and editor in order.
 
