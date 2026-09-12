@@ -29,6 +29,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Sync package version with git tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if node -e "const semver = require('semver'); process.exit(semver.valid(process.argv[1]) ? 0 : 1)" "$VERSION" 2>/dev/null; then
+            npm version "$VERSION" --no-git-tag-version --allow-same-version
+          fi
+
       - name: Run tests
         run: npm test
 
@@ -36,12 +43,12 @@ jobs:
         run: npm run compile
 
       - name: Package VSIX extension
-        run: npx @vscode/vsce package --no-dependencies
+        run: npx @vscode/vsce package --no-dependencies -o "visual-agent-designer-${{ github.ref_name }}.vsix"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          files: '*.vsix'
+          files: 'visual-agent-designer-${{ github.ref_name }}.vsix'
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
