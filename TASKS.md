@@ -44,6 +44,18 @@
 | **TASK-129** | v1.0.6 | Tools | ADK Built-in Tools Registry & Cross-Harness Tool Adapter Architecture | **Done** | TASK-104, TASK-118 |
 | **TASK-130** | v1.0.8 | MCP / Tools | Google Cloud Remote MCP Servers Registry in Tools Tab | **Completed** | TASK-120, TASK-129 |
 | **TASK-131** | v1.1.3 | i18n | Extension Host & Webview Internationalization (i18n / l10n) | **Not Started** | TASK-100, TASK-102 |
+| **TASK-132** | v1.0.10 | Codegen / Security | [CRITICAL] Escape User Strings Emitted Into Generated Python (Code Injection) | **Not Started** | TASK-106, TASK-114 |
+| **TASK-133** | v1.0.10 | Extension Host / Security | [CRITICAL] Eliminate Shell String Interpolation in Subprocess Invocation | **Not Started** | TASK-107, TASK-120, TASK-125 |
+| **TASK-134** | v1.0.10 | Extension Host / Security | [CRITICAL] Contain Workspace File Writes & Validate Webview RPC Payloads | **Not Started** | TASK-101, TASK-106 |
+| **TASK-135** | v1.0.10 | Security / Secrets | [CRITICAL] Migrate Gemini API Key & OAuth Tokens to VS Code SecretStorage | **Not Started** | TASK-106, TASK-120 |
+| **TASK-136** | v1.0.10 | Persistence | [CRITICAL] Prevent Silent Data Loss on Malformed `.agent` Documents | **Not Started** | TASK-108 |
+| **TASK-137** | v1.0.10 | Webview / Security | [MAJOR] Harden Webview CSP & Inline Bootstrap Serialization | **Not Started** | TASK-100, TASK-102 |
+| **TASK-138** | v1.0.11 | Codegen / Correctness | [MAJOR] Topological Ordering, Python Keyword & Duplicate Identifier Safety | **Not Started** | TASK-114, TASK-117 |
+| **TASK-139** | v1.0.11 | Extension Host / Perf | [MAJOR] Remove Blocking `execSync` & Add Network Timeouts on Host Thread | **Not Started** | TASK-106, TASK-125 |
+| **TASK-140** | v1.0.11 | Runner / Concurrency | [MAJOR] Fix Runner Start Races, Unsettled Promises & Timer/Process Leaks | **Not Started** | TASK-107, TASK-120 |
+| **TASK-141** | v1.0.11 | Webview / Perf | [MAJOR] Fix Canvas Re-Render Storms & Document Serialization Thrash | **Not Started** | TASK-103, TASK-112 |
+| **TASK-142** | v1.0.12 | Architecture | [MAJOR] Decompose God Classes (Runner, Deployer, EditorProvider, App.tsx) | **Not Started** | TASK-132 to TASK-141 |
+| **TASK-143** | v1.0.12 | Architecture / Quality | [MAJOR] Unify Duplicated Domain Types, Extract Drawer Primitives & Remove Dead Code | **Not Started** | TASK-142 |
 
 ---
 
@@ -939,4 +951,411 @@
   - `npm test` runs with 100% coverage on i18n utilities and translation key resolution.
   - Switching VS Code display language or setting `agentDesigner.languagePreference` dynamically updates all labels, menus, drawer fields, and status messages without restarting.
 
+
+
+---
+
+## Code Review Remediation Backlog (TASK-132 → TASK-143)
+
+> **Source**: Principal-engineer code review of `develop` @ `894226f`, 2026-09-11.
+> **Scope reviewed**: ~58k LOC across extension host, webview SPA, shared codegen, and tests.
+> **Baseline**: `npm test` = 536 passing / 0 failing. All findings below were confirmed by reading the cited lines.
+> **Threat model note**: A `.agent` file is **untrusted input** — users open workflow files authored by colleagues, samples, or repos. Several findings below are only exploitable under that assumption, which the product explicitly invites.
+
+---
+
+### [TASK-132] [CRITICAL] Escape User Strings Emitted Into Generated Python (Code Injection)
+* **Release**: `v1.0.10`
+* **Severity**: Critical — Remote/Arbitrary Code Execution
+* **Target Package/Files**:
+  - `src/shared/codegen/pythonAdkGenerator.ts` (lines 660, 663, 665, 666, 697, 567, 239-240)
+  - `src/shared/codegen/toolAdapters.ts` (lines 193, 246-273)
+  - `tests/shared/codegen/codegenEscaping.test.ts` (new)
+* **Context**:
+  The Python generator interpolates user-controlled strings directly into Python string literals. The emitted file is then **imported and executed** by the local test runner (`AgentRunnerManager`) and shipped to Vertex AI Agent Engine, so a string break-out is a full code-execution primitive.
+
+  1. **Incomplete escaping of `systemPrompt`** — `pythonAdkGenerator.ts:660`:
+     ```ts
+     const prompt = (data?.systemPrompt || 'Autonomous AI Agent').replace(/\n/g, '\\n').replace(/"/g, '\\"');
+     ```
+     Newlines and double quotes are escaped, but **backslashes are not**, and they are not escaped *first*. An input of `\"` becomes `\\"` in the output — an escaped backslash followed by a **terminating** quote. Everything after it is executed as Python. Payload: `\", tools=[__import__('os').system('id')])#`.
+  2. **Completely unescaped `label`** — `pythonAdkGenerator.ts:663`:
+     ```ts
+     lines.push(`    name="${data?.label || node.id}",`);
+     ```
+     No escaping whatsoever. Same break-out with a single `"`.
+  3. **Unescaped branch IDs and regex patterns** — `pythonAdkGenerator.ts:697` emits `"${branch.id}"` raw; line 567 escapes only quotes for the `re.search` pattern.
+  4. **Unescaped MCP config** — `toolAdapters.ts:193` and surrounding: `serverName`, `command`, `url`, and header values are interpolated into Python literals unescaped.
+  5. **JS literals leaking into Python** — `toolAdapters.ts:253, 260, 269, 273` use `JSON.stringify(...)` for lists/dicts. This is *safe* against injection but emits JS `true` / `false` / `null`, which are `NameError`s in Python. Must map to `True` / `False` / `None`.
+* **Sub-Agent Prompt**:
+  ```
+  Fix code injection in the Python code generator:
+  1. Add a single exported helper `pyStr(value: string): string` in src/shared/codegen/pythonEscape.ts that returns a fully-quoted, safely-escaped Python string literal. Escape backslashes FIRST, then quotes, then newlines/tabs/carriage returns, and reject or escape non-printable characters. Do not hand-roll partial .replace() chains anywhere else.
+  2. Add `pyLiteral(value: unknown)` that emits Python-correct literals for arrays/objects/booleans/null (True/False/None), replacing the JSON.stringify calls in toolAdapters.ts.
+  3. Replace EVERY interpolation of a user-controlled string into generated Python with pyStr()/pyLiteral() across pythonAdkGenerator.ts and toolAdapters.ts, including name=, instruction=, model=, branch ids, regex patterns, MCP serverName/command/url/headers, and A2A endpoint/authType.
+  4. Do not add silent fallbacks; if a value cannot be safely emitted, throw with a clear message naming the offending node.
+  ```
+* **Verification**:
+  - New unit tests assert that agent labels/prompts containing `"`, `\`, `\"`, `'''`, `"""`, newlines, and `__import__('os').system('x')` produce Python that parses cleanly and contains the payload only as inert data.
+  - A round-trip test compiles generated output with `python -m py_compile` (or `ast.parse`) and asserts no `SyntaxError` and no injected top-level statements.
+
+---
+
+### [TASK-133] [CRITICAL] Eliminate Shell String Interpolation in Subprocess Invocation
+* **Release**: `v1.0.10`
+* **Severity**: Critical — Arbitrary Command Execution
+* **Target Package/Files**:
+  - `src/extension/AgentEngineDeployer.ts` (lines 1026-1029, 1250-1256, 1626, 1651)
+  - `src/extension/McpOAuthManager.ts` (lines 228-233)
+  - `src/extension/McpSubprocessManager.ts` (lines 135-136)
+  - `src/extension/AgentRunnerManager.ts` (line 710)
+  - `tests/extension/subprocessInjection.test.ts` (new)
+* **Context**:
+  Several call sites build a **shell command string** from user/workflow-controlled values instead of passing an argv array.
+
+  1. **Python `-c` inside a shell string** — `AgentEngineDeployer.ts:1026-1029`:
+     ```ts
+     const script = `import sys, vertexai; client=vertexai.Client(project='${projectId}', location='${region}'); ... == '${displayName}'), ''))`;
+     const res = require('child_process').execSync(`"${pythonCmd}" -c "${script}"`, {...});
+     ```
+     `displayName`, `projectId`, and `region` are interpolated into a Python literal *inside* a double-quoted shell string — two nested injection contexts. A display name containing `$(...)` or a quote yields shell command execution. The surrounding `catch { return null; }` (line 1037-1039) then hides the failure entirely.
+  2. **OAuth browser fallback** — `McpOAuthManager.ts:228-233`:
+     ```ts
+     const cmd = process.platform === 'darwin' ? `open "${finalUrl}"` : ... ;
+     exec(cmd);
+     ```
+     `finalUrl` passes through `new URL().toString()`, which percent-encodes quotes but **does not encode `$`**. Inside a double-quoted `sh` string, `$(...)` is still evaluated — so an `authUrl` of `https://x.com/?a=$(id)` executes `id`.
+  3. **gcloud scopes** — `McpSubprocessManager.ts:135-136`: `scopes.join(',')` is interpolated into an `execAsync` shell string.
+  4. **`shell: true` on Windows** — `AgentEngineDeployer.ts:1256`: Node does not escape argv entries for `cmd.exe`, so `&`/`|` in `projectId` or `serviceAccount` break out.
+  5. **Login shell probe** — `AgentEngineDeployer.ts:1626`: `execSync(\`${shell} -lc 'which gcloud'\`)`.
+  - *Note*: `AgentRunnerManager.killPort()` (lines 983-1035) was reviewed and is **not** injectable — the port is numeric-validated and PIDs are `parseInt`-ed. It is still flagged for blocking sync I/O under TASK-139.
+* **Sub-Agent Prompt**:
+  ```
+  Remove shell interpolation from all subprocess invocations in the extension host:
+  1. Replace execSync/exec string-concatenation call sites with execFile/execFileSync/spawn using an explicit argv array and shell:false.
+  2. For AgentEngineDeployer.findExistingReasoningEngine, write the probe script to a temp .py file and pass projectId/region/displayName via sys.argv rather than embedding them in source. Delete the temp file in a finally block.
+  3. For the OAuth browser fallback, prefer vscode.env.openExternal only; if an OS fallback is truly required use spawn('open', [url]) with an argv array, and validate the URL is http(s) before launching.
+  4. Set shell:false for gcloud/python spawns on all platforms; resolve the absolute binary path instead of relying on shell PATH resolution.
+  5. Replace the `catch { return null }` in findExistingReasoningEngine with a logged, typed failure that surfaces to the user.
+  ```
+* **Verification**:
+  - Unit tests inject `"; touch /tmp/pwned #`, `$(touch /tmp/pwned)`, and `& calc` into displayName, projectId, scopes, and authUrl and assert the marker file is never created and the values arrive as literal argv entries.
+  - A repo-wide lint/grep guard fails CI if `execSync(`/`exec(` is called with a template literal containing `${`.
+
+---
+
+### [TASK-134] [CRITICAL] Contain Workspace File Writes & Validate Webview RPC Payloads
+* **Release**: `v1.0.10`
+* **Severity**: Critical — Path Traversal / Arbitrary File Overwrite
+* **Target Package/Files**:
+  - `src/extension/AgentEditorProvider.ts` (lines 404-426, 528-538, 574-593, 358)
+  - `src/shared/rpcProtocol.ts`
+  - `tests/extension/rpcPayloadValidation.test.ts` (new)
+* **Context**:
+  1. **Unbounded file write** — `AgentEditorProvider.ts:404-426`:
+     ```ts
+     const targetDir = payload.targetDirectory && workspaceFolders
+       ? vscode.Uri.joinPath(workspaceFolders[0].uri, payload.targetDirectory) : ...;
+     for (const file of payload.files) {
+       const fileUri = vscode.Uri.joinPath(targetDir, file.path);
+       await vscode.workspace.fs.writeFile(fileUri, buffer);
+     }
+     ```
+     Neither `payload.targetDirectory` nor `file.path` is validated. `Uri.joinPath` **resolves** `../`, so a path of `../../../../.zshrc` (or `.git/hooks/pre-commit`) escapes the workspace and is overwritten with **no existence check and no user confirmation**. `file.path` originates from LLM output, which is itself steered by attacker-controllable agent instructions in the `.agent` file.
+  2. **Unvalidated MCP discovery** — lines 528-538: `payload.command` / `payload.args` are forwarded to `mcpManager.discoverTools` and spawned. Combined with an untrusted `.agent` file this is a direct execution path.
+  3. **Unvalidated runner directory** — lines 574-593: `START_LOCAL_RUNNER` accepts an arbitrary `targetDirectory` that may resolve outside the workspace.
+* **Sub-Agent Prompt**:
+  ```
+  Harden the extension-host RPC trust boundary:
+  1. Add src/extension/security/pathGuard.ts exporting assertInsideWorkspace(baseUri, candidateRelPath) that normalizes the joined path and throws unless the resolved fsPath is strictly contained within baseUri.fsPath. Reject absolute paths, drive letters, UNC prefixes, and any '..' segment.
+  2. Apply the guard to WRITE_FILES_TO_WORKSPACE (both targetDirectory and every file.path) and to START_LOCAL_RUNNER's targetDirectory.
+  3. Before overwriting an existing file, collect the conflicts and require a single explicit user confirmation (vscode.window.showWarningMessage with a modal) listing how many files will be overwritten.
+  4. Add runtime payload validation (a small hand-written type guard per message type, no new dependency) in rpcProtocol.ts; reject and log malformed payloads instead of destructuring them blindly.
+  5. Restrict DISCOVER_MCP_TOOLS stdio commands to an allowlist (npx, uvx, python, python3, node, docker) and require explicit user confirmation before spawning any command originating from a newly-opened .agent file.
+  ```
+* **Verification**:
+  - Tests assert `file.path` values of `../evil.txt`, `/etc/passwd`, `..\\..\\evil`, and `.git/hooks/pre-commit` are rejected and no write occurs outside the target dir.
+  - Test asserts an overwrite of an existing file does not proceed without confirmation.
+
+---
+
+### [TASK-135] [CRITICAL] Migrate Gemini API Key & OAuth Tokens to VS Code SecretStorage
+* **Release**: `v1.0.10`
+* **Severity**: Critical — Credential Exposure
+* **Target Package/Files**:
+  - `package.json` (`agentFlow.geminiApiKey` contribution)
+  - `src/extension/AgentEditorProvider.ts` (lines 286-290, 330, 454)
+  - `src/extension/McpOAuthManager.ts` (lines 295-330, 388, 411)
+  - `src/webview/components/settings/SettingsPage.tsx` (lines 324, 348-366)
+  - `.gitignore`
+* **Context**:
+  1. **API key in plaintext settings** — `package.json` declares `agentFlow.geminiApiKey` as a plain `string` configuration property, and it is read via `workspace.getConfiguration('agentFlow').get<string>('geminiApiKey')` at `AgentEditorProvider.ts:286, 330, 454`. This writes the key in cleartext to `settings.json`, which is commonly committed to source control and is propagated by **VS Code Settings Sync**. `SettingsPage.tsx:324` tells the user *"API keys are securely stored in VS Code SecretStorage"* — the UI copy is currently **false**.
+  2. **Tokens written to `.env` while `.gitignore` lacks `.env`** — `McpOAuthManager` persists bearer tokens to a workspace `.env` (correctly *also* using `context.secrets`). The repo `.gitignore` contains no `.env` entry, and the code that appends to `.gitignore` swallows failures in an empty `catch {}` (line 411), so a write failure silently leaves credentials committable.
+  3. Empty `catch {}` at line 388 hides `.env` write failures.
+* **Sub-Agent Prompt**:
+  ```
+  Move all credentials to secure storage:
+  1. Remove agentFlow.geminiApiKey from package.json contributes.configuration. Replace it with a command 'agentFlow.setGeminiApiKey' that prompts via showInputBox({password:true}) and stores through context.secrets.store().
+  2. Add a one-time migration: on activate, if the deprecated setting has a value, copy it into SecretStorage, clear the setting value, and notify the user that the key was migrated.
+  3. Route all reads through a single SecretsProvider abstraction; never pass the raw key into the webview - the webview must only ever receive a boolean 'isSet' flag (AgentEditorProvider.ts:290 already does this correctly, keep that pattern).
+  4. Add `.env` and `.env.*` to .gitignore. Replace the empty catch blocks in McpOAuthManager (lines 388, 411) with explicit error surfacing so a failure to protect the token is never silent.
+  5. Update SettingsPage.tsx copy so it accurately describes where the key is stored, and make the input write-only (never render the stored secret back).
+  ```
+* **Verification**:
+  - Test asserts no code path reads `geminiApiKey` from `workspace.getConfiguration`, and that the webview `SETTINGS_SYNC` payload never contains key material.
+  - Test asserts the migration clears the plaintext setting, and that `.gitignore` contains `.env`.
+
+---
+
+### [TASK-136] [CRITICAL] Prevent Silent Data Loss on Malformed `.agent` Documents
+* **Release**: `v1.0.10`
+* **Severity**: Critical — Irreversible User Data Loss
+* **Target Package/Files**:
+  - `src/extension/AgentEditorProvider.ts` (lines 253-262, 838-854, 928-939, 311-316)
+  - `src/webview/hooks/useExtensionSync.ts` (lines 178, 296-366)
+  - `tests/extension/documentRecovery.test.ts` (new)
+* **Context**:
+  1. **Silent reset to empty graph** — `AgentEditorProvider.ts:255-262`:
+     ```ts
+     try {
+       parsedDoc = docText.trim().length > 0 ? JSON.parse(docText) : this.createEmptyWorkflow(document.uri);
+     } catch {
+       parsedDoc = this.createEmptyWorkflow(document.uri);
+     }
+     ```
+     If the user hand-edits the `.agent` JSON and introduces a syntax error (or the file is truncated by a bad merge), the editor **silently loads an empty workflow** and pushes it to the webview. The webview then echoes state back via `DOCUMENT_UPDATED`, and the extension applies a **full-range replace** (line ~928-939), permanently destroying the user's graph. This is a one-keystroke path to total loss of work and directly violates the project's "no undocumented fallbacks — fail fast" rule.
+  2. **Whole-document replace destroys cursor/selection** and floods IPC on every canvas frame (no debounce, no deep-equality check).
+  3. **`isUpdatingFromWebview` echo-guard race** — line 311-316: the flag is flipped around an `await vscode.workspace.applyEdit(...)`, so overlapping messages can re-enter.
+  4. **No schema version migration** — `useExtensionSync.ts:178` defaults `version` to `'1.0.0'` on save without inspecting the loaded document's version.
+* **Sub-Agent Prompt**:
+  ```
+  Make .agent document handling loss-proof:
+  1. On JSON.parse failure, do NOT substitute an empty workflow. Enter an explicit 'parse error' state: post a PARSE_ERROR message to the webview which renders a blocking error overlay showing the parser message, and refuse to emit any DOCUMENT_UPDATED until the user fixes the file or explicitly chooses 'Reset to empty workflow'.
+  2. Never write to the document while in parse-error state.
+  3. Debounce webview -> host document sync (~250ms) and skip the edit entirely when the serialized content is byte-identical to the current document text.
+  4. Replace the full-range WorkspaceEdit with a minimal-diff TextEdit so cursor position and selection survive split-view editing.
+  5. Replace the boolean isUpdatingFromWebview guard with a monotonically increasing revision/sequence number compared on both sides to make the echo-guard race-free.
+  6. Read and honor doc.version on load; add an explicit migration hook and fail loudly on an unknown future version rather than silently rewriting it.
+  ```
+* **Verification**:
+  - Regression test: load a `.agent` file with malformed JSON, assert the on-disk bytes are **unchanged** after the webview signals READY and after a simulated canvas interaction.
+  - Test asserts no `applyEdit` is issued when serialized content is unchanged.
+
+---
+
+### [TASK-137] [MAJOR] Harden Webview CSP & Inline Bootstrap Serialization
+* **Release**: `v1.0.10`
+* **Severity**: Major — XSS Hardening
+* **Target Package/Files**:
+  - `src/extension/AgentEditorProvider.ts` (lines 1134, 1148, 1160-1161, 199-207)
+* **Context**:
+  1. **CSP is not strict despite the docstring claiming it is** — line 1134:
+     ```
+     script-src 'nonce-${nonce}' 'unsafe-eval' ${cspSource}; style-src ${cspSource} 'unsafe-inline';
+     ```
+     `'unsafe-eval'` materially weakens the policy. The class docstring at line 14 advertises "strict Content Security Policy" — the comment and the code disagree.
+  2. **`</script>` break-out in the bootstrap** — line 1160:
+     ```ts
+     ${initialDoc ? `window.__INITIAL_AGENT_DOCUMENT__ = ${JSON.stringify(initialDoc)};` : ''}
+     ```
+     `JSON.stringify` does **not** escape `<` or `/`. A workflow whose agent name contains `</script><img src=x onerror=...>` terminates the inline script block early. The nonce-based CSP blocks the injected script from *executing*, so this is Major rather than Critical, but it corrupts the bootstrap, breaks webview load, and is one CSP regression away from full XSS.
+  3. **Broad `localResourceRoots`** — lines 202-207 grant more than the compiled `dist` webview assets.
+* **Sub-Agent Prompt**:
+  ```
+  Harden the webview HTML generation in AgentEditorProvider.getHtmlForWebview:
+  1. Remove 'unsafe-eval' from script-src. Build and verify the bundle still loads; if a dependency requires eval, document precisely which one and why in a NOTE comment rather than leaving it unexplained.
+  2. Replace 'unsafe-inline' in style-src with the existing nonce on the inline <style> block.
+  3. Escape the inlined JSON: add a helper that runs JSON.stringify then replaces '<' with '\\u003c', '>' with '\\u003e', '&' with '\\u0026', and U+2028/U+2029. Apply it to both __INITIAL_AGENT_DOCUMENT__ and __INITIAL_AGENT_FILE_PATH__. Preferred alternative: drop the inline bootstrap entirely and deliver the initial document via webview.postMessage after READY.
+  4. Narrow localResourceRoots to only the compiled dist/webview directory.
+  5. Fix the class docstring so it describes the policy that is actually emitted.
+  ```
+* **Verification**:
+  - Test asserts the generated HTML contains no `unsafe-eval` / `unsafe-inline`.
+  - Test asserts a workflow named `</script><script>x=1</script>` produces HTML with no unescaped `</script>` inside the bootstrap block.
+
+---
+
+### [TASK-138] [MAJOR] Topological Ordering, Python Keyword & Duplicate Identifier Safety
+* **Release**: `v1.0.11`
+* **Severity**: Major — Generated Code Is Invalid
+* **Target Package/Files**:
+  - `src/shared/codegen/pythonAdkGenerator.ts` (lines 651-724)
+  - `src/shared/codegen/toolAdapters.ts` (lines 37-49)
+* **Context**:
+  1. **No topological ordering** — agents are emitted in raw array order (line 655). A router branching to an agent defined later in the array emits a Python `NameError` at import time. Cyclic graphs are not detected at all.
+  2. **Python reserved words not handled** — `sanitizePythonIdentifier` (`toolAdapters.ts:37-49`) lowercases and strips non-alphanumerics but never checks keywords. An agent named "Class" emits `class = Agent(...)` → `SyntaxError`. Same for `import`, `def`, `return`, `None`, `lambda`, etc.
+  3. **No de-duplication** — "Support Agent" and "Support-Agent" both sanitize to `support_agent`; the second silently overwrites the first, so an agent vanishes from the generated system with no warning.
+  - *Note*: the sanitizer **is** injection-safe (the `[^a-z0-9_]+` strip removes all metacharacters), so this is a correctness bug rather than a security bug. The security exposure lives in the string literals covered by TASK-132.
+* **Sub-Agent Prompt**:
+  ```
+  Make generated Python structurally valid for all graphs:
+  1. Add a topological sort over the agent/router graph before emission. Emit nodes in dependency order.
+  2. Detect cycles explicitly and fail fast with an error naming the participating nodes; do not emit partial output.
+  3. Extend sanitizePythonIdentifier to append a '_agent' suffix when the result collides with a Python keyword or builtin (use a complete keyword list).
+  4. Introduce an identifier allocator that tracks assigned names per generation run and appends _2, _3 on collision, and surface a webview warning when two nodes collide so the user can rename them.
+  5. Where a genuine forward reference is unavoidable (e.g. AgentTool referencing a sub-agent across modules), use lazy/late binding and emit the required import.
+  ```
+* **Verification**:
+  - Tests cover: router→router forward reference, a 3-node cycle (must fail fast), agents named `class`/`import`/`None`, and two agents colliding on one identifier.
+  - Generated output for each fixture passes `ast.parse`.
+
+---
+
+### [TASK-139] [MAJOR] Remove Blocking `execSync` & Add Network Timeouts on Host Thread
+* **Release**: `v1.0.11`
+* **Severity**: Major — UI Freeze / Hung Operations
+* **Target Package/Files**:
+  - `src/extension/GeminiCodeGenEngine.ts` (lines 271-282, 337, 409, 439, 452, 479, 550)
+  - `src/extension/AgentEngineDeployer.ts` (lines 1626, 1651)
+  - `src/extension/AgentRunnerManager.ts` (lines 710, 983-1035)
+  - `src/extension/views/AgentEngineDeploymentsTreeProvider.ts` (lines 256, 292)
+* **Context**:
+  The VS Code extension host is single-threaded; every `execSync` freezes the **entire IDE UI**.
+  1. `GeminiCodeGenEngine.ts:439, 452, 479` shell out to `gcloud` synchronously during auth.
+  2. `AgentRunnerManager.killPort()` (983-1035) chains up to four `execSync` calls with 2-3s timeouts each, wrapped in six nested empty `catch {}` blocks.
+  3. `AgentEngineDeployer.ts:1626, 1651` run `which gcloud` / `where` synchronously.
+  4. **Unbounded `fetch`** — `GeminiCodeGenEngine.ts:337, 409` call the Gemini and Vertex endpoints with no timeout; a hung connection stalls code generation forever with no cancellation.
+  5. **Silent auth fallback** — lines 271-282: when an explicitly configured API key fails, the code silently falls back to ADC, masking a revoked/invalid key. Violates the fail-fast rule.
+  6. **Brittle LLM response parsing** — line 550: a regex over the returned JSON risks dropping valid generated files.
+  7. `findFiles('**/*.agent')` with no `maxResults` cap in the deployments tree provider.
+* **Sub-Agent Prompt**:
+  ```
+  Unblock the extension host event loop and bound all I/O:
+  1. Convert every execSync call in the extension host to promisified execFile/spawn. Keep timeouts, but make them non-blocking.
+  2. Wrap all fetch calls to generativelanguage.googleapis.com and aiplatform.googleapis.com with AbortSignal.timeout(30000) and surface a cancellable vscode.window.withProgress UI.
+  3. Remove the silent ADC fallback at GeminiCodeGenEngine.ts:271-282. If an API key is explicitly configured and rejected, throw with the underlying auth error. Only use ADC when no key is configured at all.
+  4. Replace the empty catch blocks in killPort with debug-level logging that records which strategy failed.
+  5. Parse the LLM response as JSON with a strict schema check instead of the fileBlockRegex; fail fast with the raw response attached to the output channel when parsing fails.
+  6. Add a maxResults cap and a workspace-scoped exclude to the findFiles calls.
+  ```
+* **Verification**:
+  - Test asserts no `execSync` import remains in `src/extension/` (CI grep guard).
+  - Test asserts a stalled fetch rejects within the configured timeout rather than hanging.
+
+---
+
+### [TASK-140] [MAJOR] Fix Runner Start Races, Unsettled Promises & Timer/Process Leaks
+* **Release**: `v1.0.11`
+* **Severity**: Major — State Corruption / Resource Leaks
+* **Target Package/Files**:
+  - `src/extension/AgentRunnerManager.ts` (lines 750-776, 574, 594)
+  - `src/extension/McpSubprocessManager.ts` (lines 282-291, 694-744)
+  - `src/extension/McpOAuthManager.ts` (lines 84, 205-214)
+  - `src/extension/PythonEnvResolver.ts` (lines 193, 271, 367)
+* **Context**:
+  1. **Start race** — `AgentRunnerManager.ts:750-776`: `this.runnerStatus = 'starting'` and `this.lastRunningPort = port` are global mutable fields written *before* `await pythonResolver.ensureVirtualEnvironment(...)`. Two rapid start requests interleave across that await and corrupt runner state / port bookkeeping.
+  2. **Promise that never settles** — `McpSubprocessManager.ts:694-744`: the secondary `listReq` sets a `timeout` option but registers no `'timeout'` listener. In Node, the socket is *not* destroyed automatically, so the request hangs and the surrounding promise never resolves or rejects — a permanent leak of the MCP discovery flow.
+  3. **SIGKILL fallback timer leak** — `McpSubprocessManager.ts:282-291`: the 1000ms escalation timer is never `clearTimeout`-ed when the child exits gracefully.
+  4. **OAuth loopback socket leak** — `McpOAuthManager.ts:84`: `server.close()` stops new connections but leaves active sockets open, holding the port.
+  5. **Missing OAuth CSRF/PKCE** — lines 205-214 build the authorization URL with no `state` parameter and no PKCE `code_challenge`.
+  6. **Silent I/O failures** — `AgentRunnerManager.ts:574, 594` and `PythonEnvResolver.ts:193, 271, 367` swallow write/unlink/venv errors, orphaning temp scripts and hiding broken environments.
+* **Sub-Agent Prompt**:
+  ```
+  Fix concurrency and lifecycle defects in the runtime layer:
+  1. Guard startLocalRunner with an async mutex / in-flight promise keyed by runnerId so concurrent starts await the same operation instead of racing. Do not mutate shared status fields before awaits; compute locally and commit after.
+  2. Add a 'timeout' listener to the listReq HTTP request in McpSubprocessManager that destroys the socket and settles the promise. Audit every new Promise((resolve,reject)=>...) in these files and assert every branch (error, close, timeout, non-2xx) settles exactly once.
+  3. clearTimeout the SIGKILL escalation timer in the child's exit/close handler.
+  4. Track sockets on the OAuth loopback server and destroy them in close(); bind explicitly to 127.0.0.1.
+  5. Implement OAuth 2.1 correctness: generate a cryptographically random `state` and a PKCE code_verifier/code_challenge, include them in the auth URL, and verify `state` on callback before exchanging the code.
+  6. Replace the empty catch blocks with logged errors; a failure to write or clean up a temp runner script must be visible in the output channel.
+  ```
+* **Verification**:
+  - Regression test: invoking `startLocalRunner` twice concurrently yields one process and a consistent port.
+  - Test asserts an unresponsive MCP endpoint rejects within the timeout instead of hanging forever.
+  - Test asserts a mismatched `state` on OAuth callback is rejected.
+
+---
+
+### [TASK-141] [MAJOR] Fix Canvas Re-Render Storms & Document Serialization Thrash
+* **Release**: `v1.0.11`
+* **Severity**: Major — Interactive Performance
+* **Target Package/Files**:
+  - `src/webview/App.tsx` (lines 858-884, 1322-1364, 721-752, 1438-1444, 1651)
+  - `src/webview/hooks/useWorkflowState.ts` (lines 170-171)
+  - `src/webview/components/Canvas/nodes/AgentNode.tsx`
+* **Context**:
+  1. **`React.memo` fully defeated** — `App.tsx:858-884`: `enrichedNodes` rebuilds `{ ...node, data: { ...node.data, onEdit } }` for **every node on every render**. `AgentNode` *is* correctly wrapped in `memo()` (AgentNode.tsx:218), but the new `data` object reference on each frame guarantees a prop-identity miss, so panning/dragging re-renders the entire graph — O(N) per frame.
+  2. **Full document serialization per frame** — `App.tsx:1322-1364`: `currentWorkflowDocument` deep-maps all nodes and edges inside a `useMemo` keyed on `nodes`, so it re-runs on every drag tick, generating heavy GC churn.
+  3. **Derived-state effect loop** — `App.tsx:721-752`: an effect recomputes `isStartNode` and calls `setNodes`, causing a second render pass on every connection change.
+  4. **Argument mutation** — `App.tsx:1438-1444`: `partialData` is mutated in place before being handed to a state setter.
+  5. **Ref write during render** — `useWorkflowState.ts:170-171`: `docRef.current = document` executes in the render body, which is unsafe under concurrent rendering.
+  6. **Inline object prop** — `App.tsx:1651` allocates a fresh object literal for the drawer's `agent` prop each render, forcing the ~1600-line drawer to re-render.
+* **Sub-Agent Prompt**:
+  ```
+  Restore canvas rendering performance in the webview:
+  1. Stop injecting callbacks into node.data. Provide onEdit/onDelete/onDuplicate through a React context (GraphActionsContext) consumed inside AgentNode, so node objects keep stable identity across frames.
+  2. Delete the currentWorkflowDocument useMemo; build the export payload imperatively inside the handlers that actually need it (generate, save, deploy).
+  3. Compute isStartNode synchronously inside onConnect/onEdgesChange instead of in a reactive effect.
+  4. Copy partialData before mutating it.
+  5. Move the docRef assignment into useEffect/useLayoutEffect.
+  6. Memoize the object passed as the drawer's agent prop with useMemo keyed on the selected node id and its data.
+  7. Verify with the React DevTools profiler that dragging one node re-renders only that node.
+  ```
+* **Verification**:
+  - Profiler-based assertion (or a render-counter test harness) proving a single node drag does not re-render sibling nodes.
+  - No behavioral regressions in existing canvas tests.
+
+---
+
+### [TASK-142] [MAJOR] Decompose God Classes (Runner, Deployer, EditorProvider, App.tsx)
+* **Release**: `v1.0.12`
+* **Severity**: Major — Maintainability / SRP
+* **Target Package/Files**:
+  - `src/extension/AgentRunnerManager.ts` (2707 LOC)
+  - `src/extension/AgentEngineDeployer.ts` (2438 LOC)
+  - `src/extension/AgentEditorProvider.ts` (1468 LOC)
+  - `src/extension/GeminiCodeGenEngine.ts` (1138 LOC)
+  - `src/webview/App.tsx` (1804 LOC)
+* **Context**:
+  Five files carry ~9,500 LOC and mix four-plus responsibilities each. This is the single largest impediment to safely landing the fixes above, and it directly violates the AGENTS.md rule: *"Do not write large files, break the files up into components and helper classes."* Proposed splits:
+
+  | File | LOC | Currently mixes | Proposed split |
+  | :--- | :--- | :--- | :--- |
+  | `AgentRunnerManager.ts` | 2707 | Python script templating (430+ line embedded template), process lifecycle, HTTP inference client, chat session state | `AgentTestRunnerScriptFactory`, `LocalProcessRunner`, `AgentScenarioExecutor`, `ChatSessionManager` |
+  | `AgentEngineDeployer.ts` | 2438 | Scaffolding/fs, subprocess execution, operation polling, auth, metadata persistence | `AgentScaffolder`, `DeploymentExecutor`, `DeploymentMetadataStore` |
+  | `AgentEditorProvider.ts` | 1468 | Editor lifecycle, HTML/CSP templating, 20+ RPC handlers, workspace fs I/O | `AgentRpcDispatcher`, `WebviewTemplateEngine`, `WorkspacePathResolver` |
+  | `GeminiCodeGenEngine.ts` | 1138 | Prompt templating, HTTP clients, response sanitization, assertion evaluation | `GeminiApiClient`, `CodePostProcessor`, `AgentTestEvaluator` |
+  | `App.tsx` | 1804 | ReactFlow state, MCP IPC, OAuth bridge, serialization, panel layout | `useMcpBridge`, `useCodeGeneration`, `useCanvasGraph`, `AppLayout` |
+* **Sub-Agent Prompt**:
+  ```
+  Decompose the five god classes listed in the table above. Work one file at a time, in this order: AgentEditorProvider, GeminiCodeGenEngine, AgentEngineDeployer, AgentRunnerManager, App.tsx.
+  Rules:
+  - Pure mechanical extraction only. Do NOT change behavior in this task; the security and correctness fixes are tracked separately in TASK-132..TASK-141.
+  - Run the full test suite after each extraction and keep it green (baseline: 536 passing).
+  - Preserve every existing comment and docstring; add a class-level docstring to each new module per AGENTS.md, including the Author tag.
+  - Extract the large embedded Python runner template into its own resource file rather than a TS string constant.
+  ```
+* **Verification**:
+  - `npm test` remains green (>= 536 passing) after every extraction step.
+  - No file in `src/` exceeds ~600 LOC afterward; each new module has a single stated responsibility.
+
+---
+
+### [TASK-143] [MAJOR] Unify Duplicated Domain Types, Extract Drawer Primitives & Remove Dead Code
+* **Release**: `v1.0.12`
+* **Severity**: Major — DRY / Drift Risk
+* **Target Package/Files**:
+  - `src/shared/types.ts` (393 LOC) vs `src/webview/types.ts` (551 LOC)
+  - `src/webview/components/inspector/A2AAgentDrawer.tsx` (1592), `StandardAgentDrawer.tsx` (1099), `RouterAgentDrawer.tsx` (740), `tools/McpToolDrawer.tsx` (1390)
+  - `src/webview/hooks/useWorkflowState.ts`
+  - `src/webview/data/patterns.ts` (1379), `src/webview/data/googleCloudMcpServers.ts` (980)
+* **Context**:
+  1. **Duplicated domain model** — `src/shared/types.ts` and `src/webview/types.ts` independently define overlapping core types (`ToolDefinition`, `AgentKind`, `McpToolConfig`, `AgentWorkflowDocument`) with already-visible drift (e.g. `icon` exists on the webview `ToolDefinition` but not the shared one). Since these types describe the payloads crossing the extension↔webview boundary, drift produces silent serialization mismatches.
+  2. **~4,800 LOC of inspector drawers** with heavy copy-paste: each re-implements label/field/section scaffolding, model dropdowns, attached-tool lists, and sub-agent reorder lists.
+  3. **Dead code** — `useWorkflowState()` is referenced **only by its own test file** (`tests/webview/useWorkflowState.test.ts`); `App.tsx` does not consume the hook. Only the standalone `syncWorkflowSubAgents` export is actually exercised. This is tested dead code, which is worse than untested dead code because it looks maintained.
+  4. **Data/logic mixing** — `patterns.ts` and `googleCloudMcpServers.ts` combine static catalogs with factory/transformation functions.
+  5. **Zero component-level test coverage** — the `tests/webview/` suites assert static data shapes and pure helpers; none of the 40+ React components are rendered in a test. Against the AGENTS.md "100% coverage" rule this is the largest coverage gap in the repo.
+* **Sub-Agent Prompt**:
+  ```
+  Consolidate duplication and remove dead code in the webview layer:
+  1. Make src/shared/types.ts the single source of truth for every type that crosses the extension<->webview boundary. Delete the duplicates from src/webview/types.ts and re-export from shared. Keep only genuinely webview-only view-model types local, and document why each one is local.
+  2. Extract shared drawer primitives into src/webview/components/inspector/common/: DrawerSection, LabeledField, ModelSelect, AttachedToolsList, SubAgentReorderList, BranchReorderList, plus a useAgentIdentifier hook. Refactor all four drawers onto them and delete the copy-pasted blocks.
+  3. Either wire useWorkflowState into App.tsx as the canonical graph-state hook, or delete the hook and its test and keep only syncWorkflowSubAgents. Decide explicitly and record the decision in the file's class docstring.
+  4. Split patterns.ts into patternData.ts + nodeFactory.ts, and googleCloudMcpServers.ts into mcpCatalogData.ts + mcpToolMapper.ts.
+  5. Add @testing-library/react and write render-level tests for the four inspector drawers and the canvas node components, covering empty, populated, and invalid-input states.
+  ```
+* **Verification**:
+  - No type name is declared in both `src/shared/types.ts` and `src/webview/types.ts`.
+  - Combined LOC of the four drawers drops materially (target: >30% reduction) with no behavior change.
+  - Component render tests exist and pass for all inspector drawers and canvas nodes.
 
