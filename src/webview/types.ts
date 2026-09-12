@@ -218,7 +218,11 @@ export interface ToolDefinition {
   description: string;
   codePrompt?: string; // Describes what the code in the tool should do (e.g. "Call twitter api endpoint...")
   endpointUrl?: string;
+  httpMethod?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   authKeyEnv?: string;
+  secretManagerKey?: string;
+  headers?: Record<string, string>;
+  timeoutSeconds?: number;
   codeSnippet?: string;
   icon?: string;
   parameters?: Record<string, string>;

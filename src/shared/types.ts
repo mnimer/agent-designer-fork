@@ -132,7 +132,11 @@ export interface ToolDefinition {
   parameters?: Record<string, string>;
   codePrompt?: string;
   endpointUrl?: string;
+  httpMethod?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   authKeyEnv?: string;
+  secretManagerKey?: string;
+  headers?: Record<string, string>;
+  timeoutSeconds?: number;
   enabled?: boolean;
 }
 

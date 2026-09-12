@@ -336,6 +336,63 @@ describe('Tool Adapter Compiler', () => {
       assert.ok(result.toolBindings.includes('slack_mcp_tool'));
     });
 
+    it('should compile REST API tool with async httpx client and GET query params', () => {
+      const restTool: ToolDefinition = {
+        id: 'cust_crm_api',
+        name: 'CRM Customer Query',
+        type: 'api',
+        httpMethod: 'GET',
+        endpointUrl: 'https://crm.example.com/api/v1/customers',
+        authKeyEnv: 'CRM_API_TOKEN',
+        timeoutSeconds: 15,
+        parameters: {
+          customer_id: 'ID of the customer',
+          status: 'Active status',
+        },
+      };
+
+      const result = compileTools([restTool], 'google-adk');
+      assert.ok(result.imports.some((i) => i.includes('import httpx')));
+      assert.ok(result.imports.some((i) => i.includes('import os')));
+
+      const def = result.toolDefinitions.find((d) => d.includes('async def crm_customer_query'));
+      assert.ok(def, 'Should generate async function for REST tool');
+      assert.ok(def.includes('url = "https://crm.example.com/api/v1/customers"'));
+      assert.ok(def.includes('method="GET"'));
+      assert.ok(def.includes('params=data_map'));
+      assert.ok(def.includes('httpx.AsyncClient(timeout=15.0)'));
+      assert.ok(def.includes('token = os.environ.get("CRM_API_TOKEN", "")'));
+      assert.ok(def.includes('headers["Authorization"] = f"Bearer {token}"'));
+      assert.ok(result.toolBindings.includes('crm_customer_query'));
+    });
+
+    it('should compile REST API tool with POST JSON body and Secret Manager fallback', () => {
+      const postTool: ToolDefinition = {
+        id: 'send_order_api',
+        name: 'Submit Order API',
+        type: 'api',
+        httpMethod: 'POST',
+        endpointUrl: 'https://orders.example.com/v2/orders',
+        secretManagerKey: 'projects/my-proj/secrets/orders-secret/versions/latest',
+        headers: {
+          'X-Tenant-Id': 'tenant-999',
+        },
+        parameters: {
+          sku: 'Product SKU',
+          quantity: 'Quantity count',
+        },
+      };
+
+      const result = compileTools([postTool], 'google-adk');
+      const def = result.toolDefinitions.find((d) => d.includes('async def submit_order_api'));
+      assert.ok(def, 'Should generate async submit_order_api');
+      assert.ok(def.includes('method="POST"'));
+      assert.ok(def.includes('json=data_map'));
+      assert.ok(def.includes('"X-Tenant-Id": "tenant-999"'));
+      assert.ok(def.includes('projects/my-proj/secrets/orders-secret/versions/latest'));
+      assert.ok(result.toolBindings.includes('submit_order_api'));
+    });
+
     it('should compile custom Python functions with docstrings and typed signatures', () => {
       const customTool: ToolDefinition = {
         id: 'cust_weather',
@@ -502,5 +559,28 @@ describe('Tool Adapter Compiler', () => {
       assert.ok(def.includes('https://gateway.mcpservers.org/yahoo-finance/mcp'));
       assert.ok(result.toolBindings.includes('yahoo_finance_mcp_tool'));
     });
+
+    it('should compile REST API tool with @tool decorator and async httpx client for LangGraph', () => {
+      const restTool: ToolDefinition = {
+        id: 'lg_weather_api',
+        name: 'Live Weather API',
+        type: 'api',
+        httpMethod: 'GET',
+        endpointUrl: 'https://api.weather.com/v3/current',
+        parameters: {
+          city: 'City name',
+        },
+      };
+
+      const result = compileTools([restTool], 'langgraph');
+      assert.ok(result.imports.some((i) => i.includes('import httpx')));
+      const def = result.toolDefinitions.find((d) => d.includes('async def live_weather_api'));
+      assert.ok(def, 'Should generate live_weather_api function');
+      assert.ok(def.includes('@tool'));
+      assert.ok(def.includes('method="GET"'));
+      assert.ok(def.includes('params=data_map'));
+      assert.ok(result.toolBindings.includes('live_weather_api'));
+    });
   });
 });
+

@@ -749,10 +749,20 @@ export class PythonAdkGenerator {
     const hasMcp = (workflow.nodes || []).some((n: any) =>
       (n.data?.tools || []).some((t: any) => t.type === 'mcp' || t.mcpConfig)
     );
+    const hasRest = (workflow.nodes || []).some((n: any) =>
+      (n.data?.tools || []).some(
+        (t: any) => t.type === 'api' || t.type === 'rest' || (t.endpointUrl && !t.mcpConfig && !t.builtinType)
+      )
+    );
+    const hasSecretManager = (workflow.nodes || []).some((n: any) =>
+      (n.data?.tools || []).some((t: any) => Boolean(t.secretManagerKey))
+    );
     const requirementsCode = [
       hasA2A ? 'google-adk[a2a]>=0.1.0' : 'google-adk>=0.1.0',
       ...(hasA2A ? ['a2a-sdk[http-server]>=0.3.4'] : []),
       ...(hasMcp ? ['mcp>=1.0.0'] : []),
+      ...(hasRest ? ['httpx>=0.27.0'] : []),
+      ...(hasSecretManager ? ['google-cloud-secret-manager>=2.16.0'] : []),
       'google-cloud-aiplatform>=1.70.0',
       'google-auth>=2.30.0',
       'pydantic>=2.0.0',

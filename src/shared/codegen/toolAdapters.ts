@@ -278,7 +278,94 @@ export class ToolAdapterCompiler {
         continue;
       }
 
-      // 9. Custom Function Tools
+      // 9. REST API Tools (async httpx client)
+      if (tool.type === 'api' || tool.type === 'rest' || (tool.endpointUrl && !tool.mcpConfig && !tool.builtinType)) {
+        importSet.add('import httpx');
+        const funcName = sanitizePythonIdentifier(tool.name || tool.id);
+        const docString = tool.description || `REST API tool invoking ${tool.endpointUrl || 'endpoint'}`;
+        const method = (tool.httpMethod || 'GET').toUpperCase();
+        const url = tool.endpointUrl || 'https://api.example.com';
+        const timeout = tool.timeoutSeconds ?? 30;
+
+        const paramKeys = Object.keys(tool.parameters || {});
+        const sig = paramKeys.length > 0
+          ? paramKeys.map((k) => `${sanitizePythonIdentifier(k)}: str = ""`).join(', ')
+          : '**kwargs';
+
+        const lines: string[] = [
+          `async def ${funcName}(${sig}) -> dict:`,
+          `    """${docString}"""`,
+          `    url = "${url}"`,
+        ];
+
+        const headerEntries: Record<string, string> = {
+          Accept: 'application/json',
+          ...(tool.headers || {}),
+        };
+        if (['POST', 'PUT', 'PATCH'].includes(method)) {
+          headerEntries['Content-Type'] = headerEntries['Content-Type'] || 'application/json';
+        }
+
+        const headerLines = Object.entries(headerEntries).map(
+          ([k, v]) => `        "${k}": "${v}",`
+        );
+        lines.push(`    headers = {\n${headerLines.join('\n')}\n    }`);
+
+        if (tool.authKeyEnv) {
+          importSet.add('import os');
+          lines.push(`    token = os.environ.get("${tool.authKeyEnv}", "")`);
+          lines.push(`    if token:`);
+          lines.push(`        headers["Authorization"] = f"Bearer {token}"`);
+        }
+
+        if (tool.secretManagerKey) {
+          lines.push(`    if "Authorization" not in headers or not headers["Authorization"]:`);
+          lines.push(`        try:`);
+          lines.push(`            from google.cloud import secretmanager`);
+          lines.push(`            sm_client = secretmanager.SecretManagerServiceClient()`);
+          lines.push(`            sm_resp = sm_client.access_secret_version(request={"name": "${tool.secretManagerKey}"})`);
+          lines.push(`            sm_token = sm_resp.payload.data.decode("utf-8")`);
+          lines.push(`            headers["Authorization"] = f"Bearer {sm_token}"`);
+          lines.push(`        except Exception:`);
+          lines.push(`            pass`);
+        }
+
+        if (paramKeys.length > 0) {
+          const dictEntries = paramKeys
+            .map((k) => `"${k}": ${sanitizePythonIdentifier(k)}`)
+            .join(', ');
+          lines.push(`    data_map = {k: v for k, v in {${dictEntries}}.items() if v}`);
+        } else {
+          lines.push(`    data_map = kwargs`);
+        }
+
+        const isQuery = method === 'GET' || method === 'DELETE';
+        const dataArg = isQuery ? 'params=data_map' : 'json=data_map';
+
+        lines.push(`    try:`);
+        lines.push(`        async with httpx.AsyncClient(timeout=${timeout}.0) as client:`);
+        lines.push(`            response = await client.request(`);
+        lines.push(`                method="${method}",`);
+        lines.push(`                url=url,`);
+        lines.push(`                ${dataArg},`);
+        lines.push(`                headers=headers,`);
+        lines.push(`            )`);
+        lines.push(`            response.raise_for_status()`);
+        lines.push(`            try:`);
+        lines.push(`                return response.json()`);
+        lines.push(`            except Exception:`);
+        lines.push(`                return {"status": "success", "text": response.text}`);
+        lines.push(`    except httpx.HTTPStatusError as e:`);
+        lines.push(`        return {"status": "error", "code": e.response.status_code, "detail": e.response.text}`);
+        lines.push(`    except Exception as e:`);
+        lines.push(`        return {"status": "error", "message": str(e)}`);
+
+        definitions.push(lines.join('\n'));
+        bindings.push(funcName);
+        continue;
+      }
+
+      // 10. Custom Function Tools
       const funcName = sanitizePythonIdentifier(tool.name || tool.id);
       const docString = tool.description || 'Custom agent tool';
       const paramKeys = Object.keys(tool.parameters || {});
@@ -531,7 +618,95 @@ export class ToolAdapterCompiler {
         continue;
       }
 
-      // 8. General Custom Tools / APIs
+      // 8. REST API Tools (async httpx client with @tool decorator)
+      if (tool.type === 'api' || tool.type === 'rest' || (tool.endpointUrl && !tool.mcpConfig && !tool.builtinType)) {
+        importSet.add('import httpx');
+        const funcName = sanitizePythonIdentifier(tool.name || tool.id);
+        const docString = tool.description || `REST API tool invoking ${tool.endpointUrl || 'endpoint'}`;
+        const method = (tool.httpMethod || 'GET').toUpperCase();
+        const url = tool.endpointUrl || 'https://api.example.com';
+        const timeout = tool.timeoutSeconds ?? 30;
+
+        const paramKeys = Object.keys(tool.parameters || {});
+        const sig = paramKeys.length > 0
+          ? paramKeys.map((k) => `${sanitizePythonIdentifier(k)}: str = ""`).join(', ')
+          : '**kwargs';
+
+        const lines: string[] = [
+          `@tool`,
+          `async def ${funcName}(${sig}) -> dict:`,
+          `    """${docString}"""`,
+          `    url = "${url}"`,
+        ];
+
+        const headerEntries: Record<string, string> = {
+          Accept: 'application/json',
+          ...(tool.headers || {}),
+        };
+        if (['POST', 'PUT', 'PATCH'].includes(method)) {
+          headerEntries['Content-Type'] = headerEntries['Content-Type'] || 'application/json';
+        }
+
+        const headerLines = Object.entries(headerEntries).map(
+          ([k, v]) => `        "${k}": "${v}",`
+        );
+        lines.push(`    headers = {\n${headerLines.join('\n')}\n    }`);
+
+        if (tool.authKeyEnv) {
+          importSet.add('import os');
+          lines.push(`    token = os.environ.get("${tool.authKeyEnv}", "")`);
+          lines.push(`    if token:`);
+          lines.push(`        headers["Authorization"] = f"Bearer {token}"`);
+        }
+
+        if (tool.secretManagerKey) {
+          lines.push(`    if "Authorization" not in headers or not headers["Authorization"]:`);
+          lines.push(`        try:`);
+          lines.push(`            from google.cloud import secretmanager`);
+          lines.push(`            sm_client = secretmanager.SecretManagerServiceClient()`);
+          lines.push(`            sm_resp = sm_client.access_secret_version(request={"name": "${tool.secretManagerKey}"})`);
+          lines.push(`            sm_token = sm_resp.payload.data.decode("utf-8")`);
+          lines.push(`            headers["Authorization"] = f"Bearer {sm_token}"`);
+          lines.push(`        except Exception:`);
+          lines.push(`            pass`);
+        }
+
+        if (paramKeys.length > 0) {
+          const dictEntries = paramKeys
+            .map((k) => `"${k}": ${sanitizePythonIdentifier(k)}`)
+            .join(', ');
+          lines.push(`    data_map = {k: v for k, v in {${dictEntries}}.items() if v}`);
+        } else {
+          lines.push(`    data_map = kwargs`);
+        }
+
+        const isQuery = method === 'GET' || method === 'DELETE';
+        const dataArg = isQuery ? 'params=data_map' : 'json=data_map';
+
+        lines.push(`    try:`);
+        lines.push(`        async with httpx.AsyncClient(timeout=${timeout}.0) as client:`);
+        lines.push(`            response = await client.request(`);
+        lines.push(`                method="${method}",`);
+        lines.push(`                url=url,`);
+        lines.push(`                ${dataArg},`);
+        lines.push(`                headers=headers,`);
+        lines.push(`            )`);
+        lines.push(`            response.raise_for_status()`);
+        lines.push(`            try:`);
+        lines.push(`                return response.json()`);
+        lines.push(`            except Exception:`);
+        lines.push(`                return {"status": "success", "text": response.text}`);
+        lines.push(`    except httpx.HTTPStatusError as e:`);
+        lines.push(`        return {"status": "error", "code": e.response.status_code, "detail": e.response.text}`);
+        lines.push(`    except Exception as e:`);
+        lines.push(`        return {"status": "error", "message": str(e)}`);
+
+        definitions.push(lines.join('\n'));
+        bindings.push(funcName);
+        continue;
+      }
+
+      // 9. General Custom Tools / APIs
       const funcName = sanitizePythonIdentifier(tool.name || tool.id);
       const docString = tool.description || 'Custom LangGraph agent tool';
       const paramKeys = Object.keys(tool.parameters || {});
