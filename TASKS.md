@@ -28,7 +28,6 @@
 | **TASK-113** | v1.0.2 | Patterns | Sequential Pipeline & Parallel Fan-Out Patterns | **Complete** | TASK-112 |
 | **TASK-114** | v1.0.2 | Codegen | Multi-Agent DAG Python ADK Code Generation & Tracing | **Complete** | TASK-113 |
 | **TASK-115** | v1.0.3 | Memory | In-Memory & Cloud Firestore Checkpointer Configuration | **Not Started** | TASK-103, TASK-111 |
-| **TASK-116** | v1.0.4 | A2A | Agent-to-Agent (A2A) Protocol Node & JSON-RPC Client | **Complete** | TASK-112, TASK-115 |
 | **TASK-117** | v1.0.5 | Router | Router Node & Dynamic Branching Logic | **Complete** | TASK-112 |
 | **TASK-118** | v1.0.6 | Tools | Custom REST API Tool Builder & Python Code Sandbox | **Complete** | TASK-104 |
 | **TASK-119** | v1.0.7 | Schema | Structured Output Schema Builder & Pydantic Validation | **Complete** | TASK-103, TASK-106 |
@@ -44,18 +43,18 @@
 | **TASK-129** | v1.0.6 | Tools | ADK Built-in Tools Registry & Cross-Harness Tool Adapter Architecture | **Done** | TASK-104, TASK-118 |
 | **TASK-130** | v1.0.8 | MCP / Tools | Google Cloud Remote MCP Servers Registry in Tools Tab | **Completed** | TASK-120, TASK-129 |
 | **TASK-131** | v1.1.3 | i18n | Extension Host & Webview Internationalization (i18n / l10n) | **Not Started** | TASK-100, TASK-102 |
-| **TASK-132** | v1.0.10 | Codegen / Security | [CRITICAL] Escape User Strings Emitted Into Generated Python (Code Injection) | **In Progress** | TASK-106, TASK-114 |
-| **TASK-133** | v1.0.10 | Extension Host / Security | [CRITICAL] Eliminate Shell String Interpolation in Subprocess Invocation | **In Progress** | TASK-107, TASK-120, TASK-125 |
-| **TASK-134** | v1.0.10 | Extension Host / Security | [CRITICAL] Contain Workspace File Writes & Validate Webview RPC Payloads | **In Progress** | TASK-101, TASK-106 |
-| **TASK-135** | v1.0.10 | Security / Secrets | [CRITICAL] Migrate Gemini API Key & OAuth Tokens to VS Code SecretStorage | **In Progress** | TASK-106, TASK-120 |
-| **TASK-136** | v1.0.10 | Persistence | [CRITICAL] Prevent Silent Data Loss on Malformed `.agent` Documents | **In Progress** | TASK-108 |
-| **TASK-137** | v1.0.10 | Webview / Security | [MAJOR] Harden Webview CSP & Inline Bootstrap Serialization | **In Progress** | TASK-100, TASK-102 |
-| **TASK-138** | v1.0.11 | Codegen / Correctness | [MAJOR] Topological Ordering, Python Keyword & Duplicate Identifier Safety | **In Progress** | TASK-114, TASK-117 |
-| **TASK-139** | v1.0.11 | Extension Host / Perf | [MAJOR] Remove Blocking `execSync` & Add Network Timeouts on Host Thread | **In Progress** | TASK-106, TASK-125 |
-| **TASK-140** | v1.0.11 | Runner / Concurrency | [MAJOR] Fix Runner Start Races, Unsettled Promises & Timer/Process Leaks | **In Progress** | TASK-107, TASK-120 |
-| **TASK-141** | v1.0.11 | Webview / Perf | [MAJOR] Fix Canvas Re-Render Storms & Document Serialization Thrash | **In Progress** | TASK-103, TASK-112 |
-| **TASK-142** | v1.0.12 | Architecture | [MAJOR] Decompose God Classes (Runner, Deployer, EditorProvider, App.tsx) | **In Progress** | TASK-132 to TASK-141 |
-| **TASK-143** | v1.0.12 | Architecture / Quality | [MAJOR] Unify Duplicated Domain Types, Extract Drawer Primitives & Remove Dead Code | **In Progress** | TASK-142 |
+| **TASK-132** | v1.0.10 | Codegen / Security | [CRITICAL] Escape User Strings Emitted Into Generated Python (Code Injection) | **Completed** | TASK-106, TASK-114 |
+| **TASK-133** | v1.0.10 | Extension Host / Security | [CRITICAL] Eliminate Shell String Interpolation in Subprocess Invocation | **Completed** | TASK-107, TASK-120, TASK-125 |
+| **TASK-134** | v1.0.10 | Extension Host / Security | [CRITICAL] Contain Workspace File Writes & Validate Webview RPC Payloads | **Completed** | TASK-101, TASK-106 |
+| **TASK-135** | v1.0.10 | Security / Secrets | [CRITICAL] Migrate Gemini API Key & OAuth Tokens to VS Code SecretStorage | **Completed** | TASK-106, TASK-120 |
+| **TASK-136** | v1.0.10 | Persistence | [CRITICAL] Prevent Silent Data Loss on Malformed `.agent` Documents | **Completed** | TASK-108 |
+| **TASK-137** | v1.0.10 | Webview / Security | [MAJOR] Harden Webview CSP & Inline Bootstrap Serialization | **Completed** | TASK-100, TASK-102 |
+| **TASK-138** | v1.0.11 | Codegen / Correctness | [MAJOR] Topological Ordering, Python Keyword & Duplicate Identifier Safety | **Completed** | TASK-114, TASK-117 |
+| **TASK-139** | v1.0.11 | Extension Host / Perf | [MAJOR] Remove Blocking `execSync` & Add Network Timeouts on Host Thread | **Completed** | TASK-106, TASK-125 |
+| **TASK-140** | v1.0.11 | Runner / Concurrency | [MAJOR] Fix Runner Start Races, Unsettled Promises & Timer/Process Leaks | **Completed** | TASK-107, TASK-120 |
+| **TASK-141** | v1.0.11 | Webview / Perf | [MAJOR] Fix Canvas Re-Render Storms & Document Serialization Thrash | **Completed** | TASK-103, TASK-112 |
+| **TASK-142** | v1.0.12 | Architecture | [MAJOR] Decompose God Classes (Runner, Deployer, EditorProvider, App.tsx) | **Completed** | TASK-132 to TASK-141 |
+| **TASK-143** | v1.0.12 | Architecture / Quality | [MAJOR] Unify Duplicated Domain Types, Extract Drawer Primitives & Remove Dead Code | **Completed** | TASK-142 |
 | **TASK-144** | v1.2.0 | Samples / Research | Reverse Engineer `academic-research` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
 | **TASK-145** | v1.2.0 | Samples / Patterns | Reverse Engineer `adk-ae-oauth` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
 | **TASK-146** | v1.2.0 | Samples / Patterns | Reverse Engineer `agent-skills-tutorial` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
@@ -1022,7 +1021,7 @@
 
 ### [TASK-132] [CRITICAL] Escape User Strings Emitted Into Generated Python (Code Injection)
 * **Release**: `v1.0.10`
-* **Status**: In Progress
+* **Status**: Completed
 * **Severity**: Critical — Remote/Arbitrary Code Execution
 * **Target Package/Files**:
   - `src/shared/codegen/pythonAdkGenerator.ts` (lines 660, 663, 665, 666, 697, 567, 239-240)
@@ -1060,7 +1059,7 @@
 
 ### [TASK-133] [CRITICAL] Eliminate Shell String Interpolation in Subprocess Invocation
 * **Release**: `v1.0.10`
-* **Status**: In Progress
+* **Status**: Completed
 * **Severity**: Critical — Arbitrary Command Execution
 * **Target Package/Files**:
   - `src/extension/AgentEngineDeployer.ts` (lines 1026-1029, 1250-1256, 1626, 1651)
@@ -1104,7 +1103,7 @@
 
 ### [TASK-134] [CRITICAL] Contain Workspace File Writes & Validate Webview RPC Payloads
 * **Release**: `v1.0.10`
-* **Status**: In Progress
+* **Status**: Completed
 * **Severity**: Critical — Path Traversal / Arbitrary File Overwrite
 * **Target Package/Files**:
   - `src/extension/AgentEditorProvider.ts` (lines 404-426, 528-538, 574-593, 358)
@@ -1140,7 +1139,7 @@
 
 ### [TASK-135] [CRITICAL] Migrate Gemini API Key & OAuth Tokens to VS Code SecretStorage
 * **Release**: `v1.0.10`
-* **Status**: In Progress
+* **Status**: Completed
 * **Severity**: Critical — Credential Exposure
 * **Target Package/Files**:
   - `package.json` (`agentFlow.geminiApiKey` contribution)
@@ -1169,7 +1168,7 @@
 
 ### [TASK-136] [CRITICAL] Prevent Silent Data Loss on Malformed `.agent` Documents
 * **Release**: `v1.0.10`
-* **Status**: In Progress
+* **Status**: Completed
 * **Severity**: Critical — Irreversible User Data Loss
 * **Target Package/Files**:
   - `src/extension/AgentEditorProvider.ts` (lines 253-262, 838-854, 928-939, 311-316)
@@ -1206,7 +1205,7 @@
 
 ### [TASK-137] [MAJOR] Harden Webview CSP & Inline Bootstrap Serialization
 * **Release**: `v1.0.10`
-* **Status**: In Progress
+* **Status**: Completed
 * **Severity**: Major — XSS Hardening
 * **Target Package/Files**:
   - `src/extension/AgentEditorProvider.ts` (lines 1134, 1148, 1160-1161, 199-207)
@@ -1239,7 +1238,7 @@
 
 ### [TASK-138] [MAJOR] Topological Ordering, Python Keyword & Duplicate Identifier Safety
 * **Release**: `v1.0.11`
-* **Status**: In Progress
+* **Status**: Completed
 * **Severity**: Major — Generated Code Is Invalid
 * **Target Package/Files**:
   - `src/shared/codegen/pythonAdkGenerator.ts` (lines 651-724)
@@ -1266,7 +1265,7 @@
 
 ### [TASK-139] [MAJOR] Remove Blocking `execSync` & Add Network Timeouts on Host Thread
 * **Release**: `v1.0.11`
-* **Status**: In Progress
+* **Status**: Completed
 * **Severity**: Major — UI Freeze / Hung Operations
 * **Target Package/Files**:
   - `src/extension/GeminiCodeGenEngine.ts` (lines 271-282, 337, 409, 439, 452, 479, 550)
@@ -1300,7 +1299,7 @@
 
 ### [TASK-140] [MAJOR] Fix Runner Start Races, Unsettled Promises & Timer/Process Leaks
 * **Release**: `v1.0.11`
-* **Status**: In Progress
+* **Status**: Completed
 * **Severity**: Major — State Corruption / Resource Leaks
 * **Target Package/Files**:
   - `src/extension/AgentRunnerManager.ts` (lines 750-776, 574, 594)
@@ -1333,7 +1332,7 @@
 
 ### [TASK-141] [MAJOR] Fix Canvas Re-Render Storms & Document Serialization Thrash
 * **Release**: `v1.0.11`
-* **Status**: In Progress
+* **Status**: Completed
 * **Severity**: Major — Interactive Performance
 * **Target Package/Files**:
   - `src/webview/App.tsx` (lines 858-884, 1322-1364, 721-752, 1438-1444, 1651)
@@ -1365,7 +1364,7 @@
 
 ### [TASK-142] [MAJOR] Decompose God Classes (Runner, Deployer, EditorProvider, App.tsx)
 * **Release**: `v1.0.12`
-* **Status**: In Progress
+* **Status**: Completed
 * **Severity**: Major — Maintainability / SRP
 * **Target Package/Files**:
   - `src/extension/AgentRunnerManager.ts` (2707 LOC)
@@ -1400,7 +1399,7 @@
 
 ### [TASK-143] [MAJOR] Unify Duplicated Domain Types, Extract Drawer Primitives & Remove Dead Code
 * **Release**: `v1.0.12`
-* **Status**: In Progress
+* **Status**: Completed
 * **Severity**: Major — DRY / Drift Risk
 * **Target Package/Files**:
   - `src/shared/types.ts` (393 LOC) vs `src/webview/types.ts` (551 LOC)

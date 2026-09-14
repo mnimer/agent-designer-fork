@@ -75,7 +75,7 @@ export class WorkflowTreeItem extends vscode.TreeItem {
       `- **Nodes**: ${nodeCount}\n` +
       `- **Framework**: ${framework}\n` +
       `- **Path**: ${uri.fsPath}`
-    ).value;
+    );
 
     // Icon representing agent topology / workflow graph
     this.iconPath = new vscode.ThemeIcon('symbol-structure');

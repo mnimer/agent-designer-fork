@@ -15,6 +15,7 @@
  
 import * as vscode from 'vscode';
 import { AgentEditorProvider } from './AgentEditorProvider';
+import { SecretsProvider } from './security/SecretsProvider';
 import {
   WorkflowExplorerTreeProvider,
   WorkflowTreeItem,
@@ -35,6 +36,19 @@ export function activate(context: vscode.ExtensionContext): void {
   // 1. Create shared OutputChannel for extension logging & diagnostics
   outputChannel = vscode.window.createOutputChannel('Agent Flow Builder');
   context.subscriptions.push(outputChannel);
+
+  // Initialize secure secrets storage provider
+  const secretsProvider = SecretsProvider.init(context.secrets);
+
+  // Perform global configuration-to-SecretStorage migration if needed
+  const config = vscode.workspace.getConfiguration('agentFlow');
+  secretsProvider.migrateFromSettings(config).then((migrated) => {
+    if (migrated) {
+      vscode.window.showInformationMessage('Migrated Gemini API key to secure VS Code SecretStorage.');
+    }
+  }).catch((err) => {
+    outputChannel?.appendLine(`[Agent Flow Builder] Error migrating legacy API key configuration: ${err}`);
+  });
 
   // 2. Register Custom Editor Provider for *.agent visual topology files
   const providerRegistration = AgentEditorProvider.register(context, outputChannel);
@@ -175,6 +189,40 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   );
   context.subscriptions.push(deployAgentEngineCmd);
+
+  // 9. Command: Set Gemini API Key (Command Palette wrapper)
+  const setApiKeyCmd = vscode.commands.registerCommand(
+    'agentFlow.setGeminiApiKey',
+    async () => {
+      const input = await vscode.window.showInputBox({
+        title: 'Agent Flow: Set Gemini API Key',
+        prompt: 'Enter your Gemini API key (stored securely in VS Code SecretStorage)',
+        password: true,
+        ignoreFocusOut: true,
+      });
+
+      if (input !== undefined) {
+        if (input.trim() === '') {
+          await secretsProvider.deleteGeminiApiKey();
+          vscode.window.showInformationMessage('Gemini API key has been cleared.');
+        } else {
+          await secretsProvider.setGeminiApiKey(input.trim());
+          vscode.window.showInformationMessage('Gemini API key has been securely saved.');
+        }
+      }
+    }
+  );
+  context.subscriptions.push(setApiKeyCmd);
+
+  // 10. Command: Clear Gemini API Key
+  const clearApiKeyCmd = vscode.commands.registerCommand(
+    'agentFlow.clearGeminiApiKey',
+    async () => {
+      await secretsProvider.deleteGeminiApiKey();
+      vscode.window.showInformationMessage('Gemini API key has been securely cleared from SecretStorage.');
+    }
+  );
+  context.subscriptions.push(clearApiKeyCmd);
 }
 
 /**
@@ -182,4 +230,5 @@ export function activate(context: vscode.ExtensionContext): void {
  */
 export function deactivate(): void {
   AgentEditorProvider.disposeAll();
+  SecretsProvider.resetInstance();
 }

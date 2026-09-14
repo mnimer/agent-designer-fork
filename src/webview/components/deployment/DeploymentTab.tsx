@@ -6,14 +6,16 @@
  * in the Code Generation tab (Vertex AI Agent Engine or Google Cloud Run).
  *
  * Architectural Decisions:
- * 1. Provides a 75% width Run/Deploy/Restart Agent button alongside a 25% width red Stop button.
- * 2. Stop button cleanly dispatches STOP_LOCAL_RUNNER and resets deployment status.
- * 3. Adheres strictly to the 8pt UI grid system for all layout dimensions.
+ * 1. Fixed size output container (h-[256px] adhering to 8pt grid system: 32 * 8 = 256px) with overflow-y-auto and auto-scrolling to prevent output logs from expanding vertically and pushing the UI/action buttons off-screen.
+ * 2. Provides a 75% width Run/Deploy/Restart Agent button alongside a 25% width red Stop button pinned to the bottom of the configuration card.
+ * 3. Stop button cleanly dispatches STOP_LOCAL_RUNNER and resets deployment status.
+ * 4. Container hierarchy enforces h-full min-h-0 overflow-hidden to prevent viewport scroll leakage.
+ * 5. Adheres strictly to the 8pt UI grid system for all layout dimensions.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Laptop, 
   Cpu, 
@@ -46,6 +48,7 @@ import { AgentWorkflowDocument } from '../../../shared/types';
 import { extractRuntimeSecrets, RuntimeSecret } from '../../utils/runtimeSecrets';
 import { useWebviewBridge } from '../../hooks/useWebviewBridge';
 import { AgentEngineDeployTab } from './AgentEngineDeployTab';
+import { CloudRunDeployTab } from './CloudRunDeployTab';
 
 interface DeploymentTabProps {
   generationConfig: GenerationConfig;
@@ -83,6 +86,13 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [deployStatus, setDeployStatus] = useState<'idle' | 'deploying' | 'success' | 'error'>('idle');
   const [deployLogs, setDeployLogs] = useState<string[]>([]);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll local runner and deployment logs to bottom as new entries stream in
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [deployLogs]);
+
   const [serviceUrl, setServiceUrl] = useState<string | null>(null);
   const [diskFilesExist, setDiskFilesExist] = useState<boolean>(false);
 
@@ -282,12 +292,12 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
   const hasGeneratedCode = Boolean((generatedFiles && generatedFiles.length > 0) || diskFilesExist);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
+    <div className="h-full flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
       {/* Top Environment Switcher Bar */}
-      <div className="px-4 py-2.5 bg-[#161b22] border-b border-[#30363d] flex items-center justify-between shrink-0">
+      <div className="px-4 py-2 bg-[#161b22] border-b border-[#30363d] flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <Server className="w-4 h-4 text-emerald-400" />
-          <span className="text-xs font-bold uppercase tracking-wide text-white">TARGET ENVIRONMENT</span>
+          <span className="text-xs font-bold uppercase tracking-wide text-white">Target Environment</span>
         </div>
         <div className="flex items-center gap-1 bg-[#0d1117] p-1 rounded-lg border border-[#30363d]">
           <button
@@ -340,40 +350,54 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
         />
       </div>
 
-      {/* Local Runner and Cloud Run View (Kept mounted with CSS hidden to preserve running processes, inputs, and logs) */}
-      <div className={selectedTarget !== 'agent_engine' ? 'flex-1 p-4 flex gap-4 overflow-hidden bg-[#0d1117]' : 'hidden'}>
+      {/* Cloud Run View (Kept mounted with CSS hidden to preserve active background deployment, inputs, and logs) */}
+      <div className={selectedTarget === 'cloud_run' ? 'flex-1 flex flex-col h-full overflow-hidden' : 'hidden'}>
+        <CloudRunDeployTab
+          document={workflowDoc}
+          generatedFiles={generatedFiles}
+          secrets={secretValues}
+          onSecretChange={(k, v) => setSecretValues((prev) => ({ ...prev, [k]: v }))}
+          targetDirectory={generationConfig.outputFolder || './'}
+          onTargetDirectoryChange={(newFolder) => onUpdateGenerationConfig?.({ outputFolder: newFolder })}
+          sharedProjectId={sharedProjectId}
+          onProjectIdChange={handleSharedProjectIdChange}
+        />
+      </div>
+
+      {/* Local Runner View (Kept mounted with CSS hidden to preserve running processes, inputs, and logs) */}
+      <div className={selectedTarget === 'local' ? 'flex-1 p-4 flex gap-4 overflow-hidden bg-[#0d1117] min-h-0' : 'hidden'}>
         {/* LEFT 1/3 CARD: Deployment Options & Config */}
         <div className="w-1/3 min-w-[310px] max-w-[390px] bg-[#161b22] border border-[#30363d] rounded-xl p-4 shadow-xl flex flex-col min-h-0 overflow-hidden">
           <div className="flex-1 overflow-y-auto pr-1 space-y-4 min-h-0">
             {/* Target Header */}
             <div className="flex items-center justify-between border-b border-[#30363d] pb-2">
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-white">
-                <Server className="w-4 h-4 text-emerald-400" />
-                <span>DEPLOYMENT & RUNNER</span>
+              <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-white">
+                <Server className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Deployment & Runner</span>
               </div>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono border border-emerald-500/30">
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#0d1117] text-emerald-400 font-mono border border-[#30363d]">
                 Ready
               </span>
             </div>
 
             {/* Deployment Target Dropdown (Local Runner vs Codegen Selected Target) */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider">TARGET ENVIRONMENT</span>
-                <span className="text-[10px] text-gray-400 font-mono uppercase">
-                  {isLocalSelected ? 'LOCAL MACHINE' : 'CLOUD DEPLOYMENT'}
+              <label className="text-[11px] text-gray-400 font-bold uppercase tracking-tight flex items-center justify-between">
+                <span>Target Environment</span>
+                <span className="text-[9px] text-gray-400 font-mono">
+                  {isLocalSelected ? 'Local Machine' : 'Cloud Deployment'}
                 </span>
-              </div>
+              </label>
               <select
                 value={selectedTarget}
                 onChange={(e) => {
                   setSelectedTarget(e.target.value as any);
                 }}
-                className="w-full bg-[#0d1117] border border-[#30363d] text-xs text-white rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500 cursor-pointer font-medium"
+                className="w-full bg-[#0d1117] border border-[#30363d] text-xs text-white rounded-lg px-2.5 py-2 focus:outline-none focus:border-emerald-500 cursor-pointer font-medium"
               >
                 <option value="local">🖥️ Local Runner</option>
                 {cloudTarget === 'agent_engine' ? (
-                  <option value="agent_engine">🧠 Google Agent Engine</option>
+                  <option value="agent_engine">🧠 Vertex AI Agent Engine</option>
                 ) : (
                   <option value="cloud_run">☁️ Google Cloud Run</option>
                 )}
@@ -489,17 +513,17 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
 
           {/* RUNTIME VALUES & SECRETS SECTION */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between border-b border-[#30363d] pb-2">
-              <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-400">
+            <div className="flex items-center justify-between border-b border-[#30363d] pb-1.5">
+              <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-amber-400">
                 <Key className="w-3.5 h-3.5 text-amber-400" />
-                <span>RUNTIME VALUES & SECRETS</span>
+                <span>Runtime Values & Secrets</span>
               </div>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 font-mono border border-amber-500/30">
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-300 font-mono border border-amber-500/30">
                 {runtimeSecrets.length} detected
               </span>
             </div>
 
-            <p className="text-[10px] text-gray-400 leading-normal">
+            <p className="text-[10px] text-gray-400 leading-tight">
               Secret keys and environment variables referenced by nodes in your diagram (tools, custom APIs, memory checkpointers).
             </p>
 
@@ -515,10 +539,10 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                       className="p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d] space-y-1.5 transition-all hover:border-gray-500"
                     >
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-mono font-bold text-amber-300 truncate">
+                        <span className="text-[11px] font-mono font-bold text-amber-300 truncate">
                           {secret.name}
                         </span>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#21262d] text-gray-300 font-sans border border-[#30363d] truncate max-w-[150px]">
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#21262d] text-gray-300 font-sans border border-[#30363d] truncate max-w-[130px]">
                           {secret.sourceNode}
                         </span>
                       </div>
@@ -533,15 +557,15 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                           value={currentValue}
                           onChange={(e) => handleSecretChange(secret.name, e.target.value)}
                           placeholder={secret.placeholder || 'Enter secret value...'}
-                          className="w-full bg-[#161b22] border border-[#30363d] text-xs text-gray-200 rounded px-2.5 py-1.5 pr-8 focus:outline-none focus:border-amber-500 font-mono placeholder:text-gray-500"
+                          className="w-full bg-[#161b22] border border-[#30363d] text-xs text-gray-200 rounded px-2 py-1 pr-7 focus:outline-none focus:border-amber-500 font-mono placeholder:text-gray-600"
                         />
                         <button
                           type="button"
                           onClick={() => handleToggleShowSecret(secret.name)}
-                          className="absolute right-2 p-0.5 text-gray-400 hover:text-gray-200 cursor-pointer"
+                          className="absolute right-1.5 p-0.5 text-gray-400 hover:text-gray-200 cursor-pointer"
                           title={isVisible ? 'Hide secret' : 'Show secret'}
                         >
-                          {isVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          {isVisible ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                         </button>
                       </div>
                     </div>
@@ -582,32 +606,32 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                   ? 'Restart active local runner'
                   : undefined
               }
-              className={`w-3/4 py-2.5 rounded-lg text-sm font-bold shadow-md transition-all flex items-center justify-center gap-2 text-white ${
+              className={`w-3/4 py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2 text-white ${
                 !isLocalSelected || (!hasGeneratedCode && deployStatus !== 'success')
                   ? 'bg-gray-800 text-gray-500 border border-[#30363d] cursor-not-allowed opacity-60'
                   : deployStatus === 'deploying'
-                  ? 'bg-emerald-600/50 cursor-wait'
-                  : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer active:scale-[0.99]'
+                  ? 'bg-[#238636] opacity-50 cursor-wait'
+                  : 'bg-[#238636] hover:bg-[#2ea043] cursor-pointer'
               }`}
             >
               {deployStatus === 'deploying' ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                   <span>Starting Local Agent...</span>
                 </>
               ) : isLocalSelected && deployStatus === 'success' ? (
                 <>
-                  <RefreshCw className="w-4 h-4 text-white" />
+                  <RefreshCw className="w-3.5 h-3.5" />
                   <span>Restart Agent</span>
                 </>
               ) : isLocalSelected ? (
                 <>
-                  <Play className="w-4 h-4 fill-current text-white" />
+                  <Play className="w-3.5 h-3.5 fill-current" />
                   <span>Run Agent</span>
                 </>
               ) : (
                 <>
-                  <Rocket className="w-4 h-4 opacity-50 text-white" />
+                  <Rocket className="w-3.5 h-3.5 opacity-50" />
                   <span>Deploy Agent (Not Implemented)</span>
                 </>
               )}
@@ -623,7 +647,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                   ? 'Stop local runner process'
                   : 'Runner is not currently running'
               }
-              className="w-1/4 py-2.5 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md bg-[#85182a] hover:bg-[#a42036] text-white border-[#da3633]/40 active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#85182a]"
+              className="w-1/4 py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-1.5 text-white bg-rose-600 hover:bg-rose-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-rose-600"
             >
               <Square className="w-3.5 h-3.5 fill-current" />
               <span>Stop</span>
@@ -633,15 +657,15 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
       </div>
 
       {/* RIGHT 2/3: Deployment Preview & Console */}
-      <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117] border border-[#30363d] rounded-xl overflow-hidden shadow-xl">
+      <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117] border border-[#30363d] rounded-xl overflow-hidden shadow-xl min-h-0">
         {/* Terminal / Status Header */}
-        <div className="flex items-center justify-between px-3 bg-[#161b22] border-b border-[#30363d] shrink-0 h-10">
+        <div className="flex items-center justify-between px-3 bg-[#161b22] border-b border-[#30363d] shrink-0 h-9">
           <div className="flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-emerald-400" />
-            <span className="text-xs font-semibold text-white">
+            <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="text-xs font-mono font-semibold text-white">
               {isLocalSelected ? 'Local Execution Sandbox' : 'Cloud Deployment Console'}
             </span>
-            <span className="text-[10px] px-2 py-0.5 rounded bg-[#0d1117] text-gray-400 border border-[#30363d] font-mono">
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#0d1117] text-gray-400 border border-[#30363d] font-mono">
               {selectedTarget}
             </span>
           </div>
@@ -649,16 +673,16 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={handleCopyCommand}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-gray-200 transition-colors cursor-pointer font-medium"
+              className="flex items-center gap-1 px-2 py-0.8 text-[11px] rounded bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-gray-200 transition-colors cursor-pointer font-medium"
             >
               {copiedCmd ? (
                 <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <Check className="w-3 h-3 text-emerald-400" />
                   <span className="text-emerald-400">Copied</span>
                 </>
               ) : (
                 <>
-                  <Copy className="w-3.5 h-3.5" />
+                  <Copy className="w-3 h-3" />
                   <span>Copy CLI Command</span>
                 </>
               )}
@@ -667,32 +691,46 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
         </div>
 
         {/* Content & Logs View */}
-        <div className="flex-1 p-4 overflow-auto bg-[#0d1117] space-y-4 font-mono text-xs text-[#c9d1d9] select-text">
+        <div className="flex-1 p-4 overflow-y-auto bg-[#0d1117] space-y-4 font-mono text-xs text-[#c9d1d9] select-text min-h-0">
           {/* CLI Command Preview Box */}
           <div>
             <div className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-1.5 flex items-center justify-between font-sans">
-              <span>{isLocalSelected ? 'LOCAL RUNNER COMMAND' : 'AUTOMATED CLOUD DEPLOYMENT COMMAND'}</span>
+              <span>{isLocalSelected ? 'Local Runner Command' : 'Automated Cloud Deployment Command'}</span>
               <span className="text-[10px] text-gray-400 font-mono">bash</span>
             </div>
-            <pre className="bg-[#161b22] p-3 rounded-lg border border-[#30363d] text-gray-300 whitespace-pre-wrap selection:bg-blue-900 selection:text-white leading-relaxed font-mono text-xs">
+            <pre className="bg-[#161b22] p-3 rounded-lg border border-[#30363d] text-gray-300 whitespace-pre-wrap selection:bg-blue-900 selection:text-white leading-relaxed">
               {getRunCommand()}
             </pre>
           </div>
 
-          {/* Active Live Logs / Deployment Status Box */}
+          {/* Active Live Logs / Deployment Status Box - Fixed height with vertical scrollbar */}
           <div className="space-y-2">
             <div className="text-[10px] text-gray-400 uppercase font-bold tracking-wider flex items-center justify-between font-sans">
-              <span>{isLocalSelected ? 'LOCAL RUNNER OUTPUT' : 'LIVE DEPLOYMENT LOGS'}</span>
-              {deployStatus === 'success' && (
-                <span className="flex items-center gap-1 text-emerald-400 text-[10px]">
-                  <CheckCircle2 className="w-3 h-3" /> Active & Healthy
-                </span>
-              )}
+              <span>{isLocalSelected ? 'Local Runner Output' : 'Live Deployment Logs'}</span>
+              <div className="flex items-center gap-2">
+                {deployStatus === 'success' && (
+                  <span className="flex items-center gap-1 text-emerald-400 text-[10px]">
+                    <CheckCircle2 className="w-3 h-3" /> Active & Healthy
+                  </span>
+                )}
+                {deployLogs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setDeployLogs([])}
+                    className="px-2 py-0.5 text-[10px] rounded bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-gray-300 font-mono transition-colors cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="bg-[#161b22] p-3 rounded-lg border border-[#30363d] min-h-[140px] space-y-1 font-mono text-xs">
+            <div
+              data-testid="local-runner-output-box"
+              className="bg-[#161b22] p-3 rounded-lg border border-[#30363d] h-[256px] overflow-y-auto space-y-1 text-[11px] font-mono select-text"
+            >
               {deployLogs.length === 0 ? (
-                <div className="text-gray-400 italic">
+                <div className="h-full flex items-center justify-center text-gray-500 italic font-sans text-xs">
                   Press "{isLocalSelected ? 'Run Agent' : 'Deploy Agent'}" to execute or deploy your visual agent topology.
                 </div>
               ) : (
@@ -702,6 +740,8 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                     className={
                       log.includes('✅') || log.includes('✨') || log.includes('🚀')
                         ? 'text-emerald-400 font-bold'
+                        : log.includes('❌') || log.includes('ERROR') || log.includes('Error')
+                        ? 'text-rose-400'
                         : 'text-gray-300'
                     }
                   >
@@ -709,6 +749,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                   </div>
                 ))
               )}
+              <div ref={logsEndRef} />
             </div>
           </div>
 
@@ -747,7 +788,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                   <span>Quick Test via OpenAI Chat Completions (POST)</span>
                   <button
                     onClick={() => {
-                      const curlCmd = `curl -X POST ${serviceUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-flash-latest",\n    "messages": [{"role": "user", "content": "Hello world"}]\n  }'`;
+                      const curlCmd = `curl -X POST ${serviceUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-3.7-flash",\n    "messages": [{"role": "user", "content": "Hello world"}]\n  }'`;
                       navigator.clipboard.writeText(curlCmd);
                       setCopiedCurl(true);
                       setTimeout(() => setCopiedCurl(false), 2000);
@@ -768,7 +809,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                   </button>
                 </div>
                 <pre className="text-[11px] font-mono text-gray-300 whitespace-pre-wrap selection:bg-blue-900 selection:text-white">
-                  {`curl -X POST ${serviceUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-flash-latest",\n    "messages": [{"role": "user", "content": "Hello world"}]\n  }'`}
+                  {`curl -X POST ${serviceUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-3.7-flash",\n    "messages": [{"role": "user", "content": "Hello world"}]\n  }'`}
                 </pre>
               </div>
             </div>

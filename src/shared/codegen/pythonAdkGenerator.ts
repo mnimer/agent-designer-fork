@@ -33,6 +33,8 @@ import {
 } from '../types';
 import { GeneratedFile } from './types';
 import { sanitizePythonIdentifier, ToolAdapterCompiler } from './toolAdapters';
+import { sanitizeIdentifier, topologicalSortAgents } from './nameSanitizer';
+import { pyStr, pyLiteral } from './pythonEscape';
 
 export interface PythonAdkGeneratorOptions {
   includeA2AClient?: boolean;
@@ -220,9 +222,12 @@ export function generateA2AClientBaseClass(): string {
  * @param agent Agent node data with A2A configuration
  * @returns Python code snippet instantiating A2AClient and wrapping it in an ADK tool function
  */
-export function generateA2AClientCode(agent: AgentNodeData | { label: string; a2aConfig?: any }): string {
+export function generateA2AClientCode(
+  agent: AgentNodeData | { label: string; a2aConfig?: any },
+  safeId?: string
+): string {
   const norm = normalizeA2AConfig(agent.a2aConfig);
-  const safeId = sanitizePythonIdentifier(agent.label || 'a2a_agent');
+  const resolvedSafeId = safeId || sanitizeIdentifier(agent.label || 'a2a_agent');
   const agentDesc = (agent as AgentNodeData).systemPrompt || (agent as AgentNodeData).description || 'Remote A2A protocol autonomous agent';
 
   let skillsDoc = '';
@@ -231,30 +236,36 @@ export function generateA2AClientCode(agent: AgentNodeData | { label: string; a2
     skillsDoc = `\n    Skills: ${skillNames}`;
   }
 
+  const safeLabelDoc = (agent.label || '').replace(/"""/g, '\\"\\"\\"');
+  const safeEndpointDoc = (norm.endpoint || '').replace(/"""/g, '\\"\\"\\"');
+  const safeDescDoc = (agentDesc.replace(/\n/g, ' ') || '').replace(/"""/g, '\\"\\"\\"');
+  const safeSkillsDoc = skillsDoc.replace(/"""/g, '\\"\\"\\"');
+  const safeCardUrlDoc = (norm.agentCardUrl || '').replace(/"""/g, '\\"\\"\\"');
+
   return `# A2A Client Instance for: ${agent.label}
-_client_${safeId} = A2AClient(
-    endpoint="${norm.endpoint}",
-    auth_type="${norm.authType}",
-    auth_secret="${norm.authSecretKey || ''}",
-    header_name="${norm.headerName}",
-    custom_headers=${JSON.stringify(norm.customHeaders)},
+_client_${resolvedSafeId} = A2AClient(
+    endpoint=${pyStr(norm.endpoint)},
+    auth_type=${pyStr(norm.authType)},
+    auth_secret=${pyStr(norm.authSecretKey || '')},
+    header_name=${pyStr(norm.headerName)},
+    custom_headers=${pyLiteral(norm.customHeaders)},
     timeout_seconds=${norm.timeoutSeconds},
     max_retries=${norm.maxRetries}
 )
 
-def call_${safeId}_a2a(task_input: str) -> dict:
+def call_${resolvedSafeId}_a2a(task_input: str) -> dict:
     """
-    Delegates task execution to remote A2A agent '${agent.label}' via JSON-RPC 2.0.
-    Endpoint: ${norm.endpoint}
-    Description: ${agentDesc.replace(/\n/g, ' ')}${skillsDoc}
+    Delegates task execution to remote A2A agent '${safeLabelDoc}' via JSON-RPC 2.0.
+    Endpoint: ${safeEndpointDoc}
+    Description: ${safeDescDoc}${safeSkillsDoc}
     """
-    return _client_${safeId}.dispatch_task(task_input=task_input)
+    return _client_${resolvedSafeId}.dispatch_task(task_input=task_input)
 
-def query_${safeId}_card() -> dict:
+def query_${resolvedSafeId}_card() -> dict:
     """
-    Queries capability agent card metadata from '${agent.label}' at ${norm.agentCardUrl}.
+    Queries capability agent card metadata from '${safeLabelDoc}' at ${safeCardUrlDoc}.
     """
-    return _client_${safeId}.query_agent_card(agent_card_path="${norm.agentCardUrl}")
+    return _client_${resolvedSafeId}.query_agent_card(agent_card_path=${pyStr(norm.agentCardUrl)})
 `;
 }
 
@@ -288,8 +299,24 @@ export class PythonAdkGenerator {
     workflow: AgentWorkflowDocument, 
     options?: PythonAdkGeneratorOptions
   ): string {
-    // NOTE: Identify all A2A agents from workflow nodes
-    const a2aNodes = (workflow.nodes || []).filter(
+    const agentNodes = (workflow.nodes || []).filter(
+      (n) => n.data && (n.data.agentKind === 'standard' || n.data.agentKind === 'router' || n.data.agentKind === 'a2a' || !n.data.agentKind)
+    );
+
+    // Sort topologically
+    const sortedAgents = topologicalSortAgents(agentNodes, workflow.edges || []);
+
+    // Create safe names mapping
+    const idToVar = new Map<string, string>();
+    const usedNames = new Set<string>();
+
+    for (const node of sortedAgents) {
+      const varName = sanitizeIdentifier(node.data?.label || node.id, usedNames);
+      idToVar.set(node.id, varName);
+    }
+
+    // Filter A2A nodes from sortedAgents
+    const a2aNodes = sortedAgents.filter(
       (n) => n.data && (n.data.agentKind === 'a2a' || n.data.a2aConfig !== undefined)
     );
 
@@ -351,7 +378,8 @@ export class PythonAdkGenerator {
       lines.push('# Configured A2A Remote Agent Connectors & Tools');
       lines.push('# ==============================================================================');
       for (const a2aNode of a2aNodes) {
-        lines.push(generateA2AClientCode(a2aNode.data));
+        const safeId = idToVar.get(a2aNode.id) || sanitizeIdentifier(a2aNode.data?.label || a2aNode.id);
+        lines.push(generateA2AClientCode(a2aNode.data, safeId));
       }
     }
 
@@ -372,18 +400,18 @@ export class PythonAdkGenerator {
     lines.push('    """Returns list of executable tools assigned to a given agent id."""');
     lines.push('    tools = []');
 
-    for (const node of workflow.nodes || []) {
+    for (const node of sortedAgents) {
       const nodeTools = node.data?.tools || [];
       const isA2A = node.data?.agentKind === 'a2a';
-      const safeId = sanitizePythonIdentifier(node.data?.label || node.id);
+      const safeId = idToVar.get(node.id) || sanitizeIdentifier(node.data?.label || node.id);
 
       if (nodeTools.length > 0 || isA2A) {
-        lines.push(`    if agent_id == "${node.id}":`);
+        lines.push(`    if agent_id == ${pyStr(node.id)}:`);
         if (isA2A) {
           lines.push(`        tools.append(call_${safeId}_a2a)`);
         }
         for (const t of nodeTools) {
-          const varName = sanitizePythonIdentifier(t.name || t.id);
+          const varName = sanitizeIdentifier(t.name || t.id);
           lines.push(`        tools.append(${varName})`);
         }
       }
@@ -413,8 +441,22 @@ export class PythonAdkGenerator {
     options?: PythonAdkGeneratorOptions
   ): string {
     const defaultModel = options?.defaultModel || 'gemini-3.7-flash';
-    const nodes = workflow.nodes || [];
-    const routerNodes = nodes.filter((n) => n.data && n.data.agentKind === 'router');
+    const agentNodes = (workflow.nodes || []).filter(
+      (n) => n.data && (n.data.agentKind === 'standard' || n.data.agentKind === 'router' || n.data.agentKind === 'a2a' || !n.data.agentKind)
+    );
+
+    // Sort topologically
+    const sortedAgents = topologicalSortAgents(agentNodes, workflow.edges || []);
+
+    const idToVar = new Map<string, string>();
+    const usedNames = new Set<string>();
+
+    for (const node of sortedAgents) {
+      const varName = sanitizeIdentifier(node.data?.label || node.id, usedNames);
+      idToVar.set(node.id, varName);
+    }
+
+    const routerNodes = sortedAgents.filter((n) => n.data && n.data.agentKind === 'router');
     const hasRouter = routerNodes.length > 0;
 
     const lines: string[] = [
@@ -466,7 +508,7 @@ export class PythonAdkGenerator {
       // Generate evaluation helper functions and custom BaseAgent router classes
       for (const routerNode of routerNodes) {
         const data = routerNode.data || {};
-        const safeVar = sanitizePythonIdentifier(data.label || routerNode.id);
+        const safeVar = idToVar.get(routerNode.id)!;
         let routerClassName = toPascalCase(data.label || routerNode.id);
         if (!routerClassName.endsWith('Router')) {
           routerClassName += 'Router';
@@ -546,7 +588,7 @@ export class PythonAdkGenerator {
             if (passBranch) {
               lines.push(
                 `    if metric_val >= threshold:`,
-                `        return "${passBranch.id}"`
+                `        return ${pyStr(passBranch.id)}`
               );
             }
           }
@@ -564,10 +606,10 @@ export class PythonAdkGenerator {
             if (rawPattern && rawPattern !== 'default') {
               lines.push(
                 '    try:',
-                `        if re.search(r"${rawPattern.replace(/"/g, '\\"')}", target_text, re.IGNORECASE):`,
-                `            return "${branch.id}"`,
+                `        if re.search(${pyStr(rawPattern)}, target_text, re.IGNORECASE):`,
+                `            return ${pyStr(branch.id)}`,
                 '    except Exception as e:',
-                `        logger.warning(f"Error evaluating regex pattern for branch '${branch.id}': {e}")`
+                `        logger.warning(f"Error evaluating regex pattern for branch '${branch.id.replace(/'/g, "\\'")}': {e}")`
               );
             }
           }
@@ -591,10 +633,10 @@ export class PythonAdkGenerator {
               .filter((s) => s.length > 0 && s !== 'default');
 
             if (candidateTerms.length > 0) {
-              const termsArrayStr = candidateTerms.map((t) => `"${t}"`).join(', ');
+              const termsArrayStr = candidateTerms.map(pyStr).join(', ');
               lines.push(
                 `    if any(term in query_text for term in [${termsArrayStr}]):`,
-                `        return "${branch.id}"`
+                `        return ${pyStr(branch.id)}`
               );
             }
           }
@@ -602,7 +644,7 @@ export class PythonAdkGenerator {
 
         // Return default fallback branch id
         lines.push(
-          `    return "${defaultBranchId}"`,
+          `    return ${pyStr(defaultBranchId)}`,
           ''
         );
 
@@ -612,7 +654,7 @@ export class PythonAdkGenerator {
           `# Router Agent Class: ${routerClassName}`,
           '# ------------------------------------------------------------------------------',
           `class ${routerClassName}(BaseAgent):`,
-          `    """Conditional routing agent for '${data.label || routerNode.id}'."""`,
+          `    """Conditional routing agent for '${(data.label || routerNode.id).replace(/"""/g, '\\"\\"\\"')}'."""`,
           '    def __init__(',
           '        self,',
           '        name: str,',
@@ -648,82 +690,91 @@ export class PythonAdkGenerator {
       }
     }
 
-    // Instantiate Standard Agents First
+    // Instantiate Agents Topologically (Sub-agents before parents)
     lines.push('# ==============================================================================');
-    lines.push('# Initialize Standard Agents');
+    lines.push('# Initialize Agents in Topological Order');
     lines.push('# ==============================================================================');
-    for (const node of nodes) {
-      if (node.data?.agentKind === 'router') continue;
-      const data = node.data;
-      const safeVar = sanitizePythonIdentifier(data?.label || node.id);
-      const model = data?.model || defaultModel;
-      const prompt = (data?.systemPrompt || 'Autonomous AI Agent').replace(/\n/g, '\\n').replace(/"/g, '\\"');
 
-      lines.push(`${safeVar} = Agent(`);
-      lines.push(`    name="${data?.label || node.id}",`);
-      lines.push(`    model="${model}",`);
-      lines.push(`    instruction="${prompt}",`);
-      lines.push(`    tools=setup_agent_tools("${node.id}")`);
-      lines.push(')');
-      lines.push('');
-    }
+    for (const node of sortedAgents) {
+      const data = node.data || {};
+      const safeVar = idToVar.get(node.id)!;
 
-    // Instantiate Router Agents Next
-    if (hasRouter) {
-      lines.push('# ==============================================================================');
-      lines.push('# Initialize Router Agents & Branch Wiring');
-      lines.push('# ==============================================================================');
-      for (const node of routerNodes) {
-        const data = node.data;
-        const safeVar = sanitizePythonIdentifier(data?.label || node.id);
-        let routerClassName = toPascalCase(data?.label || node.id);
+      if (data.agentKind === 'router') {
+        let routerClassName = toPascalCase(data.label || node.id);
         if (!routerClassName.endsWith('Router')) {
           routerClassName += 'Router';
         }
-        const branches = data?.routerConfig?.branches || [];
-        const defaultBranch =
-          branches.find((b) => b.isDefault || b.isDefaultFallback) || branches[branches.length - 1];
+        const branches = data.routerConfig?.branches || [];
 
         // Map branch target variables
         lines.push(`${safeVar}_branches = {`);
         for (const branch of branches) {
           let targetVar = 'None';
           if (branch.targetAgentId) {
-            const targetNode = nodes.find((n) => n.id === branch.targetAgentId);
+            const targetNode = sortedAgents.find((n) => n.id === branch.targetAgentId);
             if (targetNode) {
-              targetVar = sanitizePythonIdentifier(targetNode.data?.label || targetNode.id);
+              targetVar = idToVar.get(targetNode.id) || 'None';
             }
           }
-          lines.push(`    "${branch.id}": ${targetVar},`);
+          lines.push(`    ${pyStr(branch.id)}: ${targetVar},`);
         }
         lines.push('}');
 
         let defaultVar = 'None';
+        const defaultBranch = branches.find((b) => b.isDefault || b.isDefaultFallback) || branches[branches.length - 1];
         if (defaultBranch?.targetAgentId) {
-          const defaultNode = nodes.find((n) => n.id === defaultBranch.targetAgentId);
+          const defaultNode = sortedAgents.find((n) => n.id === defaultBranch.targetAgentId);
           if (defaultNode) {
-            defaultVar = sanitizePythonIdentifier(defaultNode.data?.label || defaultNode.id);
+            defaultVar = idToVar.get(defaultNode.id) || 'None';
           }
         }
 
         lines.push(`${safeVar} = ${routerClassName}(`);
-        lines.push(`    name="${data?.label || node.id}",`);
+        lines.push(`    name=${pyStr(data.label || node.id)},`);
         lines.push(`    branches=${safeVar}_branches,`);
         lines.push(`    default_agent=${defaultVar},`);
-        lines.push(`    tools=setup_agent_tools("${node.id}")`);
+        lines.push(`    tools=setup_agent_tools(${pyStr(node.id)})`);
+        lines.push(')');
+        lines.push('');
+      } else {
+        // Standard / A2A Agent
+        const model = data.model || defaultModel;
+        lines.push(`${safeVar} = Agent(`);
+        lines.push(`    name=${pyStr(data.label || node.id)},`);
+        lines.push(`    model=${pyStr(model)},`);
+        lines.push(`    instruction=${pyStr(data.systemPrompt || 'Autonomous AI Agent')},`);
+
+        // NOTE: Wire sub_agents hierarchy for multi-agent delegation (Google ADK)
+        if (Array.isArray(data.subAgents) && data.subAgents.length > 0) {
+          lines.push('    sub_agents=[');
+          for (const sub of data.subAgents) {
+            const childNode = sortedAgents.find((n) => n.id === sub.agentId);
+            const childVar = childNode ? idToVar.get(childNode.id) : sanitizePythonIdentifier(sub.name || sub.agentId);
+            lines.push(`        ${childVar},`);
+          }
+          lines.push('    ],');
+        }
+
+        lines.push(`    tools=setup_agent_tools(${pyStr(node.id)})`);
         lines.push(')');
         lines.push('');
       }
     }
 
+    // Find start node from sorted agents
+    const startNode = sortedAgents.find((n) => n.data?.isStartNode) || sortedAgents[sortedAgents.length - 1];
+    const rootVar = startNode ? idToVar.get(startNode.id)! : 'agent';
+
+    // Unambiguous entrypoint / root agent assignment
+    lines.push('# ==============================================================================');
+    lines.push('# Entrypoint / Root Agent Assignment');
+    lines.push('# ==============================================================================');
+    lines.push(`root_agent = ${rootVar}`);
+    lines.push('');
+
     lines.push('def execute_workflow(user_query: str) -> Dict[str, Any]:');
     lines.push('    """Executes the workflow graph starting from the root agent."""');
-    
-    // Find start node
-    const startNode = nodes.find((n) => n.data?.isStartNode) || nodes[0];
-    const rootVar = startNode ? sanitizePythonIdentifier(startNode.data?.label || startNode.id) : 'agent';
-
-    lines.push(`    runner = Runner(agent=${rootVar})`);
+    lines.push(`    runner = Runner(agent=root_agent)`);
     lines.push('    response = runner.run(user_query)');
     lines.push('    return {"response": str(response)}');
     lines.push('');

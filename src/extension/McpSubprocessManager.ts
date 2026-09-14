@@ -21,13 +21,14 @@
  * Author: Mike Nimer <mikenimer@google.com>
  */
 
-import { spawn, exec, ChildProcess } from 'child_process';
+import { spawn, exec, execFile, ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import * as http from 'http';
 import * as https from 'https';
 import { ToolDefinition, McpAuthProviderType, McpOAuthConfig, McpSecretConfig } from '../shared/types';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface McpDiscoveryParams {
   transport: 'stdio' | 'sse' | 'http';
@@ -75,6 +76,7 @@ export type ProcessSpawner = (
 export class McpSubprocessManager {
   private readonly defaultTimeoutMs: number = 30000;
   private readonly spawner: ProcessSpawner;
+  private readonly activeSubprocesses = new Set<ChildProcess>();
 
   /**
    * Initializes the MCP Subprocess Manager with an optional spawner for dependency injection.
@@ -113,11 +115,13 @@ export class McpSubprocessManager {
   public async resolveGoogleCredentials(
     oauthConfig?: McpOAuthConfig
   ): Promise<{ token: string; projectId?: string }> {
+    const { execFileAsync } = require('./asyncUtils');
+
     // 1. Resolve project ID
     let projectId = oauthConfig?.projectId?.trim() || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
     if (!projectId) {
       try {
-        const { stdout } = await execAsync('gcloud config get-value project 2>/dev/null', { timeout: 5000 });
+        const { stdout } = await execFileAsync('gcloud', ['config', 'get-value', 'project'], { timeoutMs: 10000 });
         const trimmed = stdout?.trim();
         if (trimmed && trimmed !== '(unset)') {
           projectId = trimmed;
@@ -132,8 +136,7 @@ export class McpSubprocessManager {
     const scopes = oauthConfig?.scopes?.filter(Boolean) || [];
     if (scopes.length > 0) {
       try {
-        const scopesArg = `--scopes=${scopes.join(',')}`;
-        const { stdout } = await execAsync(`gcloud auth application-default print-access-token ${scopesArg} 2>/dev/null`, { timeout: 8000 });
+        const { stdout } = await execFileAsync('gcloud', ['auth', 'application-default', 'print-access-token', `--scopes=${scopes.join(',')}`], { timeoutMs: 10000 });
         if (stdout && stdout.trim().startsWith('ya29.')) {
           token = stdout.trim();
         }
@@ -144,13 +147,13 @@ export class McpSubprocessManager {
 
     if (!token) {
       try {
-        const { stdout } = await execAsync('gcloud auth print-access-token 2>/dev/null', { timeout: 8000 });
+        const { stdout } = await execFileAsync('gcloud', ['auth', 'print-access-token'], { timeoutMs: 10000 });
         if (stdout && stdout.trim().startsWith('ya29.')) {
           token = stdout.trim();
         }
       } catch {
         try {
-          const { stdout } = await execAsync('gcloud auth application-default print-access-token 2>/dev/null', { timeout: 8000 });
+          const { stdout } = await execFileAsync('gcloud', ['auth', 'application-default', 'print-access-token'], { timeoutMs: 10000 });
           if (stdout && stdout.trim().startsWith('ya29.')) {
             token = stdout.trim();
           }
@@ -277,6 +280,7 @@ export class McpSubprocessManager {
         }
         // Cleanup child process defensively
         if (child) {
+          this.activeSubprocesses.delete(child);
           try {
             child.kill('SIGTERM');
             setTimeout(() => {
@@ -321,6 +325,10 @@ export class McpSubprocessManager {
           env: mergedEnv,
           stdio: ['pipe', 'pipe', 'pipe'],
         });
+
+        if (child) {
+          this.activeSubprocesses.add(child);
+        }
       } catch (spawnError: any) {
         return finish({
           success: false,
@@ -341,6 +349,10 @@ export class McpSubprocessManager {
 
       // Handle spawn error (e.g. command not found ENOENT)
       child.on('error', (err: any) => {
+        console.error(`[McpSubprocessManager] Subprocess error on PID ${child?.pid || 'unknown'}:`, err);
+        if (child) {
+          this.activeSubprocesses.delete(child);
+        }
         finish({
           success: false,
           tools: [],
@@ -351,6 +363,10 @@ export class McpSubprocessManager {
 
       // Handle process exit
       child.on('exit', (code, signal) => {
+        console.log(`[McpSubprocessManager] Subprocess exited on PID ${child?.pid || 'unknown'} with code ${code} and signal ${signal}`);
+        if (child) {
+          this.activeSubprocesses.delete(child);
+        }
         if (!resolved) {
           finish({
             success: false,
@@ -838,5 +854,43 @@ export class McpSubprocessManager {
 
       return toolDef;
     });
+  }
+
+  /**
+   * Kills all currently running and registered MCP discovery subprocesses.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
+   */
+  public killAll(): void {
+    for (const child of this.activeSubprocesses) {
+      try {
+        if (child.pid && !child.killed) {
+          if (process.platform === 'win32') {
+            try {
+              const { exec } = require('child_process');
+              exec(`taskkill /f /t /pid ${child.pid}`);
+            } catch {
+              child.kill('SIGKILL');
+            }
+          } else {
+            try {
+              process.kill(-child.pid, 'SIGKILL');
+            } catch {
+              child.kill('SIGKILL');
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`[McpSubprocessManager] Failed to kill child process on PID ${child.pid}:`, err);
+      }
+    }
+    this.activeSubprocesses.clear();
+  }
+
+  /**
+   * Disposes of the manager and terminates all active processes.
+   */
+  public dispose(): void {
+    this.killAll();
   }
 }

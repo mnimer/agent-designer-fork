@@ -14,6 +14,9 @@
  *   state mounting cycle before the document has arrived from the extension host.
  * - Auto-Directory Discovery: Inspects target directories via `CHECK_FILES_EXIST` whenever the output
  *   folder changes to dynamically show existing generated code.
+ * - Debounced State Updates (TASK-136): Debounces document serialization and sync message dispatching by 250ms.
+ * - Schema Version Preservation (TASK-136): Retains the original loaded schema version string, avoiding down-migration.
+ * - Parse Error Handling UI (TASK-136): Intercepts PARSE_ERROR messages to inject a non-interactive blocking UI overlay.
  */
 
 import { useRef, useEffect } from 'react';
@@ -22,6 +25,7 @@ import { WebviewBridge } from './useWebviewBridge';
 import { normalizeLoadedNodes, normalizeLoadedEdges, computeTargetFolder, resolveAgentOutputFolder } from '../utils/workflowSync';
 import { AgentFileTab, GenerationConfig, GeneratedFile } from '../types';
 import { WorkflowNode, WorkflowEdge, AgentWorkflowDocument } from '../../shared/types';
+import { fnv1a } from '../utils/hashUtils';
 
 export interface UseExtensionSyncOptions {
   bridge: WebviewBridge;
@@ -69,9 +73,11 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
   const docVersionRef = useRef(1);
   const isLoadedRef = useRef(false);
   const lastSentJsonRef = useRef<string>('');
+  const lastSentHashRef = useRef<string>('');
   const docNameRef = useRef<string>('');
   const docDescriptionRef = useRef<string>('');
   const docMetadataRef = useRef<Record<string, any>>({});
+  const docVersionValueRef = useRef<string>('1.0.0');
 
   // NOTE: Signal to the VS Code extension host that the webview is mounted and ready to receive the document
   useEffect(() => {
@@ -95,7 +101,15 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
     const unsubLoadDoc = bridge.subscribe('LOAD_DOCUMENT', (payload) => {
       if (!payload?.document) return;
 
+      const overlay = document.getElementById('parse-error-overlay');
+      if (overlay) {
+        overlay.remove();
+      }
+
       const doc = payload.document;
+      if (doc.version) {
+        docVersionValueRef.current = doc.version;
+      }
       if (payload.docVersion) {
         docVersionRef.current = payload.docVersion;
       }
@@ -200,6 +214,7 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
           deployment: loadedDeployment,
         });
         lastSentJsonRef.current = loadedJson;
+        lastSentHashRef.current = fnv1a(loadedJson);
       }
 
       setConfig((prev) => ({
@@ -256,6 +271,39 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
       }, 100);
     });
 
+    const unsubParseError = bridge.subscribe('PARSE_ERROR', (payload) => {
+      if (!payload) return;
+      let overlay = document.getElementById('parse-error-overlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'parse-error-overlay';
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100vw';
+        overlay.style.height = '100vh';
+        overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
+        overlay.style.zIndex = '99999';
+        overlay.style.display = 'flex';
+        overlay.style.flexDirection = 'column';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.color = '#ff6b6b';
+        overlay.style.fontFamily = 'monospace';
+        overlay.style.padding = '20px';
+        overlay.style.textAlign = 'center';
+        document.body.appendChild(overlay);
+      }
+      overlay.innerHTML = `
+        <div style="background-color: #1e1e1e; border: 1px solid #ff6b6b; padding: 24px; border-radius: 8px; max-width: 600px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+          <h2 style="margin-top: 0; color: #ff6b6b;">[CRITICAL] Malformed .agent Document</h2>
+          <p style="color: #cccccc; font-size: 14px; text-align: left;">The document could not be loaded because it contains invalid JSON or schema errors:</p>
+          <pre style="background-color: #2d2d2d; color: #f8f8f2; padding: 12px; border-radius: 4px; text-align: left; overflow-x: auto; max-height: 200px; font-size: 12px; border: 1px solid #444; white-space: pre-wrap; word-break: break-all;">${payload.error}</pre>
+          <p style="color: #888888; font-size: 12px; margin-bottom: 0;">Please correct the syntax error in the standard VS Code text editor to resume designing.</p>
+        </div>
+      `;
+    });
+
     const unsubCodeGenerated = bridge.subscribe('CODE_GENERATED', (payload) => {
       setIsGenerating(false);
       if (payload.success && payload.files && payload.files.length > 0) {
@@ -276,6 +324,7 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
 
     return () => {
       unsubLoadDoc();
+      unsubParseError();
       unsubCodeGenerated();
       unsubFilesExist();
     };
@@ -297,71 +346,79 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
   useEffect(() => {
     if (!isLoadedRef.current) return;
 
-    const documentNodes: WorkflowNode[] = nodes.map((node) => ({
-      id: node.id,
-      type: node.type as any,
-      position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
-      data: { ...node.data },
-    }));
+    const debounceTimer = setTimeout(() => {
+      const documentNodes: WorkflowNode[] = nodes.map((node) => ({
+        id: node.id,
+        type: node.type as any,
+        position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
+        data: { ...node.data },
+      }));
 
-    const documentEdges: WorkflowEdge[] = edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      sourceHandle: edge.sourceHandle || undefined,
-      targetHandle: edge.targetHandle || undefined,
-      type: edge.type,
-      animated: edge.animated,
-      data: edge.data ? { ...edge.data } : undefined,
-    }));
+      const documentEdges: WorkflowEdge[] = edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle || undefined,
+        targetHandle: edge.targetHandle || undefined,
+        type: edge.type,
+        animated: edge.animated,
+        data: edge.data ? { ...edge.data } : undefined,
+      }));
 
-    const currentActiveFile = fileTabs.find((t) => t.id === activeTabId) || fileTabs[0];
+      const currentActiveFile = fileTabs.find((t) => t.id === activeTabId) || fileTabs[0];
 
-    const docName =
-      docNameRef.current ||
-      (currentActiveFile?.title && currentActiveFile.title !== 'workflow.agent' && currentActiveFile.title !== 'Untitled'
-        ? currentActiveFile.title
-        : currentActiveFile?.filename
-        ? currentActiveFile.filename.replace(/\.agent$/, '')
-        : 'agent_workflow');
+      const docName =
+        docNameRef.current ||
+        (currentActiveFile?.title && currentActiveFile.title !== 'workflow.agent' && currentActiveFile.title !== 'Untitled'
+          ? currentActiveFile.title
+          : currentActiveFile?.filename
+          ? currentActiveFile.filename.replace(/\.agent$/, '')
+          : 'agent_workflow');
 
-    const updatedDoc: AgentWorkflowDocument = {
-      version: '1.0.0',
-      name: docName,
-      description: docDescriptionRef.current || 'Agent Workflow Document',
-      framework: config.framework === 'google_adk' ? 'google-adk' : (config.framework as any) || 'google-adk',
-      language: config.language || 'python',
-      nodes: documentNodes,
-      edges: documentEdges,
-      metadata: {
-        ...docMetadataRef.current,
-        updatedAt: new Date().toISOString(),
-      },
-      deployment: {
-        target: config.deploymentTarget || 'agent_engine',
-        deploymentTarget: config.deploymentTarget || 'agent_engine',
-        outputFolder: config.outputFolder,
-        framework: config.framework === 'google_adk' ? 'google-adk' : config.framework,
-        language: config.language,
-        includeTests: config.includeTests,
-        includeDocker: config.includeDocker,
-        useStreaming: config.useStreaming,
-      },
+      const updatedDoc: AgentWorkflowDocument = {
+        version: docVersionValueRef.current,
+        name: docName,
+        description: docDescriptionRef.current || 'Agent Workflow Document',
+        framework: config.framework === 'google_adk' ? 'google-adk' : (config.framework as any) || 'google-adk',
+        language: config.language || 'python',
+        nodes: documentNodes,
+        edges: documentEdges,
+        metadata: {
+          ...docMetadataRef.current,
+          updatedAt: new Date().toISOString(),
+        },
+        deployment: {
+          target: config.deploymentTarget || 'agent_engine',
+          deploymentTarget: config.deploymentTarget || 'agent_engine',
+          outputFolder: config.outputFolder,
+          framework: config.framework === 'google_adk' ? 'google-adk' : config.framework,
+          language: config.language,
+          includeTests: config.includeTests,
+          includeDocker: config.includeDocker,
+          useStreaming: config.useStreaming,
+        },
+      };
+
+      const jsonString = JSON.stringify(updatedDoc);
+      const currentHash = fnv1a(jsonString);
+      if (currentHash === lastSentHashRef.current) {
+        return;
+      }
+      lastSentJsonRef.current = jsonString;
+      lastSentHashRef.current = currentHash;
+
+      docVersionRef.current += 1;
+      bridge.postMessage({
+        type: 'DOCUMENT_UPDATED',
+        payload: {
+          document: updatedDoc,
+          docVersion: docVersionRef.current,
+        },
+      });
+    }, 250);
+
+    return () => {
+      clearTimeout(debounceTimer);
     };
-
-    const jsonString = JSON.stringify(updatedDoc);
-    if (jsonString === lastSentJsonRef.current) {
-      return;
-    }
-    lastSentJsonRef.current = jsonString;
-
-    docVersionRef.current += 1;
-    bridge.postMessage({
-      type: 'DOCUMENT_UPDATED',
-      payload: {
-        document: updatedDoc,
-        docVersion: docVersionRef.current,
-      },
-    });
   }, [nodes, edges, config, bridge, fileTabs, activeTabId]);
 }

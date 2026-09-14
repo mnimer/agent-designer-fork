@@ -189,7 +189,8 @@ describe('Python ADK Generator & A2A JSON-RPC 2.0 Client', () => {
     assert.ok(workflowPy.includes('from google.adk.runners import Runner'));
     assert.ok(workflowPy.includes('from tools import setup_agent_tools'));
     assert.ok(workflowPy.includes('lead_analyst = Agent('));
-    assert.ok(workflowPy.includes('runner = Runner(agent=lead_analyst)'));
+    assert.ok(workflowPy.includes('root_agent = lead_analyst'));
+    assert.ok(workflowPy.includes('runner = Runner(agent=root_agent)'));
   });
 
   it('should bundle complete full project with requirements and env templates', () => {

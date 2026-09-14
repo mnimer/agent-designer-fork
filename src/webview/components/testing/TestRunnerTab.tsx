@@ -910,7 +910,7 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                         Input Prompt
                       </span>
                       <button
-                        onClick={() => handleCopy(tp.prompt, `prompt_${tp.id}`)}
+                        onClick={() => handleCopy(tp.prompt || (tp as any).inputQuery || '', `prompt_${tp.id}`)}
                         className="text-[10px] text-gray-400 hover:text-white flex items-center gap-0.5 cursor-pointer"
                         title="Copy prompt"
                       >
@@ -922,7 +922,7 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                       </button>
                     </div>
                     <div className="flex-1 p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d] font-mono text-[11px] text-gray-200 leading-relaxed overflow-y-auto max-h-[140px] select-text cursor-text" style={{ userSelect: 'text' }}>
-                      {tp.prompt}
+                      {tp.prompt || (tp as any).inputQuery || ''}
                     </div>
                   </div>
 
@@ -935,7 +935,7 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                       </span>
                     </div>
                     <div className="flex-1 p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d] font-mono text-[11px] text-gray-300 leading-relaxed overflow-y-auto max-h-[140px] select-text cursor-text" style={{ userSelect: 'text' }}>
-                      {tp.expectedOutput}
+                      {tp.expectedOutput || (tp as any).expectedOutputPattern || ''}
                     </div>
                   </div>
 

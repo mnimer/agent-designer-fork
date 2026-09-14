@@ -108,6 +108,16 @@
         "title": "Deploy to Vertex AI Agent Engine",
         "category": "Agent Designer",
         "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "agentFlow.setGeminiApiKey",
+        "title": "Agent Flow: Set Gemini API Key",
+        "category": "Agent Flow"
+      },
+      {
+        "command": "agentFlow.clearGeminiApiKey",
+        "title": "Agent Flow: Clear Gemini API Key",
+        "category": "Agent Flow"
       }
     ],
     "menus": {
@@ -173,11 +183,6 @@
     "configuration": {
       "title": "Agent Flow Builder",
       "properties": {
-        "agentFlow.geminiApiKey": {
-          "type": "string",
-          "default": "",
-          "description": "Gemini API Key for LLM code generation and agent workflow assistance."
-        },
         "agentFlow.targetFramework": {
           "type": "string",
           "enum": [

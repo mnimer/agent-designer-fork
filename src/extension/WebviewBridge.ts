@@ -18,6 +18,10 @@ import * as vscode from 'vscode';
 import {
   WebviewToExtensionMessage,
   ExtensionToWebviewMessage,
+  isValidRpcMessage,
+  isWriteFilesPayload,
+  isStartRunnerPayload,
+  isDiscoverMcpPayload,
 } from '../shared/rpcProtocol';
 
 export type MessageHandler<T = any> = (payload: T) => void | Promise<void>;
@@ -42,7 +46,27 @@ export class WebviewBridge implements vscode.Disposable {
 
     // Listen to messages emitted by the webview
     const messageListener = this.panel.webview.onDidReceiveMessage(
-      async (message: WebviewToExtensionMessage) => {
+      async (message: any) => {
+        // Validate overall message envelope
+        if (!isValidRpcMessage(message)) {
+          this.outputChannel?.appendLine(`[WebviewBridge:RECV] Rejected invalid RPC message envelope: ${JSON.stringify(message)}`);
+          return;
+        }
+
+        // Validate individual critical payloads to prevent malformed injections
+        if (message.type === 'WRITE_FILES_TO_WORKSPACE' && !isWriteFilesPayload(message.payload)) {
+          this.outputChannel?.appendLine(`[WebviewBridge:RECV] Rejected malformed WRITE_FILES_TO_WORKSPACE payload: ${JSON.stringify(message.payload)}`);
+          return;
+        }
+        if (message.type === 'START_LOCAL_RUNNER' && !isStartRunnerPayload(message.payload)) {
+          this.outputChannel?.appendLine(`[WebviewBridge:RECV] Rejected malformed START_LOCAL_RUNNER payload: ${JSON.stringify(message.payload)}`);
+          return;
+        }
+        if (message.type === 'DISCOVER_MCP_TOOLS' && !isDiscoverMcpPayload(message.payload)) {
+          this.outputChannel?.appendLine(`[WebviewBridge:RECV] Rejected malformed DISCOVER_MCP_TOOLS payload: ${JSON.stringify(message.payload)}`);
+          return;
+        }
+
         this.outputChannel?.appendLine(`[WebviewBridge:RECV] Received from webview: ${JSON.stringify(message)}`);
         await this.dispatch(message);
       }

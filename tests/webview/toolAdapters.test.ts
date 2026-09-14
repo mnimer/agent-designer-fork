@@ -235,9 +235,9 @@ describe('Tool Adapter Compiler', () => {
       assert.ok(def.includes('transport="stdio"'));
       assert.ok(def.includes('command="uvx"'));
       assert.ok(def.includes('cwd="/workspace/db"'));
-      assert.ok(def.includes('env={"DB_PORT":"5432"}'));
+      assert.ok(def.includes('env={"DB_PORT": "5432"}'));
       assert.ok(def.includes('timeout=45'));
-      assert.ok(def.includes('tools=["read_query","list_tables"]'));
+      assert.ok(def.includes('tools=["read_query", "list_tables"]'));
       assert.ok(def.includes('auto_approve_tools=["read_query"]'));
     });
 
@@ -261,7 +261,7 @@ describe('Tool Adapter Compiler', () => {
       assert.ok(def.includes('name="remote-search"'));
       assert.ok(def.includes('transport="sse"'));
       assert.ok(def.includes('url="https://mcp.internal.example/sse"'));
-      assert.ok(def.includes('headers={"X-Custom-Auth":"secret-token"}'));
+      assert.ok(def.includes('headers={"X-Custom-Auth": "secret-token"}'));
       assert.ok(def.includes('timeout=20'));
     });
 
@@ -411,6 +411,35 @@ describe('Tool Adapter Compiler', () => {
         def.includes('Fetch real-time weather given a city and days.')
       ));
       assert.ok(result.toolBindings.includes('get_weather_forecast'));
+    });
+
+    it('should compile local Python file tools with relative sourceFile into module imports (Google ADK)', () => {
+      const localTool: ToolDefinition = {
+        id: 'cust_triage',
+        name: 'Triage Query Tool',
+        type: 'custom',
+        toolMode: 'local_file',
+        sourceFile: './tools/triage_tools.py',
+        functionName: 'triage_query_tool',
+      };
+
+      const result = compileTools([localTool], 'google-adk');
+      assert.ok(result.imports.some((i) => i.includes('from tools.triage_tools import triage_query_tool')));
+      assert.ok(result.toolBindings.includes('triage_query_tool'));
+    });
+
+    it('should compile AI generated tools with custom codeSnippet (Google ADK)', () => {
+      const aiTool: ToolDefinition = {
+        id: 'cust_ai_calc',
+        name: 'calculate_tax',
+        type: 'custom',
+        toolMode: 'ai_generated',
+        codeSnippet: 'def calculate_tax(amount: float) -> float:\n    """Calculates tax rate."""\n    return amount * 0.08',
+      };
+
+      const result = compileTools([aiTool], 'google-adk');
+      assert.ok(result.toolDefinitions.some((d) => d.includes('def calculate_tax(amount: float) -> float:')));
+      assert.ok(result.toolBindings.includes('calculate_tax'));
     });
 
     it('should exclude disabled tools from the generated toolBindings list', () => {
@@ -580,6 +609,35 @@ describe('Tool Adapter Compiler', () => {
       assert.ok(def.includes('method="GET"'));
       assert.ok(def.includes('params=data_map'));
       assert.ok(result.toolBindings.includes('live_weather_api'));
+    });
+
+    it('should compile local Python file tools with relative sourceFile into module imports (LangGraph)', () => {
+      const localTool: ToolDefinition = {
+        id: 'cust_threat',
+        name: 'Threat Intel Query Tool',
+        type: 'custom',
+        toolMode: 'local_file',
+        sourceFile: './tools/threat_intel_tools.py',
+        functionName: 'threat_intel_query_tool',
+      };
+
+      const result = compileTools([localTool], 'langgraph');
+      assert.ok(result.imports.some((i) => i.includes('from tools.threat_intel_tools import threat_intel_query_tool')));
+      assert.ok(result.toolBindings.includes('threat_intel_query_tool'));
+    });
+
+    it('should compile AI generated tools with custom codeSnippet (LangGraph)', () => {
+      const aiTool: ToolDefinition = {
+        id: 'cust_ai_filter',
+        name: 'filter_logs',
+        type: 'custom',
+        toolMode: 'ai_generated',
+        codeSnippet: '@tool\ndef filter_logs(pattern: str) -> list:\n    """Filters security logs."""\n    return []',
+      };
+
+      const result = compileTools([aiTool], 'langgraph');
+      assert.ok(result.toolDefinitions.some((d) => d.includes('def filter_logs(pattern: str) -> list:')));
+      assert.ok(result.toolBindings.includes('filter_logs'));
     });
   });
 });

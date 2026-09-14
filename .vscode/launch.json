@@ -5,6 +5,7 @@
       "name": "Run Extension",
       "type": "extensionHost",
       "request": "launch",
+      "runtimeExecutable": "${execPath}",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
         "--disable-extensions"
@@ -12,7 +13,7 @@
       "outFiles": [
         "${workspaceFolder}/dist/extension/**/*.js"
       ],
-      "preLaunchTask": "build-and-run"
+      "preLaunchTask": "npm: compile"
     }
   ]
 }

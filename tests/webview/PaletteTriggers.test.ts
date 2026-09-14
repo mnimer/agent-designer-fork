@@ -38,7 +38,8 @@ describe('Triggers Tab Panel & Theme Logic', () => {
     assert.ok(triggerTypes.includes('pubsub'), 'pubsub trigger must exist');
     assert.ok(triggerTypes.includes('scheduled'), 'scheduled trigger must exist');
     assert.ok(triggerTypes.includes('eventarc'), 'eventarc trigger must exist');
-    assert.equal(TRIGGER_CATALOG.length, 5);
+    assert.ok(triggerTypes.includes('webhook'), 'webhook trigger must exist');
+    assert.equal(TRIGGER_CATALOG.length, 6);
   });
 
   it('should mark PubSub and Scheduled triggers as disabled', () => {
@@ -47,18 +48,21 @@ describe('Triggers Tab Panel & Theme Logic', () => {
     const chatTrigger = TRIGGER_CATALOG.find((t) => t.type === 'chat');
     const testerTrigger = TRIGGER_CATALOG.find((t) => t.type === 'tester');
     const eventarcTrigger = TRIGGER_CATALOG.find((t) => t.type === 'eventarc');
+    const webhookTrigger = TRIGGER_CATALOG.find((t) => t.type === 'webhook');
 
     assert.ok(pubsubTrigger);
     assert.ok(scheduledTrigger);
     assert.ok(chatTrigger);
     assert.ok(testerTrigger);
     assert.ok(eventarcTrigger);
+    assert.ok(webhookTrigger);
 
     assert.equal(isTriggerDisabled(pubsubTrigger.type), true, 'PubSub must be disabled');
     assert.equal(isTriggerDisabled(scheduledTrigger.type), true, 'Scheduled must be disabled');
     assert.equal(isTriggerDisabled(chatTrigger.type), false, 'Chat must remain enabled');
     assert.equal(isTriggerDisabled(testerTrigger.type), false, 'Tester must remain enabled');
     assert.equal(isTriggerDisabled(eventarcTrigger.type), false, 'EventArc must remain enabled');
+    assert.equal(isTriggerDisabled(webhookTrigger.type), false, 'Webhook must remain enabled');
   });
 
   it('should prevent drag-and-drop initiation for disabled triggers', () => {
@@ -94,7 +98,7 @@ describe('Triggers Tab Panel & Theme Logic', () => {
   });
 
   it('should return unified orange theme attributes for all trigger types', () => {
-    const types: TriggerType[] = ['chat', 'pubsub', 'scheduled', 'tester', 'eventarc'];
+    const types: TriggerType[] = ['chat', 'pubsub', 'scheduled', 'tester', 'eventarc', 'webhook'];
     for (const t of types) {
       const theme = getTriggerTheme(t);
       assert.ok(theme.border.includes('border-orange-500'), `${t} border must be orange`);
