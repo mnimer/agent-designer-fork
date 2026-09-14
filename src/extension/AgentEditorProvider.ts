@@ -24,6 +24,8 @@
  *    GOOGLE_CLOUD_LOCATION='global'). Regional endpoints return 404 NOT_FOUND for gemini-3.7-flash publisher models.
  * 10. Pre-Generation Cleanup: Immediately cleans prior generated source files and stale virtual environments from
  *     the target output directory when GENERATE_CODE is received, before initiating LLM synthesis, preserving .agent, .git, and IDE configurations.
+ * 11. In-Flight Code Generation Cancellation: Manages an active AbortController for LLM synthesis. When CANCEL_CODE_GENERATION
+ *     is received, aborts network fetch requests, suppresses file persistence, and reports clean cancellation to the webview.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -55,6 +57,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   private readonly mcpManager: McpSubprocessManager;
   private readonly mcpOAuthManager: McpOAuthManager;
   private readonly outputChannel?: vscode.OutputChannel;
+  private activeCodeGenAbortController: AbortController | null = null;
   private readonly messageHandlers: Map<
     string,
     (msg: WebviewToExtensionMessage, bridge: WebviewBridge, doc: vscode.TextDocument) => void
@@ -326,6 +329,14 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
 
     bridge.onMessage('GENERATE_CODE', async (payload) => {
       if (!payload) return;
+
+      // Abort any prior in-flight code generation
+      if (this.activeCodeGenAbortController) {
+        this.activeCodeGenAbortController.abort();
+      }
+      const abortController = new AbortController();
+      this.activeCodeGenAbortController = abortController;
+
       const config = vscode.workspace.getConfiguration('agentFlow');
       const apiKey = config.get<string>('geminiApiKey') || process.env.GEMINI_API_KEY || '';
 
@@ -349,7 +360,29 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         deploymentTarget: deploymentTarget,
         apiKey: apiKey,
         model: 'gemini-3.7-flash',
+        signal: abortController.signal,
       });
+
+      // If code generation was cancelled, suppress file writes and notify webview
+      if (abortController.signal.aborted || result.cancelled) {
+        if (this.activeCodeGenAbortController === abortController) {
+          this.activeCodeGenAbortController = null;
+        }
+        await bridge.postMessage({
+          type: 'CODE_GENERATED',
+          payload: {
+            success: false,
+            files: [],
+            error: 'Code generation cancelled by user',
+            modelUsed: result.modelUsed,
+          },
+        });
+        return;
+      }
+
+      if (this.activeCodeGenAbortController === abortController) {
+        this.activeCodeGenAbortController = null;
+      }
 
       if (result.success && result.files.length > 0) {
         try {
@@ -399,6 +432,22 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           },
         });
       }
+    });
+
+    bridge.onMessage('CANCEL_CODE_GENERATION', async () => {
+      if (this.activeCodeGenAbortController) {
+        this.activeCodeGenAbortController.abort();
+        this.activeCodeGenAbortController = null;
+      }
+      vscode.window.showInformationMessage('Agent Flow: Code generation stopped.');
+      await bridge.postMessage({
+        type: 'CODE_GENERATED',
+        payload: {
+          success: false,
+          files: [],
+          error: 'Code generation cancelled by user',
+        },
+      });
     });
 
     bridge.onMessage('WRITE_FILES_TO_WORKSPACE', async (payload) => {

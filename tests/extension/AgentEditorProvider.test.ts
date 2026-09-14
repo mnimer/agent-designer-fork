@@ -396,6 +396,102 @@ describe('AgentEditorProvider', { concurrency: 1 }, () => {
     }
   });
 
+  it('should handle CANCEL_CODE_GENERATION message, abort active generation, and post cancelled result', async () => {
+    const mockContext: any = {
+      extensionPath: '/mock/extension',
+      extensionUri: vscode.Uri.file('/mock/extension'),
+      subscriptions: [],
+    };
+    const provider = new AgentEditorProvider(mockContext);
+
+    let abortSignalObserved: boolean = false;
+    (provider as any).codeGenEngine = {
+      generateCode: async (req: any) => {
+        if (req.signal) {
+          if (req.signal.aborted) {
+            abortSignalObserved = true;
+          } else {
+            req.signal.addEventListener('abort', () => {
+              abortSignalObserved = true;
+            });
+          }
+        }
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            if (req.signal?.aborted) {
+              resolve({
+                success: false,
+                files: [],
+                error: 'Code generation cancelled by user',
+                cancelled: true,
+              });
+            } else {
+              resolve({
+                success: true,
+                files: [{ path: 'done.py', name: 'done.py', description: 'Done', content: '# done' }],
+              });
+            }
+          }, 10);
+        });
+      },
+    };
+
+    const mockDoc: any = {
+      uri: vscode.Uri.file('/mock/workspace/cancel_sample.agent'),
+      getText: () => '{}',
+      positionAt: () => new vscode.Position(0, 0),
+    };
+
+    let messageCallback: ((msg: any) => Promise<void>) | null = null;
+    const postedMessages: any[] = [];
+    const mockPanel: any = {
+      webview: {
+        options: {},
+        html: '',
+        postMessage: async (msg: any) => {
+          postedMessages.push(msg);
+          return true;
+        },
+        onDidReceiveMessage: (cb: any) => {
+          messageCallback = cb;
+          return { dispose: () => {} };
+        },
+        cspSource: 'vscode-webview:',
+        asWebviewUri: (uri: any) => uri.toString(),
+      },
+      onDidDispose: () => {},
+    };
+
+    await provider.resolveCustomTextEditor(mockDoc, mockPanel, {} as any);
+
+    if (messageCallback) {
+      // Trigger code generation
+      const genPromise = (messageCallback as any)({
+        type: 'GENERATE_CODE',
+        payload: {
+          document: { version: '1.0.0', name: 'sample', nodes: [], edges: [] },
+          targetFramework: 'google-adk',
+          targetLanguage: 'python',
+          outputFolder: '/mock/workspace/target_cancel',
+        },
+      });
+
+      // Send CANCEL_CODE_GENERATION immediately
+      await (messageCallback as any)({
+        type: 'CANCEL_CODE_GENERATION',
+      });
+
+      await genPromise;
+
+      const cancelMsg = postedMessages.find(
+        (m) => m.type === 'CODE_GENERATED' && m.payload.error === 'Code generation cancelled by user'
+      );
+      assert.ok(cancelMsg, 'Expected CODE_GENERATED message with cancellation error');
+      assert.strictEqual(cancelMsg.payload.success, false);
+      assert.strictEqual(abortSignalObserved, true, 'AbortSignal should have fired');
+    }
+  });
+
   it('should cleanly delete old code files and venv while preserving .agent and .git folders', async () => {
     const fs = await import('node:fs');
     const path = await import('node:path');

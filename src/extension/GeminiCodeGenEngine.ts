@@ -60,6 +60,17 @@ export class GeminiCodeGenEngine {
     const model = request.model || 'gemini-3.7-flash';
     const apiKey = request.apiKey || process.env.GEMINI_API_KEY || '';
 
+    if (request.signal?.aborted) {
+      return {
+        success: false,
+        files: [],
+        error: 'Code generation cancelled by user',
+        cancelled: true,
+        modelUsed: model,
+        timestamp: new Date().toISOString(),
+      };
+    }
+
     try {
       // 1. Load prompt template from resource/prompts directory
       const promptTemplate = this.loadPromptTemplate(framework, language, target);
@@ -94,7 +105,7 @@ export class GeminiCodeGenEngine {
       const workflowJson = JSON.stringify(sanitizedDoc, null, 2);
       const interpolatedPrompt = promptTemplate.replace('{{WORKFLOW_JSON}}', workflowJson);
 
-      const rawGeneratedFiles = await this.callGeminiApi(interpolatedPrompt, apiKey, model);
+      const rawGeneratedFiles = await this.callGeminiApi(interpolatedPrompt, apiKey, model, request.signal);
 
       if (!rawGeneratedFiles || rawGeneratedFiles.length === 0) {
         throw new Error('Gemini returned an empty file list. Please verify the prompt and model output.');
@@ -113,6 +124,16 @@ export class GeminiCodeGenEngine {
         timestamp: new Date().toISOString(),
       };
     } catch (err: any) {
+      if (request.signal?.aborted || err?.name === 'AbortError') {
+        return {
+          success: false,
+          files: [],
+          error: 'Code generation cancelled by user',
+          cancelled: true,
+          modelUsed: model,
+          timestamp: new Date().toISOString(),
+        };
+      }
       const errorMessage = err?.message || 'Unknown error occurred during Gemini code generation.';
       return {
         success: false,
@@ -262,14 +283,21 @@ export class GeminiCodeGenEngine {
    * @param model Target model identifier (default: 'gemini-flash-latest')
    * @returns Array of generated file objects
    */
-  public async callGeminiApi(prompt: string, apiKey: string, model: string): Promise<GeneratedFile[]> {
+  public async callGeminiApi(prompt: string, apiKey: string, model: string, signal?: AbortSignal): Promise<GeneratedFile[]> {
     let apiKeyError: Error | null = null;
+
+    if (signal?.aborted) {
+      throw new Error('Code generation cancelled by user');
+    }
 
     // Strategy A: Direct API Key provided
     if (apiKey) {
       try {
-        return await this.callGeminiWithApiKey(prompt, apiKey, model);
+        return await this.callGeminiWithApiKey(prompt, apiKey, model, signal);
       } catch (err: any) {
+        if (signal?.aborted || err?.name === 'AbortError') {
+          throw err;
+        }
         apiKeyError = err;
         // API key failed (e.g. invalid, revoked, or expired) - proceed to fallback Strategy B (ADC)
       }
@@ -277,8 +305,11 @@ export class GeminiCodeGenEngine {
 
     // Strategy B: Google Application Default Credentials (ADC) / Vertex AI
     try {
-      return await this.callGeminiWithAdc(prompt, model);
+      return await this.callGeminiWithAdc(prompt, model, signal);
     } catch (adcErr: any) {
+      if (signal?.aborted || adcErr?.name === 'AbortError') {
+        throw adcErr;
+      }
       if (apiKeyError) {
         throw new Error(
           `Gemini code generation failed: API Key error (${apiKeyError.message}) and Application Default Credentials fallback failed (${adcErr.message}). Run 'gcloud auth application-default login' or update your API key.`
@@ -322,7 +353,7 @@ export class GeminiCodeGenEngine {
    * @param apiKey API key
    * @param model Model name
    */
-  private async callGeminiWithApiKey(prompt: string, apiKey: string, model: string): Promise<GeneratedFile[]> {
+  private async callGeminiWithApiKey(prompt: string, apiKey: string, model: string, signal?: AbortSignal): Promise<GeneratedFile[]> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const requestBody = {
@@ -338,6 +369,7 @@ export class GeminiCodeGenEngine {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
+      signal,
     });
 
     if (!response.ok) {
@@ -360,13 +392,13 @@ export class GeminiCodeGenEngine {
    * @param prompt Prompt string
    * @param model Model name
    */
-  private async callGeminiWithAdc(prompt: string, model: string): Promise<GeneratedFile[]> {
+  private async callGeminiWithAdc(prompt: string, model: string, signal?: AbortSignal): Promise<GeneratedFile[]> {
     // 1. Attempt Vertex AI with ADC token and project ID
     const adcToken = this.getGCloudAccessToken();
     const projectId = this.getGCloudProjectId();
 
     if (adcToken && projectId) {
-      return this.callVertexAiGemini(prompt, model, adcToken, projectId);
+      return this.callVertexAiGemini(prompt, model, adcToken, projectId, signal);
     }
 
     throw new Error(
@@ -386,7 +418,8 @@ export class GeminiCodeGenEngine {
     prompt: string,
     model: string,
     token: string,
-    projectId: string
+    projectId: string,
+    signal?: AbortSignal
   ): Promise<GeneratedFile[]> {
     const location = process.env.GOOGLE_CLOUD_LOCATION || process.env.GOOGLE_CLOUD_REGION || process.env.CLOUD_ML_REGION || 'global';
     const host = location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`;
@@ -413,6 +446,7 @@ export class GeminiCodeGenEngine {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
+      signal,
     });
 
     if (!response.ok) {

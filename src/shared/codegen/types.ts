@@ -24,12 +24,14 @@ export interface CodeGenRequest {
   deploymentTarget?: 'cloudrun' | 'agent-engine' | string;
   apiKey?: string;
   model?: string;
+  signal?: AbortSignal;
 }
 
 export interface CodeGenResult {
   success: boolean;
   files: GeneratedFile[];
   error?: string;
+  cancelled?: boolean;
   modelUsed?: string;
   timestamp?: string;
 }

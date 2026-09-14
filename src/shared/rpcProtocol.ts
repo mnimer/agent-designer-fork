@@ -38,6 +38,12 @@ export type WebviewToExtensionMessage =
       };
     }
   | {
+      type: 'CANCEL_CODE_GENERATION';
+      payload?: {
+        targetDirectory?: string;
+      };
+    }
+  | {
       type: 'EXPORT_CODE';
       payload: {
         document: AgentWorkflowDocument;

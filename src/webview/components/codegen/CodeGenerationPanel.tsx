@@ -13,6 +13,7 @@ import {
   Cpu,
   Layers,
   Settings2,
+  Sliders,
   ExternalLink,
   ChevronRight,
   Server,
@@ -40,7 +41,10 @@ import { getFileColorInfo } from './fileTypeColors';
 import { FindInFilesBar } from './FindInFilesBar';
 
 /**
- * Renders file text with highlighted search occurrences.
+ * CodeGenerationPanel
+ *
+ * Webview component for multi-agent code synthesis, preview, and export.
+ * Follows 8pt grid spacing and matches plugin design specifications.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -303,13 +307,13 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
             onClick={() => setActiveTab('codegen')}
             className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-colors cursor-pointer ${
               activeTab === 'codegen'
-                ? 'border-[#f78166] text-[#f78166] bg-[#0d1117]/60'
+                ? 'border-white text-white bg-[#0d1117]/60'
                 : 'border-transparent text-gray-400 hover:text-gray-200'
             }`}
           >
-            <Code2 className="w-3.5 h-3.5 text-[#f78166]" />
+            <Code2 className="w-3.5 h-3.5" />
             <span>Code Generation</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#21262d] text-gray-300 border border-[#30363d]">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#21262d] text-gray-300 border border-[#30363d] font-mono">
               {generatedFiles.length} files
             </span>
           </button>
@@ -318,13 +322,13 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
             onClick={() => setActiveTab('deployment')}
             className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-colors cursor-pointer ${
               activeTab === 'deployment'
-                ? 'border-emerald-500 text-emerald-400 bg-[#0d1117]/60'
+                ? 'border-white text-white bg-[#0d1117]/60'
                 : 'border-transparent text-gray-400 hover:text-gray-200'
             }`}
           >
-            <Server className="w-3.5 h-3.5 text-emerald-400" />
+            <Server className="w-3.5 h-3.5" />
             <span>Deployment</span>
-            <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#21262d] text-emerald-400 border border-emerald-500/30 font-mono">
               {config.deploymentTarget === 'cloud_run' ? 'Cloud Run' : 'Google Agent Engine'}
             </span>
           </button>
@@ -349,19 +353,19 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                   !hasGeneratedCode
                     ? 'border-transparent text-gray-500 bg-[#161b22]/40 cursor-not-allowed opacity-60'
                     : activeTab === 'test_runner'
-                    ? 'border-pink-500 text-pink-400 bg-[#0d1117]/60 cursor-pointer'
-                    : 'border-transparent text-gray-400 hover:text-pink-300 cursor-pointer'
+                    ? 'border-white text-white bg-[#0d1117]/60 cursor-pointer'
+                    : 'border-transparent text-gray-400 hover:text-gray-200 cursor-pointer'
                 }`}
               >
-                <FlaskConical className={`w-3.5 h-3.5 ${hasGeneratedCode ? 'text-pink-400' : 'text-gray-500'}`} />
+                <FlaskConical className="w-3.5 h-3.5" />
                 <span>Test Runner</span>
                 {!hasGeneratedCode ? (
-                  <span className="text-[9px] px-1.5 py-0.2 rounded font-mono bg-[#21262d] text-gray-400 border border-[#30363d] flex items-center gap-0.5">
+                  <span className="text-[9px] px-1.5 py-0.5 rounded font-mono bg-[#21262d] text-gray-400 border border-[#30363d] flex items-center gap-0.5">
                     <Lock className="w-2.5 h-2.5" />
                     Locked
                   </span>
                 ) : (
-                  <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-pink-500/20 text-pink-300 border border-pink-500/30">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#21262d] text-pink-400 border border-pink-500/30 font-mono">
                     {testPrompts.length} tests
                   </span>
                 )}
@@ -384,13 +388,13 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
               title="Interactive live streaming chat runner"
               className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
                 activeTab === 'chat'
-                  ? 'border-emerald-500 text-emerald-400 bg-[#0d1117]/60'
-                  : 'border-transparent text-gray-400 hover:text-emerald-300'
+                  ? 'border-white text-white bg-[#0d1117]/60'
+                  : 'border-transparent text-gray-400 hover:text-gray-200'
               }`}
             >
-              <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+              <MessageSquare className="w-3.5 h-3.5" />
               <span>Interactive Chat</span>
-              <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#21262d] text-emerald-400 border border-emerald-500/30 font-mono">
                 Live
               </span>
             </button>
@@ -422,46 +426,45 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
             <div className="flex-1 overflow-y-auto pr-1 space-y-3.5 min-h-0">
               {/* Card Header */}
               <div className="flex items-center justify-between border-b border-[#30363d] pb-2">
-                <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-white">
-                  <Settings2 className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Generator Settings</span>
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-white">
+                  <Sliders className="w-4 h-4 text-sky-400" />
+                  <span>GENERATOR SETTINGS</span>
                 </div>
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#0d1117] text-gray-400 font-mono border border-[#30363d]">
+                <span className="text-[10px] px-2 py-0.5 rounded bg-[#0d1117] text-gray-400 font-mono border border-[#30363d]">
                   v2.4
                 </span>
               </div>
 
               {/* Radio Group: Google ADK vs LangGraph */}
               <div className="space-y-1.5">
-                <p className="text-[11px] text-gray-400 font-bold uppercase tracking-tight">
-                  Target Framework
+                <p className="text-[11px] text-gray-400 font-bold uppercase tracking-wider">
+                  TARGET FRAMEWORK
                 </p>
                 <div className="space-y-1.5">
                   {/* Google ADK Option */}
                   <label
-                    className={`flex items-start gap-2.5 p-2 rounded-lg border transition-all cursor-pointer group ${
+                    className={`flex items-start gap-3 p-3 rounded-lg border transition-all cursor-pointer group ${
                       config.framework === 'google_adk'
-                        ? 'bg-[#21262d] border-blue-500 shadow-sm'
-                        : 'bg-[#0d1117] border-[#30363d] hover:bg-[#21262d]'
+                        ? 'bg-[#0d1117] border-[#388bfd] shadow-sm'
+                        : 'bg-[#0d1117] border-[#30363d] hover:bg-[#161b22]'
                     }`}
                   >
-                    <input
-                      type="radio"
-                      name="framework"
-                      value="google_adk"
-                      checked={config.framework === 'google_adk'}
-                      onChange={() => onChangeConfig({ framework: 'google_adk' })}
-                      className="mt-0.5 accent-blue-500"
-                    />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-gray-200 group-hover:text-white">Google ADK</span>
+                    <div className="pt-0.5">
+                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+                        config.framework === 'google_adk' ? 'border-[#388bfd] bg-[#388bfd]' : 'border-gray-500'
+                      }`}>
+                        {config.framework === 'google_adk' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                      </div>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white">Google ADK</span>
                         <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 font-mono border border-blue-500/30">
                           GenAI SDK
                         </span>
                       </div>
-                      <p className="text-[10px] text-gray-400 mt-0.5">
-                        Google Agent Development Kit & Gemini 2.5 tools.
+                      <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">
+                        Google Agent Development Kit & Gemini tools.
                       </p>
                     </div>
                   </label>
@@ -469,24 +472,19 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                   {/* LangGraph Option (Disabled) */}
                   <label
                     title="LangGraph option is currently disabled"
-                    className="flex items-start gap-2.5 p-2 rounded-lg border transition-all opacity-50 cursor-not-allowed bg-[#0d1117] border-[#30363d]"
+                    className="flex items-start gap-3 p-3 rounded-lg border transition-all opacity-50 cursor-not-allowed bg-[#0d1117] border-[#30363d]"
                   >
-                    <input
-                      type="radio"
-                      name="framework"
-                      value="langgraph"
-                      disabled={true}
-                      checked={false}
-                      className="mt-0.5 accent-purple-500 cursor-not-allowed"
-                    />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
+                    <div className="pt-0.5">
+                      <div className="w-4 h-4 rounded-full border border-gray-600 flex items-center justify-center bg-gray-800" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold text-gray-400">LangGraph</span>
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-400 font-mono border border-purple-500/20">
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-900/30 text-purple-400 font-mono border border-purple-700/40">
                           Disabled
                         </span>
                       </div>
-                      <p className="text-[10px] text-gray-500 mt-0.5">
+                      <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">
                         Cyclic StateGraph orchestration with shared memory.
                       </p>
                     </div>
@@ -495,49 +493,51 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
               </div>
 
               {/* Target Language Toggle */}
-              <div className="space-y-1">
-                <p className="text-[11px] text-gray-400 font-bold uppercase tracking-tight flex items-center justify-between">
-                  <span>Language</span>
-                  <span className="text-[10px] text-gray-400 font-mono">{config.language.toUpperCase()}</span>
-                </p>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider">LANGUAGE</span>
+                  <span className="text-[10px] text-gray-400 font-mono uppercase">{config.language}</span>
+                </div>
                 <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#0d1117] rounded-lg border border-[#30363d]">
                   <button
                     type="button"
                     onClick={() => onChangeConfig({ language: 'python' })}
-                    className={`py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
+                    className={`py-1.5 px-3 text-xs font-medium rounded transition-colors cursor-pointer flex items-center justify-center gap-2 ${
                       config.language === 'python'
-                        ? 'bg-[#21262d] text-white border border-[#30363d] shadow'
+                        ? 'bg-[#21262d] text-white border border-[#30363d] shadow-sm'
                         : 'text-gray-400 hover:text-gray-200'
                     }`}
                   >
-                    🐍 Python
+                    <span>🐍</span>
+                    <span>Python</span>
                   </button>
                   <button
                     type="button"
                     disabled={true}
                     title="TypeScript option is currently disabled"
-                    className="py-1 text-xs font-medium rounded transition-colors opacity-50 cursor-not-allowed text-gray-500 bg-[#0d1117]"
+                    className="py-1.5 px-3 text-xs font-medium rounded transition-colors opacity-50 cursor-not-allowed text-gray-500 bg-[#0d1117] flex items-center justify-center gap-2"
                   >
-                    🔷 TypeScript
+                    <span className="text-blue-500">🔷</span>
+                    <span>TypeScript</span>
                   </button>
                 </div>
               </div>
 
               {/* Folder Selector for Generated Code */}
               <div className="space-y-1.5">
-                <label className="text-[11px] text-gray-400 font-bold uppercase tracking-tight flex items-center justify-between">
-                  <span className="flex items-center gap-1">
-                    <Folder className="w-3 h-3 text-amber-400" />
-                    Target Folder
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-[11px] text-gray-300 font-bold uppercase tracking-wider">
+                    <Folder className="w-3.5 h-3.5 text-amber-400" />
+                    TARGET FOLDER
                   </span>
                   <button
                     type="button"
                     onClick={() => setIsFolderPickerOpen(!isFolderPickerOpen)}
-                    className="text-[10px] text-blue-400 hover:underline cursor-pointer font-normal"
+                    className="text-[11px] text-blue-400 hover:underline cursor-pointer font-normal"
                   >
                     {isFolderPickerOpen ? 'Hide' : 'Paths'}
                   </button>
-                </label>
+                </div>
 
                 <div className="flex gap-1.5">
                   <input
@@ -545,7 +545,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                     value={config.outputFolder}
                     onChange={(e) => onChangeConfig({ outputFolder: e.target.value })}
                     placeholder="./"
-                    className={`flex-1 px-3 py-1.5 bg-[#0d1117] border rounded text-xs font-mono text-gray-300 focus:outline-none ${
+                    className={`flex-1 px-3 py-2 bg-[#0d1117] border rounded-lg text-xs font-mono text-gray-200 focus:outline-none ${
                       !folderValidation.isValid
                         ? 'border-amber-500/80 focus:border-amber-500'
                         : 'border-[#30363d] focus:border-blue-500'
@@ -555,9 +555,9 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                     type="button"
                     onClick={() => setIsFolderPickerOpen(!isFolderPickerOpen)}
                     title="Choose folder location"
-                    className="bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] rounded px-2.5 text-gray-400 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
+                    className="bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] rounded-lg px-2.5 text-gray-400 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
                   >
-                    <FolderOpen className="w-3.5 h-3.5" />
+                    <FolderOpen className="w-4 h-4" />
                   </button>
                 </div>
 
@@ -584,8 +584,8 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                     )}
                   </div>
                 ) : (
-                  <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-400/90 font-mono">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  <div className="mt-1 flex items-center gap-1 text-[11px] text-emerald-400 font-mono">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Valid Python package name: {folderValidation.folderBase}</span>
                   </div>
                 )}
@@ -619,24 +619,24 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
 
               {/* Deployment Target Selection (Terraform IaC Target) */}
               <div className="space-y-1.5">
-                <label className="text-[11px] text-gray-400 font-bold uppercase tracking-tight flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-gray-300">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-[11px] text-gray-300 font-bold uppercase tracking-wider">
                     <Cloud className="w-3.5 h-3.5 text-emerald-400" />
-                    Deployment Target
+                    DEPLOYMENT TARGET
                   </span>
-                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-300 font-mono border border-emerald-500/30">
-                    Terraform IaC
+                  <span className="text-[9px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono border border-emerald-500/30">
+                    TERRAFORM IAC
                   </span>
-                </label>
+                </div>
                 <select
                   value={config.deploymentTarget || 'agent_engine'}
                   onChange={(e) => onChangeConfig({ deploymentTarget: e.target.value as 'cloud_run' | 'agent_engine' })}
-                  className="w-full bg-[#0d1117] border border-[#30363d] text-xs text-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 cursor-pointer font-medium"
+                  className="w-full bg-[#0d1117] border border-[#30363d] text-xs text-white rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500 cursor-pointer font-medium"
                 >
                   <option value="agent_engine">🧠 Google Agent Engine (Managed ADK)</option>
                   <option value="cloud_run">☁️ Google Cloud Run (Containerized Microservice)</option>
                 </select>
-                <p className="text-[10px] text-gray-400 leading-tight">
+                <p className="text-[10px] text-gray-400 leading-normal">
                   Tells the generator how to construct the <code className="text-gray-300 font-mono">main.tf</code> terraform script and deployment spec.
                 </p>
               </div>
@@ -649,15 +649,15 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                 onClick={onGenerateCode}
                 disabled={isGenerating}
                 title="Synthesize production repository using Gemini LLM"
-                className={`w-3/4 py-2.5 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg ${
+                className={`w-3/4 py-2.5 rounded-lg text-sm font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
                   isGenerating
-                    ? 'bg-blue-600/40 text-blue-200 border-blue-500/50 cursor-wait'
-                    : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400 hover:shadow-emerald-500/20 active:scale-[0.98]'
+                    ? 'bg-emerald-600/50 text-white cursor-wait'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white active:scale-[0.99]'
                 }`}
               >
                 {isGenerating ? (
                   <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-blue-200" />
+                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
                     <span>Generating Code...</span>
                   </>
                 ) : (
@@ -672,9 +672,12 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                 type="button"
                 data-testid="stop-codegen-button"
                 onClick={onStopGenerate}
-                disabled={!isGenerating}
-                title={isGenerating ? 'Stop active code generation' : 'Code generation is not running'}
-                className="w-1/4 py-2.5 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg bg-rose-600 hover:bg-rose-500 text-white border-rose-500 hover:shadow-rose-500/20 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-rose-600"
+                title={isGenerating ? 'Stop active code generation' : 'Stop code generation'}
+                className={`w-1/4 py-2.5 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md text-white border-[#da3633]/40 active:scale-[0.99] ${
+                  isGenerating
+                    ? 'bg-[#a42036] hover:bg-[#c92a43] ring-2 ring-red-500/50 animate-pulse'
+                    : 'bg-[#85182a] hover:bg-[#a42036]'
+                }`}
               >
                 <Square className="w-3.5 h-3.5 fill-current" />
                 <span>Stop</span>
