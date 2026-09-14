@@ -58,13 +58,15 @@ import {
   Split,
   Server,
   Plug,
+  Webhook,
   TerminalSquare,
   Globe2,
   History,
   Cloud,
   BarChart3,
   Shield,
-  ExternalLink
+  ExternalLink,
+  GripVertical
 } from 'lucide-react';
 import { PATTERN_DEFINITIONS } from '../../data/patterns';
 import { TRIGGER_CATALOG, TriggerCatalogItem } from '../../data/triggerDefinitions';
@@ -85,6 +87,8 @@ interface PaletteCardProps {
   onCreateMcpTool?: () => void;
   onAddToolToAgent: (tool: ToolDefinition) => void;
   onOpenSample?: (sample: SampleWorkflowDefinition) => void;
+  samples?: SampleWorkflowDefinition[];
+  onLoadSampleIntoCurrentFlow?: (sample: SampleWorkflowDefinition) => void;
 }
 
 export const PaletteCard: React.FC<PaletteCardProps> = ({
@@ -99,6 +103,8 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   onCreateMcpTool,
   onAddToolToAgent,
   onOpenSample,
+  samples,
+  onLoadSampleIntoCurrentFlow,
 }) => {
   const [activeTab, setActiveTab] = useState<'agents' | 'tools' | 'triggers' | 'samples'>('agents');
   const [isPatternsOpen, setIsPatternsOpen] = useState(true);
@@ -305,6 +311,8 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
         return <FlaskConical className="w-4 h-4 text-orange-400" />;
       case 'eventarc':
         return <Zap className="w-4 h-4 text-orange-400" />;
+      case 'webhook':
+        return <Webhook className="w-4 h-4 text-orange-400" />;
       default:
         return <Zap className="w-4 h-4 text-orange-400" />;
     }
@@ -467,7 +475,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                 {activeTab === 'agents' && 'Agents & Patterns'}
                 {activeTab === 'tools' && `Tool Registry (${tools.length})`}
                 {activeTab === 'triggers' && 'Workflow Triggers & QA'}
-                {activeTab === 'samples' && 'Workflow Samples (0)'}
+                {activeTab === 'samples' && `Workflow Samples (${SAMPLES_CATALOG.length})`}
               </h3>
             </div>
             <div className="flex items-center gap-1.5">
@@ -1184,17 +1192,73 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
       )}
 
       {/* TAB 4: SAMPLES & TEMPLATES */}
-      {activeTab === 'samples' && (
-        <div className="p-3 space-y-3 overflow-y-auto flex-1">
-          <div className="text-[11px] font-semibold text-purple-400 uppercase tracking-wide flex items-center justify-between">
-            <span>Ready-to-Use Workflows (0)</span>
-          </div>
+      {activeTab === 'samples' && (() => {
+        const sampleList = samples && samples.length > 0 ? samples : SAMPLES_CATALOG;
+        return (
+          <div className="p-3 space-y-3 overflow-y-auto flex-1">
+            <div className="text-[11px] font-semibold text-purple-400 uppercase tracking-wide flex items-center justify-between">
+              <span>Ready-to-Use Workflows ({sampleList.length})</span>
+            </div>
 
-          <div className="text-center py-6 text-gray-500 text-xs italic bg-[#0d1117] rounded-lg border border-dashed border-[#30363d]">
-            No sample workflows available in this release.
+            <div className="space-y-2">
+              {sampleList.map((sample) => (
+                <div
+                  key={sample.id}
+                  draggable={true}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('application/reactflow/type', 'sample');
+                    e.dataTransfer.setData('application/reactflow/sample', JSON.stringify(sample));
+                    e.dataTransfer.setData('application/reactflow/sampleId', sample.id);
+                    e.dataTransfer.setData('text/plain', JSON.stringify(sample));
+                    e.dataTransfer.effectAllowed = 'all';
+                  }}
+                  className="group relative flex flex-col p-2.5 bg-[#21262d] border border-purple-500/30 rounded-lg hover:bg-[#30363d] hover:border-purple-400 shadow-sm transition-all shadow-purple-950/20 cursor-grab active:cursor-grabbing"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                      <GripVertical className="w-3.5 h-3.5 text-gray-500 group-hover:text-purple-400 shrink-0 mt-0.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-xs text-white truncate max-w-[150px]">
+                            {sample.name}
+                          </span>
+                          <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            {sample.badge}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-1 line-clamp-2 leading-relaxed">
+                          {sample.description}
+                        </p>
+                        <div className="flex items-center gap-2 mt-2 text-[9px] text-gray-400 font-mono">
+                          <span>{sample.nodesCount} nodes</span>
+                          <span>•</span>
+                          <span>{sample.toolsCount} tools</span>
+                          <span>•</span>
+                          <span className="text-purple-300">{sample.category}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1 shrink-0 mt-0.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenSample?.(sample);
+                        }}
+                        title={`Save "${sample.name}" as a new .agent file and open in a new tab`}
+                        className="px-2 py-1 rounded bg-[#161b22] hover:bg-[#21262d] border border-purple-500/40 text-purple-300 hover:text-white transition-colors cursor-pointer text-[10px] font-medium flex items-center justify-center gap-1"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>New File</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Floating Card Footer Tip */}
       <div className="px-3.5 py-2 bg-[#0d1117] border-t border-[#30363d] text-[10px] text-gray-400 flex items-center justify-between shrink-0">
@@ -1205,7 +1269,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
             ? 'Drag onto Agent node to attach'
             : activeTab === 'triggers'
             ? 'Drag onto canvas to auto-link to Root Agent'
-            : 'Click any sample to open in a new .agent tab'}
+            : 'Drag sample onto diagram to insert (or click New Tab)'}
         </span>
       </div>
     </div>

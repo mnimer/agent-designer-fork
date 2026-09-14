@@ -356,6 +356,35 @@ describe('Tool Adapter Compiler', () => {
       assert.ok(result.toolBindings.includes('get_weather_forecast'));
     });
 
+    it('should compile local Python file tools with relative sourceFile into module imports (Google ADK)', () => {
+      const localTool: ToolDefinition = {
+        id: 'cust_triage',
+        name: 'Triage Query Tool',
+        type: 'custom',
+        toolMode: 'local_file',
+        sourceFile: './tools/triage_tools.py',
+        functionName: 'triage_query_tool',
+      };
+
+      const result = compileTools([localTool], 'google-adk');
+      assert.ok(result.imports.some((i) => i.includes('from tools.triage_tools import triage_query_tool')));
+      assert.ok(result.toolBindings.includes('triage_query_tool'));
+    });
+
+    it('should compile AI generated tools with custom codeSnippet (Google ADK)', () => {
+      const aiTool: ToolDefinition = {
+        id: 'cust_ai_calc',
+        name: 'calculate_tax',
+        type: 'custom',
+        toolMode: 'ai_generated',
+        codeSnippet: 'def calculate_tax(amount: float) -> float:\n    """Calculates tax rate."""\n    return amount * 0.08',
+      };
+
+      const result = compileTools([aiTool], 'google-adk');
+      assert.ok(result.toolDefinitions.some((d) => d.includes('def calculate_tax(amount: float) -> float:')));
+      assert.ok(result.toolBindings.includes('calculate_tax'));
+    });
+
     it('should exclude disabled tools from the generated toolBindings list', () => {
       const tools: ToolDefinition[] = [
         { id: 't1', name: 'Enabled Search', type: 'search', builtinType: 'google_search', isEnabled: true },
@@ -501,6 +530,35 @@ describe('Tool Adapter Compiler', () => {
       assert.ok(def.includes('"Authorization": f"Bearer {token}"'));
       assert.ok(def.includes('https://gateway.mcpservers.org/yahoo-finance/mcp'));
       assert.ok(result.toolBindings.includes('yahoo_finance_mcp_tool'));
+    });
+
+    it('should compile local Python file tools with relative sourceFile into module imports (LangGraph)', () => {
+      const localTool: ToolDefinition = {
+        id: 'cust_threat',
+        name: 'Threat Intel Query Tool',
+        type: 'custom',
+        toolMode: 'local_file',
+        sourceFile: './tools/threat_intel_tools.py',
+        functionName: 'threat_intel_query_tool',
+      };
+
+      const result = compileTools([localTool], 'langgraph');
+      assert.ok(result.imports.some((i) => i.includes('from tools.threat_intel_tools import threat_intel_query_tool')));
+      assert.ok(result.toolBindings.includes('threat_intel_query_tool'));
+    });
+
+    it('should compile AI generated tools with custom codeSnippet (LangGraph)', () => {
+      const aiTool: ToolDefinition = {
+        id: 'cust_ai_filter',
+        name: 'filter_logs',
+        type: 'custom',
+        toolMode: 'ai_generated',
+        codeSnippet: '@tool\ndef filter_logs(pattern: str) -> list:\n    """Filters security logs."""\n    return []',
+      };
+
+      const result = compileTools([aiTool], 'langgraph');
+      assert.ok(result.toolDefinitions.some((d) => d.includes('def filter_logs(pattern: str) -> list:')));
+      assert.ok(result.toolBindings.includes('filter_logs'));
     });
   });
 });

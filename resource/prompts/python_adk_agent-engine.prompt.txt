@@ -212,7 +212,50 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
      * Dedicated Service Account with least-privilege IAM bindings (`roles/aiplatform.user`, `roles/logging.logWriter`).
      * Automated container build: `null_resource.build_container` with `local-exec` provisioner running `gcloud builds submit --config=cloudbuild-buildonly.yaml ...` when `var.build_image` is `true`.
      * `google_vertex_ai_reasoning_engine` configuring `spec.container_spec.image_uri` (with `depends_on = [null_resource.build_container]`, `agent_framework = "google-adk"`, and `lifecycle { ignore_changes = [spec[0].container_spec[0].image_uri] }`).
-     * **CONDITIONAL Pub/Sub**: ONLY generate `google_pubsub_topic`, `google_pubsub_subscription`, and `roles/pubsub.subscriber` if the workflow contains a trigger node with `triggerType: "pubsub"`. If there are NO Pub/Sub triggers in the workflow, DO NOT generate any Pub/Sub resources in `main.tf`.
+     * **CONDITIONAL Pub/Sub**: ONLY generate `google_pubsub_topic`, `google_pubsub_subscription`, and `roles/pubsub.subscriber` if the workflow contains a trigger node with `triggerType: "pubsub"` or `triggerKind: "pubsub"`. If there are NO Pub/Sub triggers in the workflow, DO NOT generate any Pub/Sub resources in `main.tf`.
+     * **CONDITIONAL Eventarc**: When the workflow contains a trigger node with `triggerType: "eventarc"` or `triggerKind: "eventarc"`:
+       - Enable APIs: `google_project_service.eventarc_api` (`eventarc.googleapis.com`) and `google_project_service.pubsub_api` (`pubsub.googleapis.com`).
+       - Create dedicated invoker service account: `google_service_account.eventarc_invoker` with `roles/aiplatform.user` and `roles/eventarc.eventReceiver` project IAM member bindings.
+       - If the event source is Cloud Storage (`storage.googleapis.com`), create `google_project_iam_member.gcs_pubsub_publisher` for `data.google_storage_project_service_account.gcs_account`.
+       - Create `google_eventarc_trigger` resource matching the configured event:
+         * `name`: derive from agent or trigger name (e.g. `"${var.agent_name}-eventarc-trigger"`).
+         * `location`: `var.region` (or `eventarcRegion` from trigger config).
+         * `matching_criteria`: match the specific selected event (e.g. `attribute = "type"`, `value = "<eventarcEvent>"` e.g. `"google.cloud.dataplex.entry.v1.created"` or `"google.cloud.storage.object.v1.finalized"`). If `eventarcServiceName` is provided, include `matching_criteria { attribute = "serviceName", value = "..." }`.
+         * `destination`: `http_endpoint { uri = "https://${var.region}-aiplatform.googleapis.com/v1/projects/${var.project_id}/locations/${var.region}/reasoningEngines/${google_vertex_ai_reasoning_engine.agent_engine.id}:query" }`.
+         * `service_account`: `google_service_account.eventarc_invoker.email`.
+         * `depends_on`: `[google_project_service.eventarc_api, google_project_iam_member.eventarc_agent_engine_invoker]`.
+       - In `Dockerfile`: Run `CMD ["adk", "api_server", "--host=0.0.0.0", "--port=8080", "--trigger_sources", "eventarc", "."]`.
+     * **CONDITIONAL Cloud Scheduler (Cron Trigger)**: When the workflow contains a trigger node with `triggerType: "scheduled"` or `"cron"` or `triggerKind: "scheduled"` / `"cron"`:
+       - Enable API: `google_project_service.cloudscheduler_api` (`cloudscheduler.googleapis.com`).
+       - Create dedicated invoker service account: `google_service_account.scheduler_invoker` with `roles/aiplatform.user` project IAM member binding.
+       - Create `google_cloud_scheduler_job` (e.g. `"${var.agent_name}-cron-job"`):
+         * `name`: `"${var.agent_name}-schedule"`
+         * `schedule`: `"<cronExpression>"` (from trigger config, e.g. `"0 9 * * 1-5"`)
+         * `time_zone`: `"<timezone>"` (from trigger config, e.g. `"America/New_York"` or `"UTC"`)
+         * `attempt_deadline`: `"320s"`
+         * `retry_config`: `retry_count = <retryCount>`
+         * `http_target`:
+           - `uri`: `"https://${var.region}-aiplatform.googleapis.com/v1/projects/${var.project_id}/locations/${var.region}/reasoningEngines/${google_vertex_ai_reasoning_engine.agent_engine.id}:query"`
+           - `http_method`: `"POST"`
+           - `body`: `base64encode(jsonencode({ "input" = { "prompt" = "<scheduledPrompt>" } }))`
+           - `oidc_token { service_account_email = google_service_account.scheduler_invoker.email }`
+         * `depends_on`: `[google_project_service.cloudscheduler_api, google_vertex_ai_reasoning_engine.agent_engine]`
+     * **CONDITIONAL Webhook Trigger**: When the workflow contains a trigger node with `triggerType: "webhook"` or `triggerKind: "webhook"`:
+       - Because Vertex AI Agent Engine (`:query`) strictly requires Google Cloud IAM authentication that external third-party webhook callers cannot directly generate, provision an HTTP Ingress Gateway:
+       - In `main.tf`:
+         * Enable APIs: `google_project_service.cloudfunctions_api` (`cloudfunctions.googleapis.com`) and `google_project_service.run_api` (`run.googleapis.com`).
+         * Create dedicated gateway service account: `google_service_account.webhook_ingress_sa` with `roles/aiplatform.user` project IAM member binding.
+         * If `authType` is not `"none"`, provision `google_secret_manager_secret.webhook_secret` and secret version, granting `roles/secretmanager.secretAccessor` to `google_service_account.webhook_ingress_sa`.
+         * Create `google_cloudfunctions2_function.webhook_gateway` (or `google_cloud_run_v2_service` ingress):
+           - `name`: `"${var.agent_name}-webhook-gateway"`
+           - `location`: `var.region`
+           - `service_config`:
+             * `service_account_email`: `google_service_account.webhook_ingress_sa.email`
+             * `environment_variables`: `PROJECT_ID = var.project_id`, `LOCATION = var.region`, `REASONING_ENGINE_ID = google_vertex_ai_reasoning_engine.agent_engine.id`, `WEBHOOK_PATH = "<webhookPath>"`, `AUTH_TYPE = "<authType>"`, `SECRET_HEADER = "<secretHeaderName>"`.
+         * Create `google_cloud_run_v2_service_iam_member.public_webhook` granting `roles/run.invoker` to `allUsers` (or authorized invokers) on the ingress gateway service.
+         * Output `webhook_endpoint_url` displaying the public HTTPS URL for external webhook delivery.
+       - Generate `webhook_gateway.py`: A lightweight HTTP Cloud Function handler validating the secret header/token, parsing the incoming JSON payload into a prompt, and querying `aiplatform.ReasoningEngine(reasoning_engine_id).query(prompt=prompt)`.
+       - In `agent.py`: Include structured input handling translating incoming webhook JSON payloads into user turns for `root_agent`.
    - `cloudbuild-buildonly.yaml`: Targeted Cloud Build configuration for container building and testing:
      * Step 1: Run pytest unit tests (`pytest test_agent.py`) in `python:3.11-slim`.
      * Step 2: Build container image with Docker and push to Artifact Registry (`${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/${_AGENT_NAME}:$SHORT_SHA` and `:latest`).

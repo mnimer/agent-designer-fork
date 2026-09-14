@@ -31,8 +31,9 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as crypto from 'crypto';
-import { AgentWorkflowDocument } from '../shared/types';
+import { AgentWorkflowDocument, SampleWorkflowDefinition } from '../shared/types';
 import { WebviewBridge } from './WebviewBridge';
 import {
   WebviewToExtensionMessage,
@@ -44,6 +45,7 @@ import { AgentRunnerManager } from './AgentRunnerManager';
 import { AgentEngineDeployer } from './AgentEngineDeployer';
 import { McpSubprocessManager } from './McpSubprocessManager';
 import { McpOAuthManager } from './McpOAuthManager';
+import { EventarcDiscoveryManager, DEFAULT_EVENTARC_FALLBACK } from './EventarcDiscoveryManager';
 
 export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'agentFlow.editor';
@@ -292,6 +294,16 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
               targetLanguage: parsedDoc.language || 'python',
             },
           });
+
+          const discoveredSamples = this.discoverResourceSamples();
+          if (discoveredSamples.length > 0) {
+            await bridge.postMessage({
+              type: 'SAMPLES_LOADED',
+              payload: {
+                samples: discoveredSamples,
+              },
+            });
+          }
         } catch (err) {
           console.error('[AgentEditorProvider] Error in READY handler:', err);
         }
@@ -362,6 +374,9 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
             await vscode.workspace.fs.writeFile(fileUri, buffer);
           }
 
+          // Copy referenced local python tool files into target tools/ directory
+          await this.copyLocalToolFiles(payload.document, document, targetDir.fsPath);
+
           vscode.window.showInformationMessage(
             `Agent Flow: Generated and saved ${result.files.length} files in ${path.basename(targetDir.fsPath)}`
           );
@@ -422,6 +437,17 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           const buffer = Buffer.from(file.content, 'utf-8');
           await vscode.workspace.fs.writeFile(fileUri, buffer);
           pathsWritten.push(file.path);
+        }
+
+        // Also copy referenced local python tool files into target tools/ directory if available
+        if (document) {
+          try {
+            const rawText = document.getText();
+            if (rawText) {
+              const currentDoc = JSON.parse(rawText) as AgentWorkflowDocument;
+              await this.copyLocalToolFiles(currentDoc, document, targetDir.fsPath);
+            }
+          } catch {}
         }
 
         vscode.window.showInformationMessage(
@@ -803,6 +829,234 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     bridge.onMessage('RESET_CHAT_SESSION', async (payload) => {
       this.runnerManager.resetChatSession(payload?.sessionId);
     });
+
+    bridge.onMessage('PICK_LOCAL_PYTHON_TOOL', async () => {
+      try {
+        const defaultUri = document ? vscode.Uri.file(path.dirname(document.uri.fsPath)) : vscode.workspace.workspaceFolders?.[0]?.uri;
+        const uris = await vscode.window.showOpenDialog({
+          canSelectFiles: true,
+          canSelectFolders: false,
+          canSelectMany: false,
+          defaultUri,
+          filters: { 'Python Files': ['py'] },
+          openLabel: 'Select Python Tool File',
+        });
+
+        if (!uris || uris.length === 0) return;
+        const pickedUri = uris[0];
+        const pickedPath = pickedUri.fsPath;
+        const baseDir = document ? path.dirname(document.uri.fsPath) : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+        let relPath = path.relative(baseDir, pickedPath);
+        if (!relPath.startsWith('.')) relPath = `./${relPath}`;
+
+        const content = fs.readFileSync(pickedPath, 'utf-8');
+        const functions = this.parsePythonFunctions(content);
+
+        await bridge.postMessage({
+          type: 'LOCAL_PYTHON_TOOL_PICKED',
+          payload: {
+            success: true,
+            filePath: pickedPath,
+            relativePath: relPath,
+            functions,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'LOCAL_PYTHON_TOOL_PICKED',
+          payload: {
+            success: false,
+            error: err.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('PARSE_PYTHON_TOOL_FILE', async (payload: any) => {
+      try {
+        const filePath = payload.filePath;
+        const baseDir = document ? path.dirname(document.uri.fsPath) : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+        const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
+        if (fs.existsSync(resolvedPath)) {
+          const content = fs.readFileSync(resolvedPath, 'utf-8');
+          const functions = this.parsePythonFunctions(content);
+          let relPath = path.relative(baseDir, resolvedPath);
+          if (!relPath.startsWith('.')) relPath = `./${relPath}`;
+          await bridge.postMessage({
+            type: 'PYTHON_TOOL_FILE_PARSED',
+            payload: {
+              success: true,
+              filePath: resolvedPath,
+              relativePath: relPath,
+              functions,
+            },
+          });
+        } else {
+          await bridge.postMessage({
+            type: 'PYTHON_TOOL_FILE_PARSED',
+            payload: {
+              success: false,
+              filePath,
+              functions: [],
+              error: `File not found: ${resolvedPath}`,
+            },
+          });
+        }
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'PYTHON_TOOL_FILE_PARSED',
+          payload: {
+            success: false,
+            filePath: payload?.filePath || '',
+            functions: [],
+            error: err.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('OPEN_LOCAL_TOOL_FILE', async (payload: any) => {
+      try {
+        const filePath = payload.filePath;
+        const baseDir = document ? path.dirname(document.uri.fsPath) : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+        const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
+        if (fs.existsSync(resolvedPath)) {
+          const doc = await vscode.workspace.openTextDocument(resolvedPath);
+          await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside });
+        } else {
+          vscode.window.showErrorMessage(`File not found: ${resolvedPath}`);
+        }
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`Failed to open file: ${err.message}`);
+      }
+    });
+
+    bridge.onMessage('GET_SAMPLES', async () => {
+      const discoveredSamples = this.discoverResourceSamples();
+      await bridge.postMessage({
+        type: 'SAMPLES_LOADED',
+        payload: {
+          samples: discoveredSamples,
+        },
+      });
+    });
+
+    bridge.onMessage('FETCH_EVENTARC_PROVIDERS', async (payload) => {
+      try {
+        const location = payload?.location || 'global';
+        const forceRefresh = payload?.forceRefresh || false;
+        const result = await EventarcDiscoveryManager.getInstance().getEventarcProviders(location, forceRefresh);
+        await bridge.postMessage({
+          type: 'EVENTARC_PROVIDERS_RESPONSE',
+          payload: {
+            categories: result.categories,
+            source: result.source,
+            location: result.location,
+            error: result.error,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'EVENTARC_PROVIDERS_RESPONSE',
+          payload: {
+            categories: DEFAULT_EVENTARC_FALLBACK,
+            source: 'fallback',
+            location: payload?.location || 'global',
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('CREATE_FILE_FROM_SAMPLE', async (payload) => {
+      try {
+        const sampleId = payload?.sampleId;
+        const sampleName = payload?.sampleName || sampleId || 'workflow_sample';
+
+        // 1. Locate sample definition or file content
+        let sampleDoc: any = null;
+
+        // Try to find physical sample file
+        const discovered = this.discoverResourceSamples();
+        const found = discovered.find((s) => s.id === sampleId);
+        if (found?.sourceFilePath && fs.existsSync(found.sourceFilePath)) {
+          const sampleContent = fs.readFileSync(found.sourceFilePath, 'utf-8');
+          try {
+            sampleDoc = JSON.parse(sampleContent);
+          } catch {
+            sampleDoc = null;
+          }
+        }
+
+        if (!sampleDoc && payload?.sample) {
+          const sample = payload.sample;
+          sampleDoc = {
+            schemaVersion: '1.0.0',
+            name: sample.name || sampleName,
+            description: sample.description || '',
+            framework: sample.config?.framework || 'google-adk',
+            language: sample.config?.language || 'python',
+            metadata: {
+              category: sample.category,
+              badge: sample.badge,
+              features: sample.features,
+            },
+            deployment: sample.deploymentConfig || {
+              framework: sample.config?.framework || 'google-adk',
+              language: sample.config?.language || 'python',
+              outputFolder: (sample.config?.outputFolder || `./${sampleId}_agent/`).replace(/^(\.\/)?src\//, './'),
+              includeTests: sample.config?.includeTests ?? true,
+              includeDocker: sample.config?.includeDocker ?? true,
+              useStreaming: sample.config?.useStreaming ?? true,
+            },
+            nodes: sample.nodes,
+            edges: sample.edges,
+          };
+        }
+
+        if (!sampleDoc) {
+          vscode.window.showErrorMessage(`Unable to locate sample blueprint for "${sampleId}".`);
+          return;
+        }
+
+        // 2. Prompt user with Save As Dialog
+        const defaultFileName = `${(sampleId || 'sample').replace(/[^a-zA-Z0-9_-]/g, '_')}.agent`;
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri;
+        const defaultUri = workspaceFolder
+          ? vscode.Uri.joinPath(workspaceFolder, defaultFileName)
+          : vscode.Uri.file(path.join(os.homedir(), defaultFileName));
+
+        const targetUri = await vscode.window.showSaveDialog({
+          defaultUri,
+          filters: {
+            'Agent Workflow Blueprint': ['agent'],
+            'JSON Files': ['json'],
+            'All Files': ['*'],
+          },
+          saveLabel: 'Create Agent Workflow',
+          title: `Save "${sampleName}" Sample Workflow As...`,
+        });
+
+        if (!targetUri) {
+          // User canceled the save dialog
+          return;
+        }
+
+        // 3. Write formatted JSON to the selected targetUri
+        const contentToWrite = JSON.stringify(sampleDoc, null, 2);
+        await vscode.workspace.fs.writeFile(targetUri, Buffer.from(contentToWrite, 'utf-8'));
+
+        // 4. Open the new file in VS Code in a new editor tab using our custom editor
+        await vscode.commands.executeCommand('vscode.openWith', targetUri, AgentEditorProvider.viewType);
+
+        vscode.window.showInformationMessage(
+          `Created "${path.basename(targetUri.fsPath)}" from "${sampleName}" sample and opened in a new tab.`
+        );
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`Failed to create sample file: ${err?.message || String(err)}`);
+      }
+    });
+
     // Register external message delegates
     this.messageHandlers.forEach((handler, type) => {
       bridge.onMessage(type as any, async (payload) => {
@@ -1257,11 +1511,15 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       folder = path.join('./', sanitized);
     }
 
-    // Strip legacy src/agents/ prefix if present
+    // Strip legacy src/ or src/agents/ prefix if present
     if (folder.startsWith('./src/agents/')) {
       folder = `./${folder.slice('./src/agents/'.length)}`;
     } else if (folder.startsWith('src/agents/')) {
       folder = `./${folder.slice('src/agents/'.length)}`;
+    } else if (folder.startsWith('./src/')) {
+      folder = `./${folder.slice('./src/'.length)}`;
+    } else if (folder.startsWith('src/')) {
+      folder = `./${folder.slice('src/'.length)}`;
     }
 
     if (path.isAbsolute(folder)) {
@@ -1425,8 +1683,12 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           continue;
         }
 
-        // 2. Preserve virtual environments, git repository and system files
-        if (preservedNames.has(entryName) || entryName.endsWith('.agent')) {
+        // 2. Preserve virtual environments, git repository, tools directory in document root, and system files
+        if (
+          preservedNames.has(entryName) ||
+          entryName.endsWith('.agent') ||
+          (entryName === 'tools' && document && targetDirPath === path.dirname(document.uri.fsPath))
+        ) {
           preserved.push(entryName);
           continue;
         }
@@ -1464,5 +1726,238 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     return { cleaned, preserved, errors };
+  }
+
+  /**
+   * Parses top-level Python function definitions from a script file,
+   * extracting function names, docstrings, and parameter signatures.
+   */
+  public parsePythonFunctions(fileContent: string): Array<{
+    name: string;
+    docstring?: string;
+    parameters?: Record<string, string>;
+  }> {
+    const functions: Array<{ name: string; docstring?: string; parameters?: Record<string, string> }> = [];
+    const defRegex = /^def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*[^:]+)?\s*:/gm;
+    let match: RegExpExecArray | null;
+
+    while ((match = defRegex.exec(fileContent)) !== null) {
+      const funcName = match[1];
+      const rawParams = match[2];
+      if (funcName.startsWith('_')) continue;
+
+      const parameters: Record<string, string> = {};
+      if (rawParams.trim()) {
+        const paramList = rawParams.split(',');
+        for (const p of paramList) {
+          const trimmed = p.trim();
+          if (!trimmed || trimmed === 'self' || trimmed === 'cls') continue;
+          const parts = trimmed.split(':').map((s) => s.trim());
+          const pName = parts[0].split('=')[0].trim();
+          let pType = parts[1] ? parts[1].split('=')[0].trim() : 'string';
+          parameters[pName] = pType || 'str';
+        }
+      }
+
+      const afterDef = fileContent.slice(match.index + match[0].length);
+      const docMatch = afterDef.match(/^\s*(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"([^"\n]*)"|'([^'\n]*)')/);
+      const docstring = docMatch ? (docMatch[1] || docMatch[2] || docMatch[3] || docMatch[4]).trim() : undefined;
+
+      functions.push({
+        name: funcName,
+        docstring,
+        parameters,
+      });
+    }
+
+    return functions;
+  }
+
+  /**
+   * Copies local Python tool files referenced by workflow nodes into
+   * the output target's `./tools/` directory.
+   */
+  public async copyLocalToolFiles(
+    agentDoc: AgentWorkflowDocument | undefined,
+    document: vscode.TextDocument,
+    targetDirPath: string
+  ): Promise<string[]> {
+    if (!agentDoc) return [];
+    const copiedFiles: string[] = [];
+    const baseDir = path.dirname(document.uri.fsPath);
+    const targetToolsDir = path.join(targetDirPath, 'tools');
+
+    const tools: any[] = [];
+    if (agentDoc.tools) tools.push(...agentDoc.tools);
+    if (agentDoc.agents) {
+      for (const ag of agentDoc.agents) {
+        if (ag.tools) tools.push(...ag.tools);
+      }
+    }
+
+    const uniqueSources = new Set<string>();
+    for (const t of tools) {
+      if (t && t.sourceFile) {
+        uniqueSources.add(t.sourceFile);
+      }
+    }
+
+    if (uniqueSources.size > 0) {
+      if (!fs.existsSync(targetToolsDir)) {
+        fs.mkdirSync(targetToolsDir, { recursive: true });
+      }
+      const initPy = path.join(targetToolsDir, '__init__.py');
+      if (!fs.existsSync(initPy)) {
+        fs.writeFileSync(initPy, '"""Tools package for agent pipeline."""\n', 'utf-8');
+      }
+
+      for (const relSource of uniqueSources) {
+        const sourcePath = path.isAbsolute(relSource) ? relSource : path.resolve(baseDir, relSource);
+        if (fs.existsSync(sourcePath)) {
+          const destPath = path.join(targetToolsDir, path.basename(sourcePath));
+          if (path.resolve(sourcePath) !== path.resolve(destPath)) {
+            fs.copyFileSync(sourcePath, destPath);
+            copiedFiles.push(path.join('tools', path.basename(sourcePath)));
+          }
+        }
+      }
+    }
+    return copiedFiles;
+  }
+
+  /**
+   * Discovers and parses pre-configured .agent workflow samples located in resource/sample/
+   * or resource/samples/ within the extension bundle and open workspace folders.
+   *
+   * Architectural Decisions:
+   * - Scans both extension installation root and open workspaces to support both bundled
+   *   blueprints and user-defined workspace sample repositories.
+   * - Normalizes file paths and generates rich SampleWorkflowDefinition payloads for the webview.
+   * - Recursively discovers .agent files in nested sub-directories (e.g. resource/sample/cyber_guardian/cyber_guardian.agent).
+   *
+   * @author Mike Nimer <mikenimer@google.com>
+   * @returns Array of loaded SampleWorkflowDefinition objects
+   */
+  public discoverResourceSamples(): SampleWorkflowDefinition[] {
+    // Section 1: Candidate search directories
+    const candidateDirs: string[] = [];
+    if (this.context?.extensionPath) {
+      candidateDirs.push(path.join(this.context.extensionPath, 'resource', 'sample'));
+      candidateDirs.push(path.join(this.context.extensionPath, 'resource', 'samples'));
+    }
+    if (vscode.workspace.workspaceFolders) {
+      for (const wf of vscode.workspace.workspaceFolders) {
+        candidateDirs.push(path.join(wf.uri.fsPath, 'resource', 'sample'));
+        candidateDirs.push(path.join(wf.uri.fsPath, 'resource', 'samples'));
+      }
+    }
+
+    // Section 2: Recursive file discovery
+    const discoveredFiles: string[] = [];
+    for (const dir of candidateDirs) {
+      if (fs.existsSync(dir)) {
+        discoveredFiles.push(...this.scanDirectoryForAgentFiles(dir));
+      }
+    }
+
+    // Section 3: Parse and deduplicate samples
+    const samples: SampleWorkflowDefinition[] = [];
+    const seenIds = new Set<string>();
+
+    for (const filePath of discoveredFiles) {
+      try {
+        const fileContent = fs.readFileSync(filePath, 'utf-8');
+        const parsed = JSON.parse(fileContent);
+        if (!parsed || !Array.isArray(parsed.nodes)) continue;
+
+        // Determine unique ID and display metadata
+        const parentDirName = path.basename(path.dirname(filePath));
+        const baseFileName = path.basename(filePath, '.agent');
+        const sampleId = (parentDirName !== 'sample' && parentDirName !== 'samples')
+          ? parentDirName
+          : baseFileName;
+
+        if (seenIds.has(sampleId)) continue;
+        seenIds.add(sampleId);
+
+        // Count tools across all nodes
+        let toolsCount = 0;
+        let triggerType = 'chat';
+        const testPrompts: any[] = [];
+
+        for (const n of parsed.nodes) {
+          if (n.type === 'trigger') {
+            triggerType = n.data?.triggerKind || n.data?.triggerType || triggerType;
+            if (n.data?.config?.testScenarios) {
+              testPrompts.push(...n.data.config.testScenarios);
+            } else if (n.data?.config?.testPrompts) {
+              testPrompts.push(...n.data.config.testPrompts);
+            }
+          }
+          if (n.data?.tools && Array.isArray(n.data.tools)) {
+            toolsCount += n.data.tools.length;
+          }
+        }
+
+        const sampleDef: SampleWorkflowDefinition = {
+          id: sampleId,
+          name: parsed.name || baseFileName,
+          filename: path.basename(filePath),
+          category: parsed.metadata?.category || 'Ready-to-Use Workflows',
+          badge: parsed.metadata?.badge || (parsed.framework === 'langgraph' ? 'LangGraph' : 'Google ADK'),
+          description: parsed.description || 'Enterprise agent workflow blueprint.',
+          features: parsed.metadata?.features || ['Multi-Agent', 'Grounding', 'Automated Tests'],
+          nodesCount: parsed.nodes.length,
+          toolsCount: toolsCount,
+          triggerType: triggerType,
+          iconName: 'Workflow',
+          color: 'purple',
+          nodes: parsed.nodes,
+          edges: parsed.edges || [],
+          config: {
+            framework: parsed.framework || 'google-adk',
+            language: parsed.language || 'python',
+            outputFolder: (parsed.deployment?.outputFolder || `./${sampleId}_agent/`).replace(/^(\.\/)?src\//, './'),
+            includeTests: parsed.deployment?.includeTests ?? true,
+            includeDocker: parsed.deployment?.includeDocker ?? true,
+            useStreaming: parsed.deployment?.useStreaming ?? true,
+          },
+          deploymentConfig: parsed.deployment,
+          testPrompts: testPrompts.length > 0 ? testPrompts : undefined,
+          sourceFilePath: filePath,
+        };
+
+        samples.push(sampleDef);
+      } catch (err) {
+        this.outputChannel?.appendLine(`[AgentEditorProvider] Failed to parse sample at ${filePath}: ${err}`);
+      }
+    }
+
+    return samples;
+  }
+
+  /**
+   * Recursively scans a directory for files ending in .agent
+   *
+   * @author Mike Nimer <mikenimer@google.com>
+   * @param dirPath Directory to scan
+   * @returns Array of absolute file paths to .agent documents
+   */
+  private scanDirectoryForAgentFiles(dirPath: string): string[] {
+    const results: string[] = [];
+    try {
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name);
+        if (entry.isDirectory()) {
+          results.push(...this.scanDirectoryForAgentFiles(fullPath));
+        } else if (entry.isFile() && entry.name.endsWith('.agent')) {
+          results.push(fullPath);
+        }
+      }
+    } catch {
+      // Ignore read errors
+    }
+    return results;
   }
 }

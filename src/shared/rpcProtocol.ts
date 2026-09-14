@@ -14,6 +14,8 @@ import {
   McpAuthProviderType,
   McpOAuthConfig,
   McpSecretConfig,
+  SampleWorkflowDefinition,
+  EventArcCategory,
 } from './types';
 import { GeneratedFile } from './codegen/types';
 
@@ -222,6 +224,24 @@ export type WebviewToExtensionMessage =
       };
     }
   | {
+      type: 'PICK_LOCAL_PYTHON_TOOL';
+      payload?: {
+        currentFilePath?: string;
+      };
+    }
+  | {
+      type: 'PARSE_PYTHON_TOOL_FILE';
+      payload: {
+        filePath: string;
+      };
+    }
+  | {
+      type: 'OPEN_LOCAL_TOOL_FILE';
+      payload: {
+        filePath: string;
+      };
+    }
+  | {
       type: 'CANCEL_AGENT_ENGINE_DEPLOY';
       payload?: {
         targetDirectory?: string;
@@ -242,6 +262,25 @@ export type WebviewToExtensionMessage =
         serviceUrl?: string;
         location?: string;
         projectId?: string;
+      };
+    }
+  | {
+      type: 'GET_SAMPLES';
+      payload?: Record<string, never>;
+    }
+  | {
+      type: 'FETCH_EVENTARC_PROVIDERS';
+      payload?: {
+        location?: string;
+        forceRefresh?: boolean;
+      };
+    }
+  | {
+      type: 'CREATE_FILE_FROM_SAMPLE';
+      payload: {
+        sampleId: string;
+        sampleName?: string;
+        sample?: SampleWorkflowDefinition;
       };
     };
 
@@ -451,6 +490,49 @@ export type ExtensionToWebviewMessage =
         query: string;
         response?: string;
         durationMs: number;
+        error?: string;
+      };
+    }
+  | {
+      type: 'LOCAL_PYTHON_TOOL_PICKED';
+      payload: {
+        success: boolean;
+        filePath?: string;
+        relativePath?: string;
+        functions?: Array<{
+          name: string;
+          docstring?: string;
+          parameters?: Record<string, string>;
+        }>;
+        error?: string;
+      };
+    }
+  | {
+      type: 'PYTHON_TOOL_FILE_PARSED';
+      payload: {
+        success: boolean;
+        filePath: string;
+        relativePath?: string;
+        functions: Array<{
+          name: string;
+          docstring?: string;
+          parameters?: Record<string, string>;
+        }>;
+        error?: string;
+      };
+    }
+  | {
+      type: 'SAMPLES_LOADED';
+      payload: {
+        samples: SampleWorkflowDefinition[];
+      };
+    }
+  | {
+      type: 'EVENTARC_PROVIDERS_RESPONSE';
+      payload: {
+        categories: EventArcCategory[];
+        source: 'gcloud' | 'fallback';
+        location: string;
         error?: string;
       };
     };

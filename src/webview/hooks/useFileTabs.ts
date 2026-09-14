@@ -184,7 +184,7 @@ export function useFileTabs(
       const sampleConfig: GenerationConfig = {
         framework: sample.config?.framework || 'google_adk',
         language: sample.config?.language || 'python',
-        outputFolder: sample.config?.outputFolder || `./src/${sample.id}_agent/`,
+        outputFolder: (sample.config?.outputFolder || `./${sample.id}_agent/`).replace(/^(\.\/)?src\//, './'),
         includeTests: sample.config?.includeTests ?? true,
         includeDocker: sample.config?.includeDocker ?? true,
         useStreaming: sample.config?.useStreaming ?? true,

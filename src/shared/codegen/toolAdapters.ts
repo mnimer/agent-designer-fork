@@ -31,8 +31,9 @@ export interface CompiledToolPackage {
 /**
  * Sanitizes tool names into valid Python variable identifiers (snake_case).
  *
+ * @author Mike Nimer <mikenimer@google.com>
  * @param name Raw tool name or identifier
- * @returns Clean Python identifier
+ * @returns Clean Python identifier in snake_case
  */
 export function sanitizePythonIdentifier(name: string): string {
   // NOTE: Strip leading 'tool_' or 'builtin_' prefixes, lowercase, replace non-alphanumeric with underscores, and strip edge underscores
@@ -278,7 +279,25 @@ export class ToolAdapterCompiler {
         continue;
       }
 
-      // 9. Custom Function Tools
+      // 9. Local Python File Tools or AI-Generated Tools
+      if (tool.sourceFile && (tool.functionName || tool.name)) {
+        const targetFunc = sanitizePythonIdentifier(tool.functionName || tool.name);
+        const normalizedPath = tool.sourceFile.replace(/^\.?\//, '').replace(/\.py$/, '').replace(/\//g, '.');
+        importSet.add(`from ${normalizedPath} import ${targetFunc}`);
+        bindings.push(targetFunc);
+        continue;
+      }
+
+      // If embedded code snippet exists:
+      if (tool.codeSnippet && tool.codeSnippet.trim().length > 0) {
+        definitions.push(tool.codeSnippet.trim());
+        const funcMatch = tool.codeSnippet.match(/def\s+([a-zA-Z0-9_]+)\s*\(/);
+        const resolvedFuncName = funcMatch ? funcMatch[1] : sanitizePythonIdentifier(tool.name || tool.id);
+        bindings.push(resolvedFuncName);
+        continue;
+      }
+
+      // Fallback: AI-Generated / standard custom stub
       const funcName = sanitizePythonIdentifier(tool.name || tool.id);
       const docString = tool.description || 'Custom agent tool';
       const paramKeys = Object.keys(tool.parameters || {});
@@ -532,6 +551,22 @@ export class ToolAdapterCompiler {
       }
 
       // 8. General Custom Tools / APIs
+      if (tool.sourceFile && (tool.functionName || tool.name)) {
+        const targetFunc = sanitizePythonIdentifier(tool.functionName || tool.name);
+        const normalizedPath = tool.sourceFile.replace(/^\.?\//, '').replace(/\.py$/, '').replace(/\//g, '.');
+        importSet.add(`from ${normalizedPath} import ${targetFunc}`);
+        bindings.push(targetFunc);
+        continue;
+      }
+
+      if (tool.codeSnippet && tool.codeSnippet.trim().length > 0) {
+        definitions.push(tool.codeSnippet.trim());
+        const funcMatch = tool.codeSnippet.match(/def\s+([a-zA-Z0-9_]+)\s*\(/);
+        const resolvedFuncName = funcMatch ? funcMatch[1] : sanitizePythonIdentifier(tool.name || tool.id);
+        bindings.push(resolvedFuncName);
+        continue;
+      }
+
       const funcName = sanitizePythonIdentifier(tool.name || tool.id);
       const docString = tool.description || 'Custom LangGraph agent tool';
       const paramKeys = Object.keys(tool.parameters || {});

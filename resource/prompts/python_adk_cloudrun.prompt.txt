@@ -167,6 +167,44 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
          trigger_sources=["pubsub"],
      )
 
+     # CONDITIONAL Webhook Route (generate ONLY when workflow has a trigger with triggerType/triggerKind == "webhook"):
+     # Exposes an HTTP endpoint on the configured webhookPath (e.g. /webhook) to receive external POST/PUT payloads
+     @app.post("/webhook")
+     async def webhook_handler(
+         request: Request,
+         x_webhook_secret: Optional[str] = Header(None, alias="X-Webhook-Secret"),
+         authorization: Optional[str] = Header(None)
+     ):
+         # 1. Validate Secret / Auth token if authType is configured
+         expected_secret = os.getenv("WEBHOOK_SECRET")
+         if expected_secret:
+             token = x_webhook_secret or (authorization.replace("Bearer ", "") if authorization else None)
+             if token != expected_secret:
+                 raise HTTPException(status_code=401, detail="Unauthorized: Invalid webhook secret token")
+
+         # 2. Extract payload body
+         payload = await request.json()
+         prompt = f"Received Webhook Event: {json.dumps(payload)}"
+
+         # 3. Dispatch to root_agent via ADK Runner
+         from agent import root_agent
+         from google.adk.runner import Runner
+         from google.adk.sessions import InMemorySessionService
+
+         runner = Runner(agent=root_agent, session_service=InMemorySessionService())
+         session = await runner.session_service.create_session(app_name=root_agent.name, user_id="webhook_trigger")
+
+         agent_output = []
+         async for event in runner.run_async(session=session, user_input=prompt):
+             if hasattr(event, "content") and event.content:
+                 agent_output.append(str(event.content))
+
+         return {
+             "status": "success",
+             "agent": root_agent.name,
+             "response": "".join(agent_output) or "Event processed successfully."
+         }
+
      if __name__ == "__main__":
          port = int(os.environ.get("PORT", 8080))
          uvicorn.run(app, host="0.0.0.0", port=port)
@@ -310,6 +348,43 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
          percent = 100
        }
      }
+
+     # CONDITIONAL Eventarc Trigger (generate ONLY when triggerType/triggerKind == "eventarc"):
+     # resource "google_project_service" "eventarc_api" { service = "eventarc.googleapis.com" ... }
+     # resource "google_service_account" "eventarc_invoker" { account_id = "eventarc-agent-invoker" ... }
+     # resource "google_cloud_run_v2_service_iam_member" "eventarc_invoker" { role = "roles/run.invoker" ... }
+     # resource "google_project_iam_member" "eventarc_receiver" { role = "roles/eventarc.eventReceiver" ... }
+     # resource "google_eventarc_trigger" "agent_trigger" {
+     #   matching_criteria { attribute = "type", value = "<eventarcEvent>" }
+     #   destination { cloud_run_service { service = google_cloud_run_v2_service.agent_service.name, region = var.region, path = "/apps/<agent_name>/trigger/eventarc" } }
+     #   service_account = google_service_account.eventarc_invoker.email
+     # }
+
+     # CONDITIONAL Cloud Scheduler (Cron Trigger) (generate ONLY when triggerType/triggerKind == "scheduled" or "cron"):
+     # resource "google_project_service" "cloudscheduler_api" { service = "cloudscheduler.googleapis.com" ... }
+     # resource "google_service_account" "scheduler_invoker" { account_id = "${var.service_name}-scheduler-sa" ... }
+     # resource "google_cloud_run_v2_service_iam_member" "scheduler_invoker" {
+     #   name   = google_cloud_run_v2_service.agent_service.name
+     #   location = var.region
+     #   role   = "roles/run.invoker"
+     #   member = "serviceAccount:${google_service_account.scheduler_invoker.email}"
+     # }
+     # resource "google_cloud_scheduler_job" "cron_schedule" {
+     #   name     = "${var.service_name}-schedule"
+     #   schedule = "<cronExpression>"
+     #   time_zone = "<timezone>"
+     #   http_target {
+     #     uri         = "${google_cloud_run_v2_service.agent_service.uri}/query"
+     #     http_method = "POST"
+     #     body        = base64encode(jsonencode({ "prompt" = "<scheduledPrompt>" }))
+     #     oidc_token { service_account_email = google_service_account.scheduler_invoker.email }
+     #   }
+     # }
+
+     # CONDITIONAL Webhook Trigger (generate when triggerType/triggerKind == "webhook"):
+     # If authType != "none", provision google_secret_manager_secret for the webhook token/signature secret
+     # and mount as an environment variable in google_cloud_run_v2_service.agent_service.
+     # In server.py, mount the custom webhook endpoint (@app.post("<webhookPath>")) validating the header.
 
      output "service_url" {
        description = "The URL of the deployed Cloud Run service."

@@ -60,9 +60,11 @@ import {
   ToolDefinition,
   PatternType,
   McpToolConfig,
+  SampleWorkflowDefinition,
 } from './types';
 import { AgentWorkflowDocument } from '../shared/types';
 import { INITIAL_NODES, INITIAL_EDGES } from './data/initialGraph';
+import { SAMPLES_CATALOG } from './data/sampleWorkflows';
 import { DEFAULT_MOCK_TEST_PROMPTS } from './data/triggerDefinitions';
 
 // Custom Canvas Nodes & Edges
@@ -125,6 +127,12 @@ const edgeTypes = {
   workflow: CustomWorkflowEdge,
   workflowEdge: CustomWorkflowEdge,
 };
+
+/**
+ * Universal helper to identify trigger nodes regardless of whether type is triggerNode or trigger
+ */
+export const isTriggerNode = (node: { type?: string } | null | undefined): boolean =>
+  node?.type === 'triggerNode' || node?.type === 'trigger';
 
 /**
  * FlowCanvas - Inner interactive graph workspace component.
@@ -248,6 +256,7 @@ function FlowCanvas() {
     fileTabs,
     setFileTabs,
     activeTabId,
+    activeTab,
     handleOpenSampleInNewTab,
     handleCloseTab,
   } = useFileTabs(nodes, edges, config, {
@@ -267,6 +276,37 @@ function FlowCanvas() {
     setToolModalAgentId,
     setActiveEditorTab,
   });
+
+  // ---------------------------------------------------------------------------
+  // 4b. Sample Workflows Catalog State & Dynamic Discovery
+  // ---------------------------------------------------------------------------
+  const [samples, setSamples] = useState<SampleWorkflowDefinition[]>(SAMPLES_CATALOG);
+
+  useEffect(() => {
+    // Listen for extension host dynamic samples discovery
+    const unsubscribe = bridge.onMessage('SAMPLES_LOADED', (payload) => {
+      if (payload && Array.isArray(payload.samples) && payload.samples.length > 0) {
+        setSamples((prev) => {
+          const map = new Map<string, SampleWorkflowDefinition>();
+          for (const s of SAMPLES_CATALOG) {
+            map.set(s.id, s);
+          }
+          for (const s of prev) {
+            map.set(s.id, s);
+          }
+          for (const s of payload.samples) {
+            map.set(s.id, s);
+          }
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    // Request samples from extension host
+    bridge.postMessage({ type: 'GET_SAMPLES' } as any);
+
+    return unsubscribe;
+  }, [bridge]);
 
   const {
     tools,
@@ -527,7 +567,7 @@ function FlowCanvas() {
   const handleNodesDelete = useCallback(
     (nodesToDelete: Node[]) => {
       nodesToDelete.forEach((n) => {
-        if (n.type === 'triggerNode') {
+        if (isTriggerNode(n)) {
           handleDeleteTrigger(n.id);
         } else {
           handleDeleteAgent(n.id);
@@ -857,7 +897,7 @@ function FlowCanvas() {
   // Bind callback methods directly to node data payloads
   const enrichedNodes = useMemo(() => {
     return nodes.map((node) => {
-      if (node.type === 'triggerNode') {
+      if (isTriggerNode(node)) {
         return {
           ...node,
           data: {
@@ -1049,6 +1089,207 @@ function FlowCanvas() {
   // ---------------------------------------------------------------------------
   // 7. Drag-and-Drop & Creation Handlers
   // ---------------------------------------------------------------------------
+  /**
+   * Dispatches CREATE_FILE_FROM_SAMPLE over the RPC bridge to prompt the user
+   * with VS Code's Save Dialog and open the sample blueprint in a brand-new file/tab.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
+   * @param sample The sample workflow blueprint to save and open as a new file
+   */
+  const handleOpenSampleAsNewFile = useCallback(
+    (sample: SampleWorkflowDefinition) => {
+      // Auto-format sample nodes/edges with layouted coordinates
+      const normalizedNodes = normalizeLoadedNodes(sample.nodes);
+      const layouted = getLayoutedElements(normalizedNodes, sample.edges);
+      const rawOutputFolder = sample.config?.outputFolder || `./${sample.id}_agent/`;
+      const sanitizedOutputFolder = rawOutputFolder.replace(/^(\.\/)?src\//, './');
+
+      const layoutedSample: SampleWorkflowDefinition = {
+        ...sample,
+        config: {
+          ...sample.config,
+          outputFolder: sanitizedOutputFolder,
+        },
+        deploymentConfig: sample.deploymentConfig
+          ? {
+              ...sample.deploymentConfig,
+              outputFolder:
+                sample.deploymentConfig.outputFolder?.replace(/^(\.\/)?src\//, './') ||
+                sanitizedOutputFolder,
+            }
+          : undefined,
+        nodes: layouted.nodes,
+        edges: layouted.edges,
+      };
+
+      bridge.postMessage({
+        type: 'CREATE_FILE_FROM_SAMPLE',
+        payload: {
+          sampleId: sample.id,
+          sampleName: sample.name,
+          sample: layoutedSample,
+        },
+      });
+    },
+    [bridge]
+  );
+
+  /**
+   * Loads a complete sample workflow blueprint, replacing the current canvas contents.
+   * If the current diagram has unsaved edits and multiple nodes, prompts for user confirmation.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
+   * @param sample The sample workflow blueprint to load
+   */
+  const handleLoadSampleIntoCurrentFlow = useCallback(
+    (sample: SampleWorkflowDefinition) => {
+      const rawOutputFolder = sample.config?.outputFolder || config.outputFolder;
+      const sanitizedOutputFolder = rawOutputFolder
+        ? rawOutputFolder.replace(/^(\.\/)?src\//, './')
+        : `./${sample.id}_agent/`;
+
+      const sampleConfig: GenerationConfig = {
+        framework: sample.config?.framework || config.framework,
+        language: sample.config?.language || config.language,
+        outputFolder: sanitizedOutputFolder,
+        includeTests: sample.config?.includeTests ?? config.includeTests,
+        includeDocker: sample.config?.includeDocker ?? config.includeDocker,
+        useStreaming: sample.config?.useStreaming ?? config.useStreaming,
+      };
+
+      const normalizedNodes = normalizeLoadedNodes(sample.nodes);
+      const layouted = getLayoutedElements(normalizedNodes, sample.edges);
+
+      setNodes(layouted.nodes);
+      setEdges(layouted.edges);
+      setConfig(sampleConfig);
+      setSelectedAgentId(null);
+      setSelectedTriggerId(null);
+      setIsTriggerDrawerOpen(false);
+      setIsToolDrawerOpen(false);
+      setToolModalAgentId(null);
+
+      if (activeTabId) {
+        setFileTabs((prev) =>
+          prev.map((t) =>
+            t.id === activeTabId
+              ? {
+                  ...t,
+                  nodes: layouted.nodes,
+                  edges: layouted.edges,
+                  config: sampleConfig,
+                  title: sample.name,
+                  filename: sample.filename || t.filename,
+                  sampleId: sample.id,
+                  isDirty: true,
+                }
+              : t
+          )
+        );
+      }
+
+      setGeneratedFiles([]);
+      setHasGeneratedCode(false);
+      recordSnapshot(layouted.nodes, layouted.edges, { description: `Load ${sample.name} blueprint` });
+      setTimeout(() => {
+        fitView({ padding: 0.2, duration: 400 });
+      }, 50);
+    },
+    [
+      config,
+      activeTabId,
+      setNodes,
+      setEdges,
+      setConfig,
+      setSelectedAgentId,
+      setSelectedTriggerId,
+      setIsTriggerDrawerOpen,
+      setIsToolDrawerOpen,
+      setToolModalAgentId,
+      setFileTabs,
+      setGeneratedFiles,
+      setHasGeneratedCode,
+      recordSnapshot,
+      fitView,
+    ]
+  );
+
+  /**
+   * Handles dropping a sample workflow card onto the React Flow canvas.
+   * If the canvas is blank/clean, cleanly replaces the diagram and auto-fits the view.
+   * If the canvas already contains user nodes, calculates offsets, remaps IDs, and runs auto-layout.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
+   * @param sample The sample workflow blueprint being dropped
+   * @param dropPosition The canvas coordinate where the drop occurred
+   */
+  const handleDropSampleWorkflow = useCallback(
+    (sample: SampleWorkflowDefinition, dropPosition: { x: number; y: number }) => {
+      const isBlank =
+        nodes.length === 0 ||
+        (nodes.length === 1 && nodes[0].id === 'agent_1' && !activeTab?.isDirty);
+
+      if (isBlank) {
+        handleLoadSampleIntoCurrentFlow(sample);
+        return;
+      }
+
+      // Populated canvas: normalize nodes first, then offset and remap IDs to prevent collisions
+      const normalizedSampleNodes = normalizeLoadedNodes(sample.nodes);
+      const minX = Math.min(...normalizedSampleNodes.map((n) => n.position.x));
+      const minY = Math.min(...normalizedSampleNodes.map((n) => n.position.y));
+      const prefix = `s_${sample.id}_${Date.now().toString(36)}_`;
+      const idMap = new Map<string, string>();
+
+      const remappedNodes: Node[] = normalizedSampleNodes.map((node) => {
+        const newId = `${prefix}${node.id}`;
+        idMap.set(node.id, newId);
+        const nextData = { ...(node.data as any), id: newId };
+        return {
+          ...node,
+          id: newId,
+          position: {
+            x: Math.round(dropPosition.x + (node.position.x - minX)),
+            y: Math.round(dropPosition.y + (node.position.y - minY)),
+          },
+          data: nextData,
+        };
+      });
+
+      // Update subAgents references in node data
+      for (const node of remappedNodes) {
+        const d = node.data as any;
+        if (d && Array.isArray(d.subAgents)) {
+          d.subAgents = d.subAgents.map((sub: any) => ({
+            ...sub,
+            agentId: idMap.get(sub.agentId) || sub.agentId,
+          }));
+        }
+      }
+
+      const remappedEdges: Edge[] = sample.edges.map((edge) => ({
+        ...edge,
+        id: `${prefix}${edge.id}`,
+        source: idMap.get(edge.source) || edge.source,
+        target: idMap.get(edge.target) || edge.target,
+      }));
+
+      const combinedNodes = [...nodes, ...remappedNodes];
+      const combinedEdges = [...edges, ...remappedEdges];
+
+      // Auto layout immediately after adding sample so nodes are not stacked weirdly
+      const layouted = getLayoutedElements(combinedNodes, combinedEdges);
+
+      setNodes(layouted.nodes);
+      setEdges(layouted.edges);
+      recordSnapshot(layouted.nodes, layouted.edges, { description: `Insert ${sample.name} blueprint` });
+      setTimeout(() => {
+        fitView({ padding: 0.2, duration: 400 });
+      }, 50);
+    },
+    [nodes, edges, activeTab?.isDirty, handleLoadSampleIntoCurrentFlow, setNodes, setEdges, recordSnapshot, fitView]
+  );
+
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -1063,6 +1304,7 @@ function FlowCanvas() {
       const triggerType = event.dataTransfer.getData('application/reactflow/triggerType') as TriggerType | undefined;
       const agentKindData = event.dataTransfer.getData('application/reactflow/agentKind') as AgentKind | '';
       const toolDataStr = event.dataTransfer.getData('application/reactflow/tool');
+      const sampleDataStr = event.dataTransfer.getData('application/reactflow/sample');
 
       if (toolDataStr) {
         try {
@@ -1076,12 +1318,24 @@ function FlowCanvas() {
         return;
       }
 
-      if (!type) return;
-
       const position = screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       });
+
+      if (type === 'sample' || sampleDataStr) {
+        try {
+          const droppedSample = JSON.parse(sampleDataStr) as SampleWorkflowDefinition;
+          if (droppedSample) {
+            handleDropSampleWorkflow(droppedSample, position);
+          }
+        } catch (e) {
+          console.error('[App.tsx] Failed to parse dropped sample data:', e);
+        }
+        return;
+      }
+
+      if (!type) return;
 
       if (type === 'trigger') {
         const rootAgent = nodes.find((n) => n.type === 'agentNode' && (n.data as AgentData).isStartNode) ||
@@ -1167,7 +1421,18 @@ function FlowCanvas() {
         recordSnapshot(nextNodes, edges, { description: `Add ${effectiveKind || 'agent'}` });
       }
     },
-    [nodes, edges, settings, setNodes, setEdges, recordSnapshot, screenToFlowPosition, selectedAgentId, handleAddSpecificTool]
+    [
+      nodes,
+      edges,
+      settings,
+      setNodes,
+      setEdges,
+      recordSnapshot,
+      screenToFlowPosition,
+      selectedAgentId,
+      handleAddSpecificTool,
+      handleDropSampleWorkflow,
+    ]
   );
 
   const handleAddRootWithTestSuite = useCallback(() => {
@@ -1494,23 +1759,37 @@ function FlowCanvas() {
     [selectedAgentId, nodes, edges, setNodes, setEdges, reconnectTriggersToRoot, recordSnapshot]
   );
 
-  const selectedTriggerNode = nodes.find((n) => n.id === selectedTriggerId && n.type === 'triggerNode');
+  const selectedTriggerNode = nodes.find(
+    (n) => n.id === selectedTriggerId && isTriggerNode(n)
+  );
   const testSuiteNode = nodes.find(
-    (n) => n.type === 'triggerNode' && (n.data as TriggerData).triggerType === 'tester'
+    (n) => isTriggerNode(n) && ((n.data as TriggerData).triggerType === 'tester' || (n.data as any).triggerKind === 'test')
   );
   const hasTestSuite = !!testSuiteNode;
 
   const testPrompts = useMemo(() => {
     if (!testSuiteNode) return [];
     const cfg = (testSuiteNode.data as TriggerData).config;
-    return cfg?.testPrompts && cfg.testPrompts.length > 0
+    const rawList = (cfg?.testPrompts && cfg.testPrompts.length > 0)
       ? cfg.testPrompts
-      : DEFAULT_MOCK_TEST_PROMPTS;
+      : (cfg?.testScenarios && (cfg.testScenarios as any).length > 0)
+      ? (cfg.testScenarios as any)
+      : null;
+
+    if (!rawList) return DEFAULT_MOCK_TEST_PROMPTS;
+
+    return rawList.map((tp: any, idx: number) => ({
+      id: tp.id || `tp_${idx + 1}`,
+      name: tp.name || `Test Case #${idx + 1}`,
+      prompt: tp.prompt || tp.inputQuery || '',
+      expectedOutput: tp.expectedOutput || tp.expectedOutputPattern || '',
+      assertionType: tp.assertionType || 'contains',
+    }));
   }, [testSuiteNode]);
 
   // Chat Trigger detection & configuration
   const chatTriggerNode = nodes.find(
-    (n) => n.type === 'triggerNode' && (n.data as TriggerData).triggerType === 'chat'
+    (n) => isTriggerNode(n) && ((n.data as TriggerData).triggerType === 'chat' || (n.data as any).triggerKind === 'chat')
   );
   const hasChatTrigger = !!chatTriggerNode;
   const chatTriggerConfig = useMemo(() => {
@@ -1569,13 +1848,7 @@ function FlowCanvas() {
               onDrop={onDrop}
               onDragOver={onDragOver}
               onNodeClick={(_: any, node: any) => {
-                if (node.type === 'triggerNode') {
-                  const triggerData = node.data as TriggerData;
-                  if (triggerData?.triggerType === 'chat') {
-                    setSelectedTriggerId(null);
-                    setIsTriggerDrawerOpen(false);
-                    return;
-                  }
+                if (isTriggerNode(node)) {
                   setSelectedTriggerId(node.id);
                   setIsTriggerDrawerOpen(true);
                   setSelectedAgentId(null);
@@ -1636,7 +1909,9 @@ function FlowCanvas() {
               onOpenEditTool={handleOpenEditTool}
               onCreateCustomTool={handleCreateCustomTool}
               onCreateMcpTool={handleCreateMcpTool}
-              onOpenSample={handleOpenSampleInNewTab}
+              onOpenSample={handleOpenSampleAsNewFile}
+              samples={samples}
+              onLoadSampleIntoCurrentFlow={handleLoadSampleIntoCurrentFlow}
               onAddToolToAgent={(tool) => {
                 if (selectedAgentId) {
                   handleAddSpecificTool(selectedAgentId, tool);

@@ -131,6 +131,11 @@ export interface ToolDefinition {
   agentAsToolConfig?: AgentAsToolConfig;
   parameters?: Record<string, string>;
   codePrompt?: string;
+  codeSnippet?: string;
+  toolMode?: 'ai_generated' | 'local_file' | 'http_streaming';
+  sourceFile?: string;
+  functionName?: string;
+  availableFunctions?: string[];
   endpointUrl?: string;
   authKeyEnv?: string;
   enabled?: boolean;
@@ -293,9 +298,27 @@ export interface ScheduledTriggerConfig {
   timeZone: string;
 }
 
+export interface EventArcEventType {
+  id: string;
+  name: string;
+  fullEvent: string;
+  description: string;
+}
+
+export interface EventArcCategory {
+  id: string;
+  name: string;
+  serviceName: string;
+  events: EventArcEventType[];
+}
+
 export interface EventarcTriggerConfig {
-  provider: 'storage' | 'auth' | 'audit_log' | 'custom';
+  provider: 'storage' | 'auth' | 'audit_log' | 'custom' | string;
   eventType: string;
+  category?: string;
+  serviceName?: string;
+  serviceAccount?: string;
+  region?: string;
 }
 
 export interface TriggerNodeData {
@@ -390,4 +413,31 @@ export interface AgentWorkflowDocument {
   viewport?: ViewportState;
   metadata?: WorkflowMetadata;
   deployment?: WorkflowDeploymentConfig;
+}
+
+export interface SampleWorkflowDefinition {
+  id: string;
+  name: string;
+  filename: string;
+  category: string;
+  badge: string;
+  description: string;
+  features: string[];
+  nodesCount: number;
+  toolsCount: number;
+  triggerType: string;
+  iconName: string;
+  color: string;
+  nodes: any[];
+  edges: any[];
+  config?: Record<string, any>;
+  deploymentConfig?: Record<string, any>;
+  testPrompts?: Array<{
+    id: string;
+    name: string;
+    prompt: string;
+    expectedOutput?: string;
+    assertionType?: string;
+  }>;
+  sourceFilePath?: string;
 }

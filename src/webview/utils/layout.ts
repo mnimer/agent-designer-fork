@@ -35,13 +35,18 @@ const DEFAULT_OPTIONS: LayoutOptions = {
  * Accurately calculates the rendered bounding box for any node based on its contents
  */
 export function getNodeDimensions(node: Node<any>): { width: number; height: number } {
-  if (node.type === 'triggerNode') {
-    const isTester = (node.data as any)?.triggerType === 'tester';
+  if (node.type === 'triggerNode' || node.type === 'trigger') {
+    const triggerType = (node.data as any)?.triggerType || (node.data as any)?.triggerKind;
+    const isTester = triggerType === 'tester' || triggerType === 'test';
     if (isTester) {
-      const promptCount = (node.data as any)?.config?.testPrompts?.length || 3;
+      const promptCount = (node.data as any)?.config?.testPrompts?.length || (node.data as any)?.config?.testScenarios?.length || 3;
       // Header: ~70px, QA Suite Prompts container: ~50px, each prompt item: ~85px, padding/margin: ~30px
       const height = Math.max(420, 150 + promptCount * 90);
       return { width: 340, height };
+    }
+    const isEventArc = triggerType === 'eventarc';
+    if (isEventArc) {
+      return { width: 290, height: 220 };
     }
     return { width: 280, height: 180 };
   }

@@ -1,0 +1,154 @@
+{
+  "version": "1.0.0",
+  "name": "ProcurementRequestOrchestrator",
+  "description": "Multi-agent procurement approval workflow with budget policy compliance, vendor quote validation, and human-in-the-loop escalation gating.",
+  "framework": "google-adk",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "node-agent-procurement-coordinator",
+      "type": "agentNode",
+      "position": {
+        "x": 256,
+        "y": 376
+      },
+      "data": {
+        "id": "node-agent-procurement-coordinator",
+        "label": "Procurement Coordinator",
+        "role": "Request Intake, Policy Dispatch & Consolidation",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "agentKind": "standard",
+        "isStartNode": true,
+        "systemPrompt": "You are the Lead Procurement Coordinator. Evaluate purchase requests by coordinating with Budget Compliance and Vendor Verification agents, then decide whether to approve or flag for Human-in-the-Loop review.",
+        "tools": [],
+        "subAgents": [
+          {
+            "agentId": "node-agent-budget",
+            "name": "Budget Compliance Agent",
+            "role": "Financial Thresholds & Policy Enforcement",
+            "delegationType": "coordinator"
+          },
+          {
+            "agentId": "node-agent-vendor",
+            "name": "Vendor Specialist Agent",
+            "role": "Vendor Onboarding & Risk Score",
+            "delegationType": "coordinator"
+          }
+        ],
+        "name": "procurement_coordinator",
+        "description": "",
+        "memoryType": "none"
+      }
+    },
+    {
+      "id": "node-agent-budget",
+      "type": "agentNode",
+      "position": {
+        "x": 48,
+        "y": 960
+      },
+      "data": {
+        "id": "node-agent-budget",
+        "label": "Budget Compliance Agent",
+        "role": "Financial Thresholds & Policy Enforcement",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "agentKind": "standard",
+        "systemPrompt": "You are the Budget Compliance Agent. Enforce expenditure thresholds: purchases under $25,000 proceed normally; purchases over $50,000 require CFO signoff.",
+        "tools": [],
+        "subAgents": [],
+        "name": "budget_compliance_agent",
+        "description": "",
+        "memoryType": "none"
+      }
+    },
+    {
+      "id": "node-agent-vendor",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 960
+      },
+      "data": {
+        "id": "node-agent-vendor",
+        "label": "Vendor Specialist Agent",
+        "role": "Vendor Onboarding & Risk Score",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "agentKind": "standard",
+        "systemPrompt": "You are the Vendor Specialist Agent. Check vendor onboarding status and verify tax status before purchase orders are issued.",
+        "tools": [],
+        "subAgents": [],
+        "name": "vendor_specialist_agent",
+        "description": "",
+        "memoryType": "none"
+      }
+    },
+    {
+      "id": "trigger_eventarc_mu0mc3mc_em5p",
+      "type": "triggerNode",
+      "position": {
+        "x": 280,
+        "y": 48
+      },
+      "data": {
+        "id": "trigger_eventarc_mu0mc3mc_em5p",
+        "label": "EventArc Trigger",
+        "triggerType": "eventarc",
+        "description": "GCP EventArc routing events across 90+ Google Cloud services (e.g. BigQuery, Storage, Firestore).",
+        "config": {
+          "eventarcCategory": "dataplex",
+          "eventarcEvent": "created",
+          "eventarcServiceName": "dataplex.googleapis.com",
+          "eventarcServiceAccount": "eventarc-agent-invoker@my-gcp-project.iam.gserviceaccount.com",
+          "eventarcRegion": "us-central1"
+        },
+        "targetRootAgentId": "node-agent-procurement-coordinator"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-coordinator-to-budget",
+      "source": "node-agent-procurement-coordinator",
+      "target": "node-agent-budget",
+      "animated": true
+    },
+    {
+      "id": "edge-coordinator-to-vendor",
+      "source": "node-agent-procurement-coordinator",
+      "target": "node-agent-vendor",
+      "animated": true
+    },
+    {
+      "id": "e_trigger_trigger_eventarc_mu0mc3mc_em5p_node-agent-procurement-coordinator",
+      "source": "trigger_eventarc_mu0mc3mc_em5p",
+      "target": "node-agent-procurement-coordinator",
+      "sourceHandle": "trigger_out_bottom",
+      "targetHandle": "input",
+      "animated": true
+    }
+  ],
+  "metadata": {
+    "category": "Enterprise Business Processes",
+    "badge": "HITL + Multi-Agent Delegation",
+    "features": [
+      "Coordinator & Sub-Agents",
+      "Human-in-the-Loop Gate",
+      "Policy Compliance Rules",
+      "Automated Tests"
+    ],
+    "updatedAt": "2026-09-14T02:34:09.448Z"
+  },
+  "deployment": {
+    "target": "agent_engine",
+    "deploymentTarget": "agent_engine",
+    "outputFolder": "./procurement_request_agent/",
+    "framework": "google-adk",
+    "language": "python",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true
+  }
+}

@@ -749,5 +749,117 @@ describe('AgentEditorProvider', { concurrency: 1 }, () => {
     assert.strictEqual(replyMsg.payload.success, false);
     assert.match(replyMsg.payload.error, /requires a valid command/);
   });
+
+  it('should parse python functions with arguments and docstrings using parsePythonFunctions', () => {
+    const mockContext: any = { extensionPath: '/mock', subscriptions: [] };
+    const provider = new AgentEditorProvider(mockContext);
+
+    const pythonCode = `
+"""Module docstring."""
+
+def triage_query_tool(query: str, severity: int = 1) -> dict:
+    """Queries security alerts for triage.
+    Additional multiline details.
+    """
+    return {"status": "ok"}
+
+def secondary_tool(indicator):
+    'Single quoted docstring.'
+    pass
+
+class NotAFunction:
+    def method_should_be_skipped(self):
+        pass
+`;
+
+    const functions = (provider as any).parsePythonFunctions(pythonCode);
+    assert.equal(functions.length, 2);
+    assert.equal(functions[0].name, 'triage_query_tool');
+    assert.ok(functions[0].docstring.includes('Queries security alerts for triage.'));
+    assert.equal(functions[0].parameters.query, 'str');
+    assert.equal(functions[0].parameters.severity, 'int');
+
+    assert.equal(functions[1].name, 'secondary_tool');
+    assert.equal(functions[1].docstring, 'Single quoted docstring.');
+    assert.equal(functions[1].parameters.indicator, 'string');
+  });
+
+  it('should handle PARSE_PYTHON_TOOL_FILE, OPEN_LOCAL_TOOL_FILE, and PICK_LOCAL_PYTHON_TOOL via bridge', async () => {
+    const mockContext: any = { extensionPath: '/mock', subscriptions: [] };
+    const provider = new AgentEditorProvider(mockContext);
+
+    const doc: AgentWorkflowDocument = {
+      version: '1.0.0',
+      name: 'local-tool-test',
+      description: 'Local Tool Test',
+      framework: 'google-adk',
+      language: 'python',
+      nodes: [],
+      edges: [],
+    };
+
+    const mockDoc: any = {
+      uri: vscode.Uri.file('/mock/workspace/sample.agent'),
+      getText: () => JSON.stringify(doc),
+      positionAt: () => new vscode.Position(0, 0),
+    };
+
+    let messageCallback: ((msg: any) => Promise<void>) | null = null;
+    const postedMessages: any[] = [];
+    const mockPanel: any = {
+      webview: {
+        options: {},
+        html: '',
+        asWebviewUri: (u: any) => u.toString(),
+        postMessage: async (msg: any) => {
+          postedMessages.push(msg);
+          return true;
+        },
+        onDidReceiveMessage: (cb: any) => {
+          messageCallback = cb;
+          return { dispose: () => {} };
+        },
+      },
+      onDidDispose: () => ({ dispose: () => {} }),
+      onDidChangeViewState: () => ({ dispose: () => {} }),
+    };
+
+    await provider.resolveCustomTextEditor(mockDoc, mockPanel as any, {} as any);
+    assert.ok(messageCallback);
+
+    // 1. Mock fs for PARSE_PYTHON_TOOL_FILE
+    await (messageCallback as any)({
+      type: 'PARSE_PYTHON_TOOL_FILE',
+      payload: { filePath: './tools/non_existent.py' },
+    });
+
+    const parsedFailMsg = postedMessages.find((m) => m.type === 'PYTHON_TOOL_FILE_PARSED');
+    assert.ok(parsedFailMsg);
+    assert.strictEqual(parsedFailMsg.payload.success, false);
+
+    // 2. Test OPEN_LOCAL_TOOL_FILE
+    const actualToolPath = path.resolve(__dirname, '../../resource/sample/cyber_guardian/tools/triage_tools.py');
+    await (messageCallback as any)({
+      type: 'OPEN_LOCAL_TOOL_FILE',
+      payload: { filePath: actualToolPath },
+    });
+    // Should call openTextDocument without error
+    assert.equal(vscode.workspace.openTextDocument.calls.length > 0, true);
+
+    // 3. Test PICK_LOCAL_PYTHON_TOOL when file is picked
+    const sampleToolUri = vscode.Uri.file(actualToolPath);
+    vscode.window.showOpenDialog = (async () => [sampleToolUri]) as any;
+
+    await (messageCallback as any)({
+      type: 'PICK_LOCAL_PYTHON_TOOL',
+    });
+
+    const pickedSuccessMsg = postedMessages.find((m) => m.type === 'LOCAL_PYTHON_TOOL_PICKED');
+    assert.ok(pickedSuccessMsg);
+    assert.strictEqual(pickedSuccessMsg.payload.success, true);
+    assert.ok(pickedSuccessMsg.payload.filePath.includes('triage_tools.py'));
+    assert.ok(pickedSuccessMsg.payload.functions.some((f: any) => f.name === 'triage_query_tool'));
+  });
 });
+
 

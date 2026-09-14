@@ -28,7 +28,8 @@ import {
   Play,
   CheckCircle2,
   ListChecks,
-  Check
+  Check,
+  Webhook
 } from 'lucide-react';
 import { TriggerData, TriggerType, TestPrompt } from '../../../types';
 import { DEFAULT_MOCK_TEST_PROMPTS } from '../../../data/triggerDefinitions';
@@ -49,6 +50,8 @@ const getTriggerIcon = (type: TriggerType) => {
       return <FlaskConical className="w-4 h-4 text-orange-400" />;
     case 'eventarc':
       return <Zap className="w-4 h-4 text-orange-400" />;
+    case 'webhook':
+      return <Webhook className="w-4 h-4 text-orange-400" />;
     default:
       return <Zap className="w-4 h-4 text-orange-400" />;
   }
@@ -87,9 +90,21 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
   const showRightHandle = !isConnected || isRightActive || (!isRightActive && !isBottomActive);
   const showBottomHandle = !isConnected || isBottomActive || (!isRightActive && !isBottomActive);
 
+  const rawPrompts = (data.config?.testPrompts && data.config.testPrompts.length > 0)
+    ? data.config.testPrompts
+    : ((data.config as any)?.testScenarios && (data.config as any).testScenarios.length > 0)
+    ? (data.config as any).testScenarios
+    : null;
+
   const testPrompts: TestPrompt[] = isTester
-    ? data.config?.testPrompts && data.config.testPrompts.length > 0
-      ? data.config.testPrompts
+    ? rawPrompts && rawPrompts.length > 0
+      ? rawPrompts.map((tp: any, idx: number) => ({
+          id: tp.id || `tp_${idx + 1}`,
+          name: tp.name || `Test Case #${idx + 1}`,
+          prompt: tp.prompt || tp.inputQuery || '',
+          expectedOutput: tp.expectedOutput || tp.expectedOutputPattern || '',
+          assertionType: tp.assertionType || 'contains',
+        }))
       : DEFAULT_MOCK_TEST_PROMPTS
     : [];
 
@@ -103,8 +118,12 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
         return data.config?.cronExpression ? `Cron: ${data.config.cronExpression}` : 'Scheduled Cadence';
       case 'eventarc':
         return data.config?.eventarcEvent 
-          ? `${data.config.eventarcCategory?.toUpperCase() || 'EVENT'}: ${data.config.eventarcEvent}` 
+          ? `${data.config?.eventarcCategory?.toUpperCase() || 'EVENT'}: ${data.config?.eventarcEvent || 'CloudEvent'}` 
           : 'Cloud Event Routing';
+      case 'webhook':
+        return data.config?.webhookPath
+          ? `${data.config.httpMethod || 'POST'} ${data.config.webhookPath}`
+          : 'HTTP Webhook Endpoint';
       case 'tester':
         return `${testPrompts.length} Test Cases Defined`;
       default:
@@ -250,6 +269,38 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
               <p className="text-[9.5px] leading-tight text-gray-300 italic line-clamp-2 bg-[#0d1117] p-1 rounded border border-[#21262d]">
                 "{data.config?.initialMessage || 'Hello! I am your AI agent assistant. How can I help you today?'}"
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* Eventarc Configuration Section (for Eventarc Trigger) */}
+        {isEventArc && (
+          <div className="space-y-1.5 bg-[#0d1117] p-2 rounded-lg border border-purple-500/30">
+            <div className="flex items-center justify-between pb-1 border-b border-[#21262d]">
+              <div className="flex items-center gap-1 text-[10px] font-bold text-purple-400 uppercase tracking-wider">
+                <Zap className="w-3 h-3 text-purple-400" />
+                <span>CloudEvent Routing</span>
+              </div>
+              <span className="text-[8px] font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                {data.config?.eventarcCategory?.toUpperCase() || 'EVENTARC'}
+              </span>
+            </div>
+
+            <div className="p-1.5 rounded-md bg-[#161b22] border border-[#30363d]/80 text-[10px] space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-semibold text-gray-400 uppercase tracking-tight">Event:</span>
+                <span className="text-[9.5px] font-mono font-bold text-purple-300 truncate max-w-[160px]">
+                  {data.config?.eventarcEvent || 'TableCreate'}
+                </span>
+              </div>
+              <div className="text-[9px] text-gray-400 truncate">
+                Service: <span className="font-mono text-gray-300">{data.config?.eventarcServiceName || 'bigquery.googleapis.com'}</span>
+              </div>
+              {data.config?.eventarcServiceAccount && (
+                <div className="text-[8.5px] text-gray-400 font-mono truncate">
+                  SA: {data.config.eventarcServiceAccount.split('@')[0]}
+                </div>
+              )}
             </div>
           </div>
         )}

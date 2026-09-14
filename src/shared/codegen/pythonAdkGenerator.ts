@@ -648,12 +648,26 @@ export class PythonAdkGenerator {
       }
     }
 
-    // Instantiate Standard Agents First
+    // Instantiate Standard Agents First (topological ordering: leaf sub-agents before parent coordinators)
     lines.push('# ==============================================================================');
     lines.push('# Initialize Standard Agents');
     lines.push('# ==============================================================================');
-    for (const node of nodes) {
-      if (node.data?.agentKind === 'router') continue;
+    const standardNodes = nodes.filter((n) => n.data?.agentKind !== 'router');
+    const leafNodes: typeof nodes = [];
+    const coordinatorNodes: typeof nodes = [];
+
+    for (const node of standardNodes) {
+      const hasSubAgents = Array.isArray(node.data?.subAgents) && node.data.subAgents.length > 0;
+      if (hasSubAgents) {
+        coordinatorNodes.push(node);
+      } else {
+        leafNodes.push(node);
+      }
+    }
+
+    const orderedStandardNodes = [...leafNodes, ...coordinatorNodes];
+
+    for (const node of orderedStandardNodes) {
       const data = node.data;
       const safeVar = sanitizePythonIdentifier(data?.label || node.id);
       const model = data?.model || defaultModel;
@@ -663,6 +677,18 @@ export class PythonAdkGenerator {
       lines.push(`    name="${data?.label || node.id}",`);
       lines.push(`    model="${model}",`);
       lines.push(`    instruction="${prompt}",`);
+
+      // NOTE: Wire sub_agents hierarchy for multi-agent delegation (Google ADK)
+      if (Array.isArray(data?.subAgents) && data.subAgents.length > 0) {
+        lines.push('    sub_agents=[');
+        for (const sub of data.subAgents) {
+          const childNode = nodes.find((n) => n.id === sub.agentId);
+          const childVar = sanitizePythonIdentifier(childNode?.data?.label || sub.name || sub.agentId);
+          lines.push(`        ${childVar},`);
+        }
+        lines.push('    ],');
+      }
+
       lines.push(`    tools=setup_agent_tools("${node.id}")`);
       lines.push(')');
       lines.push('');

@@ -57,11 +57,33 @@ describe('Trigger Configuration & Presets Logic', () => {
       config: {
         cronExpression: '0 0 * * *',
         timezone: 'America/New_York',
+        scheduledPrompt: 'Execute nightly database integrity and compliance sync.',
+        retryCount: 3,
       },
     };
 
     assert.equal(trigger.triggerKind, 'scheduled');
     assert.equal(trigger.config?.cronExpression, '0 0 * * *');
+    assert.equal(trigger.config?.scheduledPrompt, 'Execute nightly database integrity and compliance sync.');
+    assert.equal(trigger.config?.retryCount, 3);
+
+    const webhookTrigger: TriggerNodeData = {
+      ...trigger,
+      triggerKind: 'webhook',
+      config: {
+        webhookPath: '/api/v1/orders',
+        httpMethod: 'POST',
+        authType: 'bearer_token',
+        secretHeaderName: 'Authorization',
+        payloadDescription: 'JSON webhook body containing order ID and customer request',
+      },
+    };
+
+    assert.equal(webhookTrigger.triggerKind, 'webhook');
+    assert.equal(webhookTrigger.config?.webhookPath, '/api/v1/orders');
+    assert.equal(webhookTrigger.config?.httpMethod, 'POST');
+    assert.equal(webhookTrigger.config?.authType, 'bearer_token');
+    assert.equal(webhookTrigger.config?.secretHeaderName, 'Authorization');
 
     const pubsubTrigger: TriggerNodeData = {
       ...trigger,
@@ -212,6 +234,57 @@ describe('Trigger Configuration & Presets Logic', () => {
 
       // Forward edge (downward) should not be flagged as backward
       assert.equal(isBackwardEdge('bottom', 200, 500), false);
+    });
+  });
+
+  describe('Eventarc Dynamic Providers Response Processing', () => {
+    it('should correctly unwrap categories whether returned as direct payload or nested payload', () => {
+      const mockCategories = [
+        {
+          id: 'storage',
+          name: 'Cloud Storage (GCS)',
+          serviceName: 'storage.googleapis.com',
+          events: [
+            {
+              id: 'ObjectFinalized',
+              name: 'ObjectFinalized',
+              fullEvent: 'google.cloud.storage.object.v1.finalized',
+              description: 'Object created',
+            },
+          ],
+        },
+      ];
+
+      // Format 1: Direct payload returned by bridge.sendRequestWithReply
+      const directPayloadResponse = {
+        categories: mockCategories,
+        source: 'gcloud',
+        location: 'us-central1',
+      };
+
+      const unwrap1 = (directPayloadResponse as any)?.categories
+        ? directPayloadResponse
+        : (directPayloadResponse as any)?.payload;
+      assert.equal(unwrap1.categories.length, 1);
+      assert.equal(unwrap1.source, 'gcloud');
+      assert.equal(unwrap1.categories[0].id, 'storage');
+
+      // Format 2: Nested message format
+      const nestedPayloadResponse = {
+        type: 'EVENTARC_PROVIDERS_RESPONSE',
+        payload: {
+          categories: mockCategories,
+          source: 'gcloud',
+          location: 'us-central1',
+        },
+      };
+
+      const unwrap2 = (nestedPayloadResponse as any)?.categories
+        ? nestedPayloadResponse
+        : (nestedPayloadResponse as any)?.payload;
+      assert.equal(unwrap2.categories.length, 1);
+      assert.equal(unwrap2.source, 'gcloud');
+      assert.equal(unwrap2.categories[0].id, 'storage');
     });
   });
 });

@@ -262,9 +262,11 @@ describe('workflowSync Domain Utilities', () => {
       assert.equal(resolveAgentOutputFolder('./game_20_questions/', 'game_20_questions.agent'), './game_20_questions/');
     });
 
-    it('should strip legacy src/agents/ prefix from outputFolder', () => {
+    it('should strip legacy src/ or src/agents/ prefix from outputFolder', () => {
       assert.equal(resolveAgentOutputFolder('./src/agents/agent_20_questions_game/', 'agent_20_questions_game.agent'), './agent_20_questions_game/');
       assert.equal(resolveAgentOutputFolder('src/agents/agent_20_questions_game/', 'agent_20_questions_game.agent'), './agent_20_questions_game/');
+      assert.equal(resolveAgentOutputFolder('./src/procurement_request_agent/', 'procurement_request.agent'), './procurement_request_agent/');
+      assert.equal(resolveAgentOutputFolder('src/customer_support_agent/', 'customer_support.agent'), './customer_support_agent/');
     });
 
     it('should resolve to ./<sanitized_agent_subfolder>/ when outputFolder is generic root agents folder', () => {

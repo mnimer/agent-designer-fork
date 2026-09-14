@@ -42,7 +42,7 @@ export const ADK_DELEGATION_PATTERNS: DelegationPatternOption[] = [
   { id: 'coordinator', label: 'Coordinator', desc: 'LLM dynamic routing and delegation (Agent with sub_agents)' },
 ];
 
-export type TriggerType = 'chat' | 'pubsub' | 'scheduled' | 'tester' | 'eventarc';
+export type TriggerType = 'chat' | 'pubsub' | 'scheduled' | 'tester' | 'eventarc' | 'webhook';
 
 export interface TestPrompt {
   id: string;
@@ -64,11 +64,19 @@ export interface TriggerConfig {
   ackDeadlineSeconds?: number;
   messageFormat?: 'json' | 'protobuf' | 'text';
   autoRegisterSubscription?: boolean;
-  // Scheduled
+  // Scheduled / Cron
   cronExpression?: string;
   timezone?: string;
   retryCount?: number;
   scheduleInterval?: string;
+  scheduledPrompt?: string;
+  // Webhook
+  webhookPath?: string;
+  httpMethod?: 'POST' | 'GET' | 'PUT';
+  authType?: 'none' | 'bearer_token' | 'api_key' | 'hmac_sha256';
+  secretHeaderName?: string;
+  secretToken?: string;
+  payloadDescription?: string;
   // Tester
   testPayload?: string;
   expectedOutput?: string;
@@ -220,6 +228,10 @@ export interface ToolDefinition {
   endpointUrl?: string;
   authKeyEnv?: string;
   codeSnippet?: string;
+  toolMode?: 'ai_generated' | 'local_file' | 'http_streaming';
+  sourceFile?: string;
+  functionName?: string;
+  availableFunctions?: string[];
   icon?: string;
   parameters?: Record<string, string>;
   enabled?: boolean;
@@ -548,4 +560,5 @@ export interface SampleWorkflowDefinition {
   config?: Partial<GenerationConfig>;
   deploymentConfig?: Partial<DeploymentConfig>;
   testPrompts?: TestPrompt[];
+  sourceFilePath?: string;
 }
