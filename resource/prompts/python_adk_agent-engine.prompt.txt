@@ -179,35 +179,13 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 
 6. **File Structure to Generate**:
    - `agent.py`: Official Google ADK Agent definitions and execution runner: Defines `root_agent` (`Agent`, `SequentialAgent`, `ParallelAgent`, `LoopAgent`, or `Workflow`), tools, sub-agents.
-     * CRITICAL: To ensure seamless importing under Vertex AI Agent Engine container execution (where `adk api_server` loads the agent as a submodule `f"{agent_name}.agent"` without adding the agent subdirectory to `sys.path`), `agent.py` MUST prepend its own directory to `sys.path` before importing local modules (such as `pydantic_models` or `tools`):
-       ```python
-       import os
-       import sys
-       from pathlib import Path
-
-       _agent_dir = str(Path(__file__).parent.resolve())
-       if _agent_dir not in sys.path:
-           sys.path.insert(0, _agent_dir)
-       ```
+      * CRITICAL: To ensure seamless importing under Vertex AI Agent Engine container execution (where `adk api_server` loads the agent as a submodule `f"{agent_name}.agent"` without adding the agent subdirectory to `sys.path`), `agent.py` MUST dynamically prepend its own directory to `sys.path` (via `Path(__file__).parent.resolve()`) before importing local modules (such as `pydantic_models` or `tools`).
    - `requirements.txt`: Dependencies needed locally and for deployment: Must include `google-adk>=2.0.0`, `google-cloud-aiplatform>=1.60.0`, `google-genai>=1.0.0`, `pydantic>=2.0.0`, `pytest>=8.0.0`, `pytest-asyncio>=0.23.0`, `python-dotenv>=1.0.0`. When any node in the workflow is an A2A agent (`agentKind: "a2a"`), `requirements.txt` MUST ALSO include `google-adk[a2a]>=2.0.0` and `a2a-sdk[http-server]>=0.3.4`.
-   - `Dockerfile`: Minimal, clean production Python 3.11-slim container definition executing Google ADK's native API server:
-     ```dockerfile
-     FROM python:3.11-slim
-
-     WORKDIR /app
-
-     ENV PYTHONUNBUFFERED=1 \
-         PORT=8080
-
-     COPY requirements.txt .
-     RUN pip install --no-cache-dir -r requirements.txt
-
-     COPY . .
-
-     EXPOSE 8080
-
-     CMD ["adk", "api_server", "--host=0.0.0.0", "--port=8080", "."]
-     ```
+   - `Dockerfile`: Minimal, clean production container definition executing Google ADK's native API server:
+     * Base Image: Use an official slim Python runtime (e.g., `python:3.11-slim`).
+     * Environment & Working Directory: Establish working directory `/app` and configure environment variables `PYTHONUNBUFFERED=1` and `PORT=8080`.
+     * Layer Caching: Copy `requirements.txt` and execute `pip install --no-cache-dir -r requirements.txt` prior to copying application source files.
+     * Container Execution: Expose port `8080` and configure entrypoint `adk api_server --host=0.0.0.0 --port=8080 .` to launch ADK's native API server.
    - `main.tf`: Complete Terraform configuration provisioning:
      * Dedicated Service Account with least-privilege IAM bindings (`roles/aiplatform.user`, `roles/logging.logWriter`).
      * Automated container build: `null_resource.build_container` with `local-exec` provisioner running `gcloud builds submit --config=cloudbuild-buildonly.yaml ...` when `var.build_image` is `true`.

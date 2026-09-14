@@ -27,6 +27,7 @@ import { WebviewBridge } from './WebviewBridge';
 import { GeminiCodeGenEngine } from './GeminiCodeGenEngine';
 import { AgentRunnerManager } from './AgentRunnerManager';
 import { AgentEngineDeployer } from './AgentEngineDeployer';
+import { CloudRunDeployer } from './CloudRunDeployer';
 import { McpSubprocessManager } from './McpSubprocessManager';
 import { McpOAuthManager } from './McpOAuthManager';
 import { EventarcDiscoveryManager } from './EventarcDiscoveryManager';
@@ -44,6 +45,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   public readonly codeGenEngine: GeminiCodeGenEngine;
   public readonly runnerManager: AgentRunnerManager;
   public readonly agentEngineDeployer: AgentEngineDeployer;
+  public readonly cloudRunDeployer: CloudRunDeployer;
   public readonly mcpManager: McpSubprocessManager;
   public readonly mcpOAuthManager: McpOAuthManager;
   public readonly eventarcManager: EventarcDiscoveryManager;
@@ -60,7 +62,6 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   public async updateTextDocument(document: vscode.TextDocument, newContent: string): Promise<boolean> {
     return this.documentSyncManager.updateTextDocument(document, newContent);
   }
-
   private readonly messageHandlers: Map<
     string,
     (msg: any, bridge: WebviewBridge, doc: vscode.TextDocument) => void
@@ -71,6 +72,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     this.outputChannel = outputChannel;
     this.codeGenEngine = new GeminiCodeGenEngine(context.extensionPath);
     this.agentEngineDeployer = new AgentEngineDeployer();
+    this.cloudRunDeployer = new CloudRunDeployer();
     this.runnerManager = new AgentRunnerManager(context.extensionPath, undefined, this.agentEngineDeployer);
     this.mcpManager = new McpSubprocessManager();
     this.mcpOAuthManager = new McpOAuthManager(context);
@@ -120,9 +122,20 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     return this.agentEngineDeployer;
   }
 
+  /**
+   * Returns the CloudRunDeployer instance.
+   */
+  public getCloudRunDeployer(): CloudRunDeployer {
+    return this.cloudRunDeployer;
+  }
+
+  /**
+   * Disposes this provider and terminates its runner manager and deployer processes.
+   */
   public dispose(): void {
     this.runnerManager.dispose();
     this.agentEngineDeployer.dispose();
+    this.cloudRunDeployer.dispose();
     this.mcpManager.dispose();
   }
 

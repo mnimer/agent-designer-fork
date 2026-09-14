@@ -48,6 +48,7 @@ import { AgentWorkflowDocument } from '../../../shared/types';
 import { extractRuntimeSecrets, RuntimeSecret } from '../../utils/runtimeSecrets';
 import { useWebviewBridge } from '../../hooks/useWebviewBridge';
 import { AgentEngineDeployTab } from './AgentEngineDeployTab';
+import { CloudRunDeployTab } from './CloudRunDeployTab';
 
 interface DeploymentTabProps {
   generationConfig: GenerationConfig;
@@ -349,8 +350,22 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
         />
       </div>
 
-      {/* Local Runner and Cloud Run View (Kept mounted with CSS hidden to preserve running processes, inputs, and logs) */}
-      <div className={selectedTarget !== 'agent_engine' ? 'flex-1 p-4 flex gap-4 overflow-hidden bg-[#0d1117] min-h-0' : 'hidden'}>
+      {/* Cloud Run View (Kept mounted with CSS hidden to preserve active background deployment, inputs, and logs) */}
+      <div className={selectedTarget === 'cloud_run' ? 'flex-1 flex flex-col h-full overflow-hidden' : 'hidden'}>
+        <CloudRunDeployTab
+          document={workflowDoc}
+          generatedFiles={generatedFiles}
+          secrets={secretValues}
+          onSecretChange={(k, v) => setSecretValues((prev) => ({ ...prev, [k]: v }))}
+          targetDirectory={generationConfig.outputFolder || './'}
+          onTargetDirectoryChange={(newFolder) => onUpdateGenerationConfig?.({ outputFolder: newFolder })}
+          sharedProjectId={sharedProjectId}
+          onProjectIdChange={handleSharedProjectIdChange}
+        />
+      </div>
+
+      {/* Local Runner View (Kept mounted with CSS hidden to preserve running processes, inputs, and logs) */}
+      <div className={selectedTarget === 'local' ? 'flex-1 p-4 flex gap-4 overflow-hidden bg-[#0d1117] min-h-0' : 'hidden'}>
         {/* LEFT 1/3 CARD: Deployment Options & Config */}
         <div className="w-1/3 min-w-[310px] max-w-[390px] bg-[#161b22] border border-[#30363d] rounded-xl p-4 shadow-xl flex flex-col min-h-0 overflow-hidden">
           <div className="flex-1 overflow-y-auto pr-1 space-y-4 min-h-0">

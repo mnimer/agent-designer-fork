@@ -190,3 +190,4 @@ export type {
   PatternType,
   PatternDefinition,
 };
+

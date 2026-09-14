@@ -329,6 +329,7 @@ export class GeminiCodeGenEngine {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.2,
+        maxOutputTokens: 65536,
         responseMimeType: 'application/json',
         responseSchema: this.fileArraySchema,
       },
@@ -401,6 +402,7 @@ export class GeminiCodeGenEngine {
       ],
       generationConfig: {
         temperature: 0.2,
+        maxOutputTokens: 65536,
         responseMimeType: 'application/json',
         responseSchema: this.fileArraySchema,
       },

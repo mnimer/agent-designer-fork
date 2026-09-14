@@ -15,6 +15,7 @@ import * as os from 'os';
 import * as http from 'http';
 import { AgentEngineDeployer, DeploymentMetadataRecord } from '../../src/extension/AgentEngineDeployer';
 import { AgentWorkflowDocument } from '../../src/shared/types';
+import { isValidAgentEngineId } from '../../src/shared/identifierValidation';
 
 describe('AgentEngineDeployer', () => {
   let tempDir: string;
@@ -313,6 +314,59 @@ describe('AgentEngineDeployer', () => {
       });
       assert.ok(args.includes('--agent_engine_id'));
       assert.ok(args.includes('1122334455'));
+    });
+
+    it('should reject invalid non-numeric resource ID (e.g. animal-agent from Cloud Run) and omit --agent_engine_id in favor of --display_name', () => {
+      const args = deployer.buildAdkDeployArgs({
+        targetDirectory: tempDir,
+        projectId: 'argolis-playground',
+        region: 'us-central1',
+        displayName: 'animal_agent',
+        agentEngineId: 'animal-agent', // Cloud Run service name mistakenly passed
+      });
+      assert.ok(!args.includes('--agent_engine_id'), 'Should not include --agent_engine_id for kebab-case Cloud Run name');
+      assert.ok(args.includes('--display_name'));
+      assert.ok(args.includes('animal_agent'));
+    });
+
+    it('should reject non-numeric remote_agent_runtime_id from metadata and fallback to --display_name', () => {
+      const args = deployer.buildAdkDeployArgs(
+        {
+          targetDirectory: tempDir,
+          projectId: 'argolis-playground',
+          region: 'us-central1',
+          displayName: 'animal_agent',
+        },
+        {
+          remote_agent_runtime_id: 'animal-agent',
+          deployment_target: 'cloud_run',
+          is_a2a: false,
+          agent_directory: tempDir,
+          deployment_timestamp: new Date().toISOString(),
+          status: 'ACTIVE',
+        }
+      );
+      assert.ok(!args.includes('--agent_engine_id'), 'Should ignore non-numeric metadata ID');
+      assert.ok(args.includes('--display_name'));
+      assert.ok(args.includes('animal_agent'));
+    });
+
+    it('should correctly validate Reasoning Engine IDs using isValidAgentEngineId', () => {
+      assert.equal(isValidAgentEngineId('6900866478677950464'), true);
+      assert.equal(isValidAgentEngineId('12345'), true);
+      assert.equal(
+        isValidAgentEngineId('projects/argolis-playground/locations/us-central1/reasoningEngines/6900866478677950464'),
+        true
+      );
+      assert.equal(isValidAgentEngineId('animal-agent'), false);
+      assert.equal(isValidAgentEngineId('my_agent'), false);
+      assert.equal(
+        isValidAgentEngineId('projects/argolis-playground/locations/us-central1/reasoningEngines/animal-agent'),
+        false
+      );
+      assert.equal(isValidAgentEngineId(''), false);
+      assert.equal(isValidAgentEngineId(undefined), false);
+      assert.equal(isValidAgentEngineId(null), false);
     });
 
     it('should omit --agent_engine_id when forceNew is true even if existing metadata or ID is present', () => {

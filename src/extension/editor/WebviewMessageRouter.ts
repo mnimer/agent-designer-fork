@@ -30,6 +30,7 @@ import { DocumentSyncManager } from './DocumentSyncManager';
 import { GeminiCodeGenEngine } from '../GeminiCodeGenEngine';
 import { AgentRunnerManager } from '../AgentRunnerManager';
 import { AgentEngineDeployer } from '../AgentEngineDeployer';
+import { CloudRunDeployer } from '../CloudRunDeployer';
 import { McpSubprocessManager } from '../McpSubprocessManager';
 import { McpOAuthManager } from '../McpOAuthManager';
 import { SecretsProvider } from '../security/SecretsProvider';
@@ -70,6 +71,10 @@ export class WebviewMessageRouter {
 
   private get agentEngineDeployer(): AgentEngineDeployer {
     return this.provider.agentEngineDeployer;
+  }
+
+  private get cloudRunDeployer(): CloudRunDeployer {
+    return this.provider.cloudRunDeployer;
   }
 
   private get mcpManager(): McpSubprocessManager {
@@ -868,6 +873,12 @@ export class WebviewMessageRouter {
             serviceUrl: res.serviceUrl,
             consoleUrl: res.consoleUrl,
             deployedAt: new Date().toISOString(),
+            agentEngine: {
+              deployedResourceId: res.remoteRuntimeId,
+              serviceUrl: res.serviceUrl,
+              consoleUrl: res.consoleUrl,
+              deployedAt: new Date().toISOString(),
+            },
           };
           const newJson = JSON.stringify(docData, null, 2);
           if (newJson !== currentText) {
@@ -920,7 +931,106 @@ export class WebviewMessageRouter {
       });
     });
 
-    // 10. Local Python Tool Handlers
+    // 10. Google Cloud Run Deployment & Terraform Handlers
+    bridge.onMessage('DEPLOY_TO_CLOUD_RUN', async (payload: any) => {
+      const targetDir = this.documentSyncManager.resolveTargetDirectory(document, payload?.targetDirectory);
+      let parsedDoc: any = undefined;
+      try {
+        parsedDoc = JSON.parse(document.getText());
+      } catch {
+        parsedDoc = payload?.document;
+      }
+
+      const res = await this.cloudRunDeployer.deploy({
+        document: parsedDoc,
+        targetDirectory: targetDir,
+        projectId: payload.projectId,
+        region: payload.region,
+        serviceName: payload.serviceName,
+        cpu: payload.cpu,
+        memory: payload.memory,
+        minInstances: payload.minInstances,
+        maxInstances: payload.maxInstances,
+        concurrency: payload.concurrency,
+        allowUnauthenticated: payload.allowUnauthenticated,
+        networkAttachment: payload.networkAttachment,
+        envVars: payload.envVars,
+        bridge,
+      });
+
+      if (res.success && res.serviceUrl) {
+        try {
+          const currentText = document.getText();
+          const docData = JSON.parse(currentText);
+          const currentDeploy = docData.deployment || {};
+          docData.deployment = {
+            ...currentDeploy,
+            target: 'cloud_run',
+            deployedResourceId: res.serviceName || payload.serviceName,
+            serviceUrl: res.serviceUrl,
+            consoleUrl: res.consoleUrl,
+            deployedAt: new Date().toISOString(),
+            cloudRun: {
+              deployedResourceId: res.serviceName || payload.serviceName,
+              serviceUrl: res.serviceUrl,
+              consoleUrl: res.consoleUrl,
+              deployedAt: new Date().toISOString(),
+            },
+          };
+          const newJson = JSON.stringify(docData, null, 2);
+          if (newJson !== currentText) {
+            await this.documentSyncManager.updateTextDocument(document, newJson);
+            try {
+              await document.save();
+            } catch (saveErr) {
+              console.warn('[AgentEditorProvider] Warning saving document with Cloud Run deployment state:', saveErr);
+            }
+            let docVersion = this.documentSyncManager.getDocumentVersion(uriStr);
+            docVersion++;
+            this.documentSyncManager.setDocumentVersion(uriStr, docVersion);
+            await bridge.postMessage({
+              type: 'LOAD_DOCUMENT',
+              payload: {
+                document: docData,
+                docVersion: docVersion,
+                filePath: document.uri.fsPath,
+              },
+            });
+          }
+        } catch (err) {
+          console.error('[AgentEditorProvider] Error updating document with Cloud Run deployment state:', err);
+        }
+      }
+    });
+
+    bridge.onMessage('CANCEL_CLOUD_RUN_DEPLOY', async (payload: any) => {
+      const targetDir = payload?.targetDirectory
+        ? this.documentSyncManager.resolveTargetDirectory(document, payload.targetDirectory)
+        : undefined;
+      this.cloudRunDeployer.cancelDeploy(targetDir, bridge);
+    });
+
+    bridge.onMessage('GET_CLOUD_RUN_STATUS', async (payload: any) => {
+      const targetDir = this.documentSyncManager.resolveTargetDirectory(document, payload?.targetDirectory);
+      this.cloudRunDeployer.getDeploymentStatus(targetDir, bridge);
+    });
+
+    bridge.onMessage('TEST_REMOTE_CLOUD_RUN', async (payload: any) => {
+      const targetDir = this.documentSyncManager.resolveTargetDirectory(document, payload?.targetDirectory);
+      const res = await this.cloudRunDeployer.testRemoteService({
+        targetDirectory: targetDir,
+        query: payload.query,
+        serviceUrl: payload.serviceUrl,
+        projectId: payload.projectId,
+        bridge,
+      });
+      await bridge.postMessage({
+        type: 'CLOUD_RUN_TEST_RESULT',
+        payload: res,
+      });
+    });
+
+    // 11. Local Python Tool Handlers
     bridge.onMessage('PICK_LOCAL_PYTHON_TOOL', async () => {
       try {
         const defaultUri = document ? vscode.Uri.file(path.dirname(document.uri.fsPath)) : vscode.workspace.workspaceFolders?.[0]?.uri;

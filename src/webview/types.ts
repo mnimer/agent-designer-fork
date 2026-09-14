@@ -1,7 +1,7 @@
 /**
- * types.ts - Core Webview Data Models & Protocol Definitions
+ * types.ts - Shared Type Definitions for Agent Flow Builder (Webview Bridge)
  *
- * This file is a clean interface layer that imports and re-exports the canonical 
+ * This file is an interface layer that imports and re-exports the canonical 
  * domain specifications and types from the shared single source of truth: `src/shared/agentSpec.ts`.
  * By acting as an alias/re-export gateway, it ensures that all webview components 
  * continue to import from 'types.ts' flawlessly while eliminating duplicated code.

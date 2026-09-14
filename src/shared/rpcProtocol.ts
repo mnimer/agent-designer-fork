@@ -265,6 +265,70 @@ export type WebviewToExtensionMessage =
       };
     }
   | {
+      type: 'DEPLOY_TO_CLOUD_RUN';
+      payload: {
+        document?: AgentWorkflowDocument;
+        targetDirectory?: string;
+        projectId: string;
+        region?: string;
+        serviceName?: string;
+        cpu?: string;
+        memory?: string;
+        minInstances?: number;
+        maxInstances?: number;
+        concurrency?: number;
+        allowUnauthenticated?: boolean;
+        networkAttachment?: string;
+        envVars?: Record<string, string>;
+      };
+    }
+  | {
+      type: 'CANCEL_CLOUD_RUN_DEPLOY';
+      payload?: {
+        targetDirectory?: string;
+      };
+    }
+  | {
+      type: 'GET_CLOUD_RUN_STATUS';
+      payload?: {
+        targetDirectory?: string;
+      };
+    }
+  | {
+      type: 'TEST_REMOTE_CLOUD_RUN';
+      payload: {
+        targetDirectory?: string;
+        query: string;
+        serviceUrl?: string;
+        projectId?: string;
+      };
+    }
+  | {
+      type: 'GENERATE_TERRAFORM_FILES';
+      payload: {
+        document?: AgentWorkflowDocument;
+        targetDirectory?: string;
+        projectId: string;
+        region?: string;
+        serviceName?: string;
+        cpu?: string;
+        memory?: string;
+        minInstances?: number;
+        maxInstances?: number;
+        concurrency?: number;
+        allowUnauthenticated?: boolean;
+        networkAttachment?: string;
+        secretValues?: Record<string, string>;
+      };
+    }
+  | {
+      type: 'SAVE_TERRAFORM_FILES';
+      payload: {
+        targetDirectory: string;
+        files: GeneratedFile[];
+      };
+    }
+  | {
       type: 'GET_SAMPLES';
       payload?: Record<string, never>;
     }
@@ -498,6 +562,54 @@ export type ExtensionToWebviewMessage =
         response?: string;
         durationMs: number;
         error?: string;
+      };
+    }
+  | {
+      type: 'CLOUD_RUN_DEPLOY_LOG';
+      payload: {
+        text: string;
+        stream: 'stdout' | 'stderr' | 'system';
+        timestamp: string;
+      };
+    }
+  | {
+      type: 'CLOUD_RUN_DEPLOY_STATUS';
+      payload: {
+        status: 'idle' | 'packaging' | 'building' | 'deploying' | 'success' | 'error';
+        serviceUrl?: string;
+        consoleUrl?: string;
+        serviceName?: string;
+        projectId?: string;
+        region?: string;
+        error?: string;
+        logs?: string[];
+        isExistingDeployment?: boolean;
+        metadata?: any;
+      };
+    }
+  | {
+      type: 'CLOUD_RUN_TEST_RESULT';
+      payload: {
+        success: boolean;
+        query: string;
+        response?: string;
+        durationMs: number;
+        error?: string;
+      };
+    }
+  | {
+      type: 'TERRAFORM_FILES_GENERATED';
+      payload: {
+        files: GeneratedFile[];
+        error?: string;
+      };
+    }
+  | {
+      type: 'TERRAFORM_FILES_SAVED';
+      payload: {
+        success: boolean;
+        outputDirectory: string;
+        filesWritten: string[];
       };
     }
   | {

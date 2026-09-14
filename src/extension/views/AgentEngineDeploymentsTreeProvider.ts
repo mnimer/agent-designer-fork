@@ -104,7 +104,7 @@ export class DeploymentTreeItem extends vscode.TreeItem {
         `- **A2A Enabled**: ${meta.is_a2a ? 'Yes' : 'No'}\n` +
         `- **Deployed**: ${meta.deployment_timestamp || 'N/A'}\n` +
         `${this.fileUri ? `- **Source File**: ${this.fileUri.fsPath}` : ''}`
-      ).value;
+      );
 
       // Cloud icon with status color
       this.iconPath = new vscode.ThemeIcon('cloud', new vscode.ThemeColor('charts.green'));
@@ -136,7 +136,7 @@ export class DeploymentTreeItem extends vscode.TreeItem {
         `- **PID**: ${runner.pid ?? 'N/A'}\n` +
         `- **Port**: ${port}\n` +
         `- **Endpoint**: \`http://localhost:${port}/v1/chat/completions\``
-      ).value;
+      );
 
       // Play icon indicating local active process
       this.iconPath = new vscode.ThemeIcon('play-circle', new vscode.ThemeColor('charts.blue'));

@@ -12,6 +12,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { sanitizeFolderBaseName } from '../../shared/folderValidation';
+import { isValidAgentEngineId } from '../../shared/identifierValidation';
 import { WebviewBridge } from '../WebviewBridge';
 import { GcloudDetector } from './GcloudDetector';
 import { ArtifactStager } from './ArtifactStager';
@@ -74,12 +75,18 @@ export class DeployPipeline {
     args.push('--region', region);
 
     const targetEngineId = options.agentEngineId?.trim() || existingMetadata?.remote_agent_runtime_id;
-    if (!options.forceNew && targetEngineId) {
+    if (!options.forceNew && targetEngineId && isValidAgentEngineId(targetEngineId)) {
       const parts = targetEngineId.split('/');
       const engineId = parts.pop() || targetEngineId;
       args.push('--agent_engine_id', engineId);
-    } else if (options.displayName) {
-      args.push('--display_name', options.displayName);
+    } else {
+      const resolvedDisplayName =
+        options.displayName ||
+        (options.document as any)?.name ||
+        path.basename(options.targetDirectory);
+      if (resolvedDisplayName) {
+        args.push('--display_name', resolvedDisplayName);
+      }
     }
 
     args.push('--session_service_uri', 'memory://');
@@ -169,11 +176,21 @@ export class DeployPipeline {
 
     // 4. Check for existing deployment metadata or configured engine ID
     const existingMeta = this.artifactStager.readDeploymentMetadata(targetDirectory);
-    let resolvedEngineId = options.agentEngineId?.trim() || existingMeta?.remote_agent_runtime_id;
+    let candidateEngineId = options.agentEngineId?.trim() || existingMeta?.remote_agent_runtime_id;
 
-    if (!options.forceNew && !resolvedEngineId && options.document?.deployment?.deployedResourceId) {
-      resolvedEngineId = options.document.deployment.deployedResourceId;
+    const docDeployment = options.document?.deployment as any;
+    if (!options.forceNew && !candidateEngineId) {
+      if (docDeployment?.agentEngine?.deployedResourceId && isValidAgentEngineId(docDeployment.agentEngine.deployedResourceId)) {
+        candidateEngineId = docDeployment.agentEngine.deployedResourceId;
+      } else {
+        const isDocAgentEngine = docDeployment?.target === 'agent_engine' || docDeployment?.deploymentTarget === 'agent_engine';
+        if (isDocAgentEngine && docDeployment?.deployedResourceId && isValidAgentEngineId(docDeployment.deployedResourceId)) {
+          candidateEngineId = docDeployment.deployedResourceId;
+        }
+      }
     }
+
+    let resolvedEngineId = isValidAgentEngineId(candidateEngineId) ? candidateEngineId : undefined;
 
     // Search Vertex AI to prevent accidental duplicates
     if (!options.forceNew && !resolvedEngineId && options.displayName) {
@@ -192,6 +209,8 @@ export class DeployPipeline {
     const isUpdate = Boolean(!options.forceNew && resolvedEngineId);
     if (isUpdate && resolvedEngineId) {
       options.agentEngineId = resolvedEngineId;
+    } else {
+      options.agentEngineId = undefined;
     }
 
     // 5. Initialize active deployment record in memory for background resilience

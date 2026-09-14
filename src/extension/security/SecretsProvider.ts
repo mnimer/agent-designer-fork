@@ -65,6 +65,13 @@ export class SecretsProvider {
   }
 
   /**
+   * Resets the singleton instance upon extension deactivation or between test runs.
+   */
+  public static resetInstance(): void {
+    this.instance = undefined;
+  }
+
+  /**
    * Securely retrieves the Gemini API Key from OS Keychain-backed SecretStorage.
    *
    * @returns A Promise resolving to the retrieved string, or undefined if not set.
