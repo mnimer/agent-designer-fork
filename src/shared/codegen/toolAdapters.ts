@@ -19,6 +19,7 @@
  */
 
 import { ToolDefinition } from '../types';
+import { pyStr, pyLiteral } from './pythonEscape';
 
 export interface CompiledToolPackage {
   framework: string;
@@ -147,7 +148,7 @@ export class ToolAdapterCompiler {
 
         if (domainFilters.length > 0) {
           importSet.add('from google.adk.tools.google_search_tool import GoogleSearchTool');
-          const domainsStr = JSON.stringify(domainFilters);
+          const domainsStr = pyLiteral(domainFilters);
           definitions.push(`${varName} = GoogleSearchTool(bypass_multi_tools_limit=True, domain_filters=${domainsStr})`);
           bindings.push(varName);
         } else {
@@ -165,16 +166,16 @@ export class ToolAdapterCompiler {
         const varName = `${sanitizePythonIdentifier(tool.name || 'vertex_ai_search')}_tool`;
         const dataStoreId = tool.vertexAiSearchConfig?.dataStoreId || 'enterprise-datastore';
         const project = tool.vertexAiSearchConfig?.project 
-          ? `"${tool.vertexAiSearchConfig.project}"` 
+          ? pyStr(tool.vertexAiSearchConfig.project) 
           : 'os.environ.get("GOOGLE_CLOUD_PROJECT", "default-project")';
         const location = tool.vertexAiSearchConfig?.location || 'global';
         const maxResults = tool.vertexAiSearchConfig?.maxResults || 5;
 
         definitions.push(
           `${varName} = VertexAiSearchTool(\n` +
-          `    data_store_id="${dataStoreId}",\n` +
+          `    data_store_id=${pyStr(dataStoreId)},\n` +
           `    project=${project},\n` +
-          `    location="${location}",\n` +
+          `    location=${pyStr(location)},\n` +
           `    max_results=${maxResults},\n` +
           `    bypass_multi_tools_limit=True,\n` +
           `)`
@@ -191,29 +192,29 @@ export class ToolAdapterCompiler {
         const transport = tool.mcpConfig?.transport || 'stdio';
 
         const toolArgs: string[] = [
-          `    name="${serverName}",`,
-          `    transport="${transport}",`,
+          `    name=${pyStr(serverName)},`,
+          `    transport=${pyStr(transport)},`,
         ];
 
         if (transport === 'sse' || transport === 'http') {
           const sseUrl = tool.mcpConfig?.serverUrl || tool.endpointUrl || 'http://localhost:8000/sse';
-          toolArgs.push(`    url="${sseUrl}",`);
+          toolArgs.push(`    url=${pyStr(sseUrl)},`);
           if (tool.mcpConfig?.authProviderType === 'google_credentials') {
             importSet.add('import google.auth');
             importSet.add('from google.auth.transport.requests import Request as GoogleAuthRequest');
             importSet.add('import os');
 
             const scopes = tool.mcpConfig.oauthConfig?.scopes && tool.mcpConfig.oauthConfig.scopes.length > 0
-              ? JSON.stringify(tool.mcpConfig.oauthConfig.scopes)
+              ? pyLiteral(tool.mcpConfig.oauthConfig.scopes)
               : '["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/bigquery"]';
             const projectIdExpr = tool.mcpConfig.oauthConfig?.projectId
-              ? `"${tool.mcpConfig.oauthConfig.projectId}"`
+              ? pyStr(tool.mcpConfig.oauthConfig.projectId)
               : 'os.environ.get("GOOGLE_CLOUD_PROJECT", "")';
 
             const headerFnName = `_get_${varName}_headers`;
             const headerBlock = [
               `def ${headerFnName}():`,
-              `    """Resolves and auto-refreshes Google Cloud ADC OAuth token for ${serverName}."""`,
+              `    """Resolves and auto-refreshes Google Cloud ADC OAuth token for ${serverName.replace(/"""/g, '\\"\\"\\"')}(SSE)."""`,
               `    credentials, default_project = google.auth.default(scopes=${scopes})`,
               `    if not credentials.valid:`,
               `        credentials.refresh(GoogleAuthRequest())`,
@@ -232,8 +233,8 @@ export class ToolAdapterCompiler {
             const headerFnName = `_get_${varName}_headers`;
             const headerBlock = [
               `def ${headerFnName}():`,
-              `    """Resolves Bearer secret token from environment / Secret Manager for ${serverName}."""`,
-              `    token = os.environ.get("${envVarName}", "")`,
+              `    """Resolves Bearer secret token from environment / Secret Manager for ${serverName.replace(/"""/g, '\\"\\"\\"')}(SSE)."""`,
+              `    token = os.environ.get(${pyStr(envVarName)}, "")`,
               `    return {`,
               `        "Authorization": f"Bearer {token}",`,
               `        "Content-Type": "application/json",`,
@@ -244,21 +245,21 @@ export class ToolAdapterCompiler {
             definitions.push(headerBlock);
             toolArgs.push(`    headers=${headerFnName}(),`);
           } else if (tool.mcpConfig?.headers && Object.keys(tool.mcpConfig.headers).length > 0) {
-            toolArgs.push(`    headers=${JSON.stringify(tool.mcpConfig.headers)},`);
+            toolArgs.push(`    headers=${pyLiteral(tool.mcpConfig.headers)},`);
           } else if (tool.authKeyEnv) {
-            toolArgs.push(`    headers={"Authorization": f"Bearer {os.environ.get('${tool.authKeyEnv}', '')}"},`);
+            toolArgs.push(`    headers={"Authorization": f"Bearer {os.environ.get(${pyStr(tool.authKeyEnv)}, '')}"},`);
             importSet.add('import os');
           }
         } else {
           const cmd = tool.mcpConfig?.command || 'npx';
-          const args = JSON.stringify(tool.mcpConfig?.args || []);
-          toolArgs.push(`    command="${cmd}",`);
+          const args = pyLiteral(tool.mcpConfig?.args || []);
+          toolArgs.push(`    command=${pyStr(cmd)},`);
           toolArgs.push(`    args=${args},`);
           if (tool.mcpConfig?.cwd) {
-            toolArgs.push(`    cwd="${tool.mcpConfig.cwd}",`);
+            toolArgs.push(`    cwd=${pyStr(tool.mcpConfig.cwd)},`);
           }
           if (tool.mcpConfig?.envVars && Object.keys(tool.mcpConfig.envVars).length > 0) {
-            toolArgs.push(`    env=${JSON.stringify(tool.mcpConfig.envVars)},`);
+            toolArgs.push(`    env=${pyLiteral(tool.mcpConfig.envVars)},`);
           }
         }
 
@@ -267,11 +268,11 @@ export class ToolAdapterCompiler {
         }
 
         if (tool.mcpConfig?.exposedTools && tool.mcpConfig.exposedTools.length > 0 && !tool.mcpConfig.exposedTools.includes('*')) {
-          toolArgs.push(`    tools=${JSON.stringify(tool.mcpConfig.exposedTools)},`);
+          toolArgs.push(`    tools=${pyLiteral(tool.mcpConfig.exposedTools)},`);
         }
 
         if (tool.mcpConfig?.autoApproveTools && tool.mcpConfig.autoApproveTools.length > 0) {
-          toolArgs.push(`    auto_approve_tools=${JSON.stringify(tool.mcpConfig.autoApproveTools)},`);
+          toolArgs.push(`    auto_approve_tools=${pyLiteral(tool.mcpConfig.autoApproveTools)},`);
         }
 
         definitions.push(`${varName} = McpClientTool(\n${toolArgs.join('\n')}\n)`);
@@ -297,17 +298,101 @@ export class ToolAdapterCompiler {
         continue;
       }
 
-      // Fallback: AI-Generated / standard custom stub
+      // 10. REST API Tools (async httpx client)
+      if (tool.type === 'api' || tool.type === 'rest' || (tool.endpointUrl && !tool.mcpConfig && !tool.builtinType)) {
+        importSet.add('import httpx');
+        const funcName = sanitizePythonIdentifier(tool.name || tool.id);
+        const safeDoc = (tool.description || `REST API tool invoking ${tool.endpointUrl || 'endpoint'}`).replace(/"""/g, '\\"\\"\\"');
+        const method = (tool.httpMethod || 'GET').toUpperCase();
+        const url = tool.endpointUrl || 'https://api.example.com';
+        const timeout = tool.timeoutSeconds ?? 30;
+
+        const paramKeys = Object.keys(tool.parameters || {});
+        const sig = paramKeys.length > 0
+          ? paramKeys.map((k) => `${sanitizePythonIdentifier(k)}: str = ""`).join(', ')
+          : '**kwargs';
+
+        const lines: string[] = [
+          `async def ${funcName}(${sig}) -> dict:`,
+          `    """${safeDoc}"""`,
+          `    url = ${pyStr(url)}`,
+        ];
+
+        const headerEntries: Record<string, string> = {
+          Accept: 'application/json',
+          ...(tool.headers || {}),
+        };
+        if (['POST', 'PUT', 'PATCH'].includes(method)) {
+          headerEntries['Content-Type'] = headerEntries['Content-Type'] || 'application/json';
+        }
+
+        lines.push(`    headers = ${pyLiteral(headerEntries)}`);
+
+        if (tool.authKeyEnv) {
+          importSet.add('import os');
+          lines.push(`    token = os.environ.get(${pyStr(tool.authKeyEnv)}, "")`);
+          lines.push(`    if token:`);
+          lines.push(`        headers["Authorization"] = f"Bearer {token}"`);
+        }
+
+        if (tool.secretManagerKey) {
+          lines.push(`    if "Authorization" not in headers or not headers["Authorization"]:`);
+          lines.push(`        try:`);
+          lines.push(`            from google.cloud import secretmanager`);
+          lines.push(`            sm_client = secretmanager.SecretManagerServiceClient()`);
+          lines.push(`            sm_resp = sm_client.access_secret_version(request={"name": ${pyStr(tool.secretManagerKey)}})`);
+          lines.push(`            sm_token = sm_resp.payload.data.decode("utf-8")`);
+          lines.push(`            headers["Authorization"] = f"Bearer {sm_token}"`);
+          lines.push(`        except Exception:`);
+          lines.push(`            pass`);
+        }
+
+        if (paramKeys.length > 0) {
+          const dictEntries = paramKeys
+            .map((k) => `${pyStr(k)}: ${sanitizePythonIdentifier(k)}`)
+            .join(', ');
+          lines.push(`    data_map = {k: v for k, v in {${dictEntries}}.items() if v}`);
+        } else {
+          lines.push(`    data_map = kwargs`);
+        }
+
+        const isQuery = method === 'GET' || method === 'DELETE';
+        const dataArg = isQuery ? 'params=data_map' : 'json=data_map';
+
+        lines.push(`    try:`);
+        lines.push(`        async with httpx.AsyncClient(timeout=${timeout}.0) as client:`);
+        lines.push(`            response = await client.request(`);
+        lines.push(`                method=${pyStr(method)},`);
+        lines.push(`                url=url,`);
+        lines.push(`                ${dataArg},`);
+        lines.push(`                headers=headers,`);
+        lines.push(`            )`);
+        lines.push(`            response.raise_for_status()`);
+        lines.push(`            try:`);
+        lines.push(`                return response.json()`);
+        lines.push(`            except Exception:`);
+        lines.push(`                return {"status": "success", "text": response.text}`);
+        lines.push(`    except httpx.HTTPStatusError as e:`);
+        lines.push(`        return {"status": "error", "code": e.response.status_code, "detail": e.response.text}`);
+        lines.push(`    except Exception as e:`);
+        lines.push(`        return {"status": "error", "message": str(e)}`);
+
+        definitions.push(lines.join('\n'));
+        bindings.push(funcName);
+        continue;
+      }
+
+      // 11. Custom Function Tools / Stubs
       const funcName = sanitizePythonIdentifier(tool.name || tool.id);
-      const docString = tool.description || 'Custom agent tool';
+      const safeDoc = (tool.description || 'Custom agent tool').replace(/"""/g, '\\"\\"\\"');
       const paramKeys = Object.keys(tool.parameters || {});
       const sig = paramKeys.length > 0 ? paramKeys.join(': str, ') + ': str' : '**kwargs';
 
       definitions.push(
         `def ${funcName}(${sig}) -> dict:\n` +
-        `    """${docString}"""\n` +
+        `    """${safeDoc}"""\n` +
         `    # Custom tool execution logic\n` +
-        `    return {"status": "success", "tool": "${funcName}"}\n`
+        `    return {"status": "success", "tool": ${pyStr(funcName)}}\n`
       );
       bindings.push(funcName);
     }
@@ -431,7 +516,7 @@ export class ToolAdapterCompiler {
         const varName = `${sanitizePythonIdentifier(tool.name || 'vertex_retriever')}_tool`;
         const dataStoreId = tool.vertexAiSearchConfig?.dataStoreId || 'enterprise-datastore';
         const project = tool.vertexAiSearchConfig?.project 
-          ? `"${tool.vertexAiSearchConfig.project}"` 
+          ? pyStr(tool.vertexAiSearchConfig.project) 
           : 'os.environ.get("GOOGLE_CLOUD_PROJECT", "default-project")';
         const location = tool.vertexAiSearchConfig?.location || 'global';
         const maxResults = tool.vertexAiSearchConfig?.maxResults || 5;
@@ -439,8 +524,8 @@ export class ToolAdapterCompiler {
         definitions.push(
           `${varName} = VertexAISearchRetriever(\n` +
           `    project_id=${project},\n` +
-          `    data_store_id="${dataStoreId}",\n` +
-          `    location_id="${location}",\n` +
+          `    data_store_id=${pyStr(dataStoreId)},\n` +
+          `    location_id=${pyStr(location)},\n` +
           `    max_extractive_answer_count=${maxResults},\n` +
           `)`
         );
@@ -452,7 +537,7 @@ export class ToolAdapterCompiler {
       if (tool.type === 'mcp' || tool.mcpConfig) {
         const funcName = `${sanitizePythonIdentifier(tool.name || tool.id)}_tool`;
         const serverName = tool.mcpConfig?.serverName || tool.name || 'mcp-server';
-        const docString = tool.description || `Interacts with ${serverName} MCP server`;
+        const docString = (tool.description || `Interacts with ${serverName} MCP server`).replace(/"""/g, '\\"\\"\\_');
         const transport = tool.mcpConfig?.transport || 'http';
         const timeout = tool.mcpConfig?.timeoutSeconds || 30;
 
@@ -465,10 +550,10 @@ export class ToolAdapterCompiler {
             importSet.add('from google.auth.transport.requests import Request as GoogleAuthRequest');
 
             const scopes = tool.mcpConfig.oauthConfig?.scopes && tool.mcpConfig.oauthConfig.scopes.length > 0
-              ? JSON.stringify(tool.mcpConfig.oauthConfig.scopes)
+              ? pyLiteral(tool.mcpConfig.oauthConfig.scopes)
               : '["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/bigquery"]';
             const projectIdExpr = tool.mcpConfig.oauthConfig?.projectId
-              ? `"${tool.mcpConfig.oauthConfig.projectId}"`
+              ? pyStr(tool.mcpConfig.oauthConfig.projectId)
               : 'os.environ.get("GOOGLE_CLOUD_PROJECT", "")';
 
             const tokenFnName = `_get_${funcName}_token`;
@@ -495,7 +580,7 @@ export class ToolAdapterCompiler {
               `        "method": f"tools/{action}",\n` +
               `        "params": parameters or {},\n` +
               `    }\n` +
-              `    resp = requests.post("${endpointUrl}", json=payload, headers=headers, timeout=${timeout})\n` +
+              `    resp = requests.post(${pyStr(endpointUrl)}, json=payload, headers=headers, timeout=${timeout})\n` +
               `    return resp.json()`
             );
           } else if (tool.mcpConfig?.authProviderType === 'bearer_token' || tool.mcpConfig?.secretConfig) {
@@ -505,7 +590,7 @@ export class ToolAdapterCompiler {
               `@tool\n` +
               `def ${funcName}(action: str, parameters: dict = None) -> dict:\n` +
               `    """${docString}"""\n` +
-              `    token = os.environ.get("${envVarName}", "")\n` +
+              `    token = os.environ.get(${pyStr(envVarName)}, "")\n` +
               `    headers = {\n` +
               `        "Authorization": f"Bearer {token}",\n` +
               `        "Content-Type": "application/json",\n` +
@@ -517,11 +602,11 @@ export class ToolAdapterCompiler {
               `        "method": f"tools/{action}",\n` +
               `        "params": parameters or {},\n` +
               `    }\n` +
-              `    resp = requests.post("${endpointUrl}", json=payload, headers=headers, timeout=${timeout})\n` +
+              `    resp = requests.post(${pyStr(endpointUrl)}, json=payload, headers=headers, timeout=${timeout})\n` +
               `    return resp.json()`
             );
           } else {
-            const customHeaders = tool.mcpConfig?.headers ? JSON.stringify(tool.mcpConfig.headers) : '{}';
+            const customHeaders = tool.mcpConfig?.headers ? pyLiteral(tool.mcpConfig.headers) : '{}';
             definitions.push(
               `@tool\n` +
               `def ${funcName}(action: str, parameters: dict = None) -> dict:\n` +
@@ -533,7 +618,7 @@ export class ToolAdapterCompiler {
               `        "method": f"tools/{action}",\n` +
               `        "params": parameters or {},\n` +
               `    }\n` +
-              `    resp = requests.post("${endpointUrl}", json=payload, headers=headers, timeout=${timeout})\n` +
+              `    resp = requests.post(${pyStr(endpointUrl)}, json=payload, headers=headers, timeout=${timeout})\n` +
               `    return resp.json()`
             );
           }
@@ -542,7 +627,7 @@ export class ToolAdapterCompiler {
             `@tool\n` +
             `def ${funcName}(action: str, parameters: dict = None) -> dict:\n` +
             `    """${docString} (stdio MCP runner)"""\n` +
-            `    return {"status": "success", "tool": "${serverName}", "action": action, "params": parameters or {}}`
+            `    return {"status": "success", "tool": ${pyStr(serverName)}, "action": action, "params": parameters or {}}`
           );
         }
 
@@ -550,7 +635,7 @@ export class ToolAdapterCompiler {
         continue;
       }
 
-      // 8. General Custom Tools / APIs
+      // 8. Local Python File Tools or AI-Generated Tools
       if (tool.sourceFile && (tool.functionName || tool.name)) {
         const targetFunc = sanitizePythonIdentifier(tool.functionName || tool.name);
         const normalizedPath = tool.sourceFile.replace(/^\.?\//, '').replace(/\.py$/, '').replace(/\//g, '.');
@@ -567,16 +652,102 @@ export class ToolAdapterCompiler {
         continue;
       }
 
+      // 9. REST API Tools (async httpx client with @tool decorator)
+      if (tool.type === 'api' || tool.type === 'rest' || (tool.endpointUrl && !tool.mcpConfig && !tool.builtinType)) {
+        importSet.add('import httpx');
+        const funcName = sanitizePythonIdentifier(tool.name || tool.id);
+        const safeDoc = (tool.description || `REST API tool invoking ${tool.endpointUrl || 'endpoint'}`).replace(/"""/g, '\\"\\"\\"');
+        const method = (tool.httpMethod || 'GET').toUpperCase();
+        const url = tool.endpointUrl || 'https://api.example.com';
+        const timeout = tool.timeoutSeconds ?? 30;
+
+        const paramKeys = Object.keys(tool.parameters || {});
+        const sig = paramKeys.length > 0
+          ? paramKeys.map((k) => `${sanitizePythonIdentifier(k)}: str = ""`).join(', ')
+          : '**kwargs';
+
+        const lines: string[] = [
+          `@tool`,
+          `async def ${funcName}(${sig}) -> dict:`,
+          `    """${safeDoc}"""`,
+          `    url = ${pyStr(url)}`,
+        ];
+
+        const headerEntries: Record<string, string> = {
+          Accept: 'application/json',
+          ...(tool.headers || {}),
+        };
+        if (['POST', 'PUT', 'PATCH'].includes(method)) {
+          headerEntries['Content-Type'] = headerEntries['Content-Type'] || 'application/json';
+        }
+
+        lines.push(`    headers = ${pyLiteral(headerEntries)}`);
+
+        if (tool.authKeyEnv) {
+          importSet.add('import os');
+          lines.push(`    token = os.environ.get(${pyStr(tool.authKeyEnv)}, "")`);
+          lines.push(`    if token:`);
+          lines.push(`        headers["Authorization"] = f"Bearer {token}"`);
+        }
+
+        if (tool.secretManagerKey) {
+          lines.push(`    if "Authorization" not in headers or not headers["Authorization"]:`);
+          lines.push(`        try:`);
+          lines.push(`            from google.cloud import secretmanager`);
+          lines.push(`            sm_client = secretmanager.SecretManagerServiceClient()`);
+          lines.push(`            sm_resp = sm_client.access_secret_version(request={"name": ${pyStr(tool.secretManagerKey)}})`);
+          lines.push(`            sm_token = sm_resp.payload.data.decode("utf-8")`);
+          lines.push(`            headers["Authorization"] = f"Bearer {sm_token}"`);
+          lines.push(`        except Exception:`);
+          lines.push(`            pass`);
+        }
+
+        if (paramKeys.length > 0) {
+          const dictEntries = paramKeys
+            .map((k) => `${pyStr(k)}: ${sanitizePythonIdentifier(k)}`)
+            .join(', ');
+          lines.push(`    data_map = {k: v for k, v in {${dictEntries}}.items() if v}`);
+        } else {
+          lines.push(`    data_map = kwargs`);
+        }
+
+        const isQuery = method === 'GET' || method === 'DELETE';
+        const dataArg = isQuery ? 'params=data_map' : 'json=data_map';
+
+        lines.push(`    try:`);
+        lines.push(`        async with httpx.AsyncClient(timeout=${timeout}.0) as client:`);
+        lines.push(`            response = await client.request(`);
+        lines.push(`                method=${pyStr(method)},`);
+        lines.push(`                url=url,`);
+        lines.push(`                ${dataArg},`);
+        lines.push(`                headers=headers,`);
+        lines.push(`            )`);
+        lines.push(`            response.raise_for_status()`);
+        lines.push(`            try:`);
+        lines.push(`                return response.json()`);
+        lines.push(`            except Exception:`);
+        lines.push(`                return {"status": "success", "text": response.text}`);
+        lines.push(`    except httpx.HTTPStatusError as e:`);
+        lines.push(`        return {"status": "error", "code": e.response.status_code, "detail": e.response.text}`);
+        lines.push(`    except Exception as e:`);
+        lines.push(`        return {"status": "error", "message": str(e)}`);
+
+        definitions.push(lines.join('\n'));
+        bindings.push(funcName);
+        continue;
+      }
+
+      // 10. General Custom Tools / APIs
       const funcName = sanitizePythonIdentifier(tool.name || tool.id);
-      const docString = tool.description || 'Custom LangGraph agent tool';
+      const safeDoc = (tool.description || 'Custom LangGraph agent tool').replace(/"""/g, '\\"\\"\\"');
       const paramKeys = Object.keys(tool.parameters || {});
       const sig = paramKeys.length > 0 ? paramKeys.join(': str, ') + ': str' : '**kwargs';
 
       definitions.push(
         `@tool\n` +
         `def ${funcName}(${sig}) -> dict:\n` +
-        `    """${docString}"""\n` +
-        `    return {"status": "success", "tool": "${funcName}"}`
+        `    """${safeDoc}"""\n` +
+        `    return {"status": "success", "tool": ${pyStr(funcName)}}`
       );
       bindings.push(funcName);
     }

@@ -149,7 +149,8 @@ describe('Router Agent Dynamic Branching & ADK Code Generation', () => {
       assert.ok(workflowPy.includes('default_agent=debugger_agent'));
 
       // Verify start node runner
-      assert.ok(workflowPy.includes('runner = Runner(agent=quality_gate_router)'));
+      assert.ok(workflowPy.includes('root_agent = quality_gate_router'));
+      assert.ok(workflowPy.includes('runner = Runner(agent=root_agent)'));
     });
   });
 
@@ -333,8 +334,8 @@ describe('Router Agent Dynamic Branching & ADK Code Generation', () => {
       assert.ok(workflowPy.includes('def evaluate_regex_gate_route('));
       assert.ok(workflowPy.includes('import re'));
       assert.ok(workflowPy.includes('target_text = str(user_query or proxy.get("query", "")'));
-      assert.ok(workflowPy.includes('re.search(r"^(cancel|refund|return)", target_text, re.IGNORECASE)'));
-      assert.ok(workflowPy.includes('re.search(r"order_\\d{6}", target_text, re.IGNORECASE)'));
+      assert.ok(workflowPy.includes('re.search("^(cancel|refund|return)", target_text, re.IGNORECASE)'));
+      assert.ok(workflowPy.includes('re.search("order_\\\\d{6}", target_text, re.IGNORECASE)'));
       assert.ok(workflowPy.includes('return "branch_refund"'));
       assert.ok(workflowPy.includes('return "branch_order"'));
       assert.ok(workflowPy.includes('return "branch_fallback"'));

@@ -10,10 +10,18 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { AgentEditorProvider } from '../../src/extension/AgentEditorProvider';
 import { AgentWorkflowDocument } from '../../src/shared/types';
+import { SecretsProvider } from '../../src/extension/security/SecretsProvider';
 
 describe('AgentEditorProvider', { concurrency: 1 }, () => {
   beforeEach(() => {
     vscode.resetAllMocks();
+    (SecretsProvider as any).instance = undefined;
+    SecretsProvider.init({
+      get: async () => undefined,
+      store: async () => {},
+      delete: async () => {},
+      onDidChange: () => ({ dispose: () => {} }),
+    } as any);
   });
 
   it('should register custom editor provider with VS Code', () => {

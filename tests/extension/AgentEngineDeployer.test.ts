@@ -1420,8 +1420,8 @@ create_params:
       }
     });
 
-    it('should resolve gcloud executable path or candidate', () => {
-      const gcloud = deployer.resolveGcloudPath();
+    it('should resolve gcloud executable path or candidate', async () => {
+      const gcloud = await deployer.resolveGcloudPath();
       assert.ok(gcloud && typeof gcloud === 'string' && gcloud.length > 0);
     });
 

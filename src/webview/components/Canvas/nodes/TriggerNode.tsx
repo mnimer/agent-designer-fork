@@ -70,6 +70,48 @@ const getTriggerTheme = (_type: TriggerType) => {
   };
 };
 
+/**
+ * Custom comparison function for React.memo to prevent unnecessary TriggerNode re-renders.
+ * Ensures the node only re-renders when its identity, selection state, dragging state,
+ * or data values change, ignoring stable helper function reference updates.
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
+export function areEqual(prevProps: any, nextProps: any): boolean {
+  if (prevProps.id !== nextProps.id) return false;
+  if (prevProps.selected !== nextProps.selected) return false;
+  if (prevProps.dragging !== nextProps.dragging) return false;
+
+  const prevData = prevProps.data || {};
+  const nextData = nextProps.data || {};
+
+  const prevKeys = Object.keys(prevData);
+  const nextKeys = Object.keys(nextData);
+
+  if (prevKeys.length !== nextKeys.length) return false;
+
+  for (const key of prevKeys) {
+    // Skip functions
+    if (typeof prevData[key] === 'function') continue;
+
+    const valPrev = prevData[key];
+    const valNext = nextData[key];
+
+    if (valPrev === valNext) continue;
+
+    // Deep comparison of objects/arrays
+    if (typeof valPrev === 'object' && typeof valNext === 'object' && valPrev !== null && valNext !== null) {
+      if (JSON.stringify(valPrev) !== JSON.stringify(valNext)) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: TriggerData }) => {
   const theme = getTriggerTheme(data.triggerType);
   const isTester = data.triggerType === 'tester';
@@ -345,7 +387,7 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
       )}
     </div>
   );
-});
+}, areEqual);
 
 TriggerNode.displayName = 'TriggerNode';
 

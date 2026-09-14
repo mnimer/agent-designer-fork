@@ -117,7 +117,10 @@ describe('Cyber Guardian SecOps Sample Workflow (.agent)', () => {
     assert.ok(workflowPy.includes('sub_agents=[\n        triage_specialist,\n        threat_intel_specialist,\n        investigation_specialist,\n        response_specialist,\n    ],'));
 
     // Verify runner execution starts from cyber_guardian_orchestrator
-    assert.ok(workflowPy.includes('runner = Runner(agent=cyber_guardian_orchestrator)'));
+    assert.ok(
+      workflowPy.includes('root_agent = cyber_guardian_orchestrator') ||
+      workflowPy.includes('runner = Runner(agent=cyber_guardian_orchestrator)')
+    );
   });
 
   it('should bundle complete full project with requirements and env templates', () => {

@@ -63,6 +63,7 @@ import {
   ToolDefinition
 } from '../../types';
 import { StructuredOutputBuilder } from './StructuredOutputBuilder';
+import { ModelSelector } from '../drawers/primitives/ModelSelector';
 import { parseA2AAgentCard } from '../../../shared/a2aCardParser';
 import { validateAgentIdentifier, sanitizeAgentIdentifier } from '../../../shared/identifierValidation';
 
@@ -78,10 +79,7 @@ interface A2AAgentDrawerProps {
   onSelectAgent?: (agentId: string) => void;
 }
 
-const SUPPORTED_MODELS = [
-  { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash (Recommended - Global Region)', desc: 'Next-gen hybrid reasoning with adaptive thinking on Vertex AI' },
-  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', desc: 'Fast, lightweight multimodal reasoning on Vertex AI' },
-];
+
 
 const PATTERN_OPTIONS = ADK_DELEGATION_PATTERNS;
 
@@ -633,27 +631,13 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
               }}
             />
 
-            {/* 4. Underlying LLM Engine */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
-                <Cpu className="w-3 h-3 text-cyan-400" />
-                Underlying LLM Engine
-              </label>
-              <select
-                value={agent.model || 'gemini-flash-latest'}
-                onChange={(e) => onUpdateAgent({ model: e.target.value })}
-                className="w-full px-3 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded-lg text-xs text-white focus:outline-none cursor-pointer"
-              >
-                {SUPPORTED_MODELS.map((m) => (
-                  <option key={m.id} value={m.id} className="bg-[#161b22]">
-                    {m.name} ({m.id})
-                  </option>
-                ))}
-              </select>
-              <p className="text-[10px] text-gray-500">
-                Model used for local prompt processing or delegation synthesis if this A2A client node participates in reasoning.
-              </p>
-            </div>
+            {/* Modular AI Model Settings */}
+            <ModelSelector
+              selectedModel={agent.model || 'gemini-3.7-flash'}
+              onChangeModel={(model) => onUpdateAgent({ model })}
+              thinkingBudget={agent.thinkingBudget}
+              onChangeThinkingBudget={(thinkingBudget) => onUpdateAgent({ thinkingBudget })}
+            />
 
             {/* 5. Attached Tools Section */}
             <div className="space-y-2">

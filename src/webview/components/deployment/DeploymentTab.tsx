@@ -6,14 +6,16 @@
  * in the Code Generation tab (Vertex AI Agent Engine or Google Cloud Run).
  *
  * Architectural Decisions:
- * 1. Provides a 75% width Run/Deploy/Restart Agent button alongside a 25% width red Stop button.
- * 2. Stop button cleanly dispatches STOP_LOCAL_RUNNER and resets deployment status.
- * 3. Adheres strictly to the 8pt UI grid system for all layout dimensions.
+ * 1. Fixed size output container (h-[256px] adhering to 8pt grid system: 32 * 8 = 256px) with overflow-y-auto and auto-scrolling to prevent output logs from expanding vertically and pushing the UI/action buttons off-screen.
+ * 2. Provides a 75% width Run/Deploy/Restart Agent button alongside a 25% width red Stop button pinned to the bottom of the configuration card.
+ * 3. Stop button cleanly dispatches STOP_LOCAL_RUNNER and resets deployment status.
+ * 4. Container hierarchy enforces h-full min-h-0 overflow-hidden to prevent viewport scroll leakage.
+ * 5. Adheres strictly to the 8pt UI grid system for all layout dimensions.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Laptop, 
   Cpu, 
@@ -83,6 +85,13 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [deployStatus, setDeployStatus] = useState<'idle' | 'deploying' | 'success' | 'error'>('idle');
   const [deployLogs, setDeployLogs] = useState<string[]>([]);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll local runner and deployment logs to bottom as new entries stream in
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [deployLogs]);
+
   const [serviceUrl, setServiceUrl] = useState<string | null>(null);
   const [diskFilesExist, setDiskFilesExist] = useState<boolean>(false);
 
@@ -282,7 +291,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
   const hasGeneratedCode = Boolean((generatedFiles && generatedFiles.length > 0) || diskFilesExist);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
+    <div className="h-full flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
       {/* Top Environment Switcher Bar */}
       <div className="px-4 py-2 bg-[#161b22] border-b border-[#30363d] flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
@@ -341,7 +350,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
       </div>
 
       {/* Local Runner and Cloud Run View (Kept mounted with CSS hidden to preserve running processes, inputs, and logs) */}
-      <div className={selectedTarget !== 'agent_engine' ? 'flex-1 p-4 flex gap-4 overflow-hidden bg-[#0d1117]' : 'hidden'}>
+      <div className={selectedTarget !== 'agent_engine' ? 'flex-1 p-4 flex gap-4 overflow-hidden bg-[#0d1117] min-h-0' : 'hidden'}>
         {/* LEFT 1/3 CARD: Deployment Options & Config */}
         <div className="w-1/3 min-w-[310px] max-w-[390px] bg-[#161b22] border border-[#30363d] rounded-xl p-4 shadow-xl flex flex-col min-h-0 overflow-hidden">
           <div className="flex-1 overflow-y-auto pr-1 space-y-4 min-h-0">
@@ -633,7 +642,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
       </div>
 
       {/* RIGHT 2/3: Deployment Preview & Console */}
-      <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117] border border-[#30363d] rounded-xl overflow-hidden shadow-xl">
+      <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117] border border-[#30363d] rounded-xl overflow-hidden shadow-xl min-h-0">
         {/* Terminal / Status Header */}
         <div className="flex items-center justify-between px-3 bg-[#161b22] border-b border-[#30363d] shrink-0 h-9">
           <div className="flex items-center gap-2">
@@ -667,7 +676,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
         </div>
 
         {/* Content & Logs View */}
-        <div className="flex-1 p-4 overflow-auto bg-[#0d1117] space-y-4 font-mono text-xs text-[#c9d1d9] select-text">
+        <div className="flex-1 p-4 overflow-y-auto bg-[#0d1117] space-y-4 font-mono text-xs text-[#c9d1d9] select-text min-h-0">
           {/* CLI Command Preview Box */}
           <div>
             <div className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-1.5 flex items-center justify-between font-sans">
@@ -679,20 +688,34 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
             </pre>
           </div>
 
-          {/* Active Live Logs / Deployment Status Box */}
+          {/* Active Live Logs / Deployment Status Box - Fixed height with vertical scrollbar */}
           <div className="space-y-2">
             <div className="text-[10px] text-gray-400 uppercase font-bold tracking-wider flex items-center justify-between font-sans">
               <span>{isLocalSelected ? 'Local Runner Output' : 'Live Deployment Logs'}</span>
-              {deployStatus === 'success' && (
-                <span className="flex items-center gap-1 text-emerald-400 text-[10px]">
-                  <CheckCircle2 className="w-3 h-3" /> Active & Healthy
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {deployStatus === 'success' && (
+                  <span className="flex items-center gap-1 text-emerald-400 text-[10px]">
+                    <CheckCircle2 className="w-3 h-3" /> Active & Healthy
+                  </span>
+                )}
+                {deployLogs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setDeployLogs([])}
+                    className="px-2 py-0.5 text-[10px] rounded bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-gray-300 font-mono transition-colors cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="bg-[#161b22] p-3 rounded-lg border border-[#30363d] min-h-[140px] space-y-1 text-[11px]">
+            <div
+              data-testid="local-runner-output-box"
+              className="bg-[#161b22] p-3 rounded-lg border border-[#30363d] h-[256px] overflow-y-auto space-y-1 text-[11px] font-mono select-text"
+            >
               {deployLogs.length === 0 ? (
-                <div className="text-gray-400 italic">
+                <div className="h-full flex items-center justify-center text-gray-500 italic font-sans text-xs">
                   Press "{isLocalSelected ? 'Run Agent' : 'Deploy Agent'}" to execute or deploy your visual agent topology.
                 </div>
               ) : (
@@ -702,6 +725,8 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                     className={
                       log.includes('✅') || log.includes('✨') || log.includes('🚀')
                         ? 'text-emerald-400 font-bold'
+                        : log.includes('❌') || log.includes('ERROR') || log.includes('Error')
+                        ? 'text-rose-400'
                         : 'text-gray-300'
                     }
                   >
@@ -709,6 +734,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                   </div>
                 ))
               )}
+              <div ref={logsEndRef} />
             </div>
           </div>
 
@@ -747,7 +773,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                   <span>Quick Test via OpenAI Chat Completions (POST)</span>
                   <button
                     onClick={() => {
-                      const curlCmd = `curl -X POST ${serviceUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-flash-latest",\n    "messages": [{"role": "user", "content": "Hello world"}]\n  }'`;
+                      const curlCmd = `curl -X POST ${serviceUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-3.7-flash",\n    "messages": [{"role": "user", "content": "Hello world"}]\n  }'`;
                       navigator.clipboard.writeText(curlCmd);
                       setCopiedCurl(true);
                       setTimeout(() => setCopiedCurl(false), 2000);
@@ -768,7 +794,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                   </button>
                 </div>
                 <pre className="text-[11px] font-mono text-gray-300 whitespace-pre-wrap selection:bg-blue-900 selection:text-white">
-                  {`curl -X POST ${serviceUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-flash-latest",\n    "messages": [{"role": "user", "content": "Hello world"}]\n  }'`}
+                  {`curl -X POST ${serviceUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-3.7-flash",\n    "messages": [{"role": "user", "content": "Hello world"}]\n  }'`}
                 </pre>
               </div>
             </div>

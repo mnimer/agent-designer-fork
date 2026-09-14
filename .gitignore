@@ -24,3 +24,11 @@ Thumbs.db
 # Agent skills cache
 .agents/
 .github/skills/
+
+# Secrets & local environment
+# NOTE: McpOAuthManager persists OAuth bearer tokens into a workspace .env file,
+# so these must never be committed. Example/template files are explicitly kept.
+.env
+.env.*
+!.env.example
+!.env.template

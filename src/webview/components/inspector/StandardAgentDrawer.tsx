@@ -63,6 +63,9 @@ import {
 } from '../../types';
 import { MEMORY_OPTIONS, getMemoryOption } from '../../data/memoryOptions';
 import { StructuredOutputBuilder } from './StructuredOutputBuilder';
+import { DrawerSection } from '../drawers/primitives/DrawerSection';
+import { DrawerField } from '../drawers/primitives/DrawerField';
+import { ModelSelector } from '../drawers/primitives/ModelSelector';
 import { validateAgentIdentifier, sanitizeAgentIdentifier } from '../../../shared/identifierValidation';
 
 interface StandardAgentDrawerProps {
@@ -76,10 +79,7 @@ interface StandardAgentDrawerProps {
   onSelectAgent?: (agentId: string) => void;
 }
 
-const SUPPORTED_MODELS = [
-  { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash (Recommended - Global Region)', desc: 'Next-gen hybrid reasoning with adaptive thinking on Vertex AI' },
-  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', desc: 'Fast, lightweight multimodal reasoning on Vertex AI' },
-];
+
 
 const PATTERN_OPTIONS = ADK_DELEGATION_PATTERNS;
 
@@ -270,48 +270,15 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
           }}
         />
 
-        {/* Underlying LLM Engine */}
-        <div className="space-y-1">
-          <label className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
-            <Cpu className="w-3 h-3 text-blue-400" />
-            Underlying LLM Engine
-          </label>
-          <select
-            value={agent.model || 'gemini-flash-latest'}
-            onChange={(e) => onUpdateAgent({ model: e.target.value })}
-            className="w-full px-3 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-blue-500 rounded-lg text-xs text-white focus:outline-none cursor-pointer"
-          >
-            {SUPPORTED_MODELS.map((m) => (
-              <option key={m.id} value={m.id} className="bg-[#161b22]">
-                {m.name} ({m.id})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Temperature Slider */}
-        <div className="space-y-1.5 bg-[#0d1117] p-3 rounded-lg border border-[#30363d]">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-tight text-gray-400 flex items-center gap-1">
-              <Sliders className="w-3 h-3 text-emerald-400" />
-              Creativity (Temperature)
-            </span>
-            <span className="font-mono text-xs text-emerald-400 font-bold">{agent.temperature}</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={agent.temperature}
-            onChange={(e) => onUpdateAgent({ temperature: parseFloat(e.target.value) })}
-            className="w-full accent-emerald-500 cursor-pointer"
-          />
-          <div className="flex justify-between text-[9px] text-gray-400 font-mono">
-            <span>Deterministic (0.0)</span>
-            <span>Creative (1.0)</span>
-          </div>
-        </div>
+        {/* Modular AI Model & Hyperparameter Settings */}
+        <ModelSelector
+          selectedModel={agent.model || 'gemini-3.7-flash'}
+          onChangeModel={(model) => onUpdateAgent({ model })}
+          temperature={agent.temperature ?? 1.0}
+          onChangeTemperature={(temperature) => onUpdateAgent({ temperature })}
+          thinkingBudget={agent.thinkingBudget}
+          onChangeThinkingBudget={(thinkingBudget) => onUpdateAgent({ thinkingBudget })}
+        />
 
         {/* AGENT MEMORY & CHECKPOINTING SECTION (Root node only) */}
         {agent.isStartNode && (

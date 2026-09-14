@@ -67,7 +67,7 @@ interface SettingsContextType {
   settings: PluginSettings;
   updateSettings: (partial: Partial<PluginSettings>) => void;
   resetSettings: () => void;
-  exportSettingsJson: () => string;
+  exportSettingsJson: (geminiSet?: boolean) => string;
   activeEditorTab: 'flow' | 'settings';
   setActiveEditorTab: (tab: 'flow' | 'settings') => void;
   openSettings: () => void;
@@ -112,10 +112,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, []);
 
-  const exportSettingsJson = useCallback(() => {
+  const exportSettingsJson = useCallback((geminiSet?: boolean) => {
     const exported = {
       "agentFlow.apiKeys": {
-        "gemini": settings.geminiApiKey ? "***" : "gcloud application-default",
+        "gemini": (geminiSet !== undefined ? geminiSet : !!settings.geminiApiKey) ? "***" : "gcloud application-default",
         "claude": settings.claudeApiKey ? "***" : "",
         "openai": settings.openaiApiKey ? "***" : "",
         "grok": settings.grokApiKey ? "***" : "",

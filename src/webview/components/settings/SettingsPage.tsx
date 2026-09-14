@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Key, 
   Settings, 
@@ -27,6 +27,7 @@ import {
   FolderOpen
 } from 'lucide-react';
 import { usePluginSettings, DEFAULT_SETTINGS, PluginSettings } from '../../context/SettingsContext';
+import { useWebviewBridge } from '../../hooks/useWebviewBridge';
 import { FrameworkType, LanguageType, DelegationPattern, AgentMemoryType } from '../../types';
 
 const SUPPORTED_MODELS = [
@@ -47,6 +48,36 @@ type SettingsSection = 'all' | 'api_keys' | 'framework_defaults' | 'agent_defaul
 
 export const SettingsPage: React.FC = () => {
   const { settings, updateSettings, resetSettings, exportSettingsJson, openFlow } = usePluginSettings();
+  const bridge = useWebviewBridge();
+  const [geminiApiKeySet, setGeminiApiKeySet] = useState(false);
+  const [geminiInputValue, setGeminiInputValue] = useState('');
+
+  useEffect(() => {
+    // Subscribe to settings sync events from extension
+    const unsubscribe = bridge.onMessage('SETTINGS_SYNC', (payload) => {
+      if (payload) {
+        setGeminiApiKeySet(payload.geminiApiKeySet);
+      }
+    });
+
+    // Request settings immediately upon loading SettingsPage
+    bridge.postMessage({ type: 'REQUEST_SETTINGS' });
+
+    return unsubscribe;
+  }, [bridge]);
+
+  const handleSaveGeminiKey = (value: string) => {
+    // Post to extension via RPC to update the secure SecretStorage
+    bridge.postMessage({
+      type: 'UPDATE_SETTINGS',
+      payload: {
+        geminiApiKey: value,
+      },
+    });
+    setGeminiInputValue('');
+    setSavedToast(true);
+    setTimeout(() => setSavedToast(false), 1500);
+  };
 
   const [activeSection, setActiveSection] = useState<SettingsSection>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,7 +96,7 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleCopyJson = () => {
-    navigator.clipboard.writeText(exportSettingsJson());
+    navigator.clipboard.writeText(exportSettingsJson(geminiApiKeySet));
     setCopiedJson(true);
     setTimeout(() => setCopiedJson(false), 2000);
   };
@@ -306,7 +337,7 @@ export const SettingsPage: React.FC = () => {
               </div>
 
               <div className="p-4 rounded-xl bg-[var(--vscode-canvas-bg)] border border-[var(--vscode-border)] font-mono text-xs text-[var(--vscode-text-primary)] overflow-x-auto shadow-inner">
-                <pre>{exportSettingsJson()}</pre>
+                <pre>{exportSettingsJson(geminiApiKeySet)}</pre>
               </div>
             </div>
           ) : (
@@ -341,11 +372,11 @@ export const SettingsPage: React.FC = () => {
                             </span>
                           </div>
                           <p className="text-xs text-[var(--vscode-text-secondary)] mt-1">
-                            Google GenAI / Vertex AI API key. <strong className="text-blue-400 font-normal">If not defined, will automatically fall back to Google Cloud application-default credentials (gcloud auth).</strong>
+                            API keys are securely stored in VS Code SecretStorage. <strong className="text-blue-400 font-normal">If not defined, will automatically fall back to Google Cloud application-default credentials (gcloud auth).</strong>
                           </p>
                         </div>
                         <div className="shrink-0 text-right">
-                          {settings.geminiApiKey ? (
+                          {geminiApiKeySet ? (
                             <span className="text-[10px] text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-2 py-0.5 rounded-md font-mono flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                               Key Configured
@@ -362,9 +393,15 @@ export const SettingsPage: React.FC = () => {
                       <div className="relative flex items-center max-w-xl">
                         <input
                           type={showKeys['gemini'] ? 'text' : 'password'}
-                          value={settings.geminiApiKey}
-                          onChange={(e) => handleUpdate({ geminiApiKey: e.target.value })}
-                          placeholder="AIzaSy... (leave blank to use gcloud application-default)"
+                          value={geminiInputValue}
+                          onChange={(e) => setGeminiInputValue(e.target.value)}
+                          onBlur={() => handleSaveGeminiKey(geminiInputValue)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleSaveGeminiKey(geminiInputValue);
+                            }
+                          }}
+                          placeholder={geminiApiKeySet ? "•••••••• (configured securely in SecretStorage)" : "AIzaSy... (leave blank to use gcloud application-default)"}
                           className="w-full pr-20 pl-3 py-1.5 bg-[var(--vscode-canvas-bg)] border border-[var(--vscode-border)] focus:border-blue-500 rounded-lg text-xs font-mono text-[var(--vscode-text-primary)] focus:outline-none"
                         />
                         <div className="absolute right-2 flex items-center gap-1 text-[var(--vscode-text-muted)]">

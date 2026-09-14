@@ -24,6 +24,7 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import { URL } from 'url';
+import { outputChannel } from './extension';
 
 export interface OAuthFlowOptions {
   authUrl: string;
@@ -74,11 +75,23 @@ export class McpOAuthManager {
       let isCompleted = false;
       let server: http.Server | null = null;
       let timeoutTimer: NodeJS.Timeout | null = null;
+      const sockets = new Set<import('net').Socket>();
 
       const finish = (result: OAuthFlowResult) => {
         if (isCompleted) return;
         isCompleted = true;
         if (timeoutTimer) clearTimeout(timeoutTimer);
+
+        // Forcefully close all tracked loopback sockets
+        for (const socket of sockets) {
+          try {
+            socket.destroy();
+          } catch {
+            // Ignore socket destroy errors
+          }
+        }
+        sockets.clear();
+
         if (server) {
           try {
             server.close();
@@ -185,6 +198,11 @@ export class McpOAuthManager {
         }
       });
 
+      server.on('connection', (socket) => {
+        sockets.add(socket);
+        socket.on('close', () => sockets.delete(socket));
+      });
+
       // Listen on ephemeral port
       server.listen(0, '127.0.0.1', async () => {
         try {
@@ -196,8 +214,33 @@ export class McpOAuthManager {
           const port = addr.port;
           const redirectUri = `http://127.0.0.1:${port}/callback`;
 
+          // 1. Strict URL scheme validation to restrict protocols to http/https and reject javascript:, file:, etc.
+          const rawAuthUrl = (options.authUrl || '').trim();
+          try {
+            const parsedInput = new URL(rawAuthUrl);
+            if (parsedInput.protocol !== 'http:' && parsedInput.protocol !== 'https:') {
+              throw new Error(`Forbidden protocol: ${parsedInput.protocol}`);
+            }
+          } catch (e: any) {
+            if (e.message.startsWith('Forbidden protocol:')) {
+              throw new Error(`Unsafe or invalid OAuth URL: ${e.message}`);
+            }
+            // Check if it has a non-http/https protocol scheme (excluding port numbers like localhost:8080)
+            const match = rawAuthUrl.match(/^([a-zA-Z][a-zA-Z0-9.+-]*):/);
+            if (match) {
+              const scheme = match[1].toLowerCase();
+              if (scheme !== 'http' && scheme !== 'https') {
+                const rest = rawAuthUrl.slice(scheme.length + 1);
+                const isPort = /^\d+(?:\/|$)/.test(rest);
+                if (!isPort) {
+                  throw new Error(`Unsafe or invalid OAuth URL: Forbidden protocol: ${scheme}:`);
+                }
+              }
+            }
+          }
+
           // Construct target URL with params
-          let targetUrl = (options.authUrl || '').trim();
+          let targetUrl = rawAuthUrl;
           if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
             targetUrl = `https://${targetUrl}`;
           }
@@ -224,13 +267,14 @@ export class McpOAuthManager {
           // If vscode.env.openExternal returned false or was blocked, invoke OS-level browser opener
           if (!opened) {
             try {
-              const { exec } = await import('child_process');
-              const cmd = process.platform === 'darwin'
-                ? `open "${finalUrl}"`
-                : process.platform === 'win32'
-                ? `start "" "${finalUrl}"`
-                : `xdg-open "${finalUrl}"`;
-              exec(cmd);
+              const { spawn } = await import('child_process');
+              if (process.platform === 'darwin') {
+                spawn('open', [finalUrl], { shell: false });
+              } else if (process.platform === 'win32') {
+                spawn('cmd.exe', ['/c', 'start', '""', finalUrl], { shell: false });
+              } else {
+                spawn('xdg-open', [finalUrl], { shell: false });
+              }
             } catch {
               // Ignore fallback error and let user complete via URL
             }
@@ -269,26 +313,39 @@ export class McpOAuthManager {
     if (params.clientId) postData.set('client_id', params.clientId);
     if (params.clientSecret) postData.set('client_secret', params.clientSecret);
 
-    const response = await fetch(params.tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json',
-      },
-      body: postData.toString(),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Token endpoint responded with HTTP ${response.status}: ${errText.slice(0, 200)}`);
-    }
+    try {
+      const response = await fetch(params.tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+        },
+        body: postData.toString(),
+        signal: controller.signal,
+      });
 
-    const data: any = await response.json();
-    const token = data.access_token || data.token || data.bearer_token;
-    if (!token) {
-      throw new Error('Token endpoint did not return an access_token in the response JSON.');
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Token endpoint responded with HTTP ${response.status}: ${errText.slice(0, 200)}`);
+      }
+
+      const data: any = await response.json();
+      const token = data.access_token || data.token || data.bearer_token;
+      if (!token) {
+        throw new Error('Token endpoint did not return an access_token in the response JSON.');
+      }
+      return token;
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        throw new Error('Token exchange request timed out after 15 seconds.');
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
     }
-    return token;
   }
 
   /**
@@ -359,8 +416,9 @@ export class McpOAuthManager {
     if (fs.existsSync(envPath)) {
       try {
         content = fs.readFileSync(envPath, 'utf-8');
-      } catch {
+      } catch (err: any) {
         content = '';
+        outputChannel?.appendLine(`[McpOAuthManager] Warning: failed to read existing .env file: ${err?.message || err}`);
       }
     }
 
@@ -384,8 +442,10 @@ export class McpOAuthManager {
 
     try {
       fs.writeFileSync(envPath, newLines.join('\n'), 'utf-8');
-    } catch {
-      // Ignore write errors if permissions fail
+    } catch (err: any) {
+      const errMsg = `Failed to write token synchronization to .env file: ${err?.message || err}`;
+      outputChannel?.appendLine(`[McpOAuthManager] Error: ${errMsg}`);
+      vscode.window.showWarningMessage(`Agent Flow: ${errMsg}`);
     }
   }
 
@@ -398,7 +458,8 @@ export class McpOAuthManager {
     if (fs.existsSync(gitignorePath)) {
       try {
         content = fs.readFileSync(gitignorePath, 'utf-8');
-      } catch {
+      } catch (err: any) {
+        outputChannel?.appendLine(`[McpOAuthManager] Warning: failed to read existing .gitignore file: ${err?.message || err}`);
         return;
       }
     }
@@ -408,8 +469,10 @@ export class McpOAuthManager {
       const addition = content.endsWith('\n') || content === '' ? '.env\n' : '\n.env\n';
       try {
         fs.appendFileSync(gitignorePath, addition, 'utf-8');
-      } catch {
-        // Ignore write error
+      } catch (err: any) {
+        const errMsg = `Failed to update .gitignore to protect .env file: ${err?.message || err}`;
+        outputChannel?.appendLine(`[McpOAuthManager] Error: ${errMsg}`);
+        vscode.window.showWarningMessage(`Agent Flow Security Warning: ${errMsg}`);
       }
     }
   }

@@ -12,6 +12,7 @@ import React, { useState, useEffect } from 'react';
 import { Globe } from 'lucide-react';
 import { ToolDefinition, AgentData, GoogleSearchConfig } from '../../../types';
 import { ToolDrawerShell } from './ToolDrawerShell';
+import { TagListInput } from '../../drawers/primitives/TagListInput';
 
 export interface GoogleSearchToolDrawerProps {
   tool: ToolDefinition | null;
@@ -37,7 +38,6 @@ export const GoogleSearchToolDrawer: React.FC<GoogleSearchToolDrawerProps> = ({
   agentName,
 }) => {
   const [formData, setFormData] = useState<ToolDefinition | null>(null);
-  const [newDomainFilter, setNewDomainFilter] = useState('');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   useEffect(() => {
@@ -71,16 +71,16 @@ export const GoogleSearchToolDrawer: React.FC<GoogleSearchToolDrawerProps> = ({
     });
   };
 
-  const handleAddDomainFilter = () => {
-    if (!newDomainFilter.trim() || !formData) return;
-    const cleanDomain = newDomainFilter.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  const handleAddDomainFilter = (domain: string) => {
+    if (!formData) return;
+    const cleanDomain = domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    if (!cleanDomain) return;
     const currentFilters = formData.googleSearchConfig?.domainFilters || [];
     if (!currentFilters.includes(cleanDomain)) {
       handleUpdateGoogleSearchConfig({
         domainFilters: [...currentFilters, cleanDomain],
       });
     }
-    setNewDomainFilter('');
   };
 
   const handleRemoveDomainFilter = (domainToRemove: string) => {
@@ -151,36 +151,13 @@ export const GoogleSearchToolDrawer: React.FC<GoogleSearchToolDrawerProps> = ({
             <span>Domain Filters ({(formData.googleSearchConfig?.domainFilters || []).length})</span>
             <span className="text-[9px] text-gray-500 lowercase">e.g. docs.python.org</span>
           </label>
-          <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-            {(formData.googleSearchConfig?.domainFilters || []).map((domain) => (
-              <span key={domain} className="flex items-center gap-1 px-2 py-0.5 rounded bg-sky-950 text-sky-200 border border-sky-500/30 text-[10px] font-mono">
-                <span>{domain}</span>
-                <button
-                  type="button"
-                  onClick={() => handleRemoveDomainFilter(domain)}
-                  className="hover:text-rose-400 cursor-pointer ml-1"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-          <div className="flex gap-2 pt-1">
-            <input
-              type="text"
-              value={newDomainFilter}
-              onChange={(e) => setNewDomainFilter(e.target.value)}
-              placeholder="cloud.google.com"
-              className="flex-1 px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-[11px] font-mono text-sky-200 focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={handleAddDomainFilter}
-              className="px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] rounded text-[11px] text-sky-300 font-medium cursor-pointer"
-            >
-              Add Domain
-            </button>
-          </div>
+          <TagListInput
+            tags={formData.googleSearchConfig?.domainFilters || []}
+            onAddTag={handleAddDomainFilter}
+            onRemoveTag={handleRemoveDomainFilter}
+            placeholder="cloud.google.com"
+            buttonText="Add Domain"
+          />
         </div>
 
         {/* Dynamic Retrieval Threshold */}

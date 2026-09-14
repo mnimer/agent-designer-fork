@@ -6,13 +6,12 @@
       "type": "extensionHost",
       "request": "launch",
       "args": [
-        "--extensionDevelopmentPath=${workspaceFolder}",
-        "--disable-extensions"
+        "--extensionDevelopmentPath=${workspaceFolder}"
       ],
       "outFiles": [
         "${workspaceFolder}/dist/extension/**/*.js"
       ],
-      "preLaunchTask": "build-and-run"
+      "preLaunchTask": "npm: compile"
     }
   ]
 }
