@@ -101,7 +101,7 @@
           "eventarcCategory": "dataplex",
           "eventarcEvent": "created",
           "eventarcServiceName": "dataplex.googleapis.com",
-          "eventarcServiceAccount": "eventarc-agent-invoker@my-gcp-project.iam.gserviceaccount.com",
+          "eventarcServiceAccount": "",
           "eventarcRegion": "us-central1"
         },
         "targetRootAgentId": "node-agent-procurement-coordinator"

@@ -378,7 +378,7 @@ export const SAMPLE_CYBER_GUARDIAN: SampleWorkflowDefinition = {
           eventarcCategory: 'securitycenter',
           eventarcEvent: 'FindingNotification',
           eventarcServiceName: 'securitycenter.googleapis.com',
-          eventarcServiceAccount: 'eventarc-agent-invoker@my-gcp-project.iam.gserviceaccount.com',
+          eventarcServiceAccount: '',
           eventarcRegion: 'us-central1',
           testScenarios: [
             {

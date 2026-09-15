@@ -169,6 +169,31 @@ export const EVENTARC_CATEGORIES: EventArcCategory[] = [
     ],
   },
   {
+    id: 'dataplex',
+    name: 'Dataplex',
+    serviceName: 'dataplex.googleapis.com',
+    events: [
+      {
+        id: 'created',
+        name: 'Entry Created / Resource Created',
+        fullEvent: 'google.cloud.dataplex.v1.created',
+        description: 'Fires when a new lake, zone, asset, or metadata entry is created',
+      },
+      {
+        id: 'updated',
+        name: 'Entry / Asset Updated',
+        fullEvent: 'google.cloud.dataplex.v1.updated',
+        description: 'Fires when a data lake asset or schema metadata is updated',
+      },
+      {
+        id: 'deleted',
+        name: 'Entry / Asset Deleted',
+        fullEvent: 'google.cloud.dataplex.v1.deleted',
+        description: 'Fires when a data lake asset or entry is deleted',
+      },
+    ],
+  },
+  {
     id: 'audit',
     name: 'Cloud Audit Logs',
     serviceName: 'cloudaudit.googleapis.com',
@@ -315,11 +340,11 @@ export const TRIGGER_CATALOG: TriggerCatalogItem[] = [
     iconName: 'Zap',
     description: 'GCP EventArc routing events across 90+ Google Cloud services (e.g. BigQuery, Storage, Firestore).',
     defaultConfig: {
-      eventarcCategory: 'bigquery',
-      eventarcEvent: 'TableCreate',
-      eventarcServiceName: 'bigquery.googleapis.com',
-      eventarcServiceAccount: 'eventarc-agent-invoker@my-gcp-project.iam.gserviceaccount.com',
-      eventarcRegion: 'us-central1',
+      eventarcCategory: '',
+      eventarcEvent: '',
+      eventarcServiceName: '',
+      eventarcServiceAccount: '',
+      eventarcRegion: '',
     },
   },
 ];

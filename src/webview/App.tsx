@@ -28,8 +28,11 @@ import { FlowCanvas } from './components/FlowCanvas';
 /**
  * Universal helper to identify trigger nodes regardless of whether type is triggerNode or trigger
  */
-export const isTriggerNode = (node: { type?: string } | null | undefined): boolean =>
-  node?.type === 'triggerNode' || node?.type === 'trigger';
+export const isTriggerNode = (node: { type?: string; data?: any } | null | undefined): boolean =>
+  node?.type === 'triggerNode' ||
+  node?.type === 'trigger' ||
+  !!node?.data?.triggerType ||
+  !!node?.data?.triggerKind;
 
 // Re-export utility functions to preserve backward compatibility for existing test suites
 export {

@@ -8,6 +8,13 @@
 
 This document provides essential context for AI models interacting with the `agent-designer` codebase.
 
+## General Coding Rules
+- Strict DRY--Don't repeat yourself--and zero magic constants. No hardcoded literals for code reviews to nitpick
+- Anti-Looping! If a fix fails twice with the same error, STOP and rethink--No endless retry loops!
+- Maintain a live TASK.md tracker to anchor context and cure LLM attention drift.
+- Come up with an upfront plan first and write an isolated failing test in context, then iterate until we get true verification passes
+
+
 ## Model Selection & Rules
 - **CRITICAL RULE**: Never revert to or map model names to `gemini-2.5` (`gemini-2.5-flash`, `gemini-2.5-pro`) or Gemini 1.x/2.x. They are deprecated.
 - **Valid Models**: Use `gemini-3.7-flash` (Recommended)

@@ -106,6 +106,8 @@ interface CanvasTabProps {
   selectedTriggerNode: Node | undefined;
   handleUpdateTriggerData: (triggerId: string, partial: Partial<TriggerData>) => void;
   selectedTriggerId: string | null;
+  setSelectedTriggerId: (id: string | null) => void;
+  setIsTriggerDrawerOpen: (open: boolean) => void;
   handleDeleteTrigger: (id: string) => void;
   reconnectTriggersToRoot: (rootAgentId: string) => void;
 
@@ -170,6 +172,8 @@ export const CanvasTab: React.FC<CanvasTabProps> = ({
   selectedTriggerNode,
   handleUpdateTriggerData,
   selectedTriggerId,
+  setSelectedTriggerId,
+  setIsTriggerDrawerOpen,
   handleDeleteTrigger,
   reconnectTriggersToRoot,
 
@@ -267,7 +271,11 @@ export const CanvasTab: React.FC<CanvasTabProps> = ({
       {/* Slide-out Agent Inspector Drawer */}
       <AgentDrawer
         agent={
-          selectedAgentNode
+          selectedAgentNode &&
+          selectedAgentNode.type !== 'triggerNode' &&
+          selectedAgentNode.type !== 'trigger' &&
+          !(selectedAgentNode.data as any)?.triggerType &&
+          !(selectedAgentNode.data as any)?.triggerKind
             ? {
                 ...(selectedAgentNode.data as AgentData),
                 id: (selectedAgentNode.data as AgentData)?.id || selectedAgentNode.id,
@@ -291,7 +299,8 @@ export const CanvasTab: React.FC<CanvasTabProps> = ({
         availableAgents={agentNodes}
         isOpen={isTriggerDrawerOpen && !!selectedTriggerNode}
         onClose={() => {
-          setSelectedAgentId(null);
+          setSelectedTriggerId(null);
+          setIsTriggerDrawerOpen(false);
         }}
         onUpdateTrigger={(partial) => {
           if (selectedTriggerId) handleUpdateTriggerData(selectedTriggerId, partial);

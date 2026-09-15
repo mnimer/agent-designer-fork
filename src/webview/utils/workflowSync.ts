@@ -79,10 +79,10 @@ export function normalizeLoadedNodes(loadedNodes: any[]): Node<any>[] {
 
       // Populate Eventarc defaults if triggerType is eventarc
       if (normalizedTriggerType === 'eventarc') {
-        if (!rawConfig.eventarcCategory) rawConfig.eventarcCategory = 'bigquery';
-        if (!rawConfig.eventarcEvent) rawConfig.eventarcEvent = 'TableCreate';
-        if (!rawConfig.eventarcServiceName) rawConfig.eventarcServiceName = 'bigquery.googleapis.com';
-        if (!rawConfig.eventarcServiceAccount) rawConfig.eventarcServiceAccount = 'eventarc-agent-invoker@my-gcp-project.iam.gserviceaccount.com';
+        if (rawConfig.eventarcCategory === undefined) rawConfig.eventarcCategory = '';
+        if (rawConfig.eventarcEvent === undefined) rawConfig.eventarcEvent = '';
+        if (rawConfig.eventarcServiceName === undefined) rawConfig.eventarcServiceName = '';
+        if (rawConfig.eventarcServiceAccount === undefined) rawConfig.eventarcServiceAccount = '';
         if (!rawConfig.eventarcRegion) rawConfig.eventarcRegion = 'us-central1';
       }
 

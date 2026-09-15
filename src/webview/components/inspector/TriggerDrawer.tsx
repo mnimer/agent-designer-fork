@@ -12,7 +12,7 @@
  * 4. Root Reconnection: Direct actions to associate the trigger with the primary workflow root agent.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, 
   Zap, 
@@ -62,15 +62,19 @@ interface TriggerDrawerProps {
  * Resolves trigger icon component.
  * NOTE: All triggers use uniform orange styling (text-orange-400).
  */
-const getTriggerIcon = (type: TriggerType) => {
+const getTriggerIcon = (type: TriggerType | string) => {
   switch (type) {
     case 'chat':
       return <MessageSquare className="w-4 h-4 text-orange-400" />;
     case 'pubsub':
       return <Radio className="w-4 h-4 text-orange-400" />;
     case 'scheduled':
+    case 'cron':
+    case 'schedule':
+    case 'scheduler':
       return <Clock className="w-4 h-4 text-orange-400" />;
     case 'tester':
+    case 'test':
       return <FlaskConical className="w-4 h-4 text-orange-400" />;
     case 'eventarc':
       return <Zap className="w-4 h-4 text-orange-400" />;
@@ -144,19 +148,19 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
     if (trigger) {
       const rawType =
         trigger.triggerType ||
-        ((trigger as any).triggerKind === 'test' ? 'tester' : (trigger as any).triggerKind) ||
+        (trigger as any).triggerKind ||
         (trigger as any).type ||
         'eventarc';
       const effectiveType: TriggerType =
-        rawType === 'test' ? 'tester' : (rawType as TriggerType);
+        rawType === 'test'
+          ? 'tester'
+          : rawType === 'cron' || rawType === 'schedule' || rawType === 'scheduler'
+          ? 'scheduled'
+          : (rawType as TriggerType);
 
       const config = { ...(trigger.config || {}) };
       // Defaults for EventArc if empty
       if (effectiveType === 'eventarc') {
-        if (!config.eventarcCategory) config.eventarcCategory = 'bigquery';
-        if (!config.eventarcEvent) config.eventarcEvent = 'TableCreate';
-        if (!config.eventarcServiceName) config.eventarcServiceName = 'bigquery.googleapis.com';
-        if (!config.eventarcServiceAccount) config.eventarcServiceAccount = GCP_PROJECT_SERVICE_ACCOUNTS[0].email;
         if (!config.eventarcRegion) config.eventarcRegion = 'us-central1';
         // Trigger live gcloud discovery
         fetchEventarcCategories(config.eventarcRegion, false);
@@ -189,7 +193,54 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
     }
   }, [trigger, isOpen]);
 
-  if (!isOpen || !formData) return null;
+  // EventArc category and events selection helper from dynamic or fallback catalog
+  const displayEventarcCategories = useMemo(() => {
+    const list = [...eventarcCategories];
+    const catId = formData?.config?.eventarcCategory;
+    const sName = formData?.config?.eventarcServiceName;
+    if (catId || sName) {
+      const exists = list.some((c) => (catId && c.id === catId) || (sName && c.serviceName === sName));
+      if (!exists && (catId || sName)) {
+        list.push({
+          id: catId || (sName ? sName.split('.')[0] : 'custom'),
+          name: catId ? (catId.charAt(0).toUpperCase() + catId.slice(1)) : (sName || 'Custom Service'),
+          serviceName: sName || (catId ? `${catId}.googleapis.com` : ''),
+          events: formData?.config?.eventarcEvent ? [
+            {
+              id: formData.config.eventarcEvent,
+              name: formData.config.eventarcEvent,
+              fullEvent: `google.cloud.${catId || 'custom'}.v1.${formData.config.eventarcEvent}`,
+              description: 'Configured Event',
+            }
+          ] : [],
+        });
+      }
+    }
+    return list;
+  }, [eventarcCategories, formData?.config?.eventarcCategory, formData?.config?.eventarcServiceName, formData?.config?.eventarcEvent]);
+
+  const currentCategory = useMemo(() => {
+    if (!formData?.config) return undefined;
+    return displayEventarcCategories.find(
+      (c) => (formData.config?.eventarcCategory && c.id === formData.config.eventarcCategory) ||
+             (formData.config?.eventarcServiceName && c.serviceName === formData.config.eventarcServiceName)
+    );
+  }, [displayEventarcCategories, formData?.config?.eventarcCategory, formData?.config?.eventarcServiceName]);
+
+  const displayEvents = useMemo(() => {
+    if (!currentCategory) return [];
+    const events = [...(currentCategory.events || [])];
+    const currentEventId = formData?.config?.eventarcEvent;
+    if (currentEventId && !events.some((ev) => ev.id === currentEventId || ev.name === currentEventId)) {
+      events.push({
+        id: currentEventId,
+        name: currentEventId,
+        fullEvent: `google.cloud.${currentCategory.id}.v1.${currentEventId}`,
+        description: 'Configured Event',
+      });
+    }
+    return events;
+  }, [currentCategory, formData?.config?.eventarcEvent]);
 
   const handleConfigChange = (partial: Record<string, any>) => {
     setFormData((prev) => {
@@ -218,10 +269,7 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
 
   const rootAgent = activeAgentList.find((a) => a.isStartNode) || activeAgentList[0];
 
-  // EventArc category and events selection helper from dynamic or fallback catalog
-  const currentCategory = eventarcCategories.find(
-    (c) => c.id === (formData.config?.eventarcCategory || 'bigquery') || c.serviceName === formData.config?.eventarcServiceName
-  ) || eventarcCategories[0] || EVENTARC_CATEGORIES[0];
+  if (!isOpen || !formData) return null;
 
   return (
     <div className="fixed inset-y-0 right-0 w-[420px] bg-[#161b22] border-l border-[#30363d] shadow-2xl z-50 flex flex-col font-sans animate-in slide-in-from-right duration-200">
@@ -710,13 +758,22 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
                   1. Select Service / Provider
                 </label>
                 <span className="text-[9px] text-gray-500 font-mono">
-                  {eventarcCategories.length} providers
+                  {displayEventarcCategories.length} providers
                 </span>
               </div>
               <select
-                value={formData.config.eventarcCategory || 'bigquery'}
+                value={formData.config?.eventarcCategory || ''}
                 onChange={(e) => {
-                  const newCategory = eventarcCategories.find((c) => c.id === e.target.value) || eventarcCategories[0];
+                  const val = e.target.value;
+                  if (!val) {
+                    handleConfigChange({
+                      eventarcCategory: '',
+                      eventarcServiceName: '',
+                      eventarcEvent: '',
+                    });
+                    return;
+                  }
+                  const newCategory = displayEventarcCategories.find((c) => c.id === val);
                   if (newCategory) {
                     handleConfigChange({
                       eventarcCategory: newCategory.id,
@@ -727,7 +784,8 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
                 }}
                 className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-purple-400 rounded text-xs text-white focus:outline-none cursor-pointer"
               >
-                {eventarcCategories.map((cat) => (
+                <option value="">-- Select a Service / Provider --</option>
+                {displayEventarcCategories.map((cat) => (
                   <option key={cat.id || cat.serviceName} value={cat.id}>
                     {cat.name} ({cat.serviceName})
                   </option>
@@ -742,15 +800,17 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
                   2. Select Event
                 </label>
                 <span className="text-[9px] text-gray-500 font-mono">
-                  {currentCategory?.events?.length || 0} events
+                  {displayEvents.length} events
                 </span>
               </div>
               <select
-                value={formData.config.eventarcEvent || currentCategory?.events?.[0]?.id || ''}
+                value={formData.config?.eventarcEvent || ''}
                 onChange={(e) => handleConfigChange({ eventarcEvent: e.target.value })}
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-purple-400 rounded text-xs text-white focus:outline-none cursor-pointer font-mono"
+                disabled={!formData.config?.eventarcCategory && displayEvents.length === 0}
+                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-purple-400 rounded text-xs text-white focus:outline-none cursor-pointer font-mono disabled:opacity-50"
               >
-                {currentCategory?.events?.map((ev) => (
+                <option value="">-- Select an Event --</option>
+                {displayEvents.map((ev) => (
                   <option key={ev.id || ev.fullEvent} value={ev.id}>
                     {ev.name}
                   </option>
@@ -759,8 +819,8 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
 
               {/* Event Description */}
               {(() => {
-                const selectedEv = currentCategory?.events?.find(
-                  (ev) => ev.id === (formData.config.eventarcEvent || currentCategory?.events?.[0]?.id)
+                const selectedEv = displayEvents.find(
+                  (ev) => ev.id === formData.config?.eventarcEvent
                 );
                 return selectedEv ? (
                   <div className="p-2 bg-[#161b22] rounded border border-[#30363d] text-[10px] text-gray-300 font-mono mt-1 space-y-0.5">
@@ -777,10 +837,11 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
                 Invoker Service Account
               </label>
               <select
-                value={formData.config.eventarcServiceAccount || GCP_PROJECT_SERVICE_ACCOUNTS[0].email}
+                value={formData.config?.eventarcServiceAccount || ''}
                 onChange={(e) => handleConfigChange({ eventarcServiceAccount: e.target.value })}
                 className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-purple-400 rounded text-xs text-white focus:outline-none cursor-pointer font-mono"
               >
+                <option value="">-- None / Select Service Account --</option>
                 {GCP_PROJECT_SERVICE_ACCOUNTS.map((sa) => (
                   <option key={sa.email} value={sa.email}>
                     {sa.name} ({sa.email.split('@')[0]})
@@ -790,8 +851,9 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
 
               {/* Service Account Details & IAM Roles Badge */}
               {(() => {
+                if (!formData.config?.eventarcServiceAccount) return null;
                 const selectedSA = GCP_PROJECT_SERVICE_ACCOUNTS.find(
-                  (sa) => sa.email === (formData.config.eventarcServiceAccount || GCP_PROJECT_SERVICE_ACCOUNTS[0].email)
+                  (sa) => sa.email === formData.config?.eventarcServiceAccount
                 );
                 return selectedSA ? (
                   <div className="p-2 bg-[#161b22] rounded border border-[#30363d] text-[10px] text-gray-300 font-mono mt-1 space-y-1">
@@ -805,7 +867,13 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
                       </span>
                     </div>
                   </div>
-                ) : null;
+                ) : (
+                  <div className="p-2 bg-[#161b22] rounded border border-[#30363d] text-[10px] text-gray-300 font-mono mt-1 space-y-1">
+                    <div className="text-purple-300 font-semibold truncate text-[9.5px]">
+                      {formData.config.eventarcServiceAccount}
+                    </div>
+                  </div>
+                );
               })()}
 
               {/* Eventarc Region Selection */}

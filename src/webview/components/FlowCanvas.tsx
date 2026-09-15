@@ -80,6 +80,12 @@ import {
   createPatternNodesAndEdges,
 } from '../data/patterns';
 
+export const isTriggerNode = (node?: { type?: string; data?: any }) =>
+  node?.type === 'triggerNode' ||
+  node?.type === 'trigger' ||
+  !!node?.data?.triggerType ||
+  !!node?.data?.triggerKind;
+
 export function FlowCanvas() {
   const bridge = useBridgeContext();
   const { settings, activeEditorTab, setActiveEditorTab } = usePluginSettings();
@@ -470,7 +476,7 @@ export function FlowCanvas() {
   const handleNodesDelete = useCallback(
     (nodesToDelete: Node[]) => {
       nodesToDelete.forEach((n) => {
-        if (n.type === 'triggerNode') {
+        if (isTriggerNode(n)) {
           handleDeleteTrigger(n.id);
         } else {
           handleDeleteAgent(n.id);
@@ -650,11 +656,11 @@ export function FlowCanvas() {
   }, [nodes, edges, setNodes, recordSnapshot]);
 
   const triggerTargetAgentId = useMemo(() => {
-    const triggerNodes = nodes.filter((n) => n.type === 'triggerNode');
+    const triggerNodes = nodes.filter(isTriggerNode);
     const triggerEdges = edges.filter((e) => triggerNodes.some((tn) => tn.id === e.source));
     const attachedEdge = triggerEdges.find((e) => {
       const targetNode = nodes.find((n) => n.id === e.target);
-      return targetNode?.type === 'agentNode';
+      return targetNode?.type === 'agentNode' || targetNode?.type === 'agent';
     });
     return attachedEdge ? attachedEdge.target : null;
   }, [nodes, edges]);
@@ -663,18 +669,10 @@ export function FlowCanvas() {
     setNodes((nds: any[]) => {
       let hasChanges = false;
       const targetId = triggerTargetAgentId;
-
-      const agentNodes = nds.filter((n: any) => n.type === 'agentNode');
-      const hasAnyStart = agentNodes.some((n: any) => (n.data as AgentData).isStartNode);
-      const defaultStartId = targetId || (hasAnyStart ? null : agentNodes[0]?.id);
-
-      const updated = nds.map((n: any) => {
-        if (n.type === 'agentNode') {
-          const shouldBeStart = targetId
-            ? n.id === targetId
-            : (hasAnyStart ? n.data.isStartNode : n.id === defaultStartId);
-
-          if (n.data.isStartNode !== shouldBeStart) {
+      const next = nds.map((n) => {
+        if (n.type === 'agentNode' || n.type === 'agent') {
+          const shouldBeStart = targetId ? n.id === targetId : false;
+          if (n.data?.isStartNode !== shouldBeStart) {
             hasChanges = true;
             return {
               ...n,
@@ -687,32 +685,22 @@ export function FlowCanvas() {
         }
         return n;
       });
-
-      return hasChanges ? updated : nds;
+      return hasChanges ? next : nds;
     });
   }, [triggerTargetAgentId, setNodes]);
 
   // ---------------------------------------------------------------------------
-  // 6. Graph Connection & Validation Logic
+  // 6. Connect Handlers & Validation
   // ---------------------------------------------------------------------------
   const isValidConnection = useCallback(
     (connection: Connection | Edge) => {
-      if (!connection.source || !connection.target) return false;
       if (connection.source === connection.target) return false;
 
       const sourceNode = nodes.find((n) => n.id === connection.source);
       const targetNode = nodes.find((n) => n.id === connection.target);
 
-      if (targetNode?.type === 'agentNode') {
-        const isRoot = (targetNode.data as AgentData)?.isStartNode;
-        const validInHandles = isRoot ? ['input', 'input_left'] : ['input'];
-        if (connection.targetHandle && !validInHandles.includes(connection.targetHandle)) {
-          return false;
-        }
-      }
-
-      if (sourceNode?.type === 'agentNode') {
-        if (targetNode?.type !== 'agentNode') return false;
+      if (sourceNode?.type === 'agentNode' || sourceNode?.type === 'agent') {
+        if (targetNode?.type !== 'agentNode' && targetNode?.type !== 'agent') return false;
         if (
           connection.sourceHandle &&
           connection.sourceHandle !== 'output' &&
@@ -723,10 +711,10 @@ export function FlowCanvas() {
         }
       }
 
-      if (sourceNode?.type === 'triggerNode') {
-        if (targetNode?.type !== 'agentNode') return false;
+      if (isTriggerNode(sourceNode)) {
+        if (targetNode?.type !== 'agentNode' && targetNode?.type !== 'agent') return false;
 
-        const triggerNodes = nodes.filter((n) => n.type === 'triggerNode');
+        const triggerNodes = nodes.filter(isTriggerNode);
         const otherTriggerEdges = edges.filter(
           (e) => triggerNodes.some((tn) => tn.id === e.source) && e.source !== connection.source
         );
@@ -745,7 +733,7 @@ export function FlowCanvas() {
   const reconnectTriggersToRoot = useCallback((rootAgentId: string) => {
     setNodes((nds: any[]) =>
       nds.map((n: any) => {
-        if (n.type === 'agentNode') {
+        if (n.type === 'agentNode' || n.type === 'agent') {
           return {
             ...n,
             data: {
@@ -754,7 +742,7 @@ export function FlowCanvas() {
             },
           };
         }
-        if (n.type === 'triggerNode') {
+        if (isTriggerNode(n)) {
           return {
             ...n,
             data: {
@@ -768,12 +756,12 @@ export function FlowCanvas() {
     );
 
     setEdges((eds: any[]) => {
-      const nonTriggerEdges = eds.filter((e) => !nodes.some((n) => n.type === 'triggerNode' && n.id === e.source));
-      const triggerNodes = nodes.filter((n) => n.type === 'triggerNode');
+      const nonTriggerEdges = eds.filter((e) => !nodes.some((n) => isTriggerNode(n) && n.id === e.source));
+      const triggerNodes = nodes.filter(isTriggerNode);
 
       const newTriggerEdges = triggerNodes.map((tn) => {
-        const trigType = (tn.data as TriggerData)?.triggerType;
-        const isTester = trigType === 'tester';
+        const trigType = (tn.data as TriggerData)?.triggerType || (tn.data as any)?.triggerKind;
+        const isTester = trigType === 'tester' || trigType === 'test';
         const isChat = trigType === 'chat';
         return {
           id: `e_trigger_${tn.id}_${rootAgentId}`,
@@ -797,7 +785,7 @@ export function FlowCanvas() {
   // Bind callback methods directly to node data payloads
   const enrichedNodes = useMemo(() => {
     return nodes.map((node) => {
-      if (node.type === 'triggerNode') {
+      if (isTriggerNode(node)) {
         return {
           ...node,
           data: {
@@ -842,16 +830,16 @@ export function FlowCanvas() {
       const currentEdges = edgesRef.current;
 
       const sourceNode = currentNodes.find((n) => n.id === connection.source);
-      const isTriggerSource = sourceNode?.type === 'triggerNode';
-      const sourceAgentData = sourceNode?.type === 'agentNode' ? (sourceNode.data as AgentData) : null;
+      const isTriggerSource = isTriggerNode(sourceNode);
+      const sourceAgentData = (sourceNode?.type === 'agentNode' || sourceNode?.type === 'agent') ? (sourceNode.data as AgentData) : null;
       const isRouterSource = sourceAgentData?.agentKind === 'router';
       const isSubAgentConnection = connection.sourceHandle === 'subagent';
 
       if (isTriggerSource && connection.target) {
         const targetAgent = currentNodes.find((n) => n.id === connection.target);
-        if (!targetAgent || targetAgent.type !== 'agentNode') return;
+        if (!targetAgent || (targetAgent.type !== 'agentNode' && targetAgent.type !== 'agent')) return;
 
-        const triggerNodes = currentNodes.filter((n) => n.type === 'triggerNode');
+        const triggerNodes = currentNodes.filter(isTriggerNode);
         const otherTriggerEdges = currentEdges.filter(
           (e) => triggerNodes.some((tn) => tn.id === e.source) && e.source !== connection.source
         );
@@ -866,8 +854,8 @@ export function FlowCanvas() {
           return;
         }
 
-        const trigType = (sourceNode.data as TriggerData)?.triggerType;
-        const isTester = trigType === 'tester';
+        const trigType = (sourceNode?.data as TriggerData)?.triggerType || (sourceNode?.data as any)?.triggerKind;
+        const isTester = trigType === 'tester' || trigType === 'test';
         const isChat = trigType === 'chat';
         const newTriggerEdge: Edge = {
           ...connection,
@@ -888,7 +876,7 @@ export function FlowCanvas() {
         setEdges(nextEdges);
 
         const nextNodes = currentNodes.map((n) => {
-          if (n.id === connection.target && n.type === 'agentNode') {
+          if (n.id === connection.target && (n.type === 'agentNode' || n.type === 'agent')) {
             return {
               ...n,
               data: {
@@ -897,7 +885,7 @@ export function FlowCanvas() {
               },
             };
           }
-          if (n.id === connection.source && n.type === 'triggerNode') {
+          if (n.id === connection.source && isTriggerNode(n)) {
             return {
               ...n,
               data: {
@@ -989,7 +977,7 @@ export function FlowCanvas() {
   );
 
   const handleNodeClick = useCallback((_: any, node: any) => {
-    if (node.type === 'triggerNode') {
+    if (isTriggerNode(node)) {
       setSelectedTriggerId(node.id);
       setIsTriggerDrawerOpen(true);
       setSelectedAgentId(null);
@@ -1504,11 +1492,18 @@ export function FlowCanvas() {
   );
 
   const selectedTriggerNode = useMemo(
-    () => nodes.find((n) => n.id === selectedTriggerId && n.type === 'triggerNode'),
+    () => nodes.find((n) => n.id === selectedTriggerId && isTriggerNode(n)),
     [nodes, selectedTriggerId]
   );
   const testSuiteNode = useMemo(
-    () => nodes.find((n) => n.type === 'triggerNode' && (n.data as TriggerData).triggerType === 'tester'),
+    () =>
+      nodes.find(
+        (n) =>
+          isTriggerNode(n) &&
+          ((n.data as TriggerData)?.triggerType === 'tester' ||
+            (n.data as any)?.triggerKind === 'tester' ||
+            (n.data as any)?.triggerKind === 'test')
+      ),
     [nodes]
   );
   const hasTestSuite = !!testSuiteNode;
@@ -1523,7 +1518,13 @@ export function FlowCanvas() {
 
   // Chat Trigger detection & configuration
   const chatTriggerNode = useMemo(
-    () => nodes.find((n) => n.type === 'triggerNode' && (n.data as TriggerData).triggerType === 'chat'),
+    () =>
+      nodes.find(
+        (n) =>
+          isTriggerNode(n) &&
+          ((n.data as TriggerData)?.triggerType === 'chat' ||
+            (n.data as any)?.triggerKind === 'chat')
+      ),
     [nodes]
   );
   const hasChatTrigger = !!chatTriggerNode;
@@ -1610,6 +1611,8 @@ export function FlowCanvas() {
             selectedTriggerNode={selectedTriggerNode}
             handleUpdateTriggerData={handleUpdateTriggerData}
             selectedTriggerId={selectedTriggerId}
+            setSelectedTriggerId={setSelectedTriggerId}
+            setIsTriggerDrawerOpen={setIsTriggerDrawerOpen}
             handleDeleteTrigger={handleDeleteTrigger}
             reconnectTriggersToRoot={reconnectTriggersToRoot}
             editingTool={editingTool}

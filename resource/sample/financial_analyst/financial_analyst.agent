@@ -24,15 +24,18 @@
   "nodes": [
     {
       "id": "node-trigger-finance",
-      "type": "trigger",
+      "type": "triggerNode",
       "position": { "x": 80, "y": 240 },
       "data": {
         "id": "node-trigger-finance",
         "label": "Daily Market Briefing Scheduler",
         "description": "Triggers daily at market open to generate pre-bell intelligence briefings.",
         "triggerKind": "scheduled",
+        "triggerType": "scheduled",
         "config": {
           "cronExpression": "0 8 * * 1-5",
+          "timezone": "America/New_York",
+          "scheduledPrompt": "Generate daily pre-bell equity research briefings across tracked equities.",
           "testScenarios": [
             {
               "id": "scenario-alphabet-earnings",

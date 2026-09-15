@@ -1112,7 +1112,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                           {section.triggers && (
                             <div className="space-y-1.5 max-h-[calc(66vh-240px)] overflow-y-auto pr-1">
                               {section.triggers.map((trigger) => {
-                                const isDisabled = trigger.type === 'pubsub' || trigger.type === 'scheduled';
+                                const isDisabled = false;
 
                                 return (
                                   <div

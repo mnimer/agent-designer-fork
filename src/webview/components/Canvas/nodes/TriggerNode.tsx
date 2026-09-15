@@ -287,34 +287,6 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
           </div>
         )}
 
-        {/* Chat Configuration Section (for Chat Trigger) */}
-        {isChat && (
-          <div className="space-y-1.5 bg-[#0d1117] p-2 rounded-lg border border-amber-500/30">
-            <div className="flex items-center justify-between pb-1 border-b border-[#21262d]">
-              <div className="flex items-center gap-1 text-[10px] font-bold text-amber-400 uppercase tracking-wider">
-                <MessageSquare className="w-3 h-3 text-amber-400" />
-                <span>Chat Configuration</span>
-              </div>
-              <span className={`text-[8px] font-mono px-1.5 py-0.2 rounded border ${
-                data.config?.streaming !== false
-                  ? 'bg-amber-950/50 text-amber-300 border-amber-500/40'
-                  : 'bg-[#161b22] text-gray-400 border-[#30363d]'
-              }`}>
-                {data.config?.streaming !== false ? 'Streaming Active' : 'Static Output'}
-              </span>
-            </div>
-
-            <div className="p-1.5 rounded-md bg-[#161b22] border border-[#30363d]/80 text-[10px] space-y-1">
-              <span className="text-[9px] font-semibold text-gray-400 uppercase tracking-tight block">
-                Welcome Message:
-              </span>
-              <p className="text-[9.5px] leading-tight text-gray-300 italic line-clamp-2 bg-[#0d1117] p-1 rounded border border-[#21262d]">
-                "{data.config?.initialMessage || 'Hello! I am your AI agent assistant. How can I help you today?'}"
-              </p>
-            </div>
-          </div>
-        )}
-
         {/* Eventarc Configuration Section (for Eventarc Trigger) */}
         {isEventArc && (
           <div className="space-y-1.5 bg-[#0d1117] p-2 rounded-lg border border-purple-500/30">
@@ -324,25 +296,29 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
                 <span>CloudEvent Routing</span>
               </div>
               <span className="text-[8px] font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                {data.config?.eventarcCategory?.toUpperCase() || 'EVENTARC'}
+                {data.config?.eventarcCategory ? data.config.eventarcCategory.toUpperCase() : 'EVENTARC'}
               </span>
             </div>
 
             <div className="p-1.5 rounded-md bg-[#161b22] border border-[#30363d]/80 text-[10px] space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-[9px] font-semibold text-gray-400 uppercase tracking-tight">Event:</span>
-                <span className="text-[9.5px] font-mono font-bold text-purple-300 truncate max-w-[160px]">
-                  {data.config?.eventarcEvent || 'TableCreate'}
+                <span className={`text-[9.5px] font-mono font-bold truncate max-w-[160px] ${
+                  data.config?.eventarcEvent ? 'text-purple-300' : 'text-gray-500 italic'
+                }`}>
+                  {data.config?.eventarcEvent || 'No event selected'}
                 </span>
               </div>
               <div className="text-[9px] text-gray-400 truncate">
-                Service: <span className="font-mono text-gray-300">{data.config?.eventarcServiceName || 'bigquery.googleapis.com'}</span>
+                Service: <span className={`font-mono ${data.config?.eventarcServiceName ? 'text-gray-300' : 'text-gray-500 italic'}`}>
+                  {data.config?.eventarcServiceName || 'None'}
+                </span>
               </div>
-              {data.config?.eventarcServiceAccount && (
+              {data.config?.eventarcServiceAccount ? (
                 <div className="text-[8.5px] text-gray-400 font-mono truncate">
                   SA: {data.config.eventarcServiceAccount.split('@')[0]}
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
         )}
