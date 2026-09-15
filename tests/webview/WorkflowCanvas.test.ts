@@ -109,4 +109,44 @@ describe('Workflow Canvas Topologies & Layouts', () => {
     assert.equal(computeTargetFolder('agents/my-complex-agent-flow.agent'), './my_complex_agent_flow/');
     assert.equal(computeTargetFolder(''), './workflow/');
   });
+
+  it('should auto-attach connected Test Suite node when adding the first root agent on a blank canvas', async () => {
+    const { createSingleAgentNode, createSingleTriggerNode } = await import('../../src/webview/data/patterns');
+
+    // Simulate blank canvas drop
+    const dropPosition = { x: 500, y: 200 };
+    const agentX = dropPosition.x < 380 ? 420 : dropPosition.x;
+    const agentY = dropPosition.y < 80 ? 140 : dropPosition.y;
+    const testerX = Math.max(40, agentX - 360);
+    const testerY = agentY + 20;
+
+    const rootAgent = createSingleAgentNode(agentX, agentY, 'Root Agent', 'Coordinator', 'standard', {
+      model: 'gemini-3.7-flash',
+    });
+    rootAgent.data.isStartNode = true;
+
+    const testerTrigger = createSingleTriggerNode(testerX, testerY, 'tester', rootAgent.id);
+    const testerEdge: AgentWorkflowEdge = {
+      id: `e_trigger_${testerTrigger.id}_${rootAgent.id}`,
+      source: testerTrigger.id,
+      sourceHandle: 'trigger_out_right',
+      target: rootAgent.id,
+      targetHandle: 'input_left',
+      animated: true,
+      style: {
+        stroke: '#f59e0b',
+        strokeWidth: 2,
+        strokeDasharray: '5 5',
+      },
+    };
+
+    assert.equal(rootAgent.data.isStartNode, true);
+    assert.equal(testerTrigger.data.triggerType, 'tester');
+    assert.equal(testerTrigger.data.targetRootAgentId, rootAgent.id);
+    assert.equal(testerX < agentX, true); // Test suite is to the left of the root agent
+    assert.equal(testerEdge.source, testerTrigger.id);
+    assert.equal(testerEdge.sourceHandle, 'trigger_out_right');
+    assert.equal(testerEdge.target, rootAgent.id);
+    assert.equal(testerEdge.targetHandle, 'input_left');
+  });
 });

@@ -1134,10 +1134,59 @@ export function FlowCanvas() {
         setEdges(nextEdges);
         recordSnapshot(nextNodes, nextEdges, { description: `Add pattern ${type}` });
       } else {
+        const hasAnyAgent = nodes.some((n) => n.type === 'agentNode');
         const hasStartNode = nodes.some((n) => n.type === 'agentNode' && (n.data as AgentData).isStartNode);
+        const hasTester = nodes.some((n) => n.type === 'triggerNode' && (n.data as TriggerData).triggerType === 'tester');
         const effectiveKind: AgentKind = (agentKindData === 'a2a' || agentKindData === 'router' || agentKindData === 'standard')
           ? agentKindData
           : (type === 'a2a' || type === 'router' ? (type as AgentKind) : 'standard');
+
+        // If this is the first agent on the canvas, automatically create Root Agent AND connect a Test Suite node to its left handle
+        if (!hasAnyAgent && !hasTester) {
+          const agentX = position.x < 380 ? 420 : position.x;
+          const agentY = position.y < 80 ? 140 : position.y;
+          const testerX = Math.max(40, agentX - 360);
+          const testerY = agentY + 20;
+
+          const rootAgent = createSingleAgentNode(
+            agentX,
+            agentY,
+            'Root Agent',
+            'Root coordinator and task orchestrator',
+            effectiveKind,
+            {
+              model: settings.defaultModel,
+              temperature: settings.defaultTemperature,
+              memoryType: settings.defaultMemoryType,
+              subAgentPattern: settings.defaultSubAgentPattern,
+            }
+          );
+          rootAgent.data.isStartNode = true;
+          rootAgent.data.subAgents = [];
+
+          const testerTrigger = createSingleTriggerNode(testerX, testerY, 'tester', rootAgent.id);
+          const testerEdge: Edge = {
+            id: `e_trigger_${testerTrigger.id}_${rootAgent.id}`,
+            source: testerTrigger.id,
+            sourceHandle: 'trigger_out_right',
+            target: rootAgent.id,
+            targetHandle: 'input_left',
+            animated: true,
+            style: {
+              stroke: '#f59e0b',
+              strokeWidth: 2,
+              strokeDasharray: '5 5',
+            },
+          };
+
+          const nextNodes = [...nodes, testerTrigger, rootAgent];
+          const nextEdges = [...edges, testerEdge];
+          setNodes(nextNodes);
+          setEdges(nextEdges);
+          recordSnapshot(nextNodes, nextEdges, { description: `Add root ${effectiveKind || 'agent'} with test suite` });
+          return;
+        }
+
         const newNode = createSingleAgentNode(
           position.x,
           position.y,
@@ -1163,7 +1212,7 @@ export function FlowCanvas() {
   );
 
   const handleAddRootWithTestSuite = useCallback(() => {
-    const starterAgent = createSingleAgentNode(420, 140, 'Primary Agent', 'Root coordinator and task orchestrator', 'standard', {
+    const starterAgent = createSingleAgentNode(420, 140, 'Root Agent', 'Root coordinator and task orchestrator', 'standard', {
       model: settings.defaultModel,
       temperature: settings.defaultTemperature,
       memoryType: settings.defaultMemoryType,
@@ -1201,7 +1250,50 @@ export function FlowCanvas() {
   }, [nodes, edges, settings, setNodes, setEdges, recordSnapshot, fitView]);
 
   const handleAddAgentDirect = useCallback((kind: AgentKind = 'standard') => {
+    const hasAnyAgent = nodes.some((n) => n.type === 'agentNode');
     const hasStartNode = nodes.some((n) => n.type === 'agentNode' && (n.data as AgentData).isStartNode);
+    const hasTester = nodes.some((n) => n.type === 'triggerNode' && (n.data as TriggerData).triggerType === 'tester');
+
+    if (!hasAnyAgent && !hasTester) {
+      const rootAgent = createSingleAgentNode(
+        420,
+        140,
+        'Root Agent',
+        'Root coordinator and task orchestrator',
+        kind,
+        {
+          model: settings.defaultModel,
+          temperature: settings.defaultTemperature,
+          memoryType: settings.defaultMemoryType,
+          subAgentPattern: settings.defaultSubAgentPattern,
+        }
+      );
+      rootAgent.data.isStartNode = true;
+      rootAgent.data.subAgents = [];
+
+      const testerTrigger = createSingleTriggerNode(60, 160, 'tester', rootAgent.id);
+      const testerEdge: Edge = {
+        id: `e_trigger_${testerTrigger.id}_${rootAgent.id}`,
+        source: testerTrigger.id,
+        sourceHandle: 'trigger_out_right',
+        target: rootAgent.id,
+        targetHandle: 'input_left',
+        animated: true,
+        style: {
+          stroke: '#f59e0b',
+          strokeWidth: 2,
+          strokeDasharray: '5 5',
+        },
+      };
+
+      const nextNodes = [...nodes, testerTrigger, rootAgent];
+      const nextEdges = [...edges, testerEdge];
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      recordSnapshot(nextNodes, nextEdges, { description: `Add root ${kind || 'agent'} with test suite` });
+      return;
+    }
+
     const newNode = createSingleAgentNode(
       150 + Math.random() * 200,
       150 + Math.random() * 150,
@@ -1220,8 +1312,8 @@ export function FlowCanvas() {
     }
     const nextNodes = [...nodes, newNode];
     setNodes(nextNodes);
-    recordSnapshot(nextNodes, edges, { description: `Add agent` });
-  }, [nodes, edges, setNodes, settings, recordSnapshot]);
+    recordSnapshot(nextNodes, edges, { description: `Add ${kind || 'agent'}` });
+  }, [nodes, edges, setNodes, setEdges, settings, recordSnapshot]);
 
   const handleAddPatternDirect = useCallback(
     (patternType: PatternType) => {

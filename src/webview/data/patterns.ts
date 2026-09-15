@@ -83,7 +83,7 @@ export const PATTERN_DEFINITIONS: PatternDefinition[] = [
   },
 ];
 
-let idCounter = 10;
+let idCounter = 0;
 export const getNextId = (prefix = 'agent') => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 4)}`;
 
 export function createSingleAgentNode(
