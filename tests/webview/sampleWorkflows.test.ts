@@ -27,8 +27,11 @@ import {
   SAMPLE_FINANCIAL_ANALYST,
   SAMPLE_CODE_CRITIC,
   SAMPLE_HIGH_VOLUME_DOCUMENT_ANALYZER,
+  createSampleNodesAndEdges,
 } from '../../src/webview/data/sampleWorkflows';
-import { SampleWorkflowDefinition } from '../../src/webview/types';
+import { layoutPatternAtDropPosition } from '../../src/webview/utils/layout';
+import { SampleWorkflowDefinition, AgentData, TriggerData } from '../../src/webview/types';
+import { Node } from '@xyflow/react';
 
 describe('TASK-128 & TASK-158: Sample Workflows & Blueprints Catalog', () => {
   it('should contain all 7 enterprise blueprints in the catalog', () => {
@@ -166,4 +169,135 @@ describe('TASK-128 & TASK-158: Sample Workflows & Blueprints Catalog', () => {
       assert.ok(edge.target.startsWith(prefix));
     }
   });
+
+  it('should generate valid remapped nodes and edges using createSampleNodesAndEdges for all catalog samples', () => {
+    for (const sample of SAMPLES_CATALOG) {
+      const { nodes, edges } = createSampleNodesAndEdges(sample, 200, 150, []);
+      assert.strictEqual(nodes.length, sample.nodes.length, `Node count mismatch for ${sample.name}`);
+      assert.strictEqual(edges.length, sample.edges.length, `Edge count mismatch for ${sample.name}`);
+
+      const nodeIds = new Set(nodes.map((n) => n.id));
+      assert.strictEqual(nodeIds.size, nodes.length, `Duplicate node IDs in remapped sample ${sample.name}`);
+
+      // Check all node data IDs match node IDs
+      for (const node of nodes) {
+        assert.strictEqual((node.data as any).id, node.id, `Node data ID mismatch on ${node.id}`);
+        assert.ok(node.id.startsWith(`s_${sample.id}_`), `Node ${node.id} missing expected sample prefix`);
+      }
+
+      // Check all edges connect valid remapped nodes
+      for (const edge of edges) {
+        assert.ok(edge.id.startsWith(`s_${sample.id}_`), `Edge ${edge.id} missing expected sample prefix`);
+        assert.ok(nodeIds.has(edge.source), `Edge ${edge.id} references invalid source ${edge.source}`);
+        assert.ok(nodeIds.has(edge.target), `Edge ${edge.id} references invalid target ${edge.target}`);
+      }
+    }
+  });
+
+  it('should prevent duplicate start nodes when dropping sample onto populated canvas', () => {
+    const existingCanvasNodes: Node<AgentData>[] = [
+      {
+        id: 'agent-existing-root',
+        type: 'agentNode',
+        position: { x: 100, y: 100 },
+        data: {
+          id: 'agent-existing-root',
+          label: 'Existing Root Agent',
+          role: 'Primary orchestrator',
+          model: 'gemini-3.7-flash',
+          isStartNode: true,
+          tools: [],
+          subAgents: [],
+        },
+      },
+    ];
+
+    const sample = SAMPLE_CYBER_GUARDIAN;
+    const { nodes } = createSampleNodesAndEdges(sample, 400, 200, existingCanvasNodes);
+
+    // Verify none of the dropped sample agent nodes are marked as isStartNode
+    const sampleAgentNodes = nodes.filter((n) => n.type === 'agentNode' || n.type === 'agent');
+    for (const agentNode of sampleAgentNodes) {
+      assert.strictEqual(
+        Boolean((agentNode.data as AgentData).isStartNode),
+        false,
+        `Dropped node ${agentNode.id} must not be marked as isStartNode on populated canvas`
+      );
+    }
+  });
+
+  it('should remap sub-agent references and router branch targets in multi-agent samples', () => {
+    const sample = SAMPLE_CYBER_GUARDIAN;
+    const { nodes } = createSampleNodesAndEdges(sample, 100, 100, []);
+
+    const orchestratorNode = nodes.find(
+      (n) => (n.data as AgentData).subAgents && (n.data as AgentData).subAgents!.length > 0
+    );
+    assert.ok(orchestratorNode, 'Cyber Guardian must contain an orchestrator with subAgents');
+
+    const orchestratorData = orchestratorNode.data as AgentData;
+    const allNodeIds = new Set(nodes.map((n) => n.id));
+
+    for (const subAgent of orchestratorData.subAgents!) {
+      assert.ok(
+        allNodeIds.has(subAgent.agentId),
+        `SubAgent reference ${subAgent.agentId} must point to a remapped node in the sample`
+      );
+    }
+  });
+
+  it('should remap trigger targetAgentId and connectedAgentId in sample triggers', () => {
+    const sample = SAMPLE_COMPANY_VERIFIER;
+    const { nodes } = createSampleNodesAndEdges(sample, 100, 100, []);
+
+    const triggerNode = nodes.find((n) => n.type === 'triggerNode' || n.type === 'trigger');
+    const agentNode = nodes.find((n) => n.type === 'agentNode' || n.type === 'agent');
+
+    assert.ok(triggerNode, 'Company verifier must contain a trigger');
+    assert.ok(agentNode, 'Company verifier must contain an agent');
+
+    const triggerData = triggerNode.data as TriggerData;
+    if (triggerData.targetAgentId) {
+      assert.strictEqual(triggerData.targetAgentId, agentNode.id);
+    }
+    if (triggerData.connectedAgentId) {
+      assert.strictEqual(triggerData.connectedAgentId, agentNode.id);
+    }
+  });
+
+  it('should layout dropped sample nodes using layoutPatternAtDropPosition without collisions', () => {
+    const sample = SAMPLE_CUSTOMER_SUPPORT;
+    const { nodes, edges } = createSampleNodesAndEdges(sample, 300, 200, []);
+
+    const { nodes: layoutedNodes, edges: layoutedEdges } = layoutPatternAtDropPosition(
+      nodes,
+      edges,
+      300,
+      200,
+      []
+    );
+
+    assert.strictEqual(layoutedNodes.length, sample.nodes.length);
+    assert.strictEqual(layoutedEdges.length, sample.edges.length);
+
+    for (const node of layoutedNodes) {
+      assert.ok(!isNaN(node.position.x), `Node ${node.id} X coordinate must be a valid number`);
+      assert.ok(!isNaN(node.position.y), `Node ${node.id} Y coordinate must be a valid number`);
+      assert.ok(node.position.x >= 0, `Node ${node.id} X position must be non-negative`);
+      assert.ok(node.position.y >= 0, `Node ${node.id} Y position must be non-negative`);
+    }
+  });
+
+  it('should return empty nodes and edges for empty sample', () => {
+    const emptySample = {
+      ...SAMPLE_CODE_CRITIC,
+      nodes: [],
+      edges: [],
+    };
+
+    const { nodes, edges } = createSampleNodesAndEdges(emptySample, 100, 100, []);
+    assert.strictEqual(nodes.length, 0);
+    assert.strictEqual(edges.length, 0);
+  });
 });
+

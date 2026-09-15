@@ -23,6 +23,7 @@ import {
   ToolDefinition,
   GenerationConfig,
   McpToolConfig,
+  SampleWorkflowDefinition,
 } from '../../types';
 
 // UI Panels & Drawers
@@ -93,7 +94,7 @@ interface CanvasTabProps {
   handleAddPatternDirect: (patternType: any) => void;
   handleAddTriggerDirect: (triggerType: any) => void;
   setIsAdvisorOpen: (open: boolean) => void;
-  handleOpenSampleInNewTab: (sampleId: string) => void;
+  handleOpenSampleInNewTab: (sample: SampleWorkflowDefinition) => void;
   handleAddSpecificTool: (agentId: string, tool: ToolDefinition) => void;
   selectedAgentId: string | null;
   isToolDrawerOpen: boolean;

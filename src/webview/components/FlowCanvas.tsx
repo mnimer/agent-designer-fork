@@ -41,10 +41,15 @@ import {
   ToolDefinition,
   PatternType,
   McpToolConfig,
+  SampleWorkflowDefinition,
 } from '../types';
 import { AgentWorkflowDocument } from '../../shared/types';
 import { INITIAL_NODES, INITIAL_EDGES } from '../data/initialGraph';
 import { DEFAULT_MOCK_TEST_PROMPTS } from '../data/triggerDefinitions';
+import {
+  createSampleNodesAndEdges,
+  SAMPLES_CATALOG,
+} from '../data/sampleWorkflows';
 
 // UI Tabs & Panels
 import { CanvasTab } from './tabs/CanvasTab';
@@ -204,7 +209,7 @@ export function FlowCanvas() {
     fileTabs,
     setFileTabs,
     activeTabId,
-    handleOpenSampleInNewTab,
+    handleOpenSampleInNewTab: _handleOpenSampleInInternalTab,
   } = useFileTabs(nodes, edges, config, {
     defaultFramework: settings.defaultFramework,
     defaultLanguage: settings.defaultLanguage,
@@ -222,6 +227,27 @@ export function FlowCanvas() {
     setToolModalAgentId,
     setActiveEditorTab,
   });
+
+  /**
+   * Dispatches CREATE_FILE_FROM_SAMPLE message to the VS Code extension host.
+   * Prompts the user with a Save As dialog and opens the saved blueprint in a new editor tab.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
+   */
+  const handleOpenSampleInNewTab = useCallback(
+    (sample: SampleWorkflowDefinition) => {
+      // NOTE: Forward sample creation to extension host to display save dialog and open new editor tab
+      bridge.postMessage({
+        type: 'CREATE_FILE_FROM_SAMPLE',
+        payload: {
+          sampleId: sample.id,
+          sampleName: sample.name,
+          sample: sample,
+        },
+      });
+    },
+    [bridge]
+  );
 
   const {
     tools,
@@ -1006,6 +1032,8 @@ export function FlowCanvas() {
       const triggerType = event.dataTransfer.getData('application/reactflow/triggerType') as TriggerType | undefined;
       const agentKindData = event.dataTransfer.getData('application/reactflow/agentKind') as AgentKind | '';
       const toolDataStr = event.dataTransfer.getData('application/reactflow/tool');
+      const sampleDataStr = event.dataTransfer.getData('application/reactflow/sample');
+      const sampleId = event.dataTransfer.getData('application/reactflow/sampleId');
 
       if (toolDataStr) {
         try {
@@ -1014,17 +1042,56 @@ export function FlowCanvas() {
             handleAddSpecificTool(selectedAgentId, droppedTool);
           }
         } catch (e) {
-          console.error(e);
+          console.error('[FlowCanvas] Failed to parse dropped tool JSON', e);
         }
         return;
       }
 
-      if (!type) return;
+      if (!type && !sampleDataStr && !sampleId) return;
 
       const position = screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       });
+
+      // 1. Handle Dropping an Entire Sample Workflow Blueprint
+      if (type === 'sample' || sampleDataStr || sampleId) {
+        let sample: SampleWorkflowDefinition | undefined;
+        if (sampleDataStr) {
+          try {
+            sample = JSON.parse(sampleDataStr) as SampleWorkflowDefinition;
+          } catch (e) {
+            console.error('[FlowCanvas] Failed to parse dropped sample JSON', e);
+          }
+        }
+        if (!sample && sampleId) {
+          sample = SAMPLES_CATALOG.find((s) => s.id === sampleId);
+        }
+
+        if (sample && sample.nodes && sample.nodes.length > 0) {
+          const { nodes: remappedNodes, edges: remappedEdges } = createSampleNodesAndEdges(
+            sample,
+            position.x,
+            position.y,
+            nodes
+          );
+
+          const { nodes: layoutedNodes, edges: layoutedEdges } = layoutPatternAtDropPosition(
+            remappedNodes,
+            remappedEdges,
+            position.x,
+            position.y,
+            nodes
+          );
+
+          const nextNodes = [...nodes, ...layoutedNodes];
+          const nextEdges = [...edges, ...layoutedEdges];
+          setNodes(nextNodes);
+          setEdges(nextEdges);
+          recordSnapshot(nextNodes, nextEdges, { description: `Add sample ${sample.name}` });
+          return;
+        }
+      }
 
       if (type === 'trigger') {
         const rootAgent = nodes.find((n) => n.type === 'agentNode' && (n.data as AgentData).isStartNode) ||
