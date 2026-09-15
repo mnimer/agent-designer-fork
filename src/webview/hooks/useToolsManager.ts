@@ -124,9 +124,11 @@ export function useToolsManager(options: UseToolsManagerOptions): UseToolsManage
   const [tools, setTools] = useState<ToolDefinition[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_TOOLS_KEY);
-      if (saved) {
+      if (saved && saved !== 'undefined' && saved !== 'null') {
         const parsed = JSON.parse(saved);
-        return reconcileToolsCatalog(parsed);
+        if (Array.isArray(parsed)) {
+          return reconcileToolsCatalog(parsed);
+        }
       }
     } catch (e) {
       console.warn('Failed to load saved tools from localStorage:', e);
@@ -152,8 +154,9 @@ export function useToolsManager(options: UseToolsManagerOptions): UseToolsManage
    */
   const handleOpenEditTool = useCallback(
     (tool: ToolDefinition) => {
+      if (!tool) return;
       setEditingToolScope({ type: 'global' });
-      setEditingTool(tool);
+      setEditingTool(JSON.parse(JSON.stringify(tool)));
       setIsToolDrawerOpen(true);
       setSelectedAgentId(null);
       setSelectedTriggerId(null);
@@ -167,6 +170,7 @@ export function useToolsManager(options: UseToolsManagerOptions): UseToolsManage
    */
   const handleOpenEditAgentTool = useCallback(
     (agentId: string, tool: ToolDefinition) => {
+      if (!agentId || !tool) return;
       setEditingToolScope({ type: 'agent', agentId });
       setEditingTool(JSON.parse(JSON.stringify(tool)));
       setIsToolDrawerOpen(true);

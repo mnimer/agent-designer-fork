@@ -1607,7 +1607,10 @@ export function FlowCanvas() {
             setSelectedAgentId={setSelectedAgentId}
             setToolModalAgentId={setToolModalAgentId}
             handleRemoveTool={handleRemoveTool}
+            handleOpenEditTool={handleOpenEditTool}
             handleOpenEditAgentTool={handleOpenEditAgentTool}
+            handleCreateCustomTool={handleCreateCustomTool}
+            handleCreateMcpTool={handleCreateMcpTool}
             selectedTriggerNode={selectedTriggerNode}
             handleUpdateTriggerData={handleUpdateTriggerData}
             selectedTriggerId={selectedTriggerId}

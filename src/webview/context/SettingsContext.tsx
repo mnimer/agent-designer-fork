@@ -1,3 +1,16 @@
+/**
+ * SettingsContext.tsx - Global Settings State Provider
+ *
+ * Purpose:
+ * Provides application-wide configuration settings with persistence to localStorage.
+ *
+ * Architectural Decisions:
+ * - Author: Mike Nimer <mikenimer@google.com>
+ * - Guards against corrupt or non-string serialized localStorage entries.
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { FrameworkType, LanguageType, DelegationPattern, AgentMemoryType } from '../types';
 
@@ -80,8 +93,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [settings, setSettings] = useState<PluginSettings>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+      if (saved && saved !== 'undefined' && saved !== 'null') {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed === 'object' && parsed !== null) {
+          return { ...DEFAULT_SETTINGS, ...parsed };
+        }
       }
     } catch (e) {
       console.warn('Failed to parse saved settings:', e);

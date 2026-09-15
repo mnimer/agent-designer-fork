@@ -102,7 +102,10 @@ interface CanvasTabProps {
   setSelectedAgentId: (id: string | null) => void;
   setToolModalAgentId: (id: string | null) => void;
   handleRemoveTool: (agentId: string, toolId: string) => void;
+  handleOpenEditTool: (tool: ToolDefinition) => void;
   handleOpenEditAgentTool: (agentId: string, tool: ToolDefinition) => void;
+  handleCreateCustomTool: () => void;
+  handleCreateMcpTool: () => void;
   selectedTriggerNode: Node | undefined;
   handleUpdateTriggerData: (triggerId: string, partial: Partial<TriggerData>) => void;
   selectedTriggerId: string | null;
@@ -168,7 +171,10 @@ export const CanvasTab: React.FC<CanvasTabProps> = ({
   setSelectedAgentId,
   setToolModalAgentId,
   handleRemoveTool,
+  handleOpenEditTool,
   handleOpenEditAgentTool,
+  handleCreateCustomTool,
+  handleCreateMcpTool,
   selectedTriggerNode,
   handleUpdateTriggerData,
   selectedTriggerId,
@@ -254,9 +260,9 @@ export const CanvasTab: React.FC<CanvasTabProps> = ({
         onAddPattern={handleAddPatternDirect}
         onAddTrigger={handleAddTriggerDirect}
         onOpenAdvisor={() => setIsAdvisorOpen(true)}
-        onOpenEditTool={handleOpenEditAgentTool}
-        onCreateCustomTool={() => {}}
-        onCreateMcpTool={() => {}}
+        onOpenEditTool={handleOpenEditTool}
+        onCreateCustomTool={handleCreateCustomTool}
+        onCreateMcpTool={handleCreateMcpTool}
         onOpenSample={handleOpenSampleInNewTab}
         onAddToolToAgent={(tool) => {
           if (selectedAgentId) {
