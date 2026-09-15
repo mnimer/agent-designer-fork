@@ -23,7 +23,7 @@
 | **TASK-108** | v1.0.0 | History & Sync | Undo/Redo Engine, Auto-Layout & Document Disk Sync | **Complete** | TASK-101, TASK-103 |
 | **TASK-109** | v1.0.0 | Quality | End-to-End Test Suite & 100% Coverage Suite | **Complete** | TASK-100 to TASK-108 |
 | **TASK-110** | v1.0.1 | Triggers | Chat Trigger Node & Interactive Chat Runner Panel | **Complete** | TASK-107 |
-| **TASK-111** | v1.0.1 | Deployment | Cloud Infrastructure IaC Panel (Cloud Run & Shared GCP Resources) | **Not Started** | TASK-106 |
+| **TASK-111** | v1.0.1 | Deployment | Cloud Infrastructure IaC Panel (Cloud Run & Shared GCP Resources) | **Complete** | TASK-106 |
 | **TASK-112** | v1.0.2 | Canvas | Multi-Agent Wiring, Sockets & Connection Validation | **Complete** | TASK-103 |
 | **TASK-113** | v1.0.2 | Patterns | Sequential Pipeline & Parallel Fan-Out Patterns | **Complete** | TASK-112 |
 | **TASK-114** | v1.0.2 | Codegen | Multi-Agent DAG Python ADK Code Generation & Tracing | **Complete** | TASK-113 |
@@ -107,6 +107,11 @@
 | **TASK-193** | v1.1.2 | Patterns | Multi-Agent Debate & Consensus Panel Pattern & Code Generation | **Not Started** | TASK-114, TASK-191 |
 | **TASK-194** | v1.1.2 | Patterns | Hierarchical Delegation (Supervisor-Workers) Pattern & Code Generation | **Not Started** | TASK-114, TASK-191 |
 | **TASK-195** | v1.1.2 | Patterns | Review & Critique Triad Pattern & Editorial Code Generation | **Not Started** | TASK-114, TASK-191 |
+| **TASK-196** | v1.0.7 | Schema / Agent Nodes | Structured Input Schema Builder for Standard & Router Agent Nodes | **Not Started** | TASK-103, TASK-117, TASK-119 |
+| **TASK-197** | v1.0.3 | Memory / Local Runner | Local Runner SQLite Checkpointer Override & Ephemeral DB Lifecycle | **Not Started** | TASK-107, TASK-115 |
+| **TASK-198** | v1.0.3 | Memory / Cloud SQL | Google Cloud SQL (PostgreSQL/MySQL) Checkpointer & Pre-Deployment Validation | **Not Started** | TASK-115 |
+| **TASK-199** | v1.0.3 | Memory / Spanner | Google Cloud Spanner Enterprise Checkpointer & Resource Validation | **Not Started** | TASK-115 |
+| **TASK-200** | v1.0.3 | Memory / Redis | Cloud Memorystore (Redis/Valkey) Checkpointer & Session TTL Expiration | **Not Started** | TASK-115 |
 
 ---
 
@@ -379,22 +384,16 @@
 
 ### [TASK-111] Cloud Infrastructure IaC Panel (Cloud Run & Shared GCP Resources)
 * **Release**: `v1.0.1`
+* **Status**: `Complete`
 * **Target Package/Files**:
   - `src/webview/components/deployment/DeploymentTab.tsx`
-  - `src/shared/codegen/terraformGenerator.ts`
+  - `src/webview/components/deployment/CloudRunDeployTab.tsx`
+  - `src/extension/CloudRunDeployer.ts`
   - `src/webview/utils/runtimeSecrets.ts`
 * **Context**:
-  Implement Cloud Infrastructure IaC panel. Support automated Terraform generation for Google Cloud Run (v2 service) and foundational GCP infrastructure (Secret Manager for runtime keys like `GEMINI_API_KEY`, IAM Service Accounts, Artifact Registry, and VPC Network Attachments for Private Service Connect). NOTE: In accordance with official Google ADK architecture, Agent Engine (Agent Runtime) application code and container updates are decoupled from Terraform via `lifecycle.ignore_changes` and deployed through native container deployment in [TASK-125].
-* **Sub-Agent Prompt**:
-  ```
-  Implement Cloud Infrastructure & IaC generator.
-  1. Extract referenced environment variables into Cloud Secret Manager resources in main.tf.
-  2. Generate Terraform for Cloud Run v2 service, Artifact Registry, and IAM invoker roles.
-  3. Generate optional PSC Network Attachment Terraform for private VPC routing.
-  4. Provide DeploymentTab with target selector, GCP project/region inputs, and one-click code copy/export.
-  ```
+  Cloud deployment configuration and execution panel for Google Cloud Run (v2 service). Includes project/region configuration, automated secret scanning (`GEMINI_API_KEY`, tool tokens, database URLs), container builds and native Cloud Run deployment with live log streaming. (NOTE: Standalone Terraform generator was intentionally omitted in favor of native deployment runner and direct container management).
 * **Verification**:
-  - Generated Terraform passes `terraform validate`.
+  - Cloud Run deployment tab renders complete service configuration and streaming terminal logs.
 
 ---
 
@@ -454,24 +453,26 @@
 
 ---
 
-### [TASK-115] In-Memory & Cloud Firestore Checkpointer Configuration
+### [TASK-115] Session Store Factory & Production Checkpointer Configuration
 * **Release**: `v1.0.3`
 * **Target Package/Files**:
   - `src/webview/data/memoryOptions.ts`
   - `src/webview/components/inspector/StandardAgentDrawer.tsx`
   - `src/shared/codegen/pythonAdkGenerator.ts`
-  - `src/shared/codegen/terraformGenerator.ts`
+  - `src/shared/agentSpec.ts`
 * **Context**:
-  Add memory configuration options: Stateless (`none`), In-Memory Turn Buffer (`MemorySaver`), and Google Cloud Firestore checkpointer (`collectionName`, `thread_id`). Generate Firestore client in Python and IAM roles in Terraform.
+  Implement Session Store Factory pattern for production checkpointer targets: Stateless (`none`), In-Memory Turn Buffer (`InMemorySessionStore` / `MemorySaver`), Google Cloud Firestore (`collectionName`, `databaseId`, `project`), and Cloud SQL PostgreSQL (`connectionName`, `databaseUrl`). Emits `session_store.py` factory function in the generated repository allowing environment-variable resolution (`SESSION_STORE_BACKEND`).
 * **Sub-Agent Prompt**:
   ```
-  Implement Memory Checkpointer configuration and code generation.
-  1. Add memory selector to StandardAgentDrawer with Firestore options.
-  2. Generate Firestore checkpointer loader in agent_workflow.py.
-  3. Add Firestore IAM roles (roles/datastore.user) in main.tf.
+  Implement Session Store Factory & Production Checkpointer configuration:
+  1. Add production memory selector to StandardAgentDrawer and Workflow Settings (Stateless, In-Memory, Cloud Firestore, Cloud SQL).
+  2. Generate session_store.py with get_session_store() factory function supporting Firestore, Cloud SQL, In-Memory, and SQLite backends.
+  3. Wire get_session_store() into main.py and agent execution loop.
+  4. Add unit tests for memory configuration serialization and Python ADK session code generation.
   ```
 * **Verification**:
-  - Multi-turn state persists across sessions using Firestore checkpointer.
+  - Multi-turn state persists across sessions using configured production checkpointer.
+  - Generated code cleanly decouples database clients into `session_store.py`.
 
 ---
 
@@ -3130,4 +3131,197 @@ Each task specifies reverse-engineering the sample Python code into a production
 * **Verification**:
   - Triad pattern drops 3 nodes onto canvas with sequential critique state handoff.
   - Generated ADK Python pipeline executes author, critic, and editor in order.
+
+---
+
+### [TASK-196] Structured Input Schema Builder for Standard & Router Agent Nodes
+* **Release**: `v1.0.7`
+* **Target Package/Files**:
+  - `src/webview/components/inspector/StructuredInputBuilder.tsx`
+  - `src/webview/components/inspector/StandardAgentDrawer.tsx`
+  - `src/webview/components/inspector/RouterAgentDrawer.tsx`
+  - `src/shared/agentSpec.ts`
+  - `src/webview/types.ts`
+  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `src/extension/AgentRunnerManager.ts`
+  - `tests/webview/StructuredInputBuilder.test.ts`
+* **Context**:
+  While agents currently support Structured Output (`response_schema` / `structuredOutput` Pydantic models), multi-agent orchestration, upstream trigger handoffs, and dynamic decision routers require strongly typed **Structured Inputs** (`inputSchema` / Pydantic `BaseModel` for inputs).
+  - **Standard Agent Nodes**:
+    - Adds an "Input Schema" accordion in `StandardAgentDrawer.tsx` (mirroring the field builder from `StructuredOutputBuilder.tsx`).
+    - Generates typed Pydantic models for incoming agent state / input parameters in generated Python ADK code.
+    - Validates incoming prompt/payload against the input schema in the Test Runner and emits early schema validation errors.
+  - **Router Agent Nodes**:
+    - Adds an "Input Schema" accordion in `RouterAgentDrawer.tsx`.
+    - Enables developers to define structured fields (e.g. `user_intent: string`, `urgency: integer`, `category: enum`, `metadata: object`) that router condition expressions (`input.urgency > 3`, `input.category == 'billing'`) evaluate against.
+    - Enables auto-completion and static syntax validation of condition variables against the configured Input Schema properties in the condition editor.
+  - **Dual Schema Previews**:
+    - Interactive visual field editor supporting `string`, `integer`, `number`, `boolean`, `array`, `object`, and `enum` with required toggles and descriptions.
+    - Live dual preview tab for Pydantic v2 `BaseModel` Python code and JSON Schema Draft-07 specification.
+* **Sub-Agent Prompt**:
+  ```
+  Implement Structured Input Schema Builder for Standard and Router Agent Nodes:
+  1. Create StructuredInputBuilder component (or generalize StructuredOutputBuilder into a reusable TypedSchemaBuilder) with field name, type, description, and required toggles.
+  2. Integrate StructuredInputBuilder accordion into StandardAgentDrawer.tsx and RouterAgentDrawer.tsx.
+  3. Update agentSpec.ts and types.ts to support inputSchema on AgentData and RouterData.
+  4. Update pythonAdkGenerator.ts to generate Pydantic input models (e.g., class AgentInput(BaseModel)) and validate incoming payloads in main.py and agent runner harnesses.
+  5. Update RouterAgentDrawer condition builder to provide variable suggestions matching inputSchema fields.
+  6. Add comprehensive unit tests in tests/webview/StructuredInputBuilder.test.ts verifying schema state mutations, Pydantic code generation, and drawer persistence.
+  ```
+* **Verification**:
+  - Standard Agent and Router Agent drawers render "Input Schema" accordion with full interactive field editing.
+  - Pydantic v2 input models compile cleanly in generated Python ADK code.
+  - Router condition expressions correctly validate against defined input schema keys.
+  - 100% unit test coverage for new schema builder components.
+
+---
+
+### [TASK-197] Local Runner SQLite Checkpointer Override & Ephemeral DB Lifecycle
+* **Release**: `v1.0.3`
+* **Target Package/Files**:
+  - `src/webview/components/deployment/DeploymentTab.tsx`
+  - `src/extension/AgentRunnerManager.ts`
+  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `src/webview/types.ts`
+  - `src/shared/types.ts`
+  - `tests/extension/AgentRunnerManager.test.ts`
+  - `tests/webview/DeploymentTab.test.ts`
+* **Context**:
+  Add an option on the Local Runner configuration in `DeploymentTab.tsx` (unchecked by default):
+  *"Use local SQLite instead of {configured_cloud_backend} for agent memory while testing"* (e.g., *"Use local SQLite instead of Firestore for agent memory while testing"*).
+  - **Environment Override**:
+    - When checked, the local runner passes `SESSION_STORE_BACKEND=sqlite` and an ephemeral database path (e.g. `./.sessions_<runId>.db` or `./sessions.db`) in environment variables when spawning the local Python agent subprocess.
+    - When unchecked, the local runner uses the primary configured production store (e.g. Cloud Firestore or Cloud SQL).
+  - **Fresh Database per Run**:
+    - On each test/runner run, initializes a clean, empty SQLite database.
+  - **Automatic Teardown / Cleanup**:
+    - When `stopLocalRunner` or runner teardown executes in `AgentRunnerManager.ts`, automatically deletes and cleans up the ephemeral `.db` files from the target directory so no leftover test state pollutes the project directory.
+* **Sub-Agent Prompt**:
+  ```
+  Implement Local Runner SQLite Override & Ephemeral DB Lifecycle:
+  1. In DeploymentTab.tsx, add a checkbox under the Local Runner target:
+     "Use local SQLite instead of {backend} for agent memory while testing" (unchecked by default).
+  2. Pass useLocalSqliteMemory flag in RunnerOptions over WebviewBridge RPC to AgentRunnerManager.
+  3. In AgentRunnerManager.ts, when flag is active, set SESSION_STORE_BACKEND=sqlite and generate an ephemeral database path.
+  4. Ensure session_store.py codegen supports SqliteSessionStore / SqliteSaver fallback when SESSION_STORE_BACKEND=sqlite.
+  5. In AgentRunnerManager.stopLocalRunner, add file cleanup logic removing the ephemeral SQLite database files (.db, .db-wal, .db-shm).
+  6. Add unit tests for DeploymentTab UI checkbox toggle and AgentRunnerManager ephemeral DB creation & teardown.
+  ```
+* **Verification**:
+  - Toggling checkbox sets local runner environment variable `SESSION_STORE_BACKEND=sqlite`.
+  - Ephemeral SQLite database is created on run and cleanly deleted when the local runner is stopped.
+  - 100% unit test coverage.
+
+---
+
+### [TASK-198] Google Cloud SQL (PostgreSQL/MySQL) Checkpointer & Pre-Deployment Validation
+* **Release**: `v1.0.3`
+* **Target Package/Files**:
+  - `src/webview/components/inspector/MemoryDrawer.tsx`
+  - `src/webview/components/inspector/StandardAgentDrawer.tsx`
+  - `src/webview/components/deployment/CloudRunDeployTab.tsx`
+  - `src/shared/agentSpec.ts`
+  - `src/webview/types.ts`
+  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `tests/webview/MemoryDrawer.test.ts`
+* **Context**:
+  Add Google Cloud SQL (PostgreSQL / MySQL) as an enterprise relational checkpointer target for multi-agent workflows.
+  - **Required Configuration Properties**:
+    - `Instance Connection Name`: GCP Cloud SQL instance identifier (`projects/{project}/locations/{region}/instances/{instance}`). **(Mandatory)**
+    - `Database Name`: PostgreSQL/MySQL database name (e.g. `agent_sessions_db`). **(Mandatory)**
+    - `Database URL / Auth Secret`: Secret Manager secret variable name containing the connection string or password (e.g., `DATABASE_URL`). **(Mandatory)**
+    - `Table Name / Prefix`: Table name for storing sessions (default: `agent_sessions`).
+  - **Pre-Deployment Gate / Validation**:
+    - When Cloud SQL is selected as the production checkpointer, the Deployment Tab (`CloudRunDeployTab.tsx` / `AgentEngineDeployTab.tsx`) enforces a pre-flight validation gate ensuring `instanceConnectionName`, `databaseName`, and `databaseUrlSecret` are populated before allowing container deployment. Displays visual alerts and highlights missing fields.
+  - **Auto-DDL & Runtime Codegen**:
+    - Generates `CloudSqlSessionStore` / `PostgresSaver` integration in `session_store.py`.
+    - Automatically executes `CREATE TABLE IF NOT EXISTS agent_sessions (session_id VARCHAR(128) PRIMARY KEY, user_id VARCHAR(128), created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, state JSONB DEFAULT '{}'::jsonb, history JSONB DEFAULT '[]'::jsonb, metadata JSONB DEFAULT '{}'::jsonb)` and index creation on startup.
+* **Sub-Agent Prompt**:
+  ```
+  Implement Google Cloud SQL Checkpointer & Pre-Deployment Validation:
+  1. Add Cloud SQL configuration fields to MemoryDrawer / StandardAgentDrawer (instanceConnectionName, databaseName, databaseUrlSecret, tableName).
+  2. Implement pre-deployment validation rules blocking deployment if required Cloud SQL parameters are empty.
+  3. Update pythonAdkGenerator.ts to generate Cloud SQL session adapter in session_store.py with auto-DDL execution and Secret Manager secret resolution.
+  4. Add unit tests for validation rules, drawer inputs, and code generation.
+  ```
+* **Verification**:
+  - Empty Cloud SQL configuration blocks deployment with informative error badges.
+  - Generated Python repository includes auto-initialization DDL and connects via Cloud SQL instance connection name.
+  - 100% test coverage.
+
+---
+
+### [TASK-199] Google Cloud Spanner Enterprise Checkpointer & Resource Validation
+* **Release**: `v1.0.3`
+* **Target Package/Files**:
+  - `src/webview/components/inspector/MemoryDrawer.tsx`
+  - `src/webview/components/inspector/StandardAgentDrawer.tsx`
+  - `src/webview/components/deployment/DeploymentTab.tsx`
+  - `src/shared/agentSpec.ts`
+  - `src/webview/types.ts`
+  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `tests/webview/MemoryDrawer.test.ts`
+* **Context**:
+  Add Google Cloud Spanner as a globally distributed, horizontally scalable checkpointer target for mission-critical enterprise agents.
+  - **Required Configuration Properties**:
+    - `Spanner Instance ID`: Instance name within the GCP project. **(Mandatory)**
+    - `Spanner Database ID`: Database name within the Spanner instance. **(Mandatory)**
+    - `Table Name`: Session table name (default: `AgentSessions`).
+    - `GCP Project ID`: GCP project hosting the Spanner instance.
+  - **Pre-Deployment Gate / Validation**:
+    - Enforces pre-deployment check requiring both `instanceId` and `databaseId` to be explicitly defined before Cloud Run or Agent Engine deployment is enabled.
+  - **Auto-DDL & Runtime Codegen**:
+    - Generates Spanner Python client checkpointer (`SpannerSessionStore`) in `session_store.py`.
+    - Includes DDL auto-verification: `CREATE TABLE IF NOT EXISTS AgentSessions (SessionId STRING(64) NOT NULL, UserId STRING(64), CreatedAt TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true), UpdatedAt TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true), State JSON, History JSON) PRIMARY KEY (SessionId)`.
+* **Sub-Agent Prompt**:
+  ```
+  Implement Google Cloud Spanner Checkpointer & Resource Validation:
+  1. Add Cloud Spanner configuration fields to MemoryDrawer (instanceId, databaseId, tableName).
+  2. Implement pre-deployment gate in DeploymentTab verifying Spanner instance and database are configured.
+  3. Update pythonAdkGenerator.ts to generate SpannerSessionStore in session_store.py.
+  4. Add unit tests.
+  ```
+* **Verification**:
+  - Pre-deployment check flags missing Spanner instance/database IDs.
+  - Generated code imports google-cloud-spanner and manages multi-turn sessions against Cloud Spanner.
+  - 100% test coverage.
+
+---
+
+### [TASK-200] Cloud Memorystore (Redis/Valkey) Checkpointer & Session TTL Expiration
+* **Release**: `v1.0.3`
+* **Target Package/Files**:
+  - `src/webview/components/inspector/MemoryDrawer.tsx`
+  - `src/webview/components/inspector/StandardAgentDrawer.tsx`
+  - `src/webview/components/deployment/DeploymentTab.tsx`
+  - `src/shared/agentSpec.ts`
+  - `src/webview/types.ts`
+  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `tests/webview/MemoryDrawer.test.ts`
+* **Context**:
+  Add Cloud Memorystore (Redis / Valkey) as a sub-millisecond, low-latency in-memory cache checkpointer with automatic session expiration for high-volume customer service bots.
+  - **Required Configuration Properties**:
+    - `Redis Host`: VPC internal IP / hostname of the Cloud Memorystore instance. **(Mandatory)**
+    - `Redis Port`: Port number (default: `6379`). **(Mandatory)**
+    - `Auth Secret Name`: Optional Secret Manager secret name containing Redis AUTH token.
+    - `Session TTL (Seconds)`: Automatic session expiration duration (default: `86400`s / 24h).
+  - **Pre-Deployment Gate / Validation**:
+    - Enforces pre-deployment check requiring `redisHost` and valid port before deployment.
+  - **Runtime Codegen**:
+    - Generates async Redis session store with key prefix (`session:{session_id}`) and automatic `EXPIRE` refresh on each turn.
+* **Sub-Agent Prompt**:
+  ```
+  Implement Cloud Memorystore (Redis) Checkpointer & TTL Expiration:
+  1. Add Redis configuration fields to MemoryDrawer (redisHost, redisPort, authSecretName, ttlSeconds).
+  2. Implement pre-deployment check requiring redisHost and port.
+  3. Update pythonAdkGenerator.ts to generate RedisSessionStore with automatic TTL key expiration.
+  4. Add unit tests.
+  ```
+* **Verification**:
+  - Deployment tab validates Redis host configuration.
+  - Generated Python code connects to Memorystore and applies configured TTL expiration.
+  - 100% unit test coverage.
+
+
+
 
