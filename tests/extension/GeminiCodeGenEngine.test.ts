@@ -741,4 +741,21 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
       assert.ok(failResult.reason.includes('Missing required property "summary"'));
     });
   });
+
+  describe('AbortSignal Cancellation Support', () => {
+    it('should immediately return cancelled result when signal is aborted', async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      const result = await engine.generateCode({
+        document: sampleDoc,
+        signal: controller.signal,
+      });
+
+      assert.strictEqual(result.success, false);
+      assert.strictEqual(result.cancelled, true);
+      assert.strictEqual(result.error, 'Code generation cancelled by user');
+      assert.deepStrictEqual(result.files, []);
+    });
+  });
 });

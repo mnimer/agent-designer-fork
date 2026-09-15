@@ -44,7 +44,7 @@ export const AgentDrawer: React.FC<AgentDrawerProps> = ({
   onEditTool,
   onSelectAgent,
 }) => {
-  if (!isOpen || !agent) return null;
+  if (!isOpen || !agent || (agent as any).triggerType || (agent as any).triggerKind) return null;
 
   // Render distinct property panel based on the node clicked
   if (agent.agentKind === 'a2a') {

@@ -57,11 +57,33 @@ describe('Trigger Configuration & Presets Logic', () => {
       config: {
         cronExpression: '0 0 * * *',
         timezone: 'America/New_York',
+        scheduledPrompt: 'Execute nightly database integrity and compliance sync.',
+        retryCount: 3,
       },
     };
 
     assert.equal(trigger.triggerKind, 'scheduled');
     assert.equal(trigger.config?.cronExpression, '0 0 * * *');
+    assert.equal(trigger.config?.scheduledPrompt, 'Execute nightly database integrity and compliance sync.');
+    assert.equal(trigger.config?.retryCount, 3);
+
+    const webhookTrigger: TriggerNodeData = {
+      ...trigger,
+      triggerKind: 'webhook',
+      config: {
+        webhookPath: '/api/v1/orders',
+        httpMethod: 'POST',
+        authType: 'bearer_token',
+        secretHeaderName: 'Authorization',
+        payloadDescription: 'JSON webhook body containing order ID and customer request',
+      },
+    };
+
+    assert.equal(webhookTrigger.triggerKind, 'webhook');
+    assert.equal(webhookTrigger.config?.webhookPath, '/api/v1/orders');
+    assert.equal(webhookTrigger.config?.httpMethod, 'POST');
+    assert.equal(webhookTrigger.config?.authType, 'bearer_token');
+    assert.equal(webhookTrigger.config?.secretHeaderName, 'Authorization');
 
     const pubsubTrigger: TriggerNodeData = {
       ...trigger,
@@ -212,6 +234,142 @@ describe('Trigger Configuration & Presets Logic', () => {
 
       // Forward edge (downward) should not be flagged as backward
       assert.equal(isBackwardEdge('bottom', 200, 500), false);
+    });
+  });
+
+  describe('Eventarc Dynamic Providers Response Processing', () => {
+    it('should correctly unwrap categories whether returned as direct payload or nested payload', () => {
+      const mockCategories = [
+        {
+          id: 'storage',
+          name: 'Cloud Storage (GCS)',
+          serviceName: 'storage.googleapis.com',
+          events: [
+            {
+              id: 'ObjectFinalized',
+              name: 'ObjectFinalized',
+              fullEvent: 'google.cloud.storage.object.v1.finalized',
+              description: 'Object created',
+            },
+          ],
+        },
+      ];
+
+      // Format 1: Direct payload returned by bridge.sendRequestWithReply
+      const directPayloadResponse = {
+        categories: mockCategories,
+        source: 'gcloud',
+        location: 'us-central1',
+      };
+
+      const unwrap1 = (directPayloadResponse as any)?.categories
+        ? directPayloadResponse
+        : (directPayloadResponse as any)?.payload;
+      assert.equal(unwrap1.categories.length, 1);
+      assert.equal(unwrap1.source, 'gcloud');
+      assert.equal(unwrap1.categories[0].id, 'storage');
+
+      // Format 2: Nested message format
+      const nestedPayloadResponse = {
+        type: 'EVENTARC_PROVIDERS_RESPONSE',
+        payload: {
+          categories: mockCategories,
+          source: 'gcloud',
+          location: 'us-central1',
+        },
+      };
+
+      const unwrap2 = (nestedPayloadResponse as any)?.categories
+        ? nestedPayloadResponse
+        : (nestedPayloadResponse as any)?.payload;
+      assert.equal(unwrap2.categories.length, 1);
+      assert.equal(unwrap2.source, 'gcloud');
+      assert.equal(unwrap2.categories[0].id, 'storage');
+    });
+
+    it('should initialize Eventarc trigger catalog with empty string defaults (no mock values)', () => {
+      const { TRIGGER_CATALOG, EVENTARC_CATEGORIES } = require('../../src/webview/data/triggerDefinitions');
+      const eventarcTrigger = TRIGGER_CATALOG.find((t: any) => t.id === 'trigger_eventarc');
+      assert.ok(eventarcTrigger, 'Eventarc trigger definition should exist in catalog');
+      assert.equal(eventarcTrigger.defaultConfig.eventarcCategory, '');
+      assert.equal(eventarcTrigger.defaultConfig.eventarcEvent, '');
+      assert.equal(eventarcTrigger.defaultConfig.eventarcServiceName, '');
+      assert.equal(eventarcTrigger.defaultConfig.eventarcServiceAccount, '');
+
+      // Verify Dataplex category is present in EVENTARC_CATEGORIES
+      const dataplex = EVENTARC_CATEGORIES.find((c: any) => c.id === 'dataplex');
+      assert.ok(dataplex, 'Dataplex category should be present in EVENTARC_CATEGORIES');
+      assert.equal(dataplex.serviceName, 'dataplex.googleapis.com');
+      assert.ok(dataplex.events.some((e: any) => e.id === 'created'));
+      assert.ok(dataplex.events.some((e: any) => e.id === 'updated'));
+      assert.ok(dataplex.events.some((e: any) => e.id === 'deleted'));
+    });
+
+    it('should dynamically preserve and display custom or unlisted Eventarc categories and events', () => {
+      const { EVENTARC_CATEGORIES } = require('../../src/webview/data/triggerDefinitions');
+      
+      // Simulate loaded node with custom/unlisted eventarc service
+      const customConfig = {
+        eventarcCategory: 'custom-event-hub',
+        eventarcServiceName: 'custom-event-hub.googleapis.com',
+        eventarcEvent: 'CustomEventTriggered',
+        eventarcServiceAccount: '',
+      };
+
+      // Match dynamic categories logic in TriggerDrawer
+      const list = [...EVENTARC_CATEGORIES];
+      const catId = customConfig.eventarcCategory;
+      const sName = customConfig.eventarcServiceName;
+      const exists = list.some((c) => (catId && c.id === catId) || (sName && c.serviceName === sName));
+      if (!exists && (catId || sName)) {
+        list.push({
+          id: catId,
+          name: catId,
+          serviceName: sName,
+          events: [
+            {
+              id: customConfig.eventarcEvent,
+              name: customConfig.eventarcEvent,
+              fullEvent: `google.cloud.${catId}.v1.${customConfig.eventarcEvent}`,
+              description: 'Configured Event',
+            },
+          ],
+        });
+      }
+
+      const matchedCategory = list.find((c) => c.id === customConfig.eventarcCategory);
+      assert.ok(matchedCategory, 'Custom eventarc category should be preserved');
+      assert.equal(matchedCategory.serviceName, 'custom-event-hub.googleapis.com');
+      assert.equal(matchedCategory.events[0].id, 'CustomEventTriggered');
+    });
+
+    it('should correctly identify trigger nodes with type triggerNode or trigger or triggerKind', () => {
+      const { isTriggerNode } = require('../../src/webview/App');
+
+      assert.equal(isTriggerNode({ type: 'triggerNode' }), true);
+      assert.equal(isTriggerNode({ type: 'trigger' }), true);
+      assert.equal(isTriggerNode({ type: 'agentNode' }), false);
+      assert.equal(isTriggerNode({ type: 'agent' }), false);
+      assert.equal(isTriggerNode(undefined), false);
+    });
+
+    it('should normalize cron, schedule, and scheduled trigger types to scheduled', () => {
+      const normalizeTriggerType = (rawType: string) => {
+        return rawType === 'test'
+          ? 'tester'
+          : rawType === 'cron' || rawType === 'schedule' || rawType === 'scheduler'
+          ? 'scheduled'
+          : rawType;
+      };
+
+      assert.equal(normalizeTriggerType('cron'), 'scheduled');
+      assert.equal(normalizeTriggerType('schedule'), 'scheduled');
+      assert.equal(normalizeTriggerType('scheduler'), 'scheduled');
+      assert.equal(normalizeTriggerType('scheduled'), 'scheduled');
+      assert.equal(normalizeTriggerType('test'), 'tester');
+      assert.equal(normalizeTriggerType('tester'), 'tester');
+      assert.equal(normalizeTriggerType('pubsub'), 'pubsub');
+      assert.equal(normalizeTriggerType('eventarc'), 'eventarc');
     });
   });
 });

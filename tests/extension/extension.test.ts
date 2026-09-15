@@ -9,10 +9,12 @@ import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { activate, deactivate } from '../../src/extension/extension';
 import { AgentEditorProvider } from '../../src/extension/AgentEditorProvider';
+import { SecretsProvider } from '../../src/extension/security/SecretsProvider';
 
 describe('Extension Lifecycle', { concurrency: 1 }, () => {
   beforeEach(() => {
     vscode.resetAllMocks();
+    (SecretsProvider as any).instance = undefined;
   });
 
   it('should activate extension, register custom editor and commands', () => {

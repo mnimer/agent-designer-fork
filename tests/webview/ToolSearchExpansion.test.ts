@@ -18,9 +18,9 @@ import { categorizeTools, isNativeAdkTool } from '../../src/webview/data/builtin
 import { ToolDefinition } from '../../src/webview/types';
 
 describe('Tool Category Auto-Expansion During Search', () => {
-  // Mock base category expansion state
+  // Mock base category expansion state (all categories collapsed by default)
   const baseOpenCategories: Record<string, boolean> = {
-    native_adk: true,
+    native_adk: false,
     mcp: false,
     custom: false,
   };
@@ -62,8 +62,8 @@ describe('Tool Category Auto-Expansion During Search', () => {
       : (baseState[categoryId] ?? false);
   }
 
-  it('should maintain native_adk open and mcp/custom closed when not searching', () => {
-    assert.equal(computeIsExpanded('native_adk', ''), true);
+  it('should maintain native_adk, mcp, and custom closed when not searching', () => {
+    assert.equal(computeIsExpanded('native_adk', ''), false);
     assert.equal(computeIsExpanded('mcp', ''), false);
     assert.equal(computeIsExpanded('custom', ''), false);
   });
@@ -109,7 +109,7 @@ describe('Tool Category Auto-Expansion During Search', () => {
     const clearedQuery = '';
     const searchToggled = {};
 
-    assert.equal(computeIsExpanded('native_adk', clearedQuery, searchToggled), true);
+    assert.equal(computeIsExpanded('native_adk', clearedQuery, searchToggled), false);
     assert.equal(computeIsExpanded('mcp', clearedQuery, searchToggled), false);
     assert.equal(computeIsExpanded('custom', clearedQuery, searchToggled), false);
   });

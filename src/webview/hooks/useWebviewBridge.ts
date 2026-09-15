@@ -28,6 +28,7 @@ export interface WebviewApi {
 
 export interface UseWebviewBridgeReturn {
   postMessage: (message: WebviewToExtensionMessage) => void;
+  sendMessage: (message: WebviewToExtensionMessage) => void;
   subscribe: <T extends ExtensionToWebviewMessage['type']>(
     type: T,
     listener: (
@@ -221,6 +222,7 @@ export function useWebviewBridge(): UseWebviewBridgeReturn {
   return useMemo(
     () => ({
       postMessage,
+      sendMessage: postMessage,
       subscribe,
       onMessage: subscribe,
       sendRequestWithReply,

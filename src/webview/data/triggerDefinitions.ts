@@ -5,7 +5,7 @@ export interface TriggerCatalogItem {
   type: TriggerType;
   name: string;
   badge: string;
-  iconName: 'MessageSquare' | 'Radio' | 'Clock' | 'FlaskConical' | 'Zap';
+  iconName: 'MessageSquare' | 'Radio' | 'Clock' | 'FlaskConical' | 'Zap' | 'Webhook';
   description: string;
   defaultConfig: TriggerConfig;
 }
@@ -149,6 +149,63 @@ export const EVENTARC_CATEGORIES: EventArcCategory[] = [
       },
     ],
   },
+  {
+    id: 'securitycenter',
+    name: 'Security Command Center (SCC)',
+    serviceName: 'securitycenter.googleapis.com',
+    events: [
+      {
+        id: 'FindingNotification',
+        name: 'Finding Notification (SecOps Alert)',
+        fullEvent: 'google.cloud.securitycenter.v1.NotificationMessage',
+        description: 'Fires when an EDR detection, IOC match, or threat finding is raised by SecOps/SCC',
+      },
+      {
+        id: 'MuteStateChanged',
+        name: 'Finding Mute State Changed',
+        fullEvent: 'google.cloud.securitycenter.v1.MuteStateChanged',
+        description: 'Fires when a security finding status or mute state changes',
+      },
+    ],
+  },
+  {
+    id: 'dataplex',
+    name: 'Dataplex',
+    serviceName: 'dataplex.googleapis.com',
+    events: [
+      {
+        id: 'created',
+        name: 'Entry Created / Resource Created',
+        fullEvent: 'google.cloud.dataplex.v1.created',
+        description: 'Fires when a new lake, zone, asset, or metadata entry is created',
+      },
+      {
+        id: 'updated',
+        name: 'Entry / Asset Updated',
+        fullEvent: 'google.cloud.dataplex.v1.updated',
+        description: 'Fires when a data lake asset or schema metadata is updated',
+      },
+      {
+        id: 'deleted',
+        name: 'Entry / Asset Deleted',
+        fullEvent: 'google.cloud.dataplex.v1.deleted',
+        description: 'Fires when a data lake asset or entry is deleted',
+      },
+    ],
+  },
+  {
+    id: 'audit',
+    name: 'Cloud Audit Logs',
+    serviceName: 'cloudaudit.googleapis.com',
+    events: [
+      {
+        id: 'AuditLogWritten',
+        name: 'Audit Log Written',
+        fullEvent: 'google.cloud.audit.log.v1.written',
+        description: 'Fires upon administrative or data access security audit event logging',
+      },
+    ],
+  },
 ];
 
 export const PUBSUB_TOPIC_PRESETS = [
@@ -256,7 +313,23 @@ export const TRIGGER_CATALOG: TriggerCatalogItem[] = [
       cronExpression: '0 9 * * 1-5',
       timezone: 'America/New_York',
       scheduleInterval: 'Weekdays @ 9AM',
+      scheduledPrompt: 'Execute scheduled batch processing and workflow execution.',
       retryCount: 3,
+    },
+  },
+  {
+    id: 'trigger_webhook',
+    type: 'webhook',
+    name: 'Webhook Trigger',
+    badge: 'HTTP Endpoint',
+    iconName: 'Webhook',
+    description: 'Exposes an HTTP REST/JSON webhook endpoint to invoke the agent from external systems.',
+    defaultConfig: {
+      webhookPath: '/webhook',
+      httpMethod: 'POST',
+      authType: 'bearer_token',
+      secretHeaderName: 'X-Webhook-Secret',
+      payloadDescription: 'JSON object containing event payload and context query',
     },
   },
   {
@@ -267,11 +340,11 @@ export const TRIGGER_CATALOG: TriggerCatalogItem[] = [
     iconName: 'Zap',
     description: 'GCP EventArc routing events across 90+ Google Cloud services (e.g. BigQuery, Storage, Firestore).',
     defaultConfig: {
-      eventarcCategory: 'bigquery',
-      eventarcEvent: 'TableCreate',
-      eventarcServiceName: 'bigquery.googleapis.com',
-      eventarcServiceAccount: 'eventarc-agent-invoker@my-gcp-project.iam.gserviceaccount.com',
-      eventarcRegion: 'us-central1',
+      eventarcCategory: '',
+      eventarcEvent: '',
+      eventarcServiceName: '',
+      eventarcServiceAccount: '',
+      eventarcRegion: '',
     },
   },
 ];

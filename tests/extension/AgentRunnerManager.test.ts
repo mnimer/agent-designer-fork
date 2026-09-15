@@ -390,10 +390,10 @@ describe('AgentRunnerManager', () => {
       },
     };
 
-    assert.doesNotThrow(() => {
-      manager.killPort(8999);
-      manager.killPort(0);
-      manager.killPort(-1);
+    await assert.doesNotReject(async () => {
+      await manager.killPort(8999);
+      await manager.killPort(0);
+      await manager.killPort(-1);
     });
 
     await manager.stopLocalRunner(undefined, 8999, mockBridge);
@@ -420,7 +420,7 @@ describe('AgentRunnerManager', () => {
 
     // Override httpPostJson to simulate OpenAI chat completions returning JSON content
     (manager as any).httpPostJson = async (_port: number, _path: string, body: any) => {
-      assert.equal(body.model, 'gemini-3.7-flash');
+      assert.equal(body.model, 'gemini-3.8-flash');
       return {
         ok: true,
         status: 200,
@@ -935,7 +935,37 @@ describe('AgentRunnerManager', () => {
     );
     assert.ok(capturedOptions.abortSignal, 'AbortSignal must be provided');
   });
+
+  it('should probe health and post LOCAL_RUNNER_STATUS via sendStatus', async () => {
+    const manager = new AgentRunnerManager('/mock/extension/path');
+    const postedMessages: any[] = [];
+    const mockBridge: any = {
+      postMessage: async (msg: any) => {
+        postedMessages.push(msg);
+      },
+    };
+
+    // Case 1: Probes health and finds runner active
+    (manager as any).healthCheck.httpGetCheck = async () => true;
+    await manager.sendStatus(mockBridge, 9090);
+
+    assert.equal(postedMessages.length, 1);
+    assert.equal(postedMessages[0].type, 'LOCAL_RUNNER_STATUS');
+    assert.equal(postedMessages[0].payload.status, 'running');
+    assert.equal(postedMessages[0].payload.port, 9090);
+    assert.equal(postedMessages[0].payload.serviceUrl, 'http://127.0.0.1:9090/v1/chat/completions');
+
+    // Case 2: Probes health and finds runner inactive
+    (manager as any).healthCheck.httpGetCheck = async () => false;
+    await manager.sendStatus(mockBridge, 9090);
+
+    assert.equal(postedMessages.length, 2);
+    assert.equal(postedMessages[1].type, 'LOCAL_RUNNER_STATUS');
+    assert.equal(postedMessages[1].payload.status, 'idle');
+    assert.equal(postedMessages[1].payload.serviceUrl, undefined);
+  });
 });
+
 
 
 

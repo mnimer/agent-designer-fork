@@ -189,7 +189,8 @@ describe('Python ADK Generator & A2A JSON-RPC 2.0 Client', () => {
     assert.ok(workflowPy.includes('from google.adk.runners import Runner'));
     assert.ok(workflowPy.includes('from tools import setup_agent_tools'));
     assert.ok(workflowPy.includes('lead_analyst = Agent('));
-    assert.ok(workflowPy.includes('runner = Runner(agent=lead_analyst)'));
+    assert.ok(workflowPy.includes('root_agent = lead_analyst'));
+    assert.ok(workflowPy.includes('runner = Runner(agent=root_agent)'));
   });
 
   it('should bundle complete full project with requirements and env templates', () => {
@@ -263,6 +264,44 @@ describe('Python ADK Generator & A2A JSON-RPC 2.0 Client', () => {
     const reqFile = files.find((f) => f.path === 'requirements.txt');
     assert.ok(reqFile, 'requirements.txt should be generated');
     assert.ok(reqFile.content.includes('mcp>=1.0.0'), 'Should include mcp>=1.0.0');
+  });
+
+  it('should include httpx and secret-manager in requirements.txt when REST API tools are present', () => {
+    const generator = new PythonAdkGenerator();
+    const workflow: AgentWorkflowDocument = {
+      id: 'wf-rest',
+      name: 'REST API System',
+      nodes: [
+        {
+          id: 'agent-1',
+          data: {
+            label: 'CRM Agent',
+            tools: [
+              {
+                id: 'tool_crm',
+                name: 'Query CRM',
+                type: 'api',
+                httpMethod: 'POST',
+                endpointUrl: 'https://crm.example.com/api',
+                secretManagerKey: 'projects/p/secrets/s/versions/1',
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const files = generator.generateFullProject(workflow);
+    const reqFile = files.find((f) => f.path === 'requirements.txt');
+    assert.ok(reqFile, 'requirements.txt should be generated');
+    assert.ok(reqFile.content.includes('httpx>=0.27.0'), 'Should include httpx');
+    assert.ok(reqFile.content.includes('google-cloud-secret-manager>=2.16.0'), 'Should include secret manager');
+
+    const toolsFile = files.find((f) => f.path === 'tools.py');
+    assert.ok(toolsFile, 'tools.py should be generated');
+    assert.ok(toolsFile.content.includes('import httpx'));
+    assert.ok(toolsFile.content.includes('async def query_crm'));
   });
 
   it('should export convenience function generateToolsPyForWorkflow', () => {

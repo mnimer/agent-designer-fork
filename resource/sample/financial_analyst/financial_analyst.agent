@@ -1,0 +1,184 @@
+{
+  "version": "1.0.0",
+  "name": "FinancialResearchAnalyst",
+  "description": "Parallel fan-out multi-agent research workflow gathering SEC filings, quarterly earnings transcripts, and market sentiment, synthesized into comprehensive equity research reports.",
+  "framework": "google-adk",
+  "language": "python",
+  "metadata": {
+    "category": "Financial & Quantitative Analysis",
+    "badge": "Parallel Fan-Out + Synthesis",
+    "features": [
+      "Parallel Sub-Agents",
+      "SEC Filing Extraction",
+      "Sentiment Analysis",
+      "Executive Synthesis"
+    ]
+  },
+  "deployment": {
+    "outputFolder": "./financial_analyst_agent/",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true,
+    "deploymentTarget": "agent_engine"
+  },
+  "nodes": [
+    {
+      "id": "node-trigger-finance",
+      "type": "triggerNode",
+      "position": { "x": 80, "y": 240 },
+      "data": {
+        "id": "node-trigger-finance",
+        "label": "Daily Market Briefing Scheduler",
+        "description": "Triggers daily at market open to generate pre-bell intelligence briefings.",
+        "triggerKind": "scheduled",
+        "triggerType": "scheduled",
+        "config": {
+          "cronExpression": "0 8 * * 1-5",
+          "timezone": "America/New_York",
+          "scheduledPrompt": "Generate daily pre-bell equity research briefings across tracked equities.",
+          "testScenarios": [
+            {
+              "id": "scenario-alphabet-earnings",
+              "name": "Alphabet Q3 Performance",
+              "prompt": "Generate an equity research summary for Alphabet focusing on Cloud revenue and operating margins.",
+              "expectedOutput": "Alphabet",
+              "assertionType": "contains"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-agent-finance-orchestrator",
+      "type": "agentNode",
+      "position": { "x": 440, "y": 200 },
+      "data": {
+        "id": "node-agent-finance-orchestrator",
+        "label": "Lead Financial Analyst",
+        "role": "Research Orchestration & Fan-Out",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "agentKind": "standard",
+        "isStartNode": true,
+        "subAgentPattern": "parallel",
+        "systemPrompt": "You are the Lead Financial Analyst Orchestrator. Deconstruct the target ticker and ticker metrics, then fan out research in parallel to: SEC Specialist, Earnings Analyst, and Market Sentiment Analyst. Synthesize their findings into an institutional-grade research memorandum.",
+        "tools": [
+          {
+            "id": "google_search",
+            "name": "google_search",
+            "type": "google_search",
+            "description": "Ground Gemini responses in real-time Google Search results.",
+            "isBuiltin": true,
+            "bypass_multi_tools_limit": true
+          }
+        ],
+        "subAgents": [
+          { "agentId": "node-agent-sec", "name": "SEC Specialist", "role": "Extracts 10-K and 10-Q disclosures", "delegationType": "parallel" },
+          { "agentId": "node-agent-earnings", "name": "Earnings Analyst", "role": "Analyzes executive call transcripts", "delegationType": "parallel" },
+          { "agentId": "node-agent-sentiment", "name": "Market Sentiment", "role": "Gauges news and social sentiment", "delegationType": "parallel" },
+          { "agentId": "node-agent-synthesizer", "name": "Report Synthesizer", "role": "Compiles institutional research memo", "delegationType": "parallel" }
+        ]
+      }
+    },
+    {
+      "id": "node-agent-sec",
+      "type": "agentNode",
+      "position": { "x": 920, "y": 32 },
+      "data": {
+        "id": "node-agent-sec",
+        "label": "SEC 10-K Specialist",
+        "role": "Financial Disclosures & Balance Sheets",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "agentKind": "standard",
+        "systemPrompt": "You are the SEC Filings Specialist. Parse balance sheets, debt maturity schedules, and 10-K Item 1A Risk Factors.",
+        "tools": [],
+        "subAgents": []
+      }
+    },
+    {
+      "id": "node-agent-earnings",
+      "type": "agentNode",
+      "position": { "x": 920, "y": 176 },
+      "data": {
+        "id": "node-agent-earnings",
+        "label": "Earnings Call Analyst",
+        "role": "Guidance & Management Commentary",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "agentKind": "standard",
+        "systemPrompt": "You are the Earnings Call Analyst. Scrutinize CEO/CFO prepared remarks and Q&A tone, identifying revenue guidance revisions.",
+        "tools": [],
+        "subAgents": []
+      }
+    },
+    {
+      "id": "node-agent-sentiment",
+      "type": "agentNode",
+      "position": { "x": 920, "y": 320 },
+      "data": {
+        "id": "node-agent-sentiment",
+        "label": "Market Sentiment Analyst",
+        "role": "News Sentiment & Target Prices",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "agentKind": "standard",
+        "systemPrompt": "You are the Market Sentiment Analyst. Track institutional rating revisions, analyst consensus targets, and macroeconomic headwinds.",
+        "tools": [],
+        "subAgents": []
+      }
+    },
+    {
+      "id": "node-agent-synthesizer",
+      "type": "agentNode",
+      "position": { "x": 920, "y": 464 },
+      "data": {
+        "id": "node-agent-synthesizer",
+        "label": "Report Synthesizer",
+        "role": "Final Equity Memo Synthesis",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "agentKind": "standard",
+        "systemPrompt": "You are the Equity Research Synthesizer. Synthesize SEC findings, earnings commentary, and market sentiment into a clear investment thesis.",
+        "tools": [],
+        "subAgents": []
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-finance-trigger-to-orchestrator",
+      "source": "node-trigger-finance",
+      "target": "node-agent-finance-orchestrator",
+      "style": { "stroke": "#f59e0b", "strokeWidth": 2, "strokeDasharray": "5 5" }
+    },
+    {
+      "id": "edge-orchestrator-to-sec",
+      "source": "node-agent-finance-orchestrator",
+      "target": "node-agent-sec",
+      "label": "SEC Data",
+      "style": { "stroke": "#10b981", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge-orchestrator-to-earnings",
+      "source": "node-agent-finance-orchestrator",
+      "target": "node-agent-earnings",
+      "label": "Transcripts",
+      "style": { "stroke": "#10b981", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge-orchestrator-to-sentiment",
+      "source": "node-agent-finance-orchestrator",
+      "target": "node-agent-sentiment",
+      "label": "Sentiment",
+      "style": { "stroke": "#10b981", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge-orchestrator-to-synthesizer",
+      "source": "node-agent-finance-orchestrator",
+      "target": "node-agent-synthesizer",
+      "label": "Synthesize",
+      "style": { "stroke": "#10b981", "strokeWidth": 2 }
+    }
+  ]
+}

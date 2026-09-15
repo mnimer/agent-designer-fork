@@ -28,7 +28,8 @@ import {
   Play,
   CheckCircle2,
   ListChecks,
-  Check
+  Check,
+  Webhook
 } from 'lucide-react';
 import { TriggerData, TriggerType, TestPrompt } from '../../../types';
 import { DEFAULT_MOCK_TEST_PROMPTS } from '../../../data/triggerDefinitions';
@@ -49,6 +50,8 @@ const getTriggerIcon = (type: TriggerType) => {
       return <FlaskConical className="w-4 h-4 text-orange-400" />;
     case 'eventarc':
       return <Zap className="w-4 h-4 text-orange-400" />;
+    case 'webhook':
+      return <Webhook className="w-4 h-4 text-orange-400" />;
     default:
       return <Zap className="w-4 h-4 text-orange-400" />;
   }
@@ -66,6 +69,48 @@ const getTriggerTheme = (_type: TriggerType) => {
     glow: 'shadow-[0_0_15px_rgba(249,115,22,0.15)]',
   };
 };
+
+/**
+ * Custom comparison function for React.memo to prevent unnecessary TriggerNode re-renders.
+ * Ensures the node only re-renders when its identity, selection state, dragging state,
+ * or data values change, ignoring stable helper function reference updates.
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
+export function areEqual(prevProps: any, nextProps: any): boolean {
+  if (prevProps.id !== nextProps.id) return false;
+  if (prevProps.selected !== nextProps.selected) return false;
+  if (prevProps.dragging !== nextProps.dragging) return false;
+
+  const prevData = prevProps.data || {};
+  const nextData = nextProps.data || {};
+
+  const prevKeys = Object.keys(prevData);
+  const nextKeys = Object.keys(nextData);
+
+  if (prevKeys.length !== nextKeys.length) return false;
+
+  for (const key of prevKeys) {
+    // Skip functions
+    if (typeof prevData[key] === 'function') continue;
+
+    const valPrev = prevData[key];
+    const valNext = nextData[key];
+
+    if (valPrev === valNext) continue;
+
+    // Deep comparison of objects/arrays
+    if (typeof valPrev === 'object' && typeof valNext === 'object' && valPrev !== null && valNext !== null) {
+      if (JSON.stringify(valPrev) !== JSON.stringify(valNext)) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: TriggerData }) => {
   const theme = getTriggerTheme(data.triggerType);
@@ -87,9 +132,21 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
   const showRightHandle = !isConnected || isRightActive || (!isRightActive && !isBottomActive);
   const showBottomHandle = !isConnected || isBottomActive || (!isRightActive && !isBottomActive);
 
+  const rawPrompts = (data.config?.testPrompts && data.config.testPrompts.length > 0)
+    ? data.config.testPrompts
+    : ((data.config as any)?.testScenarios && (data.config as any).testScenarios.length > 0)
+    ? (data.config as any).testScenarios
+    : null;
+
   const testPrompts: TestPrompt[] = isTester
-    ? data.config?.testPrompts && data.config.testPrompts.length > 0
-      ? data.config.testPrompts
+    ? rawPrompts && rawPrompts.length > 0
+      ? rawPrompts.map((tp: any, idx: number) => ({
+          id: tp.id || `tp_${idx + 1}`,
+          name: tp.name || `Test Case #${idx + 1}`,
+          prompt: tp.prompt || tp.inputQuery || '',
+          expectedOutput: tp.expectedOutput || tp.expectedOutputPattern || '',
+          assertionType: tp.assertionType || 'contains',
+        }))
       : DEFAULT_MOCK_TEST_PROMPTS
     : [];
 
@@ -103,8 +160,12 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
         return data.config?.cronExpression ? `Cron: ${data.config.cronExpression}` : 'Scheduled Cadence';
       case 'eventarc':
         return data.config?.eventarcEvent 
-          ? `${data.config.eventarcCategory?.toUpperCase() || 'EVENT'}: ${data.config.eventarcEvent}` 
+          ? `${data.config?.eventarcCategory?.toUpperCase() || 'EVENT'}: ${data.config?.eventarcEvent || 'CloudEvent'}` 
           : 'Cloud Event Routing';
+      case 'webhook':
+        return data.config?.webhookPath
+          ? `${data.config.httpMethod || 'POST'} ${data.config.webhookPath}`
+          : 'HTTP Webhook Endpoint';
       case 'tester':
         return `${testPrompts.length} Test Cases Defined`;
       default:
@@ -226,30 +287,38 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
           </div>
         )}
 
-        {/* Chat Configuration Section (for Chat Trigger) */}
-        {isChat && (
-          <div className="space-y-1.5 bg-[#0d1117] p-2 rounded-lg border border-amber-500/30">
+        {/* Eventarc Configuration Section (for Eventarc Trigger) */}
+        {isEventArc && (
+          <div className="space-y-1.5 bg-[#0d1117] p-2 rounded-lg border border-purple-500/30">
             <div className="flex items-center justify-between pb-1 border-b border-[#21262d]">
-              <div className="flex items-center gap-1 text-[10px] font-bold text-amber-400 uppercase tracking-wider">
-                <MessageSquare className="w-3 h-3 text-amber-400" />
-                <span>Chat Configuration</span>
+              <div className="flex items-center gap-1 text-[10px] font-bold text-purple-400 uppercase tracking-wider">
+                <Zap className="w-3 h-3 text-purple-400" />
+                <span>CloudEvent Routing</span>
               </div>
-              <span className={`text-[8px] font-mono px-1.5 py-0.2 rounded border ${
-                data.config?.streaming !== false
-                  ? 'bg-amber-950/50 text-amber-300 border-amber-500/40'
-                  : 'bg-[#161b22] text-gray-400 border-[#30363d]'
-              }`}>
-                {data.config?.streaming !== false ? 'Streaming Active' : 'Static Output'}
+              <span className="text-[8px] font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                {data.config?.eventarcCategory ? data.config.eventarcCategory.toUpperCase() : 'EVENTARC'}
               </span>
             </div>
 
             <div className="p-1.5 rounded-md bg-[#161b22] border border-[#30363d]/80 text-[10px] space-y-1">
-              <span className="text-[9px] font-semibold text-gray-400 uppercase tracking-tight block">
-                Welcome Message:
-              </span>
-              <p className="text-[9.5px] leading-tight text-gray-300 italic line-clamp-2 bg-[#0d1117] p-1 rounded border border-[#21262d]">
-                "{data.config?.initialMessage || 'Hello! I am your AI agent assistant. How can I help you today?'}"
-              </p>
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-semibold text-gray-400 uppercase tracking-tight">Event:</span>
+                <span className={`text-[9.5px] font-mono font-bold truncate max-w-[160px] ${
+                  data.config?.eventarcEvent ? 'text-purple-300' : 'text-gray-500 italic'
+                }`}>
+                  {data.config?.eventarcEvent || 'No event selected'}
+                </span>
+              </div>
+              <div className="text-[9px] text-gray-400 truncate">
+                Service: <span className={`font-mono ${data.config?.eventarcServiceName ? 'text-gray-300' : 'text-gray-500 italic'}`}>
+                  {data.config?.eventarcServiceName || 'None'}
+                </span>
+              </div>
+              {data.config?.eventarcServiceAccount ? (
+                <div className="text-[8.5px] text-gray-400 font-mono truncate">
+                  SA: {data.config.eventarcServiceAccount.split('@')[0]}
+                </div>
+              ) : null}
             </div>
           </div>
         )}
@@ -294,7 +363,7 @@ export const TriggerNode = memo(({ id, data, selected }: NodeProps & { data: Tri
       )}
     </div>
   );
-});
+}, areEqual);
 
 TriggerNode.displayName = 'TriggerNode';
 

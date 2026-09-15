@@ -64,6 +64,12 @@ export enum ColorThemeKind {
   HighContrastLight = 4,
 }
 
+export enum ConfigurationTarget {
+  Global = 1,
+  Workspace = 2,
+  WorkspaceFolder = 3,
+}
+
 export enum TreeItemCollapsibleState {
   None = 0,
   Collapsed = 1,

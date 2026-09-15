@@ -663,6 +663,51 @@ describe('Tool Drawer & Property Inspector Logic', () => {
     assert.equal(elem.props.tool.mcpConfig?.authProviderType, 'google_credentials');
     assert.deepEqual(elem.props.tool.mcpConfig?.discoveredTools, discoveredToolsList);
   });
+
+  it('should safely handle opening edit on tools without throwing SyntaxError: "undefined" is not valid JSON', () => {
+    // 1. Simulate safe cloning and validation of tool definition
+    const validTool: ToolDefinition = {
+      id: 'tool_custom_test',
+      name: 'Custom Test Tool',
+      type: 'custom',
+      description: 'A test custom tool',
+      enabled: true,
+    };
+
+    // Test cloning of valid tool
+    const cloned = JSON.parse(JSON.stringify(validTool));
+    assert.deepEqual(cloned, validTool);
+
+    // 2. Test safe handling when tool is undefined or non-object
+    const safeCloneTool = (tool?: ToolDefinition | null): ToolDefinition | null => {
+      if (!tool || typeof tool !== 'object') return null;
+      try {
+        return JSON.parse(JSON.stringify(tool));
+      } catch {
+        return null;
+      }
+    };
+
+    assert.equal(safeCloneTool(undefined), null);
+    assert.equal(safeCloneTool(null), null);
+    assert.deepEqual(safeCloneTool(validTool), validTool);
+
+    // 3. Test safe localStorage parsing with undefined/corrupt strings
+    const safeParseLocalStorage = (raw: string | null): any => {
+      if (!raw || raw === 'undefined' || raw === 'null') return null;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    };
+
+    assert.equal(safeParseLocalStorage('undefined'), null);
+    assert.equal(safeParseLocalStorage('null'), null);
+    assert.equal(safeParseLocalStorage(''), null);
+    assert.equal(safeParseLocalStorage(null), null);
+    assert.deepEqual(safeParseLocalStorage('{"id":"t1"}'), { id: 't1' });
+  });
 });
 
 

@@ -44,6 +44,7 @@ import {
   ToolDefinition
 } from '../../types';
 import { validateAgentIdentifier, sanitizeAgentIdentifier } from '../../../shared/identifierValidation';
+import { ModelSelector } from '../drawers/primitives/ModelSelector';
 
 interface RouterAgentDrawerProps {
   agent: AgentData;
@@ -56,10 +57,7 @@ interface RouterAgentDrawerProps {
   onSelectAgent?: (agentId: string) => void;
 }
 
-const SUPPORTED_MODELS = [
-  { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash (Recommended - Global Region)', desc: 'Next-gen hybrid reasoning intent classifier and JSON branch decision engine on Vertex AI' },
-  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', desc: 'Ultra-fast intent classifier and JSON branch decision engine on Vertex AI' },
-];
+
 
 const EVALUATION_MODES: { id: RouterEvaluationMode; label: string; icon: React.ReactNode; desc: string; badge: string }[] = [
   {
@@ -403,20 +401,12 @@ export const RouterAgentDrawer: React.FC<RouterAgentDrawerProps> = ({
               <span className="text-[9px] text-purple-300 font-mono">Zero-Shot Router</span>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[10px] text-gray-400">Router Decision Model</label>
-              <select
-                value={agent.model || 'gemini-3.7-flash'}
-                onChange={(e) => onUpdateAgent({ model: e.target.value })}
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-purple-500 rounded text-xs text-white focus:outline-none cursor-pointer"
-              >
-                {SUPPORTED_MODELS.map((m) => (
-                  <option key={m.id} value={m.id} className="bg-[#161b22]">
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <ModelSelector
+              selectedModel={agent.model || 'gemini-3.8-flash'}
+              onChangeModel={(model) => onUpdateAgent({ model })}
+              thinkingBudget={agent.thinkingBudget}
+              onChangeThinkingBudget={(thinkingBudget) => onUpdateAgent({ thinkingBudget })}
+            />
 
             <div className="space-y-1">
               <label className="text-[10px] text-gray-400">Classification Prompt Directives</label>

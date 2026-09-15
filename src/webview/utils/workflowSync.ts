@@ -52,13 +52,47 @@ export function normalizeLoadedNodes(loadedNodes: any[]): Node<any>[] {
       // Normalize trigger types and fallback configurations
       const triggerType = data.triggerType || data.triggerKind || 'tester';
       const normalizedTriggerType = triggerType === 'test' ? 'tester' : triggerType;
+      const rawConfig = { ...(data.config || data.testConfig || data.chatConfig || data.pubsubConfig || data.scheduledConfig || data.eventarcConfig || {}) };
+
+      // Harmonize testScenarios and testPrompts for tester triggers so neither is empty
+      if (normalizedTriggerType === 'tester' || rawConfig.testPrompts || rawConfig.testScenarios || data.testConfig) {
+        const scenariosSource = (rawConfig.testPrompts && rawConfig.testPrompts.length > 0)
+          ? rawConfig.testPrompts
+          : (rawConfig.testScenarios && rawConfig.testScenarios.length > 0)
+          ? rawConfig.testScenarios
+          : (data.testConfig?.testScenarios || []);
+
+        if (scenariosSource && scenariosSource.length > 0) {
+          const normalizedPrompts = scenariosSource.map((s: any, idx: number) => ({
+            id: s.id || `test_prompt_${idx + 1}`,
+            name: s.name || `Test Case #${idx + 1}`,
+            prompt: s.prompt || s.inputQuery || '',
+            inputQuery: s.inputQuery || s.prompt || '',
+            expectedOutput: s.expectedOutput || s.expectedOutputPattern || '',
+            expectedOutputPattern: s.expectedOutputPattern || s.expectedOutput || '',
+            assertionType: s.assertionType || 'contains',
+          }));
+          rawConfig.testPrompts = normalizedPrompts;
+          rawConfig.testScenarios = normalizedPrompts;
+        }
+      }
+
+      // Populate Eventarc defaults if triggerType is eventarc
+      if (normalizedTriggerType === 'eventarc') {
+        if (rawConfig.eventarcCategory === undefined) rawConfig.eventarcCategory = '';
+        if (rawConfig.eventarcEvent === undefined) rawConfig.eventarcEvent = '';
+        if (rawConfig.eventarcServiceName === undefined) rawConfig.eventarcServiceName = '';
+        if (rawConfig.eventarcServiceAccount === undefined) rawConfig.eventarcServiceAccount = '';
+        if (!rawConfig.eventarcRegion) rawConfig.eventarcRegion = 'us-central1';
+      }
+
       data = {
         ...data,
         id: n.id,
         label: data.label || (normalizedTriggerType === 'tester' ? 'Test Suite Trigger' : 'Workflow Trigger'),
         triggerType: normalizedTriggerType,
         description: data.description || 'Workflow Trigger',
-        config: data.config || data.testConfig || data.chatConfig || data.pubsubConfig || data.scheduledConfig || data.eventarcConfig || {},
+        config: rawConfig,
       };
     } else {
       // Normalize agent types, model defaults, and tool assignments
@@ -346,12 +380,16 @@ export const resolveAgentOutputFolder = (
 ): string => {
   let trimmed = explicitFolder?.trim();
 
-  // Strip legacy src/agents prefixes if present
+  // Strip legacy src/ or src/agents prefixes if present
   if (trimmed) {
     if (trimmed.startsWith('./src/agents/')) {
       trimmed = `./${trimmed.slice('./src/agents/'.length)}`;
     } else if (trimmed.startsWith('src/agents/')) {
       trimmed = `./${trimmed.slice('src/agents/'.length)}`;
+    } else if (trimmed.startsWith('./src/')) {
+      trimmed = `./${trimmed.slice('./src/'.length)}`;
+    } else if (trimmed.startsWith('src/')) {
+      trimmed = `./${trimmed.slice('src/'.length)}`;
     }
   }
 

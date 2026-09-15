@@ -14,6 +14,8 @@ import {
   McpAuthProviderType,
   McpOAuthConfig,
   McpSecretConfig,
+  SampleWorkflowDefinition,
+  EventArcCategory,
 } from './types';
 import { GeneratedFile } from './codegen/types';
 
@@ -35,6 +37,12 @@ export type WebviewToExtensionMessage =
         targetLanguage?: LanguageTarget;
         deploymentTarget?: string;
         outputFolder?: string;
+      };
+    }
+  | {
+      type: 'CANCEL_CODE_GENERATION';
+      payload?: {
+        targetDirectory?: string;
       };
     }
   | {
@@ -222,6 +230,24 @@ export type WebviewToExtensionMessage =
       };
     }
   | {
+      type: 'PICK_LOCAL_PYTHON_TOOL';
+      payload?: {
+        currentFilePath?: string;
+      };
+    }
+  | {
+      type: 'PARSE_PYTHON_TOOL_FILE';
+      payload: {
+        filePath: string;
+      };
+    }
+  | {
+      type: 'OPEN_LOCAL_TOOL_FILE';
+      payload: {
+        filePath: string;
+      };
+    }
+  | {
       type: 'CANCEL_AGENT_ENGINE_DEPLOY';
       payload?: {
         targetDirectory?: string;
@@ -243,10 +269,100 @@ export type WebviewToExtensionMessage =
         location?: string;
         projectId?: string;
       };
+    }
+  | {
+      type: 'DEPLOY_TO_CLOUD_RUN';
+      payload: {
+        document?: AgentWorkflowDocument;
+        targetDirectory?: string;
+        projectId: string;
+        region?: string;
+        serviceName?: string;
+        cpu?: string;
+        memory?: string;
+        minInstances?: number;
+        maxInstances?: number;
+        concurrency?: number;
+        allowUnauthenticated?: boolean;
+        networkAttachment?: string;
+        envVars?: Record<string, string>;
+      };
+    }
+  | {
+      type: 'CANCEL_CLOUD_RUN_DEPLOY';
+      payload?: {
+        targetDirectory?: string;
+      };
+    }
+  | {
+      type: 'GET_CLOUD_RUN_STATUS';
+      payload?: {
+        targetDirectory?: string;
+      };
+    }
+  | {
+      type: 'TEST_REMOTE_CLOUD_RUN';
+      payload: {
+        targetDirectory?: string;
+        query: string;
+        serviceUrl?: string;
+        projectId?: string;
+      };
+    }
+  | {
+      type: 'GENERATE_TERRAFORM_FILES';
+      payload: {
+        document?: AgentWorkflowDocument;
+        targetDirectory?: string;
+        projectId: string;
+        region?: string;
+        serviceName?: string;
+        cpu?: string;
+        memory?: string;
+        minInstances?: number;
+        maxInstances?: number;
+        concurrency?: number;
+        allowUnauthenticated?: boolean;
+        networkAttachment?: string;
+        secretValues?: Record<string, string>;
+      };
+    }
+  | {
+      type: 'SAVE_TERRAFORM_FILES';
+      payload: {
+        targetDirectory: string;
+        files: GeneratedFile[];
+      };
+    }
+  | {
+      type: 'GET_SAMPLES';
+      payload?: Record<string, never>;
+    }
+  | {
+      type: 'FETCH_EVENTARC_PROVIDERS';
+      payload?: {
+        location?: string;
+        forceRefresh?: boolean;
+      };
+    }
+  | {
+      type: 'CREATE_FILE_FROM_SAMPLE';
+      payload: {
+        sampleId: string;
+        sampleName?: string;
+        sample?: SampleWorkflowDefinition;
+      };
     };
 
 // Extension Host -> Webview Events
 export type ExtensionToWebviewMessage =
+  | {
+      type: 'PARSE_ERROR';
+      payload: {
+        error: string;
+        rawText: string;
+      };
+    }
   | {
       type: 'LOAD_DOCUMENT';
       payload: {
@@ -453,4 +569,222 @@ export type ExtensionToWebviewMessage =
         durationMs: number;
         error?: string;
       };
+    }
+  | {
+      type: 'CLOUD_RUN_DEPLOY_LOG';
+      payload: {
+        text: string;
+        stream: 'stdout' | 'stderr' | 'system';
+        timestamp: string;
+      };
+    }
+  | {
+      type: 'CLOUD_RUN_DEPLOY_STATUS';
+      payload: {
+        status: 'idle' | 'packaging' | 'building' | 'deploying' | 'success' | 'error';
+        serviceUrl?: string;
+        consoleUrl?: string;
+        serviceName?: string;
+        projectId?: string;
+        region?: string;
+        error?: string;
+        logs?: string[];
+        isExistingDeployment?: boolean;
+        metadata?: any;
+      };
+    }
+  | {
+      type: 'CLOUD_RUN_TEST_RESULT';
+      payload: {
+        success: boolean;
+        query: string;
+        response?: string;
+        durationMs: number;
+        error?: string;
+      };
+    }
+  | {
+      type: 'TERRAFORM_FILES_GENERATED';
+      payload: {
+        files: GeneratedFile[];
+        error?: string;
+      };
+    }
+  | {
+      type: 'TERRAFORM_FILES_SAVED';
+      payload: {
+        success: boolean;
+        outputDirectory: string;
+        filesWritten: string[];
+      };
+    }
+  | {
+      type: 'LOCAL_PYTHON_TOOL_PICKED';
+      payload: {
+        success: boolean;
+        filePath?: string;
+        relativePath?: string;
+        functions?: Array<{
+          name: string;
+          docstring?: string;
+          parameters?: Record<string, string>;
+        }>;
+        error?: string;
+      };
+    }
+  | {
+      type: 'PYTHON_TOOL_FILE_PARSED';
+      payload: {
+        success: boolean;
+        filePath: string;
+        relativePath?: string;
+        functions: Array<{
+          name: string;
+          docstring?: string;
+          parameters?: Record<string, string>;
+        }>;
+        error?: string;
+      };
+    }
+  | {
+      type: 'SAMPLES_LOADED';
+      payload: {
+        samples: SampleWorkflowDefinition[];
+      };
+    }
+  | {
+      type: 'EVENTARC_PROVIDERS_RESPONSE';
+      payload: {
+        categories: EventArcCategory[];
+        source: 'gcloud' | 'fallback';
+        location: string;
+        error?: string;
+      };
     };
+
+/**
+ * Validates if an incoming object is a valid RPC message envelope.
+ *
+ * @param msg Any candidate object
+ */
+export function isValidRpcMessage(msg: any): msg is WebviewToExtensionMessage {
+  if (!msg || typeof msg !== 'object') {
+    return false;
+  }
+  return typeof msg.type === 'string';
+}
+
+/**
+ * Validates if a payload is a valid WRITE_FILES_TO_WORKSPACE payload.
+ *
+ * @param payload Candidate payload
+ */
+export function isWriteFilesPayload(payload: any): payload is { files: { path: string; content: string }[]; targetDirectory?: string } {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  if (!Array.isArray(payload.files)) {
+    return false;
+  }
+  for (const file of payload.files) {
+    if (!file || typeof file !== 'object') {
+      return false;
+    }
+    if (typeof file.path !== 'string' || typeof file.content !== 'string') {
+      return false;
+    }
+  }
+  if ('targetDirectory' in payload && payload.targetDirectory !== undefined && typeof payload.targetDirectory !== 'string') {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Validates if a payload is a valid START_LOCAL_RUNNER payload.
+ *
+ * @param payload Candidate payload
+ */
+export function isStartRunnerPayload(payload: any): payload is { document?: any; targetDirectory?: string; port?: number; envVars?: Record<string, string> } {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  if ('targetDirectory' in payload && payload.targetDirectory !== undefined && typeof payload.targetDirectory !== 'string') {
+    return false;
+  }
+  if ('port' in payload && payload.port !== undefined && typeof payload.port !== 'number') {
+    return false;
+  }
+  if ('envVars' in payload && payload.envVars !== undefined) {
+    if (!payload.envVars || typeof payload.envVars !== 'object' || Array.isArray(payload.envVars)) {
+      return false;
+    }
+    for (const key of Object.keys(payload.envVars)) {
+      if (typeof payload.envVars[key] !== 'string') {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Validates if a payload is a valid DISCOVER_MCP_TOOLS payload.
+ *
+ * @param payload Candidate payload
+ */
+export function isDiscoverMcpPayload(payload: any): payload is { transport: 'stdio' | 'sse' | 'http'; command?: string; args?: string[]; cwd?: string; url?: string; serverUrl?: string; envVars?: Record<string, string>; headers?: Record<string, string>; timeoutSeconds?: number } {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  if (payload.transport !== 'stdio' && payload.transport !== 'sse' && payload.transport !== 'http') {
+    return false;
+  }
+  if ('command' in payload && payload.command !== undefined && typeof payload.command !== 'string') {
+    return false;
+  }
+  if ('args' in payload && payload.args !== undefined) {
+    if (!Array.isArray(payload.args)) {
+      return false;
+    }
+    for (const arg of payload.args) {
+      if (typeof arg !== 'string') {
+        return false;
+      }
+    }
+  }
+  if ('cwd' in payload && payload.cwd !== undefined && typeof payload.cwd !== 'string') {
+    return false;
+  }
+  if ('url' in payload && payload.url !== undefined && typeof payload.url !== 'string') {
+    return false;
+  }
+  if ('serverUrl' in payload && payload.serverUrl !== undefined && typeof payload.serverUrl !== 'string') {
+    return false;
+  }
+  if ('envVars' in payload && payload.envVars !== undefined) {
+    if (!payload.envVars || typeof payload.envVars !== 'object' || Array.isArray(payload.envVars)) {
+      return false;
+    }
+    for (const key of Object.keys(payload.envVars)) {
+      if (typeof payload.envVars[key] !== 'string') {
+        return false;
+      }
+    }
+  }
+  if ('headers' in payload && payload.headers !== undefined) {
+    if (!payload.headers || typeof payload.headers !== 'object' || Array.isArray(payload.headers)) {
+      return false;
+    }
+    for (const key of Object.keys(payload.headers)) {
+      if (typeof payload.headers[key] !== 'string') {
+        return false;
+      }
+    }
+  }
+  if ('timeoutSeconds' in payload && payload.timeoutSeconds !== undefined && typeof payload.timeoutSeconds !== 'number') {
+    return false;
+  }
+  return true;
+}
+

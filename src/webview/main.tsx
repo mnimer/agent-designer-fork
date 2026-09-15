@@ -18,6 +18,26 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// Read serialized bootstrap data safely from script tag to prevent inline script variables
+if (typeof document !== 'undefined') {
+  const bootstrapEl = document.getElementById('bootstrap-data');
+  if (bootstrapEl && bootstrapEl.textContent) {
+    try {
+      const bootstrapData = JSON.parse(bootstrapEl.textContent);
+      if (bootstrapData) {
+        if (bootstrapData.initialDoc) {
+          (window as any).__INITIAL_AGENT_DOCUMENT__ = bootstrapData.initialDoc;
+        }
+        if (bootstrapData.initialFilePath !== undefined) {
+          (window as any).__INITIAL_AGENT_FILE_PATH__ = bootstrapData.initialFilePath;
+        }
+      }
+    } catch (err) {
+      console.error('[Webview] Failed to parse bootstrap data:', err);
+    }
+  }
+}
+
 /**
  * Webview React Entry Point & Top-Level Error Boundary
  *

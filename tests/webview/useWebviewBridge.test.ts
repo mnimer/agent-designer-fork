@@ -105,4 +105,17 @@ describe('useWebviewBridge Core Logic', () => {
     assert.equal(receivedMessages.length, 1);
     assert.equal(receivedMessages[0], 'Deployment initiated');
   });
+
+  it('should support sendMessage as a functional alias for postMessage', () => {
+    const sentMessages: any[] = [];
+    const postMessage = (msg: any) => {
+      sentMessages.push(msg);
+    };
+    const sendMessage = postMessage;
+
+    sendMessage({ type: 'CREATE_FILE_FROM_SAMPLE', payload: { sampleId: 'sample-1' } });
+    assert.equal(sentMessages.length, 1);
+    assert.equal(sentMessages[0].type, 'CREATE_FILE_FROM_SAMPLE');
+    assert.equal(sentMessages[0].payload.sampleId, 'sample-1');
+  });
 });

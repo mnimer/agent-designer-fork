@@ -233,3 +233,33 @@ export function sanitizeAgentIdentifier(input: string, fallbackPrefix: string = 
 
   return cleaned;
 }
+
+/**
+ * Validates whether a resource identifier string is a valid Vertex AI Reasoning Engine / Agent Engine ID.
+ * Vertex AI Reasoning Engines use system-generated 64-bit integer IDs (e.g. "6900866478677950464")
+ * or fully qualified resource paths (e.g. "projects/.../locations/.../reasoningEngines/6900866478677950464").
+ * Non-numeric names like "animal-agent" (typical for Cloud Run services) are NOT valid Reasoning Engine IDs
+ * and cause 400 INVALID_ARGUMENT from Vertex AI when passed to adk deploy --agent_engine_id.
+ *
+ * @param id - Resource ID or resource name to test
+ * @returns true if the identifier matches Vertex AI Reasoning Engine conventions
+ */
+export function isValidAgentEngineId(id?: string | null): boolean {
+  if (!id || typeof id !== 'string') {
+    return false;
+  }
+  const trimmed = id.trim();
+  if (!trimmed) {
+    return false;
+  }
+  // Pure numeric 64-bit ID
+  if (/^\d+$/.test(trimmed)) {
+    return true;
+  }
+  // Full resource path ending in numeric ID
+  if (/^projects\/[^/]+\/locations\/[^/]+\/reasoningEngines\/\d+$/.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
+

@@ -2,13 +2,13 @@
  * AgentEngineDeployTab
  *
  * Dedicated webview component for Vertex AI Agent Engine (Agent Runtime) deployment,
- * configuration, real-time log monitoring, and live remote execution testing.
+ * configuration, and real-time log monitoring.
  *
  * Job in Application:
  * Provides an interactive UI for developers to configure GCP parameters (Project, Region,
  * Service Account, Network Attachment), deploy containers to Vertex AI Agent Runtime via ADK,
- * stream Cloud Build and runtime provisioning logs, view deployment metadata, and interact
- * directly with the live remote agent using the /api/run_sse HTTP passthrough.
+ * stream Cloud Build and runtime provisioning logs, and view deployment metadata. Developers can
+ * test the agent via the Interactive Chat or Test Suite tabs.
  *
  * Architectural Decisions:
  * 1. Global Region Default: Defaults the deployment location to 'global' per Google Cloud
@@ -17,9 +17,7 @@
  *    and enables safe in-place container updates or explicit new instance provisioning.
  * 3. Unified Terminal Telemetry: Integrates real-time streaming logs from `AGENT_ENGINE_DEPLOY_LOG`
  *    messages sent over WebviewBridge.
- * 4. Live Passthrough Testing: Includes an interactive testing console directly below the deployment
- *    summary to verify agent reasoning against the remote `/api/run_sse` passthrough without leaving the IDE.
- * 5. Strict 8pt Grid Layout: Adheres to multiples of 8px (p-2, p-4, gap-2, gap-4) and Tailwind CSS styling.
+ * 4. Strict 8pt Grid Layout: Adheres to multiples of 8px (p-2, p-4, gap-2, gap-4) and Tailwind CSS styling.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -34,7 +32,6 @@ import {
   Check,
   AlertCircle,
   CheckCircle2,
-  Send,
   Key,
   Shield,
   Square,
@@ -50,6 +47,7 @@ import { GeneratedFile } from '../../types';
 import { useWebviewBridge } from '../../hooks/useWebviewBridge';
 import { DeploymentMetadataRecord } from '../../../extension/AgentEngineDeployer';
 import { validateTargetFolder } from '../../../shared/folderValidation';
+import { isValidAgentEngineId } from '../../../shared/identifierValidation';
 
 export interface AgentEngineDeployTabProps {
   document?: AgentWorkflowDocument;
@@ -98,10 +96,17 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
   const [stagingBucket, setStagingBucket] = useState<string>('');
   const [forceNew, setForceNew] = useState<boolean>(false);
   const [agentEngineId, setAgentEngineId] = useState<string>(() => {
-    return (
-      (workflowDoc as any)?.deployment?.deployedResourceId ||
-      ''
-    );
+    const deployment = (workflowDoc as any)?.deployment;
+    const directId = deployment?.agentEngine?.deployedResourceId;
+    if (directId && isValidAgentEngineId(directId)) {
+      return directId;
+    }
+    const isAgentEngine = deployment?.target === 'agent_engine' || deployment?.deploymentTarget === 'agent_engine';
+    const resourceId = deployment?.deployedResourceId;
+    if (isAgentEngine && resourceId && isValidAgentEngineId(resourceId)) {
+      return resourceId;
+    }
+    return '';
   });
 
   // Sync when sharedProjectId changes externally
@@ -111,13 +116,25 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
     }
   }, [sharedProjectId]);
 
-  // Sync agentEngineId with document metadata
+  // Sync agentEngineId with document metadata (only for Agent Engine targets)
   useEffect(() => {
-    const docEngineId = (workflowDoc as any)?.deployment?.deployedResourceId;
-    if (docEngineId && !agentEngineId) {
+    const deployment = (workflowDoc as any)?.deployment;
+    const directId = deployment?.agentEngine?.deployedResourceId;
+    if (directId && isValidAgentEngineId(directId) && !agentEngineId) {
+      setAgentEngineId(directId);
+      return;
+    }
+    const isAgentEngine = deployment?.target === 'agent_engine' || deployment?.deploymentTarget === 'agent_engine';
+    const docEngineId = deployment?.deployedResourceId;
+    if (isAgentEngine && docEngineId && isValidAgentEngineId(docEngineId) && !agentEngineId) {
       setAgentEngineId(docEngineId);
     }
-  }, [(workflowDoc as any)?.deployment?.deployedResourceId]);
+  }, [
+    (workflowDoc as any)?.deployment?.deployedResourceId,
+    (workflowDoc as any)?.deployment?.target,
+    (workflowDoc as any)?.deployment?.deploymentTarget,
+    (workflowDoc as any)?.deployment?.agentEngine?.deployedResourceId,
+  ]);
 
   const handleProjectIdChange = (val: string) => {
     setProjectId(val);
@@ -142,13 +159,6 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
   // Copy Feedback
   const [copiedUrl, setCopiedUrl] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<boolean>(false);
-
-  // Remote Testing Console State
-  const [testQuery, setTestQuery] = useState<string>('Hello! What tools can you use?');
-  const [testResponse, setTestResponse] = useState<string | null>(null);
-  const [testDuration, setTestDuration] = useState<number | null>(null);
-  const [isTesting, setIsTesting] = useState<boolean>(false);
-  const [testError, setTestError] = useState<string | null>(null);
 
   const logsEndRef = useRef<HTMLDivElement>(null);
 
@@ -208,28 +218,9 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
       }
     });
 
-    // Handle remote test results
-    const unsubTest = bridge.subscribe('AGENT_ENGINE_TEST_RESULT', (payload) => {
-      setIsTesting(false);
-      if (payload.success) {
-        if (!payload.response || payload.response.trim().length === 0) {
-          setTestError('Remote Reasoning Engine completed but returned an empty response body.');
-          setTestResponse(null);
-        } else {
-          setTestResponse(payload.response);
-          setTestError(null);
-        }
-        setTestDuration(payload.durationMs);
-      } else {
-        setTestError(payload.error || 'Failed to query remote agent');
-        setTestDuration(payload.durationMs);
-      }
-    });
-
     return () => {
       unsubLog();
       unsubStatus();
-      unsubTest();
     };
   }, [bridge]);
 
@@ -288,29 +279,6 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
     bridge.postMessage({
       type: 'CANCEL_AGENT_ENGINE_DEPLOY',
       payload: { targetDirectory: currentFolder },
-    });
-  };
-
-  /**
-   * Sends a test query to the remote deployed Agent Runtime.
-   */
-  const handleSendTestQuery = () => {
-    if (!bridge || !testQuery.trim() || isTesting) return;
-
-    setIsTesting(true);
-    setTestError(null);
-    setTestResponse(null);
-
-    bridge.postMessage({
-      type: 'TEST_REMOTE_AGENT_ENGINE',
-      payload: {
-        targetDirectory: currentFolder,
-        query: testQuery,
-        remoteRuntimeId: metadata?.remote_agent_runtime_id,
-        serviceUrl: metadata?.service_url,
-        location: region,
-        projectId,
-      },
     });
   };
 
@@ -540,7 +508,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
         </div>
 
         {/* Top Split: Live Logs */}
-        <div className="h-64 p-3 overflow-auto bg-[#0d1117] border-b border-[#30363d] font-mono text-[11px] text-[#c9d1d9] space-y-1 select-text">
+        <div className="flex-1 min-h-[200px] p-3 overflow-auto bg-[#0d1117] border-b border-[#30363d] font-mono text-[11px] text-[#c9d1d9] space-y-1 select-text">
           {logs.length === 0 ? (
             <div className="h-full flex items-center justify-center text-gray-500 font-sans text-xs">
               Waiting for deployment trigger... Logs will stream here in real time.
@@ -568,8 +536,8 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
           <div ref={logsEndRef} />
         </div>
 
-        {/* Bottom Split: Deployed Info & Interactive Remote Testing Console */}
-        <div className="flex-1 p-4 overflow-y-auto space-y-4">
+        {/* Bottom Split: Deployed Info */}
+        <div className="p-4 shrink-0 space-y-4">
           {/* Active Deployment Details Banner */}
           {metadata && metadata.remote_agent_runtime_id ? (
             <div className="p-3 bg-[#161b22] border border-[#30363d] rounded-lg space-y-2">
@@ -625,57 +593,6 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
               <span>Deploy to Agent Engine to obtain live HTTP passthrough credentials and endpoints.</span>
             </div>
           )}
-
-          {/* Remote Query & Chat Console */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-300 flex items-center gap-1.5">
-                <Send className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Live Remote Execution Test (/api/run_sse)</span>
-              </span>
-              {testDuration !== null && (
-                <span className="text-[10px] font-mono text-gray-400">Latency: {testDuration}ms</span>
-              )}
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={testQuery}
-                onChange={(e) => setTestQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSendTestQuery();
-                }}
-                placeholder="Ask the deployed agent a question or trigger a task..."
-                disabled={isTesting}
-                className="flex-1 bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-sans"
-              />
-              <button
-                onClick={handleSendTestQuery}
-                disabled={isTesting || !testQuery.trim()}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-800 disabled:text-gray-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
-              >
-                {isTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                <span>Send</span>
-              </button>
-            </div>
-
-            {/* Test Query Response Display */}
-            {(testResponse || testError) && (
-              <div
-                className={`p-3 rounded-lg border font-mono text-xs select-text ${
-                  testError
-                    ? 'bg-rose-950/30 border-rose-600/40 text-rose-200'
-                    : 'bg-[#161b22] border-[#30363d] text-emerald-300'
-                }`}
-              >
-                <div className="text-[10px] uppercase font-bold text-gray-400 mb-1 font-sans">
-                  {testError ? 'Execution Error' : 'Remote Agent Response'}
-                </div>
-                <div className="whitespace-pre-wrap">{testError || testResponse}</div>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>

@@ -213,6 +213,48 @@ const getThemeStyles = (colorTheme?: string, isA2A?: boolean, isRouter?: boolean
   }
 };
 
+/**
+ * Custom comparison function for React.memo to prevent unnecessary AgentNode re-renders.
+ * Ensures the node only re-renders when its identity, selection state, dragging state,
+ * or data values change, ignoring stable helper function reference updates.
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
+export function areEqual(prevProps: any, nextProps: any): boolean {
+  if (prevProps.id !== nextProps.id) return false;
+  if (prevProps.selected !== nextProps.selected) return false;
+  if (prevProps.dragging !== nextProps.dragging) return false;
+
+  const prevData = prevProps.data || {};
+  const nextData = nextProps.data || {};
+
+  const prevKeys = Object.keys(prevData);
+  const nextKeys = Object.keys(nextData);
+
+  if (prevKeys.length !== nextKeys.length) return false;
+
+  for (const key of prevKeys) {
+    // Skip functions
+    if (typeof prevData[key] === 'function') continue;
+
+    const valPrev = prevData[key];
+    const valNext = nextData[key];
+
+    if (valPrev === valNext) continue;
+
+    // Deep comparison of objects/arrays
+    if (typeof valPrev === 'object' && typeof valNext === 'object' && valPrev !== null && valNext !== null) {
+      if (JSON.stringify(valPrev) !== JSON.stringify(valNext)) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 const PATTERN_OPTIONS = ADK_DELEGATION_PATTERNS;
 
 export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: AgentData }) => {
@@ -364,15 +406,7 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
               <span className="font-bold text-xs text-white truncate max-w-[130px]">
                 {data.label}
               </span>
-              {isRouter ? (
-                <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30">
-                  IF/ELSE ROUTER
-                </span>
-              ) : isA2A ? (
-                <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
-                  A2A PROTOCOL
-                </span>
-              ) : data.isStartNode ? (
+              {data.isStartNode ? (
                 <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40 shadow-xs flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
                   ROOT
@@ -396,7 +430,7 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
               ) : isA2A ? (
                 <>
                   <Cpu className="w-2.5 h-2.5 shrink-0 text-cyan-400" />
-                  <span className="truncate">{data.model || 'gemini-3.7-flash'} • A2A Client</span>
+                  <span className="truncate">{data.model || 'gemini-3.8-flash'} • A2A Client</span>
                 </>
               ) : (
                 <>
@@ -931,7 +965,7 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
       )}
     </div>
   );
-});
+}, areEqual);
 
 AgentNode.displayName = 'AgentNode';
 
