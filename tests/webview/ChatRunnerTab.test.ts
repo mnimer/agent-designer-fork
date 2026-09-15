@@ -25,12 +25,17 @@ describe('ChatRunnerTab Execution Target & Remote Chat Logic', () => {
     return executionTarget === 'remote' ? isDeployed : isServerRunning;
   }
 
+  function computeTextareaDisabled(
+    isTargetReady: boolean
+  ): boolean {
+    return !isTargetReady;
+  }
+
   function computeSendButtonDisabled(
     isTargetReady: boolean,
-    isStreaming: boolean,
     inputPrompt: string
   ): boolean {
-    return !isTargetReady || isStreaming || !inputPrompt.trim();
+    return !isTargetReady || !inputPrompt.trim();
   }
 
   function resolveInputPlaceholder(
@@ -125,13 +130,22 @@ describe('ChatRunnerTab Execution Target & Remote Chat Logic', () => {
 
   it('should enable Send button when remote agent is deployed and input has text', () => {
     const isReady = computeTargetReady('remote', 'idle', true);
-    const isDisabled = computeSendButtonDisabled(isReady, false, 'Hello agent');
+    const isDisabled = computeSendButtonDisabled(isReady, 'Hello agent');
     assert.equal(isDisabled, false, 'Send button should be enabled for deployed remote agent');
+  });
+
+  it('should keep textarea enabled while streaming so user can answer questions', () => {
+    const isReady = computeTargetReady('local', 'running', false);
+    const isTextareaDisabled = computeTextareaDisabled(isReady);
+    assert.equal(isTextareaDisabled, false, 'Textarea must not be disabled during streaming');
+
+    const isSendDisabledWithText = computeSendButtonDisabled(isReady, 'Yes, here is my order number 123');
+    assert.equal(isSendDisabledWithText, false, 'Send button must be enabled with text even if streaming');
   });
 
   it('should disable Send button when remote agent is not deployed', () => {
     const isReady = computeTargetReady('remote', 'idle', false);
-    const isDisabled = computeSendButtonDisabled(isReady, false, 'Hello agent');
+    const isDisabled = computeSendButtonDisabled(isReady, 'Hello agent');
     assert.equal(isDisabled, true, 'Send button should be disabled when remote agent is not deployed');
   });
 
@@ -196,5 +210,12 @@ describe('ChatRunnerTab Execution Target & Remote Chat Logic', () => {
   it('should provide informative tooltip when remote agent is not deployed', () => {
     const tooltip = resolveSendButtonTooltip(false, 'remote', 'hello');
     assert.ok(tooltip.includes('Remote agent is not deployed'));
+  });
+
+  it('should ensure Chat trigger default config does not contain initialMessage', async () => {
+    const { TRIGGER_CATALOG } = await import('../../src/webview/data/triggerDefinitions');
+    const chatTrigger = TRIGGER_CATALOG.find((t) => t.type === 'chat');
+    assert.ok(chatTrigger);
+    assert.equal((chatTrigger.defaultConfig as any)?.initialMessage, undefined);
   });
 });

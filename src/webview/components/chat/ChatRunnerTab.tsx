@@ -268,8 +268,8 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
    */
   const handleSendMessage = useCallback(
     async (textToSend?: string) => {
-      // NOTE: Strictly reject sending when runner is not ready or already streaming
-      if (!isTargetReady || isStreaming) return;
+      // NOTE: Strictly reject sending when runner is not ready
+      if (!isTargetReady) return;
 
       const text = (textToSend !== undefined ? textToSend : inputPrompt).trim();
       if (!text) return;
@@ -277,6 +277,16 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
       setInputPrompt('');
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
+      }
+
+      // NOTE: Finalize previous in-flight turn if one was streaming
+      if (activeTurnIdRef.current) {
+        const prevActiveId = activeTurnIdRef.current;
+        setMessages((prev) =>
+          prev.map((turn) =>
+            turn.id === prevActiveId ? { ...turn, isStreaming: false } : turn
+          )
+        );
       }
 
       const userTurnId = `user-${Date.now()}`;
@@ -323,7 +333,7 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
         },
       });
     },
-    [isTargetReady, isStreaming, inputPrompt, messages, bridge, chatConfig, propDocument, config, localRunnerPort, executionTarget, deployedResourceId]
+    [isTargetReady, inputPrompt, messages, bridge, chatConfig, propDocument, config, localRunnerPort, executionTarget, deployedResourceId]
   );
 
   /**
@@ -692,7 +702,7 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
               key={idx}
               type="button"
               onClick={() => handleSendMessage(prompt)}
-              disabled={!isTargetReady || isStreaming}
+              disabled={!isTargetReady}
               title={
                 !isTargetReady
                   ? executionTarget === 'remote'
@@ -734,11 +744,11 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
                   : 'Local agent server is offline. Start the agent in the Deployment tab to chat...'
                 : 'Type a message (Enter to send, Shift+Enter for newline)...'
             }
-            disabled={!isTargetReady || isStreaming}
+            disabled={!isTargetReady}
             className="flex-1 bg-transparent border-0 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-0 resize-none max-h-28 py-1.5 px-2 font-sans disabled:cursor-not-allowed"
           />
 
-          {isStreaming ? (
+          {isStreaming && !inputPrompt.trim() ? (
             <button
               type="button"
               onClick={handleStopStreaming}

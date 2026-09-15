@@ -149,4 +149,36 @@ describe('Workflow Canvas Topologies & Layouts', () => {
     assert.equal(testerEdge.target, rootAgent.id);
     assert.equal(testerEdge.targetHandle, 'input_left');
   });
+
+  it('should connect trigger bottom handle to root agent top handle for all triggers except tester', async () => {
+    const triggerTypes: Array<'chat' | 'cron' | 'pubsub' | 'webhook' | 'eventarc' | 'tester'> = [
+      'chat',
+      'cron',
+      'pubsub',
+      'webhook',
+      'eventarc',
+      'tester',
+    ];
+
+    const rootAgentId = 'agent_root_1';
+
+    for (const trigType of triggerTypes) {
+      const isTester = trigType === 'tester';
+      const edge = {
+        id: `e_trigger_node_${trigType}_${rootAgentId}`,
+        source: `node_${trigType}`,
+        sourceHandle: isTester ? 'trigger_out_right' : 'trigger_out_bottom',
+        target: rootAgentId,
+        targetHandle: isTester ? 'input_left' : 'input',
+      };
+
+      if (isTester) {
+        assert.equal(edge.sourceHandle, 'trigger_out_right');
+        assert.equal(edge.targetHandle, 'input_left');
+      } else {
+        assert.equal(edge.sourceHandle, 'trigger_out_bottom');
+        assert.equal(edge.targetHandle, 'input');
+      }
+    }
+  });
 });

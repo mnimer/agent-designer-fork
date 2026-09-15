@@ -354,19 +354,6 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
               </p>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400">
-                Initial Welcome Message
-              </label>
-              <textarea
-                rows={2}
-                value={formData.config.initialMessage || ''}
-                onChange={(e) => handleConfigChange({ initialMessage: e.target.value })}
-                placeholder="Hello! I am your AI agent assistant. How can I help you today?"
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-amber-400 rounded text-xs text-gray-200 focus:outline-none"
-              />
-            </div>
-
             <div className="flex items-center justify-between pt-1">
               <span className="text-[11px] text-gray-300 font-medium">Real-time Token Streaming</span>
               <input
@@ -487,117 +474,136 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
           </div>
         )}
 
-        {/* 3. SCHEDULED TRIGGER (Time / Cron Config) */}
+        {/* 3. SCHEDULED TRIGGER (Scheduled Prompt & Time / Cron Config) */}
         {formData.triggerType === 'scheduled' && (
-          <div className="space-y-3 bg-[#0d1117] p-3 rounded-lg border border-sky-500/30">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-sky-400 font-bold text-xs">
-                <Clock className="w-3.5 h-3.5" />
-                <span>Schedule & Cron Configuration</span>
+          <div className="space-y-4">
+            {/* Section 1: Scheduled Prompt / Input Payload */}
+            <div className="space-y-3 bg-[#0d1117] p-3 rounded-lg border border-sky-500/30">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-sky-400 font-bold text-xs">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Scheduled Prompt / Input Payload</span>
+                </div>
+                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                  Turn Input
+                </span>
               </div>
-              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
-                Cloud Scheduler
-              </span>
-            </div>
 
-            {/* Preset Schedule Dropdown / Quick Pick */}
-            <div className="space-y-1.5">
-              <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1">
-                <Calendar className="w-3 h-3 text-sky-400" />
-                <span>Time / Cadence Presets</span>
-              </label>
-              
-              <div className="grid grid-cols-2 gap-1.5">
-                {CRON_PRESETS.map((preset) => (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => {
-                      handleConfigChange({ 
-                        cronExpression: preset.cron,
-                        scheduleInterval: preset.label 
-                      });
-                    }}
-                    className={`p-1.5 rounded text-left border transition-all cursor-pointer ${
-                      formData.config.cronExpression === preset.cron
-                        ? 'bg-sky-500/20 border-sky-400 text-white shadow-xs'
-                        : 'bg-[#161b22] hover:bg-[#21262d] border-[#30363d] text-gray-300 hover:text-white'
-                    }`}
-                  >
-                    <div className="font-semibold text-[10.5px] truncate">{preset.label}</div>
-                    <div className="font-mono text-[9px] text-sky-400/90 truncate">{preset.cron}</div>
-                  </button>
-                ))}
+              <p className="text-[11px] text-gray-400 leading-relaxed">
+                The prompt or instruction automatically delivered to the agent on each scheduled cadence tick.
+              </p>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center justify-between">
+                  <span>Scheduled Prompt / Instruction</span>
+                  <span className="text-[9px] text-sky-400 font-sans">Sent on schedule tick</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={formData.config.scheduledPrompt || ''}
+                  onChange={(e) => handleConfigChange({ scheduledPrompt: e.target.value })}
+                  placeholder="e.g. Execute scheduled batch compliance audit on pending transaction records"
+                  className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs text-white focus:outline-none resize-none font-sans"
+                />
               </div>
             </div>
 
-            {/* Custom Cron Expression Input */}
-            <div className="space-y-1 pt-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center justify-between">
-                <span>Cron Expression</span>
-                <span className="text-[9px] font-mono text-gray-400">min hour day month weekday</span>
-              </label>
-              <input
-                type="text"
-                value={formData.config.cronExpression || '0 9 * * 1-5'}
-                onChange={(e) => handleConfigChange({ cronExpression: e.target.value })}
-                placeholder="0 9 * * 1-5"
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs font-mono text-sky-300 focus:outline-none"
-              />
-            </div>
+            {/* Section 2: Schedule Timing & Cadence */}
+            <div className="space-y-3 bg-[#0d1117] p-3 rounded-lg border border-sky-500/30">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-sky-400 font-bold text-xs">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Schedule Timing & Cadence</span>
+                </div>
+                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                  Cloud Scheduler
+                </span>
+              </div>
 
-            {/* Timezone */}
-            <div className="space-y-1 pt-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1">
-                <Clock3 className="w-3 h-3 text-sky-400" />
-                <span>Timezone</span>
-              </label>
-              <select
-                value={formData.config.timezone || 'America/New_York'}
-                onChange={(e) => handleConfigChange({ timezone: e.target.value })}
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs text-gray-200 focus:outline-none cursor-pointer"
-              >
-                <option value="America/New_York">America/New_York (EST / EDT)</option>
-                <option value="America/Chicago">America/Chicago (CST / CDT)</option>
-                <option value="America/Denver">America/Denver (MST / MDT)</option>
-                <option value="America/Los_Angeles">America/Los_Angeles (PST / PDT)</option>
-                <option value="UTC">UTC (Coordinated Universal Time)</option>
-                <option value="Europe/London">Europe/London (GMT / BST)</option>
-                <option value="Europe/Frankfurt">Europe/Frankfurt (CET / CEST)</option>
-                <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
-                <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
-              </select>
-            </div>
+              {/* Preset Schedule Dropdown / Quick Pick */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-sky-400" />
+                  <span>Time / Cadence Presets</span>
+                </label>
+                
+                <div className="grid grid-cols-2 gap-1.5">
+                  {CRON_PRESETS.map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => {
+                        handleConfigChange({ 
+                          cronExpression: preset.cron,
+                          scheduleInterval: preset.label 
+                        });
+                      }}
+                      className={`p-1.5 rounded text-left border transition-all cursor-pointer ${
+                        formData.config.cronExpression === preset.cron
+                          ? 'bg-sky-500/20 border-sky-400 text-white shadow-xs'
+                          : 'bg-[#161b22] hover:bg-[#21262d] border-[#30363d] text-gray-300 hover:text-white'
+                      }`}
+                    >
+                      <div className="font-semibold text-[10.5px] truncate">{preset.label}</div>
+                      <div className="font-mono text-[9px] text-sky-400/90 truncate">{preset.cron}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            {/* Scheduled Prompt / Input Payload */}
-            <div className="space-y-1 pt-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center justify-between">
-                <span>Scheduled Prompt / Turn Input</span>
-                <span className="text-[9px] text-sky-400 font-sans">Sent on schedule tick</span>
-              </label>
-              <textarea
-                rows={2}
-                value={formData.config.scheduledPrompt || ''}
-                onChange={(e) => handleConfigChange({ scheduledPrompt: e.target.value })}
-                placeholder="e.g. Execute scheduled batch compliance audit on pending transaction records"
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs text-white focus:outline-none resize-none font-sans"
-              />
-            </div>
+              {/* Custom Cron Expression Input */}
+              <div className="space-y-1 pt-1">
+                <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center justify-between">
+                  <span>Cron Expression</span>
+                  <span className="text-[9px] font-mono text-gray-400">min hour day month weekday</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.config.cronExpression || '0 9 * * 1-5'}
+                  onChange={(e) => handleConfigChange({ cronExpression: e.target.value })}
+                  placeholder="0 9 * * 1-5"
+                  className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs font-mono text-sky-300 focus:outline-none"
+                />
+              </div>
 
-            {/* Retry Count */}
-            <div className="space-y-1 pt-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center justify-between">
-                <span>Retry Count</span>
-                <span className="text-[9px] font-mono text-gray-500">Max execution retries</span>
-              </label>
-              <input
-                type="number"
-                min={0}
-                max={10}
-                value={formData.config.retryCount ?? 3}
-                onChange={(e) => handleConfigChange({ retryCount: parseInt(e.target.value, 10) || 0 })}
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs font-mono text-white focus:outline-none"
-              />
+              {/* Timezone */}
+              <div className="space-y-1 pt-1">
+                <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1">
+                  <Clock3 className="w-3 h-3 text-sky-400" />
+                  <span>Timezone</span>
+                </label>
+                <select
+                  value={formData.config.timezone || 'America/New_York'}
+                  onChange={(e) => handleConfigChange({ timezone: e.target.value })}
+                  className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs text-gray-200 focus:outline-none cursor-pointer"
+                >
+                  <option value="America/New_York">America/New_York (EST / EDT)</option>
+                  <option value="America/Chicago">America/Chicago (CST / CDT)</option>
+                  <option value="America/Denver">America/Denver (MST / MDT)</option>
+                  <option value="America/Los_Angeles">America/Los_Angeles (PST / PDT)</option>
+                  <option value="UTC">UTC (Coordinated Universal Time)</option>
+                  <option value="Europe/London">Europe/London (GMT / BST)</option>
+                  <option value="Europe/Frankfurt">Europe/Frankfurt (CET / CEST)</option>
+                  <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                  <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
+                </select>
+              </div>
+
+              {/* Retry Count */}
+              <div className="space-y-1 pt-1">
+                <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center justify-between">
+                  <span>Retry Count</span>
+                  <span className="text-[9px] font-mono text-gray-500">Max execution retries</span>
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={10}
+                  value={formData.config.retryCount ?? 3}
+                  onChange={(e) => handleConfigChange({ retryCount: parseInt(e.target.value, 10) || 0 })}
+                  className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs font-mono text-white focus:outline-none"
+                />
+              </div>
             </div>
           </div>
         )}

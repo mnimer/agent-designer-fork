@@ -762,13 +762,12 @@ export function FlowCanvas() {
       const newTriggerEdges = triggerNodes.map((tn) => {
         const trigType = (tn.data as TriggerData)?.triggerType || (tn.data as any)?.triggerKind;
         const isTester = trigType === 'tester' || trigType === 'test';
-        const isChat = trigType === 'chat';
         return {
           id: `e_trigger_${tn.id}_${rootAgentId}`,
           source: tn.id,
-          sourceHandle: isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom',
+          sourceHandle: isTester ? 'trigger_out_right' : 'trigger_out_bottom',
           target: rootAgentId,
-          targetHandle: isTester || isChat ? 'input_left' : 'input',
+          targetHandle: isTester ? 'input_left' : 'input',
           animated: true,
           style: {
             stroke: '#f59e0b',
@@ -856,14 +855,13 @@ export function FlowCanvas() {
 
         const trigType = (sourceNode?.data as TriggerData)?.triggerType || (sourceNode?.data as any)?.triggerKind;
         const isTester = trigType === 'tester' || trigType === 'test';
-        const isChat = trigType === 'chat';
         const newTriggerEdge: Edge = {
           ...connection,
           id: `e_trigger_${connection.source}_${connection.target}`,
           source: connection.source!,
-          sourceHandle: connection.sourceHandle || (isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom'),
+          sourceHandle: connection.sourceHandle || (isTester ? 'trigger_out_right' : 'trigger_out_bottom'),
           target: connection.target,
-          targetHandle: connection.targetHandle || (isTester || isChat ? 'input_left' : 'input'),
+          targetHandle: connection.targetHandle || (isTester ? 'input_left' : 'input'),
           animated: true,
           style: {
             stroke: '#f59e0b',
@@ -1092,13 +1090,12 @@ export function FlowCanvas() {
         if (rootAgent) {
           const effectiveTriggerType = triggerType || 'chat';
           const isTester = effectiveTriggerType === 'tester';
-          const isChat = effectiveTriggerType === 'chat';
           const triggerEdge: Edge = {
             id: `e_trigger_${newTriggerNode.id}_${rootAgent.id}`,
             source: newTriggerNode.id,
-            sourceHandle: isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom',
+            sourceHandle: isTester ? 'trigger_out_right' : 'trigger_out_bottom',
             target: rootAgent.id,
-            targetHandle: isTester || isChat ? 'input_left' : 'input',
+            targetHandle: isTester ? 'input_left' : 'input',
             animated: true,
             style: {
               stroke: '#f59e0b',
@@ -1342,12 +1339,11 @@ export function FlowCanvas() {
         nodes.find((n) => n.type === 'agentNode');
 
       const isTester = triggerType === 'tester';
-      const isChat = triggerType === 'chat';
       const posX = rootAgent
-        ? (isTester || isChat ? rootAgent.position.x - 380 : rootAgent.position.x + 10)
+        ? (isTester ? rootAgent.position.x - 380 : rootAgent.position.x + 10)
         : 80;
       const posY = rootAgent
-        ? (isTester ? rootAgent.position.y : isChat ? rootAgent.position.y - 120 : Math.max(20, rootAgent.position.y - 280))
+        ? (isTester ? rootAgent.position.y : Math.max(20, rootAgent.position.y - 280))
         : 40;
 
       const newTriggerNode = createSingleTriggerNode(posX, posY, triggerType, rootAgent?.id);
@@ -1358,9 +1354,9 @@ export function FlowCanvas() {
         const triggerEdge: Edge = {
           id: `e_trigger_${newTriggerNode.id}_${rootAgent.id}`,
           source: newTriggerNode.id,
-          sourceHandle: isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom',
+          sourceHandle: isTester ? 'trigger_out_right' : 'trigger_out_bottom',
           target: rootAgent.id,
-          targetHandle: isTester || isChat ? 'input_left' : 'input',
+          targetHandle: isTester ? 'input_left' : 'input',
           animated: true,
           style: {
             stroke: '#f59e0b',

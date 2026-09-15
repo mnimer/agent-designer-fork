@@ -282,7 +282,6 @@ export const TRIGGER_CATALOG: TriggerCatalogItem[] = [
     iconName: 'MessageSquare',
     description: 'Conversational end-user interface with streaming responses and session history.',
     defaultConfig: {
-      initialMessage: 'Hello! I am your AI agent assistant. How can I help you today?',
       streaming: true,
       sessionMemory: 'in_memory',
     },
