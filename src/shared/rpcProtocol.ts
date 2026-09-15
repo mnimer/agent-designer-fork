@@ -346,6 +346,27 @@ export type WebviewToExtensionMessage =
       };
     }
   | {
+      type: 'FETCH_PUBSUB_TOPICS';
+      payload?: {
+        projectId?: string;
+        forceRefresh?: boolean;
+      };
+    }
+  | {
+      type: 'FETCH_PUBSUB_SUBSCRIPTIONS';
+      payload?: {
+        projectId?: string;
+        forceRefresh?: boolean;
+      };
+    }
+  | {
+      type: 'FETCH_GCP_SERVICE_ACCOUNTS';
+      payload?: {
+        projectId?: string;
+        forceRefresh?: boolean;
+      };
+    }
+  | {
       type: 'CREATE_FILE_FROM_SAMPLE';
       payload: {
         sampleId: string;
@@ -658,6 +679,48 @@ export type ExtensionToWebviewMessage =
         categories: EventArcCategory[];
         source: 'gcloud' | 'fallback';
         location: string;
+        error?: string;
+      };
+    }
+  | {
+      type: 'PUBSUB_TOPICS_RESPONSE';
+      payload: {
+        topics: Array<{
+          name: string;
+          shortName: string;
+          projectId?: string;
+        }>;
+        source: 'gcloud' | 'fallback';
+        projectId?: string;
+        error?: string;
+      };
+    }
+  | {
+      type: 'PUBSUB_SUBSCRIPTIONS_RESPONSE';
+      payload: {
+        subscriptions: Array<{
+          name: string;
+          shortName: string;
+          topic: string;
+          pushEndpoint?: string;
+          ackDeadlineSeconds?: number;
+        }>;
+        source: 'gcloud' | 'fallback';
+        projectId?: string;
+        error?: string;
+      };
+    }
+  | {
+      type: 'GCP_SERVICE_ACCOUNTS_RESPONSE';
+      payload: {
+        serviceAccounts: Array<{
+          email: string;
+          displayName: string;
+          name?: string;
+          disabled?: boolean;
+        }>;
+        source: 'gcloud' | 'fallback';
+        projectId?: string;
         error?: string;
       };
     };

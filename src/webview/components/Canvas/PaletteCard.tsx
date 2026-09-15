@@ -226,14 +226,8 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
 
   /**
    * Initiates drag-and-drop payload for a trigger catalog item.
-   * NOTE: Blocks drag-and-drop for disabled triggers (pubsub and scheduled).
    */
   const handleDragStartTrigger = (e: React.DragEvent, triggerItem: TriggerCatalogItem) => {
-    // Prevent drag action for unimplemented triggers
-    if (triggerItem.type === 'pubsub' || triggerItem.type === 'scheduled') {
-      e.preventDefault();
-      return;
-    }
     e.dataTransfer.setData('application/reactflow/type', 'trigger');
     e.dataTransfer.setData('application/reactflow/triggerType', triggerItem.type);
     e.dataTransfer.setData('application/reactflow/triggerItem', JSON.stringify(triggerItem));
@@ -1077,6 +1071,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                               draggable
                               onDragStart={(e) => handleDragStartTrigger(e, section.trigger!)}
                               className="group relative flex items-start justify-between p-2.5 bg-[#21262d] border border-orange-500/40 rounded-lg cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-orange-400 shadow-sm transition-all shadow-orange-950/20"
+                              title={`Drag and drop ${section.trigger.name} onto canvas`}
                             >
                               <div className="flex items-start gap-2.5 min-w-0">
                                 <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-orange-400 shrink-0 mt-1" />
@@ -1085,7 +1080,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                 </div>
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5">
-                                    <span className="font-semibold text-xs text-white truncate max-w-[130px]">
+                                    <span className="font-semibold text-xs text-white truncate max-w-[150px]">
                                       {section.trigger.name}
                                     </span>
                                     <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
@@ -1097,106 +1092,40 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                   </p>
                                 </div>
                               </div>
-
-                              <button
-                                type="button"
-                                onClick={() => onAddTrigger(section.trigger!.type)}
-                                title={`Add ${section.trigger.name} to Root Agent`}
-                                className="p-1.5 rounded bg-[#0d1117] hover:bg-orange-600 border border-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer shrink-0 ml-1 mt-0.5"
-                              >
-                                <Plus className="w-3 h-3" />
-                              </button>
                             </div>
                           )}
 
                           {section.triggers && (
                             <div className="space-y-1.5 max-h-[calc(66vh-240px)] overflow-y-auto pr-1">
-                              {section.triggers.map((trigger) => {
-                                const isDisabled = false;
-
-                                return (
-                                  <div
-                                    key={trigger.id}
-                                    draggable={!isDisabled}
-                                    onDragStart={(e) => {
-                                      if (isDisabled) {
-                                        e.preventDefault();
-                                        return;
-                                      }
-                                      handleDragStartTrigger(e, trigger);
-                                    }}
-                                    className={`group relative flex items-start justify-between p-2.5 rounded-lg border transition-all shadow-sm ${
-                                      isDisabled
-                                        ? 'bg-[#161b22] border-orange-500/20 opacity-50 cursor-not-allowed select-none'
-                                        : 'bg-[#21262d] border-orange-500/40 cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-orange-400 shadow-orange-950/20'
-                                    }`}
-                                    title={isDisabled ? `${trigger.name} (Disabled until implemented)` : trigger.name}
-                                  >
-                                    <div className="flex items-start gap-2.5 min-w-0">
-                                      <GripVertical
-                                        className={`w-3.5 h-3.5 shrink-0 mt-1 ${
-                                          isDisabled
-                                            ? 'text-gray-600 cursor-not-allowed'
-                                            : 'text-gray-400 group-hover:text-orange-400'
-                                        }`}
-                                      />
-                                      <div
-                                        className={`p-1.5 rounded-md bg-[#0d1117] shrink-0 mt-0.5 border ${
-                                          isDisabled ? 'border-orange-500/10' : 'border-orange-500/30 shadow-xs'
-                                        }`}
-                                      >
-                                        {getTriggerIcon(trigger.type)}
-                                      </div>
-                                      <div className="min-w-0">
-                                        <div className="flex items-center gap-1.5">
-                                          <span className="font-semibold text-xs text-white truncate max-w-[130px]">
-                                            {trigger.name}
-                                          </span>
-                                          {isDisabled ? (
-                                            <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-orange-950/60 text-orange-300/70 border border-orange-500/20">
-                                              Disabled
-                                            </span>
-                                          ) : (
-                                            <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
-                                              {trigger.badge}
-                                            </span>
-                                          )}
-                                        </div>
-                                        <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
-                                          {trigger.description}
-                                        </p>
-                                        {isDisabled && (
-                                          <p className="text-[9px] text-orange-400/70 font-mono mt-1 italic">
-                                            Disabled until implemented
-                                          </p>
-                                        )}
-                                      </div>
+                              {section.triggers.map((trigger) => (
+                                <div
+                                  key={trigger.id}
+                                  draggable
+                                  onDragStart={(e) => handleDragStartTrigger(e, trigger)}
+                                  className="group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] border-orange-500/40 cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-orange-400 shadow-sm transition-all shadow-orange-950/20"
+                                  title={`Drag and drop ${trigger.name} onto canvas`}
+                                >
+                                  <div className="flex items-start gap-2.5 min-w-0">
+                                    <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-orange-400 shrink-0 mt-1" />
+                                    <div className="p-1.5 rounded-md bg-[#0d1117] shrink-0 mt-0.5 border border-orange-500/30 shadow-xs">
+                                      {getTriggerIcon(trigger.type)}
                                     </div>
-
-                                    <button
-                                      type="button"
-                                      disabled={isDisabled}
-                                      onClick={() => {
-                                        if (!isDisabled) {
-                                          onAddTrigger(trigger.type);
-                                        }
-                                      }}
-                                      title={
-                                        isDisabled
-                                          ? `${trigger.name} is disabled until implemented`
-                                          : `Add ${trigger.name} to Root Agent`
-                                      }
-                                      className={`p-1.5 rounded border text-gray-300 shrink-0 ml-1 mt-0.5 transition-colors ${
-                                        isDisabled
-                                          ? 'bg-[#0d1117] border-gray-700/40 text-gray-600 cursor-not-allowed opacity-40'
-                                          : 'bg-[#0d1117] hover:bg-orange-600 border-[#30363d] hover:text-white cursor-pointer'
-                                      }`}
-                                    >
-                                      <Plus className="w-3 h-3" />
-                                    </button>
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-semibold text-xs text-white truncate max-w-[150px]">
+                                          {trigger.name}
+                                        </span>
+                                        <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
+                                          {trigger.badge}
+                                        </span>
+                                      </div>
+                                      <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                                        {trigger.description}
+                                      </p>
+                                    </div>
                                   </div>
-                                );
-                              })}
+                                </div>
+                              ))}
                             </div>
                           )}
                         </div>

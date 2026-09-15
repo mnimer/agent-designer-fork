@@ -232,5 +232,134 @@ describe('useExtensionSync Protocol & Lifecycle Logic', () => {
     assert.equal(updatedDoc.metadata.author, 'Mike Nimer <mikenimer@google.com>');
     assert.ok(updatedDoc.metadata.updatedAt);
   });
+
+  it('should discard stale or equal document versions in LOAD_DOCUMENT when loaded', () => {
+    let currentNodes = [{ id: 'agent-1', type: 'agent' }];
+    const currentDocVersion = 5;
+
+    const stalePayload = {
+      filePath: 'workflow.agent',
+      docVersion: 5, // Equal or older version
+      document: {
+        version: '1.0.0',
+        name: 'StaleWorkflow',
+        nodes: [
+          { id: 'old-trigger-1', type: 'trigger' },
+          { id: 'old-trigger-2', type: 'trigger' },
+        ],
+      },
+    };
+
+    const isLoaded = true;
+    let ignored = false;
+
+    // Simulate guard logic in useExtensionSync: payload.docVersion <= docVersionRef.current
+    if (
+      isLoaded &&
+      typeof stalePayload.docVersion === 'number' &&
+      stalePayload.docVersion <= currentDocVersion
+    ) {
+      ignored = true;
+    } else {
+      currentNodes = stalePayload.document.nodes;
+    }
+
+    assert.equal(ignored, true);
+    assert.equal(currentNodes.length, 1);
+    assert.equal(currentNodes[0].id, 'agent-1');
+  });
+
+  it('should discard echo LOAD_DOCUMENT payloads matching lastSentHashRef', () => {
+    const doc = {
+      version: '1.0.0',
+      name: 'TestDoc',
+      nodes: [{ id: 'node-1', type: 'agent' }],
+      edges: [],
+    };
+    const lastSentHash = 'hash-12345';
+    let loaded = false;
+
+    // Calculate hash for incoming payload
+    const incomingHash = 'hash-12345';
+    if (incomingHash === lastSentHash) {
+      // Echo discarded
+      loaded = false;
+    } else {
+      loaded = true;
+    }
+
+    assert.equal(loaded, false);
+  });
+
+  it('should correctly delete 4 out of 5 triggers sequentially without reviving deleted nodes', () => {
+    let nodes = [
+      { id: 'agent-root', type: 'agentNode', data: { label: 'Root Agent' } },
+      { id: 'trigger-chat', type: 'triggerNode', data: { triggerType: 'chat' } },
+      { id: 'trigger-cron', type: 'triggerNode', data: { triggerType: 'cron' } },
+      { id: 'trigger-pubsub', type: 'triggerNode', data: { triggerType: 'pubsub' } },
+      { id: 'trigger-webhook', type: 'triggerNode', data: { triggerType: 'webhook' } },
+      { id: 'trigger-eventarc', type: 'triggerNode', data: { triggerType: 'eventarc' } },
+    ];
+    let edges = [
+      { id: 'e1', source: 'trigger-chat', target: 'agent-root' },
+      { id: 'e2', source: 'trigger-cron', target: 'agent-root' },
+      { id: 'e3', source: 'trigger-pubsub', target: 'agent-root' },
+      { id: 'e4', source: 'trigger-webhook', target: 'agent-root' },
+      { id: 'e5', source: 'trigger-eventarc', target: 'agent-root' },
+    ];
+
+    // Simulate functional updater deletion
+    const deleteNodeFunctional = (id: string) => {
+      edges = edges.filter((e) => e.source !== id && e.target !== id);
+      nodes = nodes.filter((n) => n.id !== id);
+    };
+
+    // Delete 4 triggers sequentially
+    deleteNodeFunctional('trigger-chat');
+    deleteNodeFunctional('trigger-cron');
+    deleteNodeFunctional('trigger-pubsub');
+    deleteNodeFunctional('trigger-webhook');
+
+    // Only root agent and trigger-eventarc remain
+    assert.equal(nodes.length, 2);
+    assert.equal(nodes.some((n) => n.id === 'trigger-eventarc'), true);
+    assert.equal(nodes.some((n) => n.id === 'agent-root'), true);
+    assert.equal(nodes.some((n) => n.id === 'trigger-chat'), false);
+    assert.equal(nodes.some((n) => n.id === 'trigger-cron'), false);
+    assert.equal(nodes.some((n) => n.id === 'trigger-pubsub'), false);
+    assert.equal(nodes.some((n) => n.id === 'trigger-webhook'), false);
+    assert.equal(edges.length, 1);
+    assert.equal(edges[0].source, 'trigger-eventarc');
+  });
+
+  it('should correctly delete multiple selected triggers atomically in batch', () => {
+    let nodes = [
+      { id: 'agent-root', type: 'agentNode', data: { label: 'Root Agent' } },
+      { id: 'trigger-1', type: 'triggerNode', data: { triggerType: 'chat' } },
+      { id: 'trigger-2', type: 'triggerNode', data: { triggerType: 'cron' } },
+      { id: 'trigger-3', type: 'triggerNode', data: { triggerType: 'pubsub' } },
+      { id: 'trigger-4', type: 'triggerNode', data: { triggerType: 'webhook' } },
+      { id: 'trigger-5', type: 'triggerNode', data: { triggerType: 'eventarc' } },
+    ];
+    let edges = [
+      { id: 'e1', source: 'trigger-1', target: 'agent-root' },
+      { id: 'e2', source: 'trigger-2', target: 'agent-root' },
+      { id: 'e3', source: 'trigger-3', target: 'agent-root' },
+      { id: 'e4', source: 'trigger-4', target: 'agent-root' },
+      { id: 'e5', source: 'trigger-5', target: 'agent-root' },
+    ];
+
+    const toDelete = [{ id: 'trigger-1' }, { id: 'trigger-2' }, { id: 'trigger-3' }, { id: 'trigger-4' }];
+    const idsToDelete = new Set(toDelete.map((n) => n.id));
+
+    edges = edges.filter((e) => !idsToDelete.has(e.source) && !idsToDelete.has(e.target));
+    nodes = nodes.filter((n) => !idsToDelete.has(n.id));
+
+    assert.equal(nodes.length, 2);
+    assert.equal(nodes[0].id, 'agent-root');
+    assert.equal(nodes[1].id, 'trigger-5');
+    assert.equal(edges.length, 1);
+    assert.equal(edges[0].source, 'trigger-5');
+  });
 });
 

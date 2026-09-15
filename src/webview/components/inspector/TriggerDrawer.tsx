@@ -29,6 +29,7 @@ import {
   ListChecks, 
   CheckCircle2, 
   RotateCcw,
+  RotateCw,
   Sparkles,
   Sliders,
   Layers,
@@ -112,9 +113,23 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isCustomTopic, setIsCustomTopic] = useState(false);
   const [customTopicInput, setCustomTopicInput] = useState('');
+  const [isCustomServiceAccount, setIsCustomServiceAccount] = useState(false);
+  const [customServiceAccountInput, setCustomServiceAccountInput] = useState('');
+
+  // Eventarc discovery state
   const [eventarcCategories, setEventarcCategories] = useState<EventArcCategory[]>(EVENTARC_CATEGORIES);
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
   const [categoriesSource, setCategoriesSource] = useState<'static' | 'gcloud'>('static');
+
+  // Pub/Sub Topics discovery state
+  const [discoveredTopics, setDiscoveredTopics] = useState<Array<{ name: string; shortName: string; projectId?: string }>>([]);
+  const [isLoadingTopics, setIsLoadingTopics] = useState(false);
+  const [topicsSource, setTopicsSource] = useState<'static' | 'gcloud'>('static');
+
+  // IAM Service Accounts discovery state
+  const [discoveredServiceAccounts, setDiscoveredServiceAccounts] = useState<Array<{ email: string; displayName: string }>>([]);
+  const [isLoadingServiceAccounts, setIsLoadingServiceAccounts] = useState(false);
+  const [serviceAccountsSource, setServiceAccountsSource] = useState<'static' | 'gcloud'>('static');
 
   const fetchEventarcCategories = async (region?: string, forceRefresh: boolean = false) => {
     setIsLoadingCategories(true);
@@ -144,6 +159,60 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
     }
   };
 
+  const fetchPubSubTopics = async (projectId?: string, forceRefresh: boolean = false) => {
+    setIsLoadingTopics(true);
+    try {
+      const response = await bridge.sendRequestWithReply<
+        { type: 'FETCH_PUBSUB_TOPICS'; payload?: { projectId?: string; forceRefresh?: boolean } },
+        { type: 'PUBSUB_TOPICS_RESPONSE'; payload: { topics: Array<{ name: string; shortName: string; projectId?: string }>; source: 'gcloud' | 'fallback'; projectId?: string; error?: string } }
+      >(
+        {
+          type: 'FETCH_PUBSUB_TOPICS',
+          payload: { projectId, forceRefresh },
+        },
+        'PUBSUB_TOPICS_RESPONSE',
+        10000
+      );
+
+      const replyPayload = (response as any)?.topics ? (response as any) : (response as any)?.payload;
+      if (replyPayload?.topics && Array.isArray(replyPayload.topics) && replyPayload.topics.length > 0) {
+        setDiscoveredTopics(replyPayload.topics);
+        setTopicsSource(replyPayload.source === 'gcloud' ? 'gcloud' : 'static');
+      }
+    } catch {
+      // Keep static fallback
+    } finally {
+      setIsLoadingTopics(false);
+    }
+  };
+
+  const fetchServiceAccounts = async (projectId?: string, forceRefresh: boolean = false) => {
+    setIsLoadingServiceAccounts(true);
+    try {
+      const response = await bridge.sendRequestWithReply<
+        { type: 'FETCH_GCP_SERVICE_ACCOUNTS'; payload?: { projectId?: string; forceRefresh?: boolean } },
+        { type: 'GCP_SERVICE_ACCOUNTS_RESPONSE'; payload: { serviceAccounts: Array<{ email: string; displayName: string }>; source: 'gcloud' | 'fallback'; projectId?: string; error?: string } }
+      >(
+        {
+          type: 'FETCH_GCP_SERVICE_ACCOUNTS',
+          payload: { projectId, forceRefresh },
+        },
+        'GCP_SERVICE_ACCOUNTS_RESPONSE',
+        10000
+      );
+
+      const replyPayload = (response as any)?.serviceAccounts ? (response as any) : (response as any)?.payload;
+      if (replyPayload?.serviceAccounts && Array.isArray(replyPayload.serviceAccounts) && replyPayload.serviceAccounts.length > 0) {
+        setDiscoveredServiceAccounts(replyPayload.serviceAccounts);
+        setServiceAccountsSource(replyPayload.source === 'gcloud' ? 'gcloud' : 'static');
+      }
+    } catch {
+      // Keep static fallback
+    } finally {
+      setIsLoadingServiceAccounts(false);
+    }
+  };
+
   useEffect(() => {
     if (trigger) {
       const rawType =
@@ -164,6 +233,11 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
         if (!config.eventarcRegion) config.eventarcRegion = 'us-central1';
         // Trigger live gcloud discovery
         fetchEventarcCategories(config.eventarcRegion, false);
+        fetchServiceAccounts(undefined, false);
+      }
+      // Defaults for Pub/Sub
+      if (effectiveType === 'pubsub') {
+        fetchPubSubTopics(undefined, false);
       }
       // Defaults for Webhook if empty
       if (effectiveType === 'webhook') {
@@ -189,9 +263,71 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
           setIsCustomTopic(false);
         }
       }
+      // Check if Eventarc Service Account is custom
+      if (config.eventarcServiceAccount) {
+        const matchingSA = GCP_PROJECT_SERVICE_ACCOUNTS.some((sa) => sa.email === config.eventarcServiceAccount);
+        if (!matchingSA) {
+          setIsCustomServiceAccount(true);
+          setCustomServiceAccountInput(config.eventarcServiceAccount);
+        } else {
+          setIsCustomServiceAccount(false);
+        }
+      }
       setFormData({ ...trigger, triggerType: effectiveType, config });
     }
   }, [trigger, isOpen]);
+
+  // Pub/Sub dynamic or preset topics helper
+  const displayPubSubTopics = useMemo(() => {
+    const list: Array<{ topic: string; label: string }> = [];
+    if (discoveredTopics.length > 0) {
+      for (const t of discoveredTopics) {
+        list.push({
+          topic: t.name,
+          label: `${t.shortName} (${t.name})`,
+        });
+      }
+    } else {
+      for (const p of PUBSUB_TOPIC_PRESETS) {
+        list.push(p);
+      }
+    }
+    const currentTopic = formData?.config?.topic;
+    if (currentTopic && !list.some((t) => t.topic === currentTopic)) {
+      list.push({
+        topic: currentTopic,
+        label: `${currentTopic.split('/').pop() || currentTopic} (${currentTopic})`,
+      });
+    }
+    return list;
+  }, [discoveredTopics, formData?.config?.topic]);
+
+  // Service Account dynamic or fallback helper
+  const displayServiceAccounts = useMemo(() => {
+    const list: Array<{ email: string; name: string; roles?: string }> = [];
+    if (discoveredServiceAccounts.length > 0) {
+      for (const sa of discoveredServiceAccounts) {
+        list.push({
+          email: sa.email,
+          name: sa.displayName || sa.email,
+          roles: 'roles/eventarc.eventReceiver, roles/run.invoker',
+        });
+      }
+    } else {
+      for (const sa of GCP_PROJECT_SERVICE_ACCOUNTS) {
+        list.push(sa);
+      }
+    }
+    const currentSA = formData?.config?.eventarcServiceAccount;
+    if (currentSA && !list.some((s) => s.email === currentSA)) {
+      list.push({
+        email: currentSA,
+        name: currentSA.split('@')[0] || currentSA,
+        roles: 'Configured Service Account',
+      });
+    }
+    return list;
+  }, [discoveredServiceAccounts, formData?.config?.eventarcServiceAccount]);
 
   // EventArc category and events selection helper from dynamic or fallback catalog
   const displayEventarcCategories = useMemo(() => {
@@ -354,19 +490,6 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
               </p>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400">
-                Initial Welcome Message
-              </label>
-              <textarea
-                rows={2}
-                value={formData.config.initialMessage || ''}
-                onChange={(e) => handleConfigChange({ initialMessage: e.target.value })}
-                placeholder="Hello! I am your AI agent assistant. How can I help you today?"
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-amber-400 rounded text-xs text-gray-200 focus:outline-none"
-              />
-            </div>
-
             <div className="flex items-center justify-between pt-1">
               <span className="text-[11px] text-gray-300 font-medium">Real-time Token Streaming</span>
               <input
@@ -382,20 +505,42 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
         {/* 2. PUBSUB INVOCATION TRIGGER */}
         {formData.triggerType === 'pubsub' && (
           <div className="space-y-3 bg-[#0d1117] p-3 rounded-lg border border-amber-500/30">
-            <div className="flex items-center gap-1.5 text-amber-400 font-bold text-xs">
-              <Radio className="w-3.5 h-3.5" />
-              <span>PubSub Invocation Configuration</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-amber-400 font-bold text-xs">
+                <Radio className="w-3.5 h-3.5" />
+                <span>PubSub Invocation Configuration</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                  topicsSource === 'gcloud'
+                    ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                    : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                }`}>
+                  {topicsSource === 'gcloud' ? '● Live GCP' : 'Offline Presets'}
+                </span>
+                <button
+                  type="button"
+                  title="Refresh Pub/Sub topics via gcloud"
+                  disabled={isLoadingTopics}
+                  onClick={() => fetchPubSubTopics(undefined, true)}
+                  className="p-1 rounded bg-[#161b22] hover:bg-[#21262d] text-gray-400 hover:text-amber-300 border border-[#30363d] cursor-pointer disabled:opacity-50"
+                >
+                  <RotateCw className={`w-3 h-3 ${isLoadingTopics ? 'animate-spin text-amber-400' : ''}`} />
+                </button>
+              </div>
             </div>
 
             {/* Topic Drop Down */}
             <div className="space-y-1.5">
               <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center justify-between">
                 <span>Select PubSub Topic</span>
-                <span className="text-[9px] text-amber-400/80 font-mono">Google Cloud Pub/Sub</span>
+                <span className="text-[9px] text-amber-400/80 font-mono">
+                  {displayPubSubTopics.length} topics
+                </span>
               </label>
               
               <select
-                value={isCustomTopic ? '__custom__' : (formData.config.topic || PUBSUB_TOPIC_PRESETS[0].topic)}
+                value={isCustomTopic ? '__custom__' : (formData.config.topic || (displayPubSubTopics[0] && displayPubSubTopics[0].topic) || '')}
                 onChange={(e) => {
                   if (e.target.value === '__custom__') {
                     setIsCustomTopic(true);
@@ -412,7 +557,7 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
                 }}
                 className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-amber-400 rounded text-xs text-white focus:outline-none cursor-pointer"
               >
-                {PUBSUB_TOPIC_PRESETS.map((preset) => (
+                {displayPubSubTopics.map((preset) => (
                   <option key={preset.topic} value={preset.topic}>
                     {preset.label}
                   </option>
@@ -487,117 +632,136 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
           </div>
         )}
 
-        {/* 3. SCHEDULED TRIGGER (Time / Cron Config) */}
+        {/* 3. SCHEDULED TRIGGER (Scheduled Prompt & Time / Cron Config) */}
         {formData.triggerType === 'scheduled' && (
-          <div className="space-y-3 bg-[#0d1117] p-3 rounded-lg border border-sky-500/30">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-sky-400 font-bold text-xs">
-                <Clock className="w-3.5 h-3.5" />
-                <span>Schedule & Cron Configuration</span>
+          <div className="space-y-4">
+            {/* Section 1: Scheduled Prompt / Input Payload */}
+            <div className="space-y-3 bg-[#0d1117] p-3 rounded-lg border border-sky-500/30">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-sky-400 font-bold text-xs">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Scheduled Prompt / Input Payload</span>
+                </div>
+                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                  Turn Input
+                </span>
               </div>
-              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
-                Cloud Scheduler
-              </span>
-            </div>
 
-            {/* Preset Schedule Dropdown / Quick Pick */}
-            <div className="space-y-1.5">
-              <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1">
-                <Calendar className="w-3 h-3 text-sky-400" />
-                <span>Time / Cadence Presets</span>
-              </label>
-              
-              <div className="grid grid-cols-2 gap-1.5">
-                {CRON_PRESETS.map((preset) => (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => {
-                      handleConfigChange({ 
-                        cronExpression: preset.cron,
-                        scheduleInterval: preset.label 
-                      });
-                    }}
-                    className={`p-1.5 rounded text-left border transition-all cursor-pointer ${
-                      formData.config.cronExpression === preset.cron
-                        ? 'bg-sky-500/20 border-sky-400 text-white shadow-xs'
-                        : 'bg-[#161b22] hover:bg-[#21262d] border-[#30363d] text-gray-300 hover:text-white'
-                    }`}
-                  >
-                    <div className="font-semibold text-[10.5px] truncate">{preset.label}</div>
-                    <div className="font-mono text-[9px] text-sky-400/90 truncate">{preset.cron}</div>
-                  </button>
-                ))}
+              <p className="text-[11px] text-gray-400 leading-relaxed">
+                The prompt or instruction automatically delivered to the agent on each scheduled cadence tick.
+              </p>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center justify-between">
+                  <span>Scheduled Prompt / Instruction</span>
+                  <span className="text-[9px] text-sky-400 font-sans">Sent on schedule tick</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={formData.config.scheduledPrompt || ''}
+                  onChange={(e) => handleConfigChange({ scheduledPrompt: e.target.value })}
+                  placeholder="e.g. Execute scheduled batch compliance audit on pending transaction records"
+                  className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs text-white focus:outline-none resize-none font-sans"
+                />
               </div>
             </div>
 
-            {/* Custom Cron Expression Input */}
-            <div className="space-y-1 pt-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center justify-between">
-                <span>Cron Expression</span>
-                <span className="text-[9px] font-mono text-gray-400">min hour day month weekday</span>
-              </label>
-              <input
-                type="text"
-                value={formData.config.cronExpression || '0 9 * * 1-5'}
-                onChange={(e) => handleConfigChange({ cronExpression: e.target.value })}
-                placeholder="0 9 * * 1-5"
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs font-mono text-sky-300 focus:outline-none"
-              />
-            </div>
+            {/* Section 2: Schedule Timing & Cadence */}
+            <div className="space-y-3 bg-[#0d1117] p-3 rounded-lg border border-sky-500/30">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-sky-400 font-bold text-xs">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Schedule Timing & Cadence</span>
+                </div>
+                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                  Cloud Scheduler
+                </span>
+              </div>
 
-            {/* Timezone */}
-            <div className="space-y-1 pt-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1">
-                <Clock3 className="w-3 h-3 text-sky-400" />
-                <span>Timezone</span>
-              </label>
-              <select
-                value={formData.config.timezone || 'America/New_York'}
-                onChange={(e) => handleConfigChange({ timezone: e.target.value })}
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs text-gray-200 focus:outline-none cursor-pointer"
-              >
-                <option value="America/New_York">America/New_York (EST / EDT)</option>
-                <option value="America/Chicago">America/Chicago (CST / CDT)</option>
-                <option value="America/Denver">America/Denver (MST / MDT)</option>
-                <option value="America/Los_Angeles">America/Los_Angeles (PST / PDT)</option>
-                <option value="UTC">UTC (Coordinated Universal Time)</option>
-                <option value="Europe/London">Europe/London (GMT / BST)</option>
-                <option value="Europe/Frankfurt">Europe/Frankfurt (CET / CEST)</option>
-                <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
-                <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
-              </select>
-            </div>
+              {/* Preset Schedule Dropdown / Quick Pick */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-sky-400" />
+                  <span>Time / Cadence Presets</span>
+                </label>
+                
+                <div className="grid grid-cols-2 gap-1.5">
+                  {CRON_PRESETS.map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => {
+                        handleConfigChange({ 
+                          cronExpression: preset.cron,
+                          scheduleInterval: preset.label 
+                        });
+                      }}
+                      className={`p-1.5 rounded text-left border transition-all cursor-pointer ${
+                        formData.config.cronExpression === preset.cron
+                          ? 'bg-sky-500/20 border-sky-400 text-white shadow-xs'
+                          : 'bg-[#161b22] hover:bg-[#21262d] border-[#30363d] text-gray-300 hover:text-white'
+                      }`}
+                    >
+                      <div className="font-semibold text-[10.5px] truncate">{preset.label}</div>
+                      <div className="font-mono text-[9px] text-sky-400/90 truncate">{preset.cron}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            {/* Scheduled Prompt / Input Payload */}
-            <div className="space-y-1 pt-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center justify-between">
-                <span>Scheduled Prompt / Turn Input</span>
-                <span className="text-[9px] text-sky-400 font-sans">Sent on schedule tick</span>
-              </label>
-              <textarea
-                rows={2}
-                value={formData.config.scheduledPrompt || ''}
-                onChange={(e) => handleConfigChange({ scheduledPrompt: e.target.value })}
-                placeholder="e.g. Execute scheduled batch compliance audit on pending transaction records"
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs text-white focus:outline-none resize-none font-sans"
-              />
-            </div>
+              {/* Custom Cron Expression Input */}
+              <div className="space-y-1 pt-1">
+                <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center justify-between">
+                  <span>Cron Expression</span>
+                  <span className="text-[9px] font-mono text-gray-400">min hour day month weekday</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.config.cronExpression || '0 9 * * 1-5'}
+                  onChange={(e) => handleConfigChange({ cronExpression: e.target.value })}
+                  placeholder="0 9 * * 1-5"
+                  className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs font-mono text-sky-300 focus:outline-none"
+                />
+              </div>
 
-            {/* Retry Count */}
-            <div className="space-y-1 pt-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center justify-between">
-                <span>Retry Count</span>
-                <span className="text-[9px] font-mono text-gray-500">Max execution retries</span>
-              </label>
-              <input
-                type="number"
-                min={0}
-                max={10}
-                value={formData.config.retryCount ?? 3}
-                onChange={(e) => handleConfigChange({ retryCount: parseInt(e.target.value, 10) || 0 })}
-                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs font-mono text-white focus:outline-none"
-              />
+              {/* Timezone */}
+              <div className="space-y-1 pt-1">
+                <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1">
+                  <Clock3 className="w-3 h-3 text-sky-400" />
+                  <span>Timezone</span>
+                </label>
+                <select
+                  value={formData.config.timezone || 'America/New_York'}
+                  onChange={(e) => handleConfigChange({ timezone: e.target.value })}
+                  className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs text-gray-200 focus:outline-none cursor-pointer"
+                >
+                  <option value="America/New_York">America/New_York (EST / EDT)</option>
+                  <option value="America/Chicago">America/Chicago (CST / CDT)</option>
+                  <option value="America/Denver">America/Denver (MST / MDT)</option>
+                  <option value="America/Los_Angeles">America/Los_Angeles (PST / PDT)</option>
+                  <option value="UTC">UTC (Coordinated Universal Time)</option>
+                  <option value="Europe/London">Europe/London (GMT / BST)</option>
+                  <option value="Europe/Frankfurt">Europe/Frankfurt (CET / CEST)</option>
+                  <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                  <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
+                </select>
+              </div>
+
+              {/* Retry Count */}
+              <div className="space-y-1 pt-1">
+                <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center justify-between">
+                  <span>Retry Count</span>
+                  <span className="text-[9px] font-mono text-gray-500">Max execution retries</span>
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={10}
+                  value={formData.config.retryCount ?? 3}
+                  onChange={(e) => handleConfigChange({ retryCount: parseInt(e.target.value, 10) || 0 })}
+                  className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-sky-400 rounded text-xs font-mono text-white focus:outline-none"
+                />
+              </div>
             </div>
           </div>
         )}
@@ -833,26 +997,73 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
 
             {/* Invoker Service Account Dropdown */}
             <div className="space-y-1 pt-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400">
-                Invoker Service Account
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] uppercase font-bold text-gray-400">
+                  Invoker Service Account
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                    serviceAccountsSource === 'gcloud'
+                      ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                      : 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                  }`}>
+                    {serviceAccountsSource === 'gcloud' ? '● Live GCP' : 'Default SAs'}
+                  </span>
+                  <button
+                    type="button"
+                    title="Refresh service accounts via gcloud"
+                    disabled={isLoadingServiceAccounts}
+                    onClick={() => fetchServiceAccounts(undefined, true)}
+                    className="p-1 rounded bg-[#161b22] hover:bg-[#21262d] text-gray-400 hover:text-purple-300 border border-[#30363d] cursor-pointer disabled:opacity-50"
+                  >
+                    <RotateCw className={`w-3 h-3 ${isLoadingServiceAccounts ? 'animate-spin text-purple-400' : ''}`} />
+                  </button>
+                </div>
+              </div>
+
               <select
-                value={formData.config?.eventarcServiceAccount || ''}
-                onChange={(e) => handleConfigChange({ eventarcServiceAccount: e.target.value })}
+                value={isCustomServiceAccount ? '__custom__' : (formData.config?.eventarcServiceAccount || '')}
+                onChange={(e) => {
+                  if (e.target.value === '__custom__') {
+                    setIsCustomServiceAccount(true);
+                    if (customServiceAccountInput) {
+                      handleConfigChange({ eventarcServiceAccount: customServiceAccountInput });
+                    }
+                  } else {
+                    setIsCustomServiceAccount(false);
+                    handleConfigChange({ eventarcServiceAccount: e.target.value });
+                  }
+                }}
                 className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-purple-400 rounded text-xs text-white focus:outline-none cursor-pointer font-mono"
               >
                 <option value="">-- None / Select Service Account --</option>
-                {GCP_PROJECT_SERVICE_ACCOUNTS.map((sa) => (
+                {displayServiceAccounts.map((sa) => (
                   <option key={sa.email} value={sa.email}>
                     {sa.name} ({sa.email.split('@')[0]})
                   </option>
                 ))}
+                <option value="__custom__">➕ Custom Service Account...</option>
               </select>
+
+              {isCustomServiceAccount && (
+                <div className="pt-1">
+                  <input
+                    type="text"
+                    value={formData.config?.eventarcServiceAccount || customServiceAccountInput}
+                    onChange={(e) => {
+                      setCustomServiceAccountInput(e.target.value);
+                      handleConfigChange({ eventarcServiceAccount: e.target.value });
+                    }}
+                    placeholder="custom-sa@my-gcp-project.iam.gserviceaccount.com"
+                    className="w-full px-2.5 py-1.5 bg-[#161b22] border border-purple-500/50 focus:border-purple-400 rounded text-[11px] font-mono text-purple-300 focus:outline-none"
+                  />
+                </div>
+              )}
 
               {/* Service Account Details & IAM Roles Badge */}
               {(() => {
                 if (!formData.config?.eventarcServiceAccount) return null;
-                const selectedSA = GCP_PROJECT_SERVICE_ACCOUNTS.find(
+                const selectedSA = displayServiceAccounts.find(
                   (sa) => sa.email === formData.config?.eventarcServiceAccount
                 );
                 return selectedSA ? (
@@ -860,12 +1071,14 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
                     <div className="text-purple-300 font-semibold truncate text-[9.5px]">
                       {selectedSA.email}
                     </div>
-                    <div className="text-gray-400 text-[9px] font-sans flex items-center gap-1">
-                      <span className="text-gray-400">IAM Roles:</span>
-                      <span className="text-purple-300/90 font-mono text-[8.5px] bg-[#0d1117] px-1.5 py-0.5 rounded border border-[#30363d]">
-                        {selectedSA.roles}
-                      </span>
-                    </div>
+                    {selectedSA.roles && (
+                      <div className="text-gray-400 text-[9px] font-sans flex items-center gap-1">
+                        <span className="text-gray-400">IAM Roles:</span>
+                        <span className="text-purple-300/90 font-mono text-[8.5px] bg-[#0d1117] px-1.5 py-0.5 rounded border border-[#30363d]">
+                          {selectedSA.roles}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="p-2 bg-[#161b22] rounded border border-[#30363d] text-[10px] text-gray-300 font-mono mt-1 space-y-1">
