@@ -27,7 +27,7 @@
 | **TASK-112** | v1.0.2 | Canvas | Multi-Agent Wiring, Sockets & Connection Validation | **Complete** | TASK-103 |
 | **TASK-113** | v1.0.2 | Patterns | Sequential Pipeline & Parallel Fan-Out Patterns | **Complete** | TASK-112 |
 | **TASK-114** | v1.0.2 | Codegen | Multi-Agent DAG Python ADK Code Generation & Tracing | **Complete** | TASK-113 |
-| **TASK-115** | v1.0.3 | Memory | In-Memory & Cloud Firestore Checkpointer Configuration | **Not Started** | TASK-103, TASK-111 |
+| **TASK-115** | v1.0.3 | Memory | Session Store Factory & Production Checkpointer Configuration | **Not Started** | TASK-103, TASK-111 |
 | **TASK-117** | v1.0.5 | Router | Router Node & Dynamic Branching Logic | **Complete** | TASK-112 |
 | **TASK-118** | v1.0.6 | Tools | Custom REST API Tool Builder & Python Code Sandbox | **Complete** | TASK-104 |
 | **TASK-119** | v1.0.7 | Schema | Structured Output Schema Builder & Pydantic Validation | **Complete** | TASK-103, TASK-106 |
