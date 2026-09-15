@@ -149,13 +149,27 @@ describe('AddToolModal Logic & Tool Panel Alignment', () => {
     assert.equal(noResults.length, 0);
   });
 
-  it('should support onRegisterMcpServer callback to trigger MCP registration flow without ReferenceError', () => {
-    let mcpRegistered = false;
-    const handleRegisterMcp = () => {
-      mcpRegistered = true;
-    };
+  it('should include all Google Cloud MCP servers and render AddToolModal cleanly without register MCP button', () => {
+    // Verify Google Cloud MCP servers are present in categorized tools
+    const categorized = categorizeTools(AVAILABLE_TOOLS);
+    assert.ok(categorized.google_cloud_mcp.length > 0, 'Google Cloud MCP tools must be present');
+    assert.ok(
+      categorized.google_cloud_mcp.some((t) => t.id === 'gcp_mcp_bigquery'),
+      'BigQuery MCP server must be in google_cloud_mcp category'
+    );
+    assert.ok(
+      categorized.google_cloud_mcp.some((t) => t.id === 'gcp_mcp_spanner'),
+      'Spanner MCP server must be in google_cloud_mcp category'
+    );
 
-    // Temporarily stub useState and useMemo to verify AddToolModal executes without reference error
+    // Filter by MCP server URL or name
+    const bqFiltered = AVAILABLE_TOOLS.filter((t) =>
+      t.name.toLowerCase().includes('bigquery') ||
+      (t.mcpConfig?.serverUrl && t.mcpConfig.serverUrl.toLowerCase().includes('bigquery'))
+    );
+    assert.ok(bqFiltered.length > 0, 'Should find BigQuery MCP server via search');
+
+    // Stub useState and useMemo to verify AddToolModal executes cleanly
     const originalUseState = React.useState;
     const originalUseMemo = React.useMemo;
     try {
@@ -165,31 +179,19 @@ describe('AddToolModal Logic & Tool Panel Alignment', () => {
       ];
       (React as any).useMemo = (fn: any) => fn();
 
-      // Verify AddToolModal executes without reference error when rendered with onRegisterMcpServer
-      const renderedWithMcp = AddToolModal({
+      const renderedModal = AddToolModal({
         isOpen: true,
         onClose: () => {},
         onSelectTool: () => {},
-        existingToolIds: [],
-        onRegisterMcpServer: handleRegisterMcp,
+        existingToolIds: ['tool_google_search'],
+        tools: AVAILABLE_TOOLS,
+        targetAgentName: 'Test Agent',
       });
-      assert.ok(renderedWithMcp, 'AddToolModal should render valid JSX with onRegisterMcpServer');
-
-      // Verify AddToolModal executes without reference error when rendered without onRegisterMcpServer
-      const renderedWithoutMcp = AddToolModal({
-        isOpen: true,
-        onClose: () => {},
-        onSelectTool: () => {},
-        existingToolIds: [],
-      });
-      assert.ok(renderedWithoutMcp, 'AddToolModal should render valid JSX without onRegisterMcpServer');
+      assert.ok(renderedModal, 'AddToolModal should render valid JSX without errors');
     } finally {
       (React as any).useState = originalUseState;
       (React as any).useMemo = originalUseMemo;
     }
-
-    handleRegisterMcp();
-    assert.equal(mcpRegistered, true);
   });
 });
 

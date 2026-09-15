@@ -1686,7 +1686,6 @@ export function FlowCanvas() {
         existingToolIds={((targetAgentForTool?.data as AgentData)?.tools || []).map((t) => t.id)}
         tools={tools}
         targetAgentName={(targetAgentForTool?.data as AgentData)?.label}
-        onRegisterMcpServer={handleCreateMcpTool}
       />
 
       {/* Architectural Advisor Modal */}
