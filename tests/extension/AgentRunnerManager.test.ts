@@ -420,7 +420,7 @@ describe('AgentRunnerManager', () => {
 
     // Override httpPostJson to simulate OpenAI chat completions returning JSON content
     (manager as any).httpPostJson = async (_port: number, _path: string, body: any) => {
-      assert.equal(body.model, 'gemini-3.7-flash');
+      assert.equal(body.model, 'gemini-3.8-flash');
       return {
         ok: true,
         status: 200,

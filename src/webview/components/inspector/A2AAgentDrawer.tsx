@@ -633,7 +633,7 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
 
             {/* Modular AI Model Settings */}
             <ModelSelector
-              selectedModel={agent.model || 'gemini-3.7-flash'}
+              selectedModel={agent.model || 'gemini-3.8-flash'}
               onChangeModel={(model) => onUpdateAgent({ model })}
               thinkingBudget={agent.thinkingBudget}
               onChangeThinkingBudget={(thinkingBudget) => onUpdateAgent({ thinkingBudget })}

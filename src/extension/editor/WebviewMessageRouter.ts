@@ -286,7 +286,7 @@ export class WebviewMessageRouter {
         language: payload.targetLanguage,
         deploymentTarget: deploymentTarget,
         apiKey: apiKey,
-        model: 'gemini-3.7-flash',
+        model: 'gemini-3.8-flash',
         signal: abortController.signal,
       });
 

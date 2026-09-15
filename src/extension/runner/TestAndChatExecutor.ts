@@ -351,7 +351,7 @@ export class TestAndChatExecutor {
           inputQuery: inputQuery,
           expectedCriteria: scenario.expectedOutput || '',
           actualOutput: responseText,
-          model: 'gemini-3.7-flash',
+          model: 'gemini-3.8-flash',
           assertionType: scenario.assertionType,
           expectedSchema: scenario.expectedSchema,
         });
@@ -398,14 +398,14 @@ export class TestAndChatExecutor {
     const agentNodes = (document.nodes || []).filter(
       (n) => n.type === 'agent' || (n as any).type === 'agentNode'
     );
-    let modelName = (agentNodes[0]?.data as any)?.model || 'gemini-3.7-flash';
+    let modelName = (agentNodes[0]?.data as any)?.model || 'gemini-3.8-flash';
     if (
       !modelName ||
       modelName.includes('2.5') ||
       modelName.includes('1.5') ||
       modelName.includes('2.0')
     ) {
-      modelName = 'gemini-3.7-flash';
+      modelName = 'gemini-3.8-flash';
     }
 
     const sessionId = `test-session-${scenario.id}-${Date.now()}`;

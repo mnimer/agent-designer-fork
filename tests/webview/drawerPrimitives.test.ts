@@ -120,26 +120,26 @@ describe('Drawer UI Primitives', () => {
       assert.equal(element.props.temperature, 0.7);
 
       // Trigger changes
-      element.props.onChangeModel('gemini-3.7-flash');
+      element.props.onChangeModel('gemini-3.8-flash');
       element.props.onChangeTemperature(1.2);
 
-      assert.equal(modelChanged, 'gemini-3.7-flash');
+      assert.equal(modelChanged, 'gemini-3.8-flash');
       assert.equal(tempChanged, 1.2);
     });
 
-    it('should support reasoning budget for gemini-3.7-flash', () => {
+    it('should support reasoning budget for gemini-3.8-flash and gemini-3.7-flash', () => {
       let modelChanged = '';
       let budgetChanged = -1;
 
       const element = React.createElement(ModelSelector, {
-        selectedModel: 'gemini-3.7-flash',
+        selectedModel: 'gemini-3.8-flash',
         onChangeModel: (m) => { modelChanged = m; },
         thinkingBudget: 2048,
         onChangeThinkingBudget: (b) => { budgetChanged = b; },
       });
 
       assert.ok(element);
-      assert.equal(element.props.selectedModel, 'gemini-3.7-flash');
+      assert.equal(element.props.selectedModel, 'gemini-3.8-flash');
       assert.equal(element.props.thinkingBudget, 2048);
 
       // Trigger budget update

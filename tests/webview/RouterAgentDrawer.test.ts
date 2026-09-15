@@ -184,16 +184,18 @@ describe('Router Agent Drawer Configuration & Inspector Logic', () => {
   });
 
   describe('Model Selection & Deprecation Rules', () => {
-    it('should default to gemini-3.7-flash and disallow deprecated gemini-1.5 or 2.5', () => {
-      const defaultModel = 'gemini-3.7-flash';
-      assert.equal(defaultModel, 'gemini-3.7-flash');
+    it('should default to gemini-3.8-flash and disallow deprecated gemini-1.5 or 2.5', () => {
+      const defaultModel = 'gemini-3.8-flash';
+      assert.equal(defaultModel, 'gemini-3.8-flash');
 
       const isModelValid = (m: string) => {
         if (m.startsWith('gemini-1.') || m.startsWith('gemini-2.')) return false;
         return m.startsWith('gemini-3.');
       };
 
+      assert.ok(isModelValid('gemini-3.8-flash'));
       assert.ok(isModelValid('gemini-3.7-flash'));
+      assert.ok(isModelValid('gemini-3.6-flash'));
       assert.ok(isModelValid('gemini-3.5-flash'));
       assert.equal(isModelValid('gemini-1.5-flash'), false);
       assert.equal(isModelValid('gemini-2.5-pro'), false);

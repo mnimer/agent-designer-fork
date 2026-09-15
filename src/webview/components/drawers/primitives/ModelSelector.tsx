@@ -19,9 +19,19 @@ export interface ModelSelectorProps {
 
 const SUPPORTED_MODELS = [
   { 
-    id: 'gemini-3.7-flash', 
-    name: 'Gemini 3.7 Flash (Recommended)', 
+    id: 'gemini-3.8-flash', 
+    name: 'Gemini 3.8 Flash (Recommended)', 
     desc: 'Next-gen hybrid reasoning with adaptive thinking on Vertex AI (location="global")' 
+  },
+  { 
+    id: 'gemini-3.7-flash', 
+    name: 'Gemini 3.7 Flash', 
+    desc: 'Hybrid reasoning with adaptive thinking on Vertex AI (location="global")' 
+  },
+  { 
+    id: 'gemini-3.6-flash', 
+    name: 'Gemini 3.6 Flash', 
+    desc: 'Advanced multimodal reasoning on Vertex AI' 
   },
   { 
     id: 'gemini-3.5-flash', 
@@ -35,7 +45,7 @@ const SUPPORTED_MODELS = [
  *
  * This component standardizes model picking and exposes specialized controls 
  * such as temperature, token budgets, and adaptive thinking (reasoning budget)
- * for advanced models like Gemini 3.7 Flash.
+ * for advanced models like Gemini 3.8 and Gemini 3.7 Flash.
  *
  * Architectural Decisions:
  * 1. Cohesive AI Parameters: Group model-specific switches within the same container.
@@ -52,8 +62,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   onChangeThinkingBudget,
   className = '',
 }) => {
-  // Determine if the current model supports a reasoning budget (e.g., Gemini 3.7)
-  const supportsReasoning = selectedModel.includes('3.7');
+  // Determine if the current model supports a reasoning budget (e.g., Gemini 3.8, Gemini 3.7)
+  const supportsReasoning = selectedModel.includes('3.8') || selectedModel.includes('3.7');
   const isReasoningEnabled = thinkingBudget !== undefined && thinkingBudget > 0;
 
   const handleReasoningToggle = (enabled: boolean) => {
@@ -68,7 +78,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     onChangeModel(nextModel);
     
     // Automatically disable reasoning budget if moving to a model that does not support it
-    if (!nextModel.includes('3.7') && onChangeThinkingBudget) {
+    if (!nextModel.includes('3.8') && !nextModel.includes('3.7') && onChangeThinkingBudget) {
       onChangeThinkingBudget(0);
     }
   };
@@ -79,7 +89,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       <DrawerField 
         label="AI Foundation Model" 
         subLabel="The foundational Gemini model used for reasoning and orchestration."
-        tooltip="Gemini 3.7 Flash is recommended for its powerful multi-agent coordination capabilities."
+        tooltip="Gemini 3.8 Flash is recommended for its powerful multi-agent coordination capabilities."
       >
         <div className="relative">
           <Cpu className="absolute left-3 top-2.5 w-4 h-4 text-emerald-500 pointer-events-none" />

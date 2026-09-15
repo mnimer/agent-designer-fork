@@ -272,7 +272,7 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
 
         {/* Modular AI Model & Hyperparameter Settings */}
         <ModelSelector
-          selectedModel={agent.model || 'gemini-3.7-flash'}
+          selectedModel={agent.model || 'gemini-3.8-flash'}
           onChangeModel={(model) => onUpdateAgent({ model })}
           temperature={agent.temperature ?? 1.0}
           onChangeTemperature={(temperature) => onUpdateAgent({ temperature })}

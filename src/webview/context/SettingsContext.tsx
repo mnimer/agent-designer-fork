@@ -49,7 +49,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   defaultIncludeTests: true,
   defaultIncludeDocker: true,
   defaultUseStreaming: true,
-  defaultModel: 'gemini-3.7-flash',
+  defaultModel: 'gemini-3.8-flash',
   defaultTemperature: 0.7,
   defaultMemoryType: 'none',
   defaultSubAgentPattern: 'parallel',

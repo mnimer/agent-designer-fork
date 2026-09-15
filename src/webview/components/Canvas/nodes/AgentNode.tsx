@@ -406,15 +406,7 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
               <span className="font-bold text-xs text-white truncate max-w-[130px]">
                 {data.label}
               </span>
-              {isRouter ? (
-                <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30">
-                  IF/ELSE ROUTER
-                </span>
-              ) : isA2A ? (
-                <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
-                  A2A PROTOCOL
-                </span>
-              ) : data.isStartNode ? (
+              {data.isStartNode ? (
                 <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40 shadow-xs flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
                   ROOT
@@ -438,7 +430,7 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
               ) : isA2A ? (
                 <>
                   <Cpu className="w-2.5 h-2.5 shrink-0 text-cyan-400" />
-                  <span className="truncate">{data.model || 'gemini-3.7-flash'} • A2A Client</span>
+                  <span className="truncate">{data.model || 'gemini-3.8-flash'} • A2A Client</span>
                 </>
               ) : (
                 <>

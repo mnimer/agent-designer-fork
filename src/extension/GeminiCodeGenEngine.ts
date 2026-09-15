@@ -57,7 +57,7 @@ export class GeminiCodeGenEngine {
     const framework = request.framework || doc.framework || 'google-adk';
     const language = request.language || doc.language || 'python';
     const target = request.deploymentTarget || doc.metadata?.deploymentTarget || 'agent-engine';
-    const model = request.model || 'gemini-3.7-flash';
+    const model = request.model || 'gemini-3.8-flash';
     const apiKey = request.apiKey || process.env.GEMINI_API_KEY || '';
 
     if (request.signal?.aborted) {

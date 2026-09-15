@@ -440,7 +440,7 @@ export class PythonAdkGenerator {
     workflow: AgentWorkflowDocument, 
     options?: PythonAdkGeneratorOptions
   ): string {
-    const defaultModel = options?.defaultModel || 'gemini-3.7-flash';
+    const defaultModel = options?.defaultModel || 'gemini-3.8-flash';
     const agentNodes = (workflow.nodes || []).filter(
       (n) => n.data && (n.data.agentKind === 'standard' || n.data.agentKind === 'router' || n.data.agentKind === 'a2a' || !n.data.agentKind)
     );

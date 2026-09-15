@@ -645,7 +645,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
             description: 'Core LLM agent',
             agentKind: 'standard',
             standardConfig: {
-              model: 'gemini-3.7-flash',
+              model: 'gemini-3.8-flash',
               systemInstruction:
                 'You are a helpful, expert AI engineering assistant. Provide direct, grounded, and concise answers.',
               temperature: 0.7,

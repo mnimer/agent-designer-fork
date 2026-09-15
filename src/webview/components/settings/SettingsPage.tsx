@@ -31,7 +31,9 @@ import { useWebviewBridge } from '../../hooks/useWebviewBridge';
 import { FrameworkType, LanguageType, DelegationPattern, AgentMemoryType } from '../../types';
 
 const SUPPORTED_MODELS = [
-  { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash (Recommended - Global Region)', provider: 'Google' },
+  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Recommended - Global Region)', provider: 'Google' },
+  { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash', provider: 'Google' },
+  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', provider: 'Google' },
   { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', provider: 'Google' },
 ];
 
