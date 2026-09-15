@@ -111,7 +111,7 @@ export const AddToolModal: React.FC<AddToolModalProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
-    native_adk: true,
+    native_adk: false,
     mcp: false,
     custom: false,
     grounding: false,

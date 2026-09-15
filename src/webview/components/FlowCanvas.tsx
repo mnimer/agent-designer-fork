@@ -990,12 +990,6 @@ export function FlowCanvas() {
 
   const handleNodeClick = useCallback((_: any, node: any) => {
     if (node.type === 'triggerNode') {
-      const triggerData = node.data as TriggerData;
-      if (triggerData?.triggerType === 'chat') {
-        setSelectedTriggerId(null);
-        setIsTriggerDrawerOpen(false);
-        return;
-      }
       setSelectedTriggerId(node.id);
       setIsTriggerDrawerOpen(true);
       setSelectedAgentId(null);

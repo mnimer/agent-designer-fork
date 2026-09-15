@@ -14,6 +14,7 @@
  * - Decision 3: Spacing and layout follow the strict 8pt grid system.
  * - Decision 4: Categorized tool sections in the Tools catalog are collapsible and default closed.
  * - Decision 5: Basic Agent Types catalog supports Standard Agent (blue), A2A Protocol Agent (cyan), and Router Agent (purple) with drag-and-drop and one-click '+' canvas insertion.
+ * - Decision 6: Trigger categories (Test Suite QA, Conversational Chat, and Workflow Triggers) in the Triggers catalog are collapsible and expanded by default.
  */
 
 import React, { useState } from 'react';
@@ -112,7 +113,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   const [toolSearch, setToolSearch] = useState('');
   const [toolCategoryFilter, setToolCategoryFilter] = useState<'all' | 'mcp' | 'api' | 'builtin'>('all');
   const [openToolCategories, setOpenToolCategories] = useState<Record<string, boolean>>({
-    native_adk: true,
+    native_adk: false,
     google_cloud_mcp: false,
     mcp: false,
     custom: false,
@@ -176,6 +177,25 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
         [categoryId]: !prev[categoryId],
       }));
     }
+  };
+
+  // Collapsible accordion state for Trigger categories (all expanded by default)
+  const [openTriggerCategories, setOpenTriggerCategories] = useState<Record<string, boolean>>({
+    tester: true,
+    chat: true,
+    workflow: true,
+  });
+
+  /**
+   * Toggles the collapse/expand state of a trigger category.
+   *
+   * @param categoryId ID of the trigger category section to toggle
+   */
+  const toggleTriggerCategory = (categoryId: string) => {
+    setOpenTriggerCategories((prev) => ({
+      ...prev,
+      [categoryId]: !prev[categoryId],
+    }));
   };
 
   const handleTabClick = (tab: 'agents' | 'tools' | 'triggers' | 'samples') => {
@@ -982,210 +1002,209 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
             const testSuiteTrigger = TRIGGER_CATALOG.find((t) => t.type === 'tester');
             const workflowTriggers = TRIGGER_CATALOG.filter((t) => t.type !== 'tester' && t.type !== 'chat');
 
+            const triggerSections = [
+              {
+                id: 'tester',
+                title: 'Test Suite & Validation',
+                icon: <FlaskConical className="w-3.5 h-3.5 text-orange-400" />,
+                badge: 'QA Suite',
+                isCount: false,
+                trigger: testSuiteTrigger,
+                triggers: undefined,
+              },
+              {
+                id: 'chat',
+                title: 'Conversational Chat',
+                icon: <MessageSquare className="w-3.5 h-3.5 text-orange-400" />,
+                badge: 'Interactive',
+                isCount: false,
+                trigger: chatTrigger,
+                triggers: undefined,
+              },
+              {
+                id: 'workflow',
+                title: 'Workflow Triggers',
+                icon: <Zap className="w-3.5 h-3.5 text-orange-400" />,
+                badge: `${workflowTriggers.length}`,
+                isCount: true,
+                trigger: undefined,
+                triggers: workflowTriggers,
+              },
+            ];
+
             return (
-              <>
-                {/* 1. Conversational Chat Trigger */}
-                {chatTrigger && (
-                  <div>
-                    <div className="text-[11px] font-semibold text-orange-400 mb-2 uppercase tracking-wide flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <MessageSquare className="w-3.5 h-3.5 text-orange-400" />
-                        Conversational Chat
-                      </span>
-                      <span className="text-[9px] text-orange-300/90 bg-orange-950/50 px-1.5 py-0.2 rounded border border-orange-500/40 font-mono">
-                        Interactive
-                      </span>
-                    </div>
+              <div className="space-y-3">
+                {triggerSections.map((section) => {
+                  const isExpanded = openTriggerCategories[section.id] ?? false;
 
+                  return (
                     <div
-                      draggable
-                      onDragStart={(e) => handleDragStartTrigger(e, chatTrigger)}
-                      className="group relative flex items-start justify-between p-2.5 bg-[#21262d] border border-orange-500/40 rounded-lg cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-orange-400 shadow-sm transition-all shadow-orange-950/20"
+                      key={section.id}
+                      className="space-y-2 bg-[#0d1117]/40 rounded-lg border border-[#30363d]/60 p-2"
                     >
-                      <div className="flex items-start gap-2.5 min-w-0">
-                        <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-orange-400 shrink-0 mt-1" />
-                        <div className="p-1.5 rounded-md bg-[#0d1117] border border-orange-500/30 shrink-0 mt-0.5 shadow-xs">
-                          <MessageSquare className="w-4 h-4 text-orange-400" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-xs text-white truncate max-w-[130px]">
-                              {chatTrigger.name}
-                            </span>
-                            <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
-                              {chatTrigger.badge}
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
-                            {chatTrigger.description}
-                          </p>
-                        </div>
-                      </div>
-
+                      {/* Collapsible Category Header */}
                       <button
                         type="button"
-                        onClick={() => onAddTrigger(chatTrigger.type)}
-                        title="Add Chat Trigger to Root Agent"
-                        className="p-1.5 rounded bg-[#0d1117] hover:bg-orange-600 border border-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer shrink-0 ml-1 mt-0.5"
+                        onClick={() => toggleTriggerCategory(section.id)}
+                        className="w-full flex items-center justify-between text-left hover:text-white transition-colors cursor-pointer group select-none"
+                        data-testid={`toggle-trigger-section-${section.id}`}
                       >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* 2. Test Suite & Validation */}
-                {testSuiteTrigger && (
-                  <div>
-                    <div className="text-[11px] font-semibold text-orange-400 mb-2 uppercase tracking-wide flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <FlaskConical className="w-3.5 h-3.5 text-orange-400" />
-                        Test Suite & Validation
-                      </span>
-                      <span className="text-[9px] text-orange-300/90 bg-orange-950/50 px-1.5 py-0.2 rounded border border-orange-500/40 font-mono">
-                        QA Suite
-                      </span>
-                    </div>
-
-                    <div
-                      draggable
-                      onDragStart={(e) => handleDragStartTrigger(e, testSuiteTrigger)}
-                      className="group relative flex items-start justify-between p-2.5 bg-[#21262d] border border-orange-500/40 rounded-lg cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-orange-400 shadow-sm transition-all shadow-orange-950/20"
-                    >
-                      <div className="flex items-start gap-2.5 min-w-0">
-                        <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-orange-400 shrink-0 mt-1" />
-                        <div className="p-1.5 rounded-md bg-[#0d1117] border border-orange-500/30 shrink-0 mt-0.5 shadow-xs">
-                          <FlaskConical className="w-4 h-4 text-orange-400" />
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {isExpanded ? (
+                            <ChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                          ) : (
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                          )}
+                          {section.icon}
+                          <span className="text-[11px] font-bold text-gray-300 group-hover:text-white tracking-tight">
+                            {section.title}
+                          </span>
                         </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-xs text-white truncate max-w-[130px]">
-                              {testSuiteTrigger.name}
-                            </span>
-                            <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
-                              {testSuiteTrigger.badge}
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
-                            {testSuiteTrigger.description}
-                          </p>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => onAddTrigger(testSuiteTrigger.type)}
-                        title="Add Test Suite Trigger to Root Agent"
-                        className="p-1.5 rounded bg-[#0d1117] hover:bg-orange-600 border border-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer shrink-0 ml-1 mt-0.5"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* 3. Workflow Triggers */}
-                <div className="border-t border-[#30363d] pt-3">
-                  <div className="text-[11px] font-semibold text-orange-400 mb-2 uppercase tracking-wide flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-orange-400" />
-                      Workflow Triggers ({workflowTriggers.length})
-                    </span>
-                    <span className="text-[9px] text-orange-300/80 bg-orange-950/40 px-1.5 py-0.2 rounded border border-orange-500/30">
-                      Root Only
-                    </span>
-                  </div>
-
-                  <div className="space-y-1.5 max-h-[calc(66vh-240px)] overflow-y-auto pr-1">
-                    {workflowTriggers.map((trigger) => {
-                      const isDisabled = trigger.type === 'pubsub' || trigger.type === 'scheduled';
-
-                      return (
-                        <div
-                          key={trigger.id}
-                          draggable={!isDisabled}
-                          onDragStart={(e) => {
-                            if (isDisabled) {
-                              e.preventDefault();
-                              return;
-                            }
-                            handleDragStartTrigger(e, trigger);
-                          }}
-                          className={`group relative flex items-start justify-between p-2.5 rounded-lg border transition-all shadow-sm ${
-                            isDisabled
-                              ? 'bg-[#161b22] border-orange-500/20 opacity-50 cursor-not-allowed select-none'
-                              : 'bg-[#21262d] border-orange-500/40 cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-orange-400 shadow-orange-950/20'
-                          }`}
-                          title={isDisabled ? `${trigger.name} (Disabled until implemented)` : trigger.name}
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded border font-mono ${
+                            section.isCount ? 'font-bold' : ''
+                          } bg-orange-950/50 text-orange-300/90 border-orange-500/40 shrink-0`}
                         >
-                          <div className="flex items-start gap-2.5 min-w-0">
-                            <GripVertical
-                              className={`w-3.5 h-3.5 shrink-0 mt-1 ${
-                                isDisabled
-                                  ? 'text-gray-600 cursor-not-allowed'
-                                  : 'text-gray-400 group-hover:text-orange-400'
-                              }`}
-                            />
-                            <div
-                              className={`p-1.5 rounded-md bg-[#0d1117] shrink-0 mt-0.5 border ${
-                                isDisabled ? 'border-orange-500/10' : 'border-orange-500/30 shadow-xs'
-                              }`}
-                            >
-                              {getTriggerIcon(trigger.type)}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-semibold text-xs text-white truncate max-w-[130px]">
-                                  {trigger.name}
-                                </span>
-                                {isDisabled ? (
-                                  <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-orange-950/60 text-orange-300/70 border border-orange-500/20">
-                                    Disabled
-                                  </span>
-                                ) : (
-                                  <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
-                                    {trigger.badge}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
-                                {trigger.description}
-                              </p>
-                              {isDisabled && (
-                                <p className="text-[9px] text-orange-400/70 font-mono mt-1 italic">
-                                  Disabled until implemented
-                                </p>
-                              )}
-                            </div>
-                          </div>
+                          {section.badge}
+                        </span>
+                      </button>
 
-                          <button
-                            type="button"
-                            disabled={isDisabled}
-                            onClick={() => {
-                              if (!isDisabled) {
-                                onAddTrigger(trigger.type);
-                              }
-                            }}
-                            title={
-                              isDisabled
-                                ? `${trigger.name} is disabled until implemented`
-                                : `Add ${trigger.name} to Root Agent`
-                            }
-                            className={`p-1.5 rounded border text-gray-300 shrink-0 ml-1 mt-0.5 transition-colors ${
-                              isDisabled
-                                ? 'bg-[#0d1117] border-gray-700/40 text-gray-600 cursor-not-allowed opacity-40'
-                                : 'bg-[#0d1117] hover:bg-orange-600 border-[#30363d] hover:text-white cursor-pointer'
-                            }`}
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
+                      {/* Expanded Section Items */}
+                      {isExpanded && (
+                        <div className="pt-1.5 space-y-2 border-t border-[#30363d]/40">
+                          {section.trigger && (
+                            <div
+                              draggable
+                              onDragStart={(e) => handleDragStartTrigger(e, section.trigger!)}
+                              className="group relative flex items-start justify-between p-2.5 bg-[#21262d] border border-orange-500/40 rounded-lg cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-orange-400 shadow-sm transition-all shadow-orange-950/20"
+                            >
+                              <div className="flex items-start gap-2.5 min-w-0">
+                                <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-orange-400 shrink-0 mt-1" />
+                                <div className="p-1.5 rounded-md bg-[#0d1117] border border-orange-500/30 shrink-0 mt-0.5 shadow-xs">
+                                  {getTriggerIcon(section.trigger.type)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-semibold text-xs text-white truncate max-w-[130px]">
+                                      {section.trigger.name}
+                                    </span>
+                                    <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
+                                      {section.trigger.badge}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                                    {section.trigger.description}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => onAddTrigger(section.trigger!.type)}
+                                title={`Add ${section.trigger.name} to Root Agent`}
+                                className="p-1.5 rounded bg-[#0d1117] hover:bg-orange-600 border border-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer shrink-0 ml-1 mt-0.5"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+
+                          {section.triggers && (
+                            <div className="space-y-1.5 max-h-[calc(66vh-240px)] overflow-y-auto pr-1">
+                              {section.triggers.map((trigger) => {
+                                const isDisabled = trigger.type === 'pubsub' || trigger.type === 'scheduled';
+
+                                return (
+                                  <div
+                                    key={trigger.id}
+                                    draggable={!isDisabled}
+                                    onDragStart={(e) => {
+                                      if (isDisabled) {
+                                        e.preventDefault();
+                                        return;
+                                      }
+                                      handleDragStartTrigger(e, trigger);
+                                    }}
+                                    className={`group relative flex items-start justify-between p-2.5 rounded-lg border transition-all shadow-sm ${
+                                      isDisabled
+                                        ? 'bg-[#161b22] border-orange-500/20 opacity-50 cursor-not-allowed select-none'
+                                        : 'bg-[#21262d] border-orange-500/40 cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-orange-400 shadow-orange-950/20'
+                                    }`}
+                                    title={isDisabled ? `${trigger.name} (Disabled until implemented)` : trigger.name}
+                                  >
+                                    <div className="flex items-start gap-2.5 min-w-0">
+                                      <GripVertical
+                                        className={`w-3.5 h-3.5 shrink-0 mt-1 ${
+                                          isDisabled
+                                            ? 'text-gray-600 cursor-not-allowed'
+                                            : 'text-gray-400 group-hover:text-orange-400'
+                                        }`}
+                                      />
+                                      <div
+                                        className={`p-1.5 rounded-md bg-[#0d1117] shrink-0 mt-0.5 border ${
+                                          isDisabled ? 'border-orange-500/10' : 'border-orange-500/30 shadow-xs'
+                                        }`}
+                                      >
+                                        {getTriggerIcon(trigger.type)}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="font-semibold text-xs text-white truncate max-w-[130px]">
+                                            {trigger.name}
+                                          </span>
+                                          {isDisabled ? (
+                                            <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-orange-950/60 text-orange-300/70 border border-orange-500/20">
+                                              Disabled
+                                            </span>
+                                          ) : (
+                                            <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
+                                              {trigger.badge}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                                          {trigger.description}
+                                        </p>
+                                        {isDisabled && (
+                                          <p className="text-[9px] text-orange-400/70 font-mono mt-1 italic">
+                                            Disabled until implemented
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      disabled={isDisabled}
+                                      onClick={() => {
+                                        if (!isDisabled) {
+                                          onAddTrigger(trigger.type);
+                                        }
+                                      }}
+                                      title={
+                                        isDisabled
+                                          ? `${trigger.name} is disabled until implemented`
+                                          : `Add ${trigger.name} to Root Agent`
+                                      }
+                                      className={`p-1.5 rounded border text-gray-300 shrink-0 ml-1 mt-0.5 transition-colors ${
+                                        isDisabled
+                                          ? 'bg-[#0d1117] border-gray-700/40 text-gray-600 cursor-not-allowed opacity-40'
+                                          : 'bg-[#0d1117] hover:bg-orange-600 border-[#30363d] hover:text-white cursor-pointer'
+                                      }`}
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             );
           })()}
         </div>
