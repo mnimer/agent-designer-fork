@@ -35,8 +35,13 @@ import { McpSubprocessManager } from '../McpSubprocessManager';
 import { McpOAuthManager } from '../McpOAuthManager';
 import { SecretsProvider } from '../security/SecretsProvider';
 import { assertInsideWorkspace, isPathInside } from '../security/pathGuard';
-import { AgentEditorProvider } from '../AgentEditorProvider';
 import { DEFAULT_EVENTARC_FALLBACK } from '../EventarcDiscoveryManager';
+import {
+  GcpDiscoveryManager,
+  DEFAULT_PUBSUB_TOPICS_FALLBACK,
+  DEFAULT_PUBSUB_SUBSCRIPTIONS_FALLBACK,
+  DEFAULT_SERVICE_ACCOUNTS_FALLBACK,
+} from '../GcpDiscoveryManager';
 import {
   WebviewToExtensionMessage,
   isWriteFilesPayload,
@@ -88,6 +93,10 @@ export class WebviewMessageRouter {
 
   private get documentSyncManager(): DocumentSyncManager {
     return this.provider.documentSyncManager;
+  }
+
+  private get gcpDiscoveryManager(): GcpDiscoveryManager {
+    return this.provider?.gcpDiscoveryManager || GcpDiscoveryManager.getInstance();
   }
 
   /**
@@ -223,6 +232,7 @@ export class WebviewMessageRouter {
       this.documentSyncManager.setDocumentVersion(uriStr, payload.docVersion);
 
       const updatedJson = JSON.stringify(payload.document, null, 2);
+      this.documentSyncManager.setLastAppliedContent(uriStr, updatedJson);
 
       if (document.getText() === updatedJson) {
         return;
@@ -260,12 +270,27 @@ export class WebviewMessageRouter {
     bridge.onMessage('GENERATE_CODE', async (payload) => {
       if (!payload) return;
 
-      // Abort any prior in-flight code generation
+      // Abort any prior in-flight code generation and establish new controller
       if (this.activeCodeGenAbortController) {
         this.activeCodeGenAbortController.abort();
       }
       const abortController = new AbortController();
       this.activeCodeGenAbortController = abortController;
+
+      // NOTE: Auto-save the .agent document to disk with the latest workflow payload before generating code
+      if (payload.document) {
+        try {
+          const updatedJson = JSON.stringify(payload.document, null, 2);
+          await this.documentSyncManager.updateTextDocument(document, updatedJson);
+          if (typeof document.save === 'function') {
+            await document.save();
+          }
+        } catch (saveErr) {
+          this.outputChannel?.appendLine(
+            `[AgentEditorProvider] Warning: Failed to auto-save .agent document prior to code generation: ${saveErr}`
+          );
+        }
+      }
 
       const secretsProvider = SecretsProvider.getInstance();
       const apiKey = (await secretsProvider.getGeminiApiKey()) || process.env.GEMINI_API_KEY || '';
@@ -490,6 +515,22 @@ export class WebviewMessageRouter {
 
     bridge.onMessage('EXPORT_CODE', async (payload) => {
       if (!payload) return;
+
+      // NOTE: Auto-save the .agent document before exporting code
+      if (payload.document) {
+        try {
+          const updatedJson = JSON.stringify(payload.document, null, 2);
+          await this.documentSyncManager.updateTextDocument(document, updatedJson);
+          if (typeof document.save === 'function') {
+            await document.save();
+          }
+        } catch (saveErr) {
+          this.outputChannel?.appendLine(
+            `[AgentEditorProvider] Warning: Failed to auto-save .agent document prior to code export: ${saveErr}`
+          );
+        }
+      }
+
       const secretsProvider = SecretsProvider.getInstance();
       const apiKey = (await secretsProvider.getGeminiApiKey()) || process.env.GEMINI_API_KEY || '';
 
@@ -652,6 +693,7 @@ export class WebviewMessageRouter {
           targetDirectory: targetDir,
           port: payload?.port || 8000,
           envVars: payload?.envVars,
+          useLocalSqliteMemory: payload?.useLocalSqliteMemory,
           bridge,
         });
       } catch (err: any) {
@@ -1217,6 +1259,90 @@ export class WebviewMessageRouter {
       }
     });
 
+    bridge.onMessage('FETCH_PUBSUB_TOPICS', async (payload: any, rawMessage?: any) => {
+      try {
+        const projectId = payload?.projectId;
+        const forceRefresh = payload?.forceRefresh || false;
+        const result = await this.gcpDiscoveryManager.getPubSubTopics(projectId, forceRefresh);
+        await bridge.postMessage({
+          type: 'PUBSUB_TOPICS_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            topics: result.topics,
+            source: result.source,
+            projectId: result.projectId,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'PUBSUB_TOPICS_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            topics: DEFAULT_PUBSUB_TOPICS_FALLBACK,
+            source: 'fallback',
+            projectId: payload?.projectId,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('FETCH_PUBSUB_SUBSCRIPTIONS', async (payload: any, rawMessage?: any) => {
+      try {
+        const projectId = payload?.projectId;
+        const forceRefresh = payload?.forceRefresh || false;
+        const result = await this.gcpDiscoveryManager.getPubSubSubscriptions(projectId, forceRefresh);
+        await bridge.postMessage({
+          type: 'PUBSUB_SUBSCRIPTIONS_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            subscriptions: result.subscriptions,
+            source: result.source,
+            projectId: result.projectId,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'PUBSUB_SUBSCRIPTIONS_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            subscriptions: DEFAULT_PUBSUB_SUBSCRIPTIONS_FALLBACK,
+            source: 'fallback',
+            projectId: payload?.projectId,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('FETCH_GCP_SERVICE_ACCOUNTS', async (payload: any, rawMessage?: any) => {
+      try {
+        const projectId = payload?.projectId;
+        const forceRefresh = payload?.forceRefresh || false;
+        const result = await this.gcpDiscoveryManager.getServiceAccounts(projectId, forceRefresh);
+        await bridge.postMessage({
+          type: 'GCP_SERVICE_ACCOUNTS_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            serviceAccounts: result.serviceAccounts,
+            source: result.source,
+            projectId: result.projectId,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'GCP_SERVICE_ACCOUNTS_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            serviceAccounts: DEFAULT_SERVICE_ACCOUNTS_FALLBACK,
+            source: 'fallback',
+            projectId: payload?.projectId,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
     bridge.onMessage('CREATE_FILE_FROM_SAMPLE', async (payload: any) => {
       try {
         const sampleId = payload?.sampleId;
@@ -1295,7 +1421,7 @@ export class WebviewMessageRouter {
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(contentToWrite, 'utf-8'));
 
         // 4. Open the new file in VS Code in a new editor tab using our custom editor
-        await vscode.commands.executeCommand('vscode.openWith', targetUri, AgentEditorProvider.viewType);
+        await vscode.commands.executeCommand('vscode.openWith', targetUri, 'agentFlow.editor');
       } catch (err: any) {
         vscode.window.showErrorMessage(`Failed to create sample agent workflow: ${err.message}`);
       }

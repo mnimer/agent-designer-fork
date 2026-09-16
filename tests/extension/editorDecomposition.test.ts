@@ -49,6 +49,25 @@ describe('Editor Decomposition - Unit Tests', { concurrency: 1 }, () => {
       assert.equal(manager.hasParseError(uriStr), false);
     });
 
+    it('should accurately detect webview-generated content changes to prevent echo resurrection loops', () => {
+      const manager = new DocumentSyncManager(undefined);
+      const uriStr = 'file:///mock/test.agent';
+      const jsonContent = JSON.stringify({ version: '1.0.0', name: 'agent', nodes: [{ id: 'agent-1' }] }, null, 2);
+
+      assert.equal(manager.isWebviewGeneratedChange(uriStr, jsonContent), false);
+      manager.setLastAppliedContent(uriStr, jsonContent);
+      assert.equal(manager.getLastAppliedContent(uriStr), jsonContent);
+      assert.equal(manager.isWebviewGeneratedChange(uriStr, jsonContent), true);
+
+      // Equivalent JSON formatting differences should still be recognized as webview-generated
+      const minifiedJson = JSON.stringify({ version: '1.0.0', name: 'agent', nodes: [{ id: 'agent-1' }] });
+      assert.equal(manager.isWebviewGeneratedChange(uriStr, minifiedJson), true);
+
+      // Distinct content should NOT be flagged as webview-generated
+      const externalChangeJson = JSON.stringify({ version: '1.0.0', name: 'agent', nodes: [{ id: 'agent-1' }, { id: 'trigger-1' }] }, null, 2);
+      assert.equal(manager.isWebviewGeneratedChange(uriStr, externalChangeJson), false);
+    });
+
     it('should report parse errors for invalid JSON documents', () => {
       const manager = new DocumentSyncManager(undefined);
       const mockDoc: any = {

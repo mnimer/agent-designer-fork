@@ -393,17 +393,35 @@ export interface ToolBinding {
 
 export type AgentMemoryType = 
   | 'none'
+  | 'in_memory'
   | 'langgraph_in_memory'
-  | 'postgres'
-  | 'redis'
   | 'firestore'
+  | 'postgres'
+  | 'cloud_sql'
+  | 'spanner'
+  | 'redis'
   | 'sqlite'
   | 'window_buffer'
   | 'summary_buffer'
   | 'vector_rag'
   | 'entity_fact';
 
-export type MemoryType = 'none' | 'buffer' | 'firestore' | 'redis' | 'postgres' | 'sqlite' | 'vector_rag' | 'langgraph_in_memory' | string;
+export type MemoryType = 
+  | 'none' 
+  | 'in_memory'
+  | 'buffer' 
+  | 'firestore' 
+  | 'redis' 
+  | 'postgres' 
+  | 'cloud_sql'
+  | 'spanner'
+  | 'sqlite' 
+  | 'window_buffer'
+  | 'summary_buffer'
+  | 'vector_rag' 
+  | 'entity_fact'
+  | 'langgraph_in_memory' 
+  | string;
 
 export interface AgentMemoryConfig {
   type: AgentMemoryType | MemoryType;
@@ -418,6 +436,16 @@ export interface AgentMemoryConfig {
   tableName?: string;
   ttlSeconds?: number;
   collectionName?: string;
+  databaseId?: string;
+  projectId?: string;
+  instanceConnectionName?: string;
+  databaseName?: string;
+  databaseUrlSecret?: string;
+  instanceId?: string;
+  // Cloud Memorystore (Redis / Valkey) parameters
+  redisHost?: string;
+  redisPort?: number;
+  authSecretName?: string;
   sqlitePath?: string;
   // Vector / Semantic RAG settings
   vectorProvider?: 'pgvector' | 'chroma' | 'pinecone' | 'qdrant' | 'weaviate';
@@ -427,6 +455,7 @@ export interface AgentMemoryConfig {
   // Entity / Knowledge Fact settings
   userIdKey?: string;
   extractUserFacts?: boolean;
+  [key: string]: any;
 }
 
 // ============================================================================

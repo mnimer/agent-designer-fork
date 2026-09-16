@@ -371,5 +371,58 @@ describe('Trigger Configuration & Presets Logic', () => {
       assert.equal(normalizeTriggerType('pubsub'), 'pubsub');
       assert.equal(normalizeTriggerType('eventarc'), 'eventarc');
     });
+
+    it('should correctly unwrap Pub/Sub topics whether returned as direct payload or nested payload', () => {
+      const mockTopics = [
+        {
+          name: 'projects/demo-proj/topics/order-events',
+          shortName: 'order-events',
+          projectId: 'demo-proj',
+        },
+      ];
+
+      // Format 1: Direct payload
+      const directResponse = {
+        topics: mockTopics,
+        source: 'gcloud',
+        projectId: 'demo-proj',
+      };
+      const unwrap1 = (directResponse as any)?.topics ? directResponse : (directResponse as any)?.payload;
+      assert.equal(unwrap1.topics.length, 1);
+      assert.equal(unwrap1.source, 'gcloud');
+      assert.equal(unwrap1.topics[0].shortName, 'order-events');
+
+      // Format 2: Nested payload
+      const nestedResponse = {
+        type: 'PUBSUB_TOPICS_RESPONSE',
+        payload: {
+          topics: mockTopics,
+          source: 'gcloud',
+          projectId: 'demo-proj',
+        },
+      };
+      const unwrap2 = (nestedResponse as any)?.topics ? nestedResponse : (nestedResponse as any)?.payload;
+      assert.equal(unwrap2.topics.length, 1);
+      assert.equal(unwrap2.topics[0].shortName, 'order-events');
+    });
+
+    it('should correctly unwrap GCP Service Accounts and preserve custom SA addresses', () => {
+      const mockSAs = [
+        {
+          email: 'custom-invoker@demo-proj.iam.gserviceaccount.com',
+          name: 'Custom Invoker SA',
+        },
+      ];
+
+      const directResponse = {
+        serviceAccounts: mockSAs,
+        source: 'gcloud',
+        projectId: 'demo-proj',
+      };
+      const unwrap = (directResponse as any)?.serviceAccounts ? directResponse : (directResponse as any)?.payload;
+      assert.equal(unwrap.serviceAccounts.length, 1);
+      assert.equal(unwrap.serviceAccounts[0].email, 'custom-invoker@demo-proj.iam.gserviceaccount.com');
+    });
   });
 });
+

@@ -11,17 +11,26 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
 ### CRITICAL MANDATE: COMPLETE REPOSITORY GENERATION (ALL FILES REQUIRED, STARTING WITH agent.py)
 - `agent.py` IS THE CORE WORKFLOW FILE AND MUST ALWAYS BE GENERATED AS THE FIRST FILE IN THE RETURNED JSON ARRAY. It defines `root_agent`, all sub-agents, tools, callbacks, and orchestration logic. Every other file (main.py, test_agent.py, server.py) directly imports `root_agent` from `agent.py`.
 - You MUST generate the COMPLETE repository and emit EVERY required file in the output JSON array.
-- Emitting only a partial project or omitting core files like `agent.py` is strictly forbidden and breaks testing and deployment.
-- Every response MUST include the full project manifest: `agent.py` (with `root_agent`), FastAPI server (`server.py`), packaging, CLI runner, test suite, evaluation dataset and script, dependencies, Dockerfile, CI/CD pipeline, Terraform infrastructure, and documentation.
+- Emitting only a partial project or omitting core files like `agent.py` or `session_store.py` is strictly forbidden and breaks testing and deployment.
+- Every response MUST include the full project manifest: `agent.py` (with `root_agent`), `session_store.py`, FastAPI server (`server.py`), packaging, CLI runner, test suite, evaluation dataset and script, dependencies (`requirements.txt`), Dockerfile, CI/CD pipeline, Terraform infrastructure, and documentation.
 
-### WORKFLOW SPECIFICATION:
-```json
-{{WORKFLOW_JSON}}
-```
-
----
-
-### REQUIREMENTS & ARCHITECTURE:
+### SESSION MEMORY & PRODUCTION CHECKPOINTERS:
+- Inspect `{{WORKFLOW_JSON}}` for session memory configuration (`memoryConfig` on nodes or workflow metadata).
+- **Supported Memory Backends**:
+  * `'in_memory'`: In-Memory Turn Buffer (`InMemorySessionStore`)
+  * `'firestore'`: Google Cloud Firestore / Firebase Checkpointer (`FirestoreSessionStore` using `google-cloud-firestore`)
+  * `'postgres'` | `'cloud_sql'`: Google Cloud SQL (PostgreSQL / MySQL) Checkpointer (`CloudSqlSessionStore` using `psycopg2-binary` and `sqlalchemy`)
+  * `'spanner'`: Google Cloud Spanner Enterprise Checkpointer (`SpannerSessionStore` using `google-cloud-spanner`)
+  * `'redis'`: Cloud Memorystore (Redis / Valkey) Checkpointer (`RedisSessionStore` using `redis` client)
+  * `'none'`: Stateless (`StatelessSessionStore`)
+- You MUST generate `session_store.py` providing `BaseSessionStore`, `StatelessSessionStore`, `InMemorySessionStore`, `FirestoreSessionStore`, `CloudSqlSessionStore`, `SpannerSessionStore`, `RedisSessionStore`, and a factory function `get_session_store(backend: Optional[str] = None) -> BaseSessionStore`.
+- In `server.py` and `agent.py`, import `from session_store import get_session_store` and use `session_store = get_session_store()` to persist session history and state between FastAPI request turns.
+- In `requirements.txt`, include the corresponding driver packages:
+  * For Firestore: `google-cloud-firestore>=2.16.0`
+  * For Cloud SQL / Postgres: `psycopg2-binary>=2.9.9`, `sqlalchemy>=2.0.0`
+  * For Spanner: `google-cloud-spanner>=3.40.0`
+  * For Redis: `redis>=5.0.0`
+- In `.env.example`, include `SESSION_STORE_BACKEND=<configured_type>` along with any relevant connection parameters.
 
 1. **Google Agent Development Kit (ADK) Architecture & Primitives**:
    - MANDATORY: Build agents exclusively using the Google Agent Development Kit (`google-adk>=2.0.0`). Do NOT hand-roll custom orchestration loops or direct `genai.Client()` call harnesses.
@@ -105,52 +114,57 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
          * Manage user and session lifecycle using ADK's session service, ensuring the session is created if `get_session(...)` returns `None`.
          * If `stream: true`: Stream tokens incrementally using Server-Sent Events (`text/event-stream`), emitting chunks in the standard OpenAI `chat.completion.chunk` delta schema, terminating with `data: [DONE]`.
          * If `stream: false`: Accumulate the full agent response asynchronously and return the standard OpenAI `chat.completion` JSON schema, including unique completion ID, created timestamp, assistant message content, and token usage estimation.
-     * **Conditional Webhook Route (`POST /webhook` or configured `webhookPath`)**:
-       - GENERATE WHEN: The workflow includes a trigger node with `triggerType == "webhook"` (or `triggerKind == "webhook"`).
-       - Validate security headers (e.g. `X-Webhook-Secret` or `Authorization: Bearer <token>`) against environment variables when authentication is configured.
-       - Parse incoming payload body and dispatch to `root_agent` via the ADK runner.
-     * **Server Entrypoint**:
-       - When executed directly (`if __name__ == "__main__":`), run `uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))`.
-   - `main.py`: Interactive CLI runner for local terminal testing. Implement as an `asyncio` command-line loop that prompts for console input and uses ADK's `Runner` to dispatch `root_agent` prompts and stream event tokens to stdout.
-   - `test_agent.py`: Comprehensive `pytest` test suite covering all test scenarios defined in trigger nodes with assertions against `root_agent`.
-   - `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios for Vertex AI Agent Evaluation. Format as JSON Lines (JSONL), where each line is a self-contained record defining the test `prompt`, expected reference ground truth (`reference`), and `expected_tool_calls` list derived from trigger node test scenarios.
-   - `evaluate.py`: Vertex AI Agent Evaluation script utilizing `vertexai.evaluation.EvalTask` for quality, groundedness, and safety evaluation.
-   - `requirements.txt`: Version-pinned production and test dependencies:
-     * Core ADK & Model Frameworks: `google-adk>=2.0.0`, `google-genai>=1.0.0`, `google-cloud-aiplatform[evaluation]>=1.60.0`.
-     * Web Service & Serialization: `fastapi>=0.110.0`, `uvicorn[standard]>=0.28.0`, `pydantic>=2.0.0`.
-     * Test & Environment Tooling: `pytest>=8.0.0`, `pytest-asyncio>=0.23.0`, `python-dotenv>=1.0.0`.
-     * Conditional Packages: Include `google-adk[a2a]>=2.0.0` and `a2a-sdk[http-server]>=0.3.4` if A2A agent nodes exist; include tool-specific packages (e.g. `google-cloud-secret-manager>=2.16.0`, `httpx>=0.27.0`) when enabled.
-   - `Dockerfile`: Production container definition for Google Cloud Run:
-     * Base Image: Use an official slim Python runtime (e.g., `python:3.11-slim`).
-     * Environment Settings: Configure `PYTHONUNBUFFERED=1`, `GOOGLE_GENAI_USE_VERTEXAI=true`, and `GOOGLE_CLOUD_LOCATION=global`, and establish an application working directory (e.g., `/app`).
-     * Dependency Layer Caching: Copy `requirements.txt` and execute `pip install --no-cache-dir -r requirements.txt` prior to copying application source code to maximize Docker build layer caching.
-     * Container Execution: Expose port `8080` and configure the entrypoint to serve the FastAPI app using Uvicorn (`python -m uvicorn server:app --host 0.0.0.0 --port 8080`).
-   - `main.tf`: Complete, production-grade Terraform configuration deploying to Google Cloud Run and connecting to an existing project:
-      * **Terraform Specification & Provider**:
-        - Configure `terraform` block requiring `google` provider (`~> 5.0`) and Terraform version `>= 1.5.0`.
-        - Configure `provider "google"` referencing `var.project_id` and `var.region`.
-      * **Artifact Registry Repository**:
-        - Provision `google_artifact_registry_repository` for storing agent container images (`format = "DOCKER"`).
-      * **Identity & Least Privilege IAM Bindings**:
-        - Provision dedicated `google_service_account` for Cloud Run (e.g. `"${var.service_name}-sa"`).
-        - Grant `roles/aiplatform.user` project IAM member to the service account for Vertex AI Gemini model invocation.
-        - When public unauthenticated access is enabled, grant `roles/run.invoker` on the Cloud Run service to `allUsers`.
-        - When Secret Manager secrets are provisioned, grant `roles/secretmanager.secretAccessor` on the secrets to the service account.
-      * **Cloud Run V2 Service (`google_cloud_run_v2_service`)**:
-        - Configure `template.service_account` to the dedicated service account email.
-        - Deploy container with `image = var.image_uri != "" ? var.image_uri : "${var.region}-docker.pkg.dev/${var.project_id}/${var.artifact_repo_name}/${var.service_name}:latest"`.
-        - Set runtime environment variables:
-          `GOOGLE_GENAI_USE_VERTEXAI = "true"`,
-          `GOOGLE_CLOUD_PROJECT = var.project_id`,
-          `GOOGLE_CLOUD_LOCATION = "global"` (per Vertex AI requirements for Gemini 3.7 Flash).
-        - Configure compute limits (`cpu = var.cpu`, `memory = var.memory`, `cpu_idle = true`).
-        - Configure scaling limits (`min_instance_count = var.min_instances`, `max_instance_count = var.max_instances`).
-        - Set traffic allocation to 100% on latest revision (`TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST`).
-        - Set `lifecycle { ignore_changes = [client, client_version, template[0].containers[0].image] }` to allow fast CI/CD container updates via Cloud Build / `gcloud run deploy` without Terraform state drift.
-      * **Conditional Triggers & Integrations**:
-        - **Eventarc Trigger** (when `triggerType` / `triggerKind == "eventarc"`): Enable `eventarc.googleapis.com`, provision dedicated invoker service account with `roles/run.invoker` on Cloud Run and `roles/eventarc.eventReceiver` on the project, and create `google_eventarc_trigger` matching the configured event routing to the Cloud Run service path.
-        - **Cloud Scheduler (Cron Trigger)** (when `triggerType` / `triggerKind == "scheduled"` or `"cron"`): Enable `cloudscheduler.googleapis.com`, provision scheduler invoker service account with `roles/run.invoker` on Cloud Run, and create `google_cloud_scheduler_job` with the configured cron schedule, timezone, and HTTP target pointing to the Cloud Run service URL with OIDC authentication.
-        - **Webhook Trigger** (when `triggerType` / `triggerKind == "webhook"`): When authentication is configured (`authType != "none"`), provision `google_secret_manager_secret` and secret version for the token/signature secret, grant `roles/secretmanager.secretAccessor` to the service account, and inject the secret into the Cloud Run container environment.
+      * **Conditional Pub/Sub Ingestion Route (`POST /pubsub` or `/apps/{app}/trigger/pubsub`)**:
+        - GENERATE WHEN: The workflow includes a trigger node with `triggerType == "pubsub"` (or `triggerKind == "pubsub"`).
+        - Parse the Google Cloud Pub/Sub push message format: extract `message.data` (decoding from base64), decode JSON or plain text body, extract attributes, and dispatch prompt to `root_agent` via the ADK runner.
+        - Return HTTP 200 OK (`{"status": "acknowledged"}`) upon successful agent execution so Pub/Sub does not redeliver the message.
+      * **Conditional Webhook Route (`POST /webhook` or configured `webhookPath`)**:
+        - GENERATE WHEN: The workflow includes a trigger node with `triggerType == "webhook"` (or `triggerKind == "webhook"`).
+        - Validate security headers (e.g. `X-Webhook-Secret` or `Authorization: Bearer <token>`) against environment variables when authentication is configured.
+        - Parse incoming payload body and dispatch to `root_agent` via the ADK runner.
+      * **Server Entrypoint**:
+        - When executed directly (`if __name__ == "__main__":`), run `uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))`.
+    - `main.py`: Interactive CLI runner for local terminal testing. Implement as an `asyncio` command-line loop that prompts for console input and uses ADK's `Runner` to dispatch `root_agent` prompts and stream event tokens to stdout.
+    - `test_agent.py`: Comprehensive `pytest` test suite covering all test scenarios defined in trigger nodes with assertions against `root_agent`.
+    - `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios for Vertex AI Agent Evaluation. Format as JSON Lines (JSONL), where each line is a self-contained record defining the test `prompt`, expected reference ground truth (`reference`), and `expected_tool_calls` list derived from trigger node test scenarios.
+    - `evaluate.py`: Vertex AI Agent Evaluation script utilizing `vertexai.evaluation.EvalTask` for quality, groundedness, and safety evaluation.
+    - `requirements.txt`: Version-pinned production and test dependencies:
+      * Core ADK & Model Frameworks: `google-adk>=2.0.0`, `google-genai>=1.0.0`, `google-cloud-aiplatform[evaluation]>=1.60.0`.
+      * Web Service & Serialization: `fastapi>=0.110.0`, `uvicorn[standard]>=0.28.0`, `pydantic>=2.0.0`.
+      * Test & Environment Tooling: `pytest>=8.0.0`, `pytest-asyncio>=0.23.0`, `python-dotenv>=1.0.0`.
+      * Conditional Packages: Include `google-adk[a2a]>=2.0.0` and `a2a-sdk[http-server]>=0.3.4` if A2A agent nodes exist; include tool-specific packages (e.g. `google-cloud-secret-manager>=2.16.0`, `httpx>=0.27.0`) when enabled.
+    - `Dockerfile`: Production container definition for Google Cloud Run:
+      * Base Image: Use an official slim Python runtime (e.g., `python:3.11-slim`).
+      * Environment Settings: Configure `PYTHONUNBUFFERED=1`, `GOOGLE_GENAI_USE_VERTEXAI=true`, and `GOOGLE_CLOUD_LOCATION=global`, and establish an application working directory (e.g., `/app`).
+      * Dependency Layer Caching: Copy `requirements.txt` and execute `pip install --no-cache-dir -r requirements.txt` prior to copying application source code to maximize Docker build layer caching.
+      * Container Execution: Expose port `8080` and configure the entrypoint to serve the FastAPI app using Uvicorn (`python -m uvicorn server:app --host 0.0.0.0 --port 8080`).
+    - `main.tf`: Complete, production-grade Terraform configuration deploying to Google Cloud Run and connecting to an existing project:
+       * **Terraform Specification & Provider**:
+         - Configure `terraform` block requiring `google` provider (`~> 5.0`) and Terraform version `>= 1.5.0`.
+         - Configure `provider "google"` referencing `var.project_id` and `var.region`.
+       * **Artifact Registry Repository**:
+         - Provision `google_artifact_registry_repository` for storing agent container images (`format = "DOCKER"`).
+       * **Identity & Least Privilege IAM Bindings**:
+         - Provision dedicated `google_service_account` for Cloud Run (e.g. `"${var.service_name}-sa"`).
+         - Grant `roles/aiplatform.user` project IAM member to the service account for Vertex AI Gemini model invocation.
+         - When public unauthenticated access is enabled, grant `roles/run.invoker` on the Cloud Run service to `allUsers`.
+         - When Secret Manager secrets are provisioned, grant `roles/secretmanager.secretAccessor` on the secrets to the service account.
+       * **Cloud Run V2 Service (`google_cloud_run_v2_service`)**:
+         - Configure `template.service_account` to the dedicated service account email.
+         - Deploy container with `image = var.image_uri != "" ? var.image_uri : "${var.region}-docker.pkg.dev/${var.project_id}/${var.artifact_repo_name}/${var.service_name}:latest"`.
+         - Set runtime environment variables:
+           `GOOGLE_GENAI_USE_VERTEXAI = "true"`,
+           `GOOGLE_CLOUD_PROJECT = var.project_id`,
+           `GOOGLE_CLOUD_LOCATION = "global"` (per Vertex AI requirements for Gemini 3.7 Flash).
+         - Configure compute limits (`cpu = var.cpu`, `memory = var.memory`, `cpu_idle = true`).
+         - Configure scaling limits (`min_instance_count = var.min_instances`, `max_instance_count = var.max_instances`).
+         - Set traffic allocation to 100% on latest revision (`TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST`).
+         - Set `lifecycle { ignore_changes = [client, client_version, template[0].containers[0].image] }` to allow fast CI/CD container updates via Cloud Build / `gcloud run deploy` without Terraform state drift.
+       * **Conditional Triggers & Integrations**:
+         - **Pub/Sub Trigger** (when `triggerType` / `triggerKind == "pubsub"`): Enable `pubsub.googleapis.com`, provision dedicated invoker service account with `roles/run.invoker` on Cloud Run, and create `google_pubsub_subscription` with `push_config` pointing to the Cloud Run service `/pubsub` (or `/apps/{app}/trigger/pubsub`) endpoint with `oidc_token { service_account_email = google_service_account.pubsub_invoker.email }`.
+         - **Eventarc Trigger** (when `triggerType` / `triggerKind == "eventarc"`): Enable `eventarc.googleapis.com`, provision dedicated invoker service account with `roles/run.invoker` on Cloud Run and `roles/eventarc.eventReceiver` on the project, and create `google_eventarc_trigger` matching the configured event routing to the Cloud Run service path.
+         - **Cloud Scheduler (Cron Trigger)** (when `triggerType` / `triggerKind == "scheduled"` or `"cron"`): Enable `cloudscheduler.googleapis.com`, provision scheduler invoker service account with `roles/run.invoker` on Cloud Run, and create `google_cloud_scheduler_job` with the configured cron schedule, timezone, and HTTP target pointing to the Cloud Run service URL with OIDC authentication.
+         - **Webhook Trigger** (when `triggerType` / `triggerKind == "webhook"`): When authentication is configured (`authType != "none"`), provision `google_secret_manager_secret` and secret version for the token/signature secret, grant `roles/secretmanager.secretAccessor` to the service account, and inject the secret into the Cloud Run container environment.
     - `variables.tf`: Complete Terraform input variable definitions:
       * `project_id`: (string, description = "Google Cloud Project ID")
       * `region`: (string, default = "us-central1", description = "Google Cloud Region")

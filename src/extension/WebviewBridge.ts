@@ -24,7 +24,7 @@ import {
   isDiscoverMcpPayload,
 } from '../shared/rpcProtocol';
 
-export type MessageHandler<T = any> = (payload: T) => void | Promise<void>;
+export type MessageHandler<T = any, M = any> = (payload: T, rawMessage?: M) => void | Promise<void>;
 
 export class WebviewBridge implements vscode.Disposable {
   private readonly panel: vscode.WebviewPanel;
@@ -114,7 +114,8 @@ export class WebviewBridge implements vscode.Disposable {
     handler: (
       payload: Extract<WebviewToExtensionMessage, { type: T }> extends { payload: infer P }
         ? P
-        : undefined
+        : undefined,
+      rawMessage?: Extract<WebviewToExtensionMessage, { type: T }>
     ) => void | Promise<void>
   ): vscode.Disposable {
     let handlerSet = this.handlers.get(type);
@@ -151,7 +152,7 @@ export class WebviewBridge implements vscode.Disposable {
     const payload = 'payload' in message ? message.payload : undefined;
     for (const handler of Array.from(handlerSet)) {
       try {
-        await handler(payload);
+        await handler(payload, message);
       } catch (err) {
         console.error(`[WebviewBridge] Error handling message ${message.type}:`, err);
       }

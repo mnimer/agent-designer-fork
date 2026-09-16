@@ -26,9 +26,7 @@
 | **TASK-111** | v1.0.1 | Deployment | Cloud Infrastructure IaC Panel (Cloud Run & Shared GCP Resources) | **Complete** | TASK-106 |
 | **TASK-112** | v1.0.2 | Canvas | Multi-Agent Wiring, Sockets & Connection Validation | **Complete** | TASK-103 |
 | **TASK-113** | v1.0.2 | Patterns | Sequential Pipeline & Parallel Fan-Out Patterns | **Complete** | TASK-112 |
-| **TASK-114** | v1.0.2 | Codegen | Multi-Agent DAG Python ADK Code Generation & Tracing | **Complete** | TASK-113 |
-| **TASK-115** | v1.0.3 | Memory | Session Store Factory & Production Checkpointer Configuration | **Not Started** | TASK-103, TASK-111 |
-| **TASK-117** | v1.0.5 | Router | Router Node & Dynamic Branching Logic | **Complete** | TASK-112 |
+| **TASK-115** | v1.0.3 | Memory | Session Store Factory & Production Checkpointer Configuration | **Complete** | TASK-103, TASK-111 |
 | **TASK-118** | v1.0.6 | Tools | Custom REST API Tool Builder & Python Code Sandbox | **Complete** | TASK-104 |
 | **TASK-119** | v1.0.7 | Schema | Structured Output Schema Builder & Pydantic Validation | **Complete** | TASK-103, TASK-106 |
 | **TASK-120** | v1.0.8 | MCP | Model Context Protocol (MCP) Client & Handshake Test | **Complete** | TASK-104, TASK-107 |
@@ -108,10 +106,10 @@
 | **TASK-194** | v1.1.2 | Patterns | Hierarchical Delegation (Supervisor-Workers) Pattern & Code Generation | **Not Started** | TASK-114, TASK-191 |
 | **TASK-195** | v1.1.2 | Patterns | Review & Critique Triad Pattern & Editorial Code Generation | **Not Started** | TASK-114, TASK-191 |
 | **TASK-196** | v1.0.7 | Schema / Agent Nodes | Structured Input Schema Builder for Standard & Router Agent Nodes | **Not Started** | TASK-103, TASK-117, TASK-119 |
-| **TASK-197** | v1.0.3 | Memory / Local Runner | Local Runner SQLite Checkpointer Override & Ephemeral DB Lifecycle | **Not Started** | TASK-107, TASK-115 |
-| **TASK-198** | v1.0.3 | Memory / Cloud SQL | Google Cloud SQL (PostgreSQL/MySQL) Checkpointer & Pre-Deployment Validation | **Not Started** | TASK-115 |
-| **TASK-199** | v1.0.3 | Memory / Spanner | Google Cloud Spanner Enterprise Checkpointer & Resource Validation | **Not Started** | TASK-115 |
-| **TASK-200** | v1.0.3 | Memory / Redis | Cloud Memorystore (Redis/Valkey) Checkpointer & Session TTL Expiration | **Not Started** | TASK-115 |
+| **TASK-197** | v1.0.3 | Memory / Local Runner | Local Runner SQLite Checkpointer Override & Ephemeral DB Lifecycle | **Complete** | TASK-107, TASK-115 |
+| **TASK-198** | v1.0.3 | Memory / Cloud SQL | Google Cloud SQL (PostgreSQL/MySQL) Checkpointer & Pre-Deployment Validation | **Complete** | TASK-115 |
+| **TASK-199** | v1.0.3 | Memory / Spanner | Google Cloud Spanner Enterprise Checkpointer & Resource Validation | **Complete** | TASK-115 |
+| **TASK-200** | v1.0.3 | Memory / Redis | Cloud Memorystore (Redis/Valkey) Checkpointer & Session TTL Expiration | **Complete** | TASK-115 |
 
 ---
 
@@ -455,6 +453,7 @@
 
 ### [TASK-115] Session Store Factory & Production Checkpointer Configuration
 * **Release**: `v1.0.3`
+* **Status**: Complete
 * **Target Package/Files**:
   - `src/webview/data/memoryOptions.ts`
   - `src/webview/components/inspector/StandardAgentDrawer.tsx`
@@ -3216,6 +3215,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-198] Google Cloud SQL (PostgreSQL/MySQL) Checkpointer & Pre-Deployment Validation
 * **Release**: `v1.0.3`
+* **Status**: Complete
 * **Target Package/Files**:
   - `src/webview/components/inspector/MemoryDrawer.tsx`
   - `src/webview/components/inspector/StandardAgentDrawer.tsx`
@@ -3253,6 +3253,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-199] Google Cloud Spanner Enterprise Checkpointer & Resource Validation
 * **Release**: `v1.0.3`
+* **Status**: Complete
 * **Target Package/Files**:
   - `src/webview/components/inspector/MemoryDrawer.tsx`
   - `src/webview/components/inspector/StandardAgentDrawer.tsx`
@@ -3290,6 +3291,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-200] Cloud Memorystore (Redis/Valkey) Checkpointer & Session TTL Expiration
 * **Release**: `v1.0.3`
+* **Status**: Complete
 * **Target Package/Files**:
   - `src/webview/components/inspector/MemoryDrawer.tsx`
   - `src/webview/components/inspector/StandardAgentDrawer.tsx`

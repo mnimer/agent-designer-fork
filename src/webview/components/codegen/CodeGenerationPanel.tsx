@@ -131,22 +131,22 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  if (hasGeneratedCode) {
+                  if (hasGeneratedCode && !isGenerating) {
                     setActiveTab('test_runner');
                   }
                 }}
-                disabled={!hasGeneratedCode}
+                disabled={!hasGeneratedCode || isGenerating}
                 className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${
-                  !hasGeneratedCode
+                  !hasGeneratedCode || isGenerating
                     ? 'border-transparent text-gray-500 bg-[#161b22]/40 cursor-not-allowed opacity-60'
                     : activeTab === 'test_runner'
                     ? 'border-pink-500 text-pink-400 bg-[#0d1117]/60 cursor-pointer'
                     : 'border-transparent text-gray-400 hover:text-pink-300 cursor-pointer'
                 }`}
               >
-                <FlaskConical className={`w-3.5 h-3.5 ${hasGeneratedCode ? 'text-pink-400' : 'text-gray-500'}`} />
+                <FlaskConical className={`w-3.5 h-3.5 ${hasGeneratedCode && !isGenerating ? 'text-pink-400' : 'text-gray-500'}`} />
                 <span>Test Runner</span>
-                {!hasGeneratedCode ? (
+                {!hasGeneratedCode || isGenerating ? (
                   <span className="text-[9px] px-1.5 py-0.2 rounded font-mono bg-[#21262d] text-gray-400 border border-[#30363d] flex items-center gap-0.5">
                     <Lock className="w-2.5 h-2.5" />
                     Locked
@@ -158,9 +158,9 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                 )}
               </button>
 
-              {!hasGeneratedCode && (
+              {(!hasGeneratedCode || isGenerating) && (
                 <div className="absolute top-full left-0 mt-1 hidden group-hover/tab:flex flex-col z-50 px-2.5 py-1.5 rounded-md bg-[#21262d] border border-[#30363d] text-[10px] text-amber-300 shadow-xl whitespace-nowrap">
-                  <span>⚠️ Code generation is required to unlock unit test runner</span>
+                  <span>{isGenerating ? '⚠️ Code generation in progress...' : '⚠️ Code generation is required to unlock unit test runner'}</span>
                 </div>
               )}
             </div>
@@ -168,21 +168,43 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
 
           {/* 4th TAB: Interactive Chat Runner */}
           {hasChatTrigger && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('chat')}
-              className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
-                activeTab === 'chat'
-                  ? 'border-emerald-500 text-emerald-400 bg-[#0d1117]/60'
-                  : 'border-transparent text-gray-400 hover:text-emerald-300'
-              }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Interactive Chat</span>
-              <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Live
-              </span>
-            </button>
+            <div className="relative group/tab">
+              <button
+                type="button"
+                onClick={() => {
+                  if (hasGeneratedCode && !isGenerating) {
+                    setActiveTab('chat');
+                  }
+                }}
+                disabled={!hasGeneratedCode || isGenerating}
+                className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${
+                  !hasGeneratedCode || isGenerating
+                    ? 'border-transparent text-gray-500 bg-[#161b22]/40 cursor-not-allowed opacity-60'
+                    : activeTab === 'chat'
+                    ? 'border-emerald-500 text-emerald-400 bg-[#0d1117]/60 cursor-pointer'
+                    : 'border-transparent text-gray-400 hover:text-emerald-300 cursor-pointer'
+                }`}
+              >
+                <MessageSquare className={`w-3.5 h-3.5 ${hasGeneratedCode && !isGenerating ? 'text-emerald-400' : 'text-gray-500'}`} />
+                <span>Interactive Chat</span>
+                {!hasGeneratedCode || isGenerating ? (
+                  <span className="text-[9px] px-1.5 py-0.2 rounded font-mono bg-[#21262d] text-gray-400 border border-[#30363d] flex items-center gap-0.5">
+                    <Lock className="w-2.5 h-2.5" />
+                    Locked
+                  </span>
+                ) : (
+                  <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    Live
+                  </span>
+                )}
+              </button>
+
+              {(!hasGeneratedCode || isGenerating) && (
+                <div className="absolute top-full left-0 mt-1 hidden group-hover/tab:flex flex-col z-50 px-2.5 py-1.5 rounded-md bg-[#21262d] border border-[#30363d] text-[10px] text-amber-300 shadow-xl whitespace-nowrap">
+                  <span>{isGenerating ? '⚠️ Code generation in progress...' : '⚠️ Code generation is required to unlock interactive chat'}</span>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

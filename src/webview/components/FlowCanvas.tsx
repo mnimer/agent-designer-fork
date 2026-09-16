@@ -434,19 +434,20 @@ export function FlowCanvas() {
 
   const handleDeleteAgent = useCallback(
     (id: string) => {
-      const nextNodes = nodes.filter((n) => n.id !== id);
-      const nextEdges = edges.filter((e) => e.source !== id && e.target !== id);
-      const cleanedNodes = syncAgentSubAgents(nextNodes, nextEdges);
-
-      setNodes(cleanedNodes);
-      setEdges(nextEdges);
-      recordSnapshot(cleanedNodes, nextEdges, { description: 'Delete agent' });
+      setEdges((currentEdges) => {
+        const nextEdges = currentEdges.filter((e) => e.source !== id && e.target !== id);
+        setNodes((currentNodes) => {
+          const nextNodes = currentNodes.filter((n) => n.id !== id);
+          return syncAgentSubAgents(nextNodes, nextEdges);
+        });
+        return nextEdges;
+      });
 
       if (selectedAgentId === id) {
         setSelectedAgentId(null);
       }
     },
-    [nodes, edges, selectedAgentId, setNodes, setEdges, recordSnapshot]
+    [selectedAgentId, setNodes, setEdges]
   );
 
   const handleEditTrigger = useCallback((id: string) => {
@@ -458,32 +459,42 @@ export function FlowCanvas() {
 
   const handleDeleteTrigger = useCallback(
     (id: string) => {
-      const nextNodes = nodes.filter((n) => n.id !== id);
-      const nextEdges = edges.filter((e) => e.source !== id && e.target !== id);
-
-      setNodes(nextNodes);
-      setEdges(nextEdges);
-      recordSnapshot(nextNodes, nextEdges, { description: 'Delete trigger' });
+      setEdges((currentEdges) => currentEdges.filter((e) => e.source !== id && e.target !== id));
+      setNodes((currentNodes) => currentNodes.filter((n) => n.id !== id));
 
       if (selectedTriggerId === id) {
         setSelectedTriggerId(null);
         setIsTriggerDrawerOpen(false);
       }
     },
-    [nodes, edges, selectedTriggerId, setNodes, setEdges, recordSnapshot]
+    [selectedTriggerId, setNodes, setEdges]
   );
 
   const handleNodesDelete = useCallback(
     (nodesToDelete: Node[]) => {
-      nodesToDelete.forEach((n) => {
-        if (isTriggerNode(n)) {
-          handleDeleteTrigger(n.id);
-        } else {
-          handleDeleteAgent(n.id);
-        }
+      const idsToDelete = new Set(nodesToDelete.map((n) => n.id));
+      if (idsToDelete.size === 0) return;
+
+      setEdges((currentEdges) => {
+        const nextEdges = currentEdges.filter(
+          (e) => !idsToDelete.has(e.source) && !idsToDelete.has(e.target)
+        );
+        setNodes((currentNodes) => {
+          const nextNodes = currentNodes.filter((n) => !idsToDelete.has(n.id));
+          return syncAgentSubAgents(nextNodes, nextEdges);
+        });
+        return nextEdges;
       });
+
+      if (selectedAgentId && idsToDelete.has(selectedAgentId)) {
+        setSelectedAgentId(null);
+      }
+      if (selectedTriggerId && idsToDelete.has(selectedTriggerId)) {
+        setSelectedTriggerId(null);
+        setIsTriggerDrawerOpen(false);
+      }
     },
-    [handleDeleteTrigger, handleDeleteAgent]
+    [selectedAgentId, selectedTriggerId, setNodes, setEdges]
   );
 
   useCanvasKeyboardShortcuts({
@@ -494,6 +505,7 @@ export function FlowCanvas() {
     nodes,
     onDeleteAgent: handleDeleteAgent,
     onDeleteTrigger: handleDeleteTrigger,
+    onDeleteNodes: handleNodesDelete,
   });
 
   const handleOpenAddTool = useCallback((agentId: string) => {
@@ -1476,6 +1488,15 @@ export function FlowCanvas() {
     setGeneratedFiles([]);
     setHasGeneratedCode(false);
     setIsGenerating(true);
+
+    // NOTE: Auto-save the .agent document before initiating code generation
+    bridge.postMessage({
+      type: 'SAVE_DOCUMENT',
+      payload: {
+        document: currentWorkflowDocument,
+        docVersion: (currentWorkflowDocument as any).version || 1,
+      },
+    });
 
     bridge.postMessage({
       type: 'GENERATE_CODE',

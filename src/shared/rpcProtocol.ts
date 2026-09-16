@@ -103,6 +103,7 @@ export type WebviewToExtensionMessage =
         targetDirectory?: string;
         port?: number;
         envVars?: Record<string, string>;
+        useLocalSqliteMemory?: boolean;
       };
     }
   | {
@@ -342,6 +343,27 @@ export type WebviewToExtensionMessage =
       type: 'FETCH_EVENTARC_PROVIDERS';
       payload?: {
         location?: string;
+        forceRefresh?: boolean;
+      };
+    }
+  | {
+      type: 'FETCH_PUBSUB_TOPICS';
+      payload?: {
+        projectId?: string;
+        forceRefresh?: boolean;
+      };
+    }
+  | {
+      type: 'FETCH_PUBSUB_SUBSCRIPTIONS';
+      payload?: {
+        projectId?: string;
+        forceRefresh?: boolean;
+      };
+    }
+  | {
+      type: 'FETCH_GCP_SERVICE_ACCOUNTS';
+      payload?: {
+        projectId?: string;
         forceRefresh?: boolean;
       };
     }
@@ -660,6 +682,48 @@ export type ExtensionToWebviewMessage =
         location: string;
         error?: string;
       };
+    }
+  | {
+      type: 'PUBSUB_TOPICS_RESPONSE';
+      payload: {
+        topics: Array<{
+          name: string;
+          shortName: string;
+          projectId?: string;
+        }>;
+        source: 'gcloud' | 'fallback';
+        projectId?: string;
+        error?: string;
+      };
+    }
+  | {
+      type: 'PUBSUB_SUBSCRIPTIONS_RESPONSE';
+      payload: {
+        subscriptions: Array<{
+          name: string;
+          shortName: string;
+          topic: string;
+          pushEndpoint?: string;
+          ackDeadlineSeconds?: number;
+        }>;
+        source: 'gcloud' | 'fallback';
+        projectId?: string;
+        error?: string;
+      };
+    }
+  | {
+      type: 'GCP_SERVICE_ACCOUNTS_RESPONSE';
+      payload: {
+        serviceAccounts: Array<{
+          email: string;
+          displayName: string;
+          name?: string;
+          disabled?: boolean;
+        }>;
+        source: 'gcloud' | 'fallback';
+        projectId?: string;
+        error?: string;
+      };
     };
 
 /**
@@ -705,7 +769,7 @@ export function isWriteFilesPayload(payload: any): payload is { files: { path: s
  *
  * @param payload Candidate payload
  */
-export function isStartRunnerPayload(payload: any): payload is { document?: any; targetDirectory?: string; port?: number; envVars?: Record<string, string> } {
+export function isStartRunnerPayload(payload: any): payload is { document?: any; targetDirectory?: string; port?: number; envVars?: Record<string, string>; useLocalSqliteMemory?: boolean } {
   if (!payload || typeof payload !== 'object') {
     return false;
   }
@@ -713,6 +777,9 @@ export function isStartRunnerPayload(payload: any): payload is { document?: any;
     return false;
   }
   if ('port' in payload && payload.port !== undefined && typeof payload.port !== 'number') {
+    return false;
+  }
+  if ('useLocalSqliteMemory' in payload && payload.useLocalSqliteMemory !== undefined && typeof payload.useLocalSqliteMemory !== 'boolean') {
     return false;
   }
   if ('envVars' in payload && payload.envVars !== undefined) {

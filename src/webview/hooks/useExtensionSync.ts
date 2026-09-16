@@ -99,14 +99,30 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
   // NOTE: Listen for messages from the VS Code extension host
   useEffect(() => {
     const unsubLoadDoc = bridge.subscribe('LOAD_DOCUMENT', (payload) => {
-      if (!payload?.document) return;
+      // Discard stale or equal document loads if docVersion arrives after newer or equal local edits
+      if (
+        isLoadedRef.current &&
+        typeof payload.docVersion === 'number' &&
+        payload.docVersion <= docVersionRef.current
+      ) {
+        return;
+      }
+
+      const doc = payload.document;
+
+      // Discard echo payloads matching what we recently sent to avoid clobbering in-flight UI state
+      if (isLoadedRef.current) {
+        const incomingJson = JSON.stringify(doc);
+        const incomingHash = fnv1a(incomingJson);
+        if (incomingHash === lastSentHashRef.current) {
+          return;
+        }
+      }
 
       const overlay = document.getElementById('parse-error-overlay');
       if (overlay) {
         overlay.remove();
       }
-
-      const doc = payload.document;
       if (doc.version) {
         docVersionValueRef.current = doc.version;
       }

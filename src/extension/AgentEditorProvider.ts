@@ -31,6 +31,7 @@ import { CloudRunDeployer } from './CloudRunDeployer';
 import { McpSubprocessManager } from './McpSubprocessManager';
 import { McpOAuthManager } from './McpOAuthManager';
 import { EventarcDiscoveryManager } from './EventarcDiscoveryManager';
+import { GcpDiscoveryManager } from './GcpDiscoveryManager';
 import { DocumentSyncManager } from './editor/DocumentSyncManager';
 import { WebviewMessageRouter } from './editor/WebviewMessageRouter';
 import { getHtmlForWebview } from './editor/WebviewHtmlProvider';
@@ -49,6 +50,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   public readonly mcpManager: McpSubprocessManager;
   public readonly mcpOAuthManager: McpOAuthManager;
   public readonly eventarcManager: EventarcDiscoveryManager;
+  public readonly gcpDiscoveryManager: GcpDiscoveryManager;
   public readonly outputChannel?: vscode.OutputChannel;
 
   public readonly documentSyncManager: DocumentSyncManager;
@@ -77,6 +79,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     this.mcpManager = new McpSubprocessManager();
     this.mcpOAuthManager = new McpOAuthManager(context);
     this.eventarcManager = new EventarcDiscoveryManager(outputChannel);
+    this.gcpDiscoveryManager = GcpDiscoveryManager.getInstance();
 
     // Instantiate sub-managers, passing "this" to support double-dispatch mocks in tests
     this.documentSyncManager = new DocumentSyncManager(this, outputChannel);
@@ -222,6 +225,15 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       // 6. Synchronize external document edits from outside webview
       const docChangeSub = vscode.workspace.onDidChangeTextDocument((e: vscode.TextDocumentChangeEvent) => {
         if (e.document.uri.toString() === document.uri.toString()) {
+          const currentText = document.getText();
+          if (this.documentSyncManager.isWebviewGeneratedChange(uriStr, currentText)) {
+            const pending = this.documentSyncManager.getPendingEditsCount(uriStr);
+            if (pending > 0) {
+              this.documentSyncManager.setPendingEditsCount(uriStr, pending - 1);
+            }
+            return;
+          }
+
           const pending = this.documentSyncManager.getPendingEditsCount(uriStr);
           if (pending > 0) {
             this.documentSyncManager.setPendingEditsCount(uriStr, pending - 1);
@@ -652,7 +664,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
               topP: 0.95,
               maxOutputTokens: 2048,
               tools: [],
-              memory: 'none',
+              memory: 'in_memory',
             },
           },
         },

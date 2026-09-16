@@ -21,9 +21,26 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 ### CRITICAL MANDATE: COMPLETE REPOSITORY GENERATION (ALL FILES REQUIRED, STARTING WITH agent.py)
 - `agent.py` IS THE CORE WORKFLOW FILE AND MUST ALWAYS BE GENERATED AS THE FIRST FILE IN THE RETURNED JSON ARRAY. It defines `root_agent`, all sub-agents, tools, callbacks, and orchestration logic. Every other file (`test_agent.py`, `Dockerfile`, `main.tf`) directly uses `agent.py`.
 - You MUST generate the COMPLETE repository and emit EVERY required file in the output JSON array.
-- Emitting only a partial project or omitting core files like `agent.py` is strictly forbidden and breaks testing and deployment.
-- Every response MUST include the standard project manifest: `agent.py` (with `root_agent`), `requirements.txt`, `Dockerfile`, `main.tf`, `cloudbuild.yaml`, `test_agent.py`, `.env.example`, `.gitignore`, `.gcloudignore`, and `README.md`.
+- Emitting only a partial project or omitting core files like `agent.py` or `session_store.py` is strictly forbidden and breaks testing and deployment.
+- Every response MUST include the standard project manifest: `agent.py` (with `root_agent`), `session_store.py`, `requirements.txt`, `Dockerfile`, `main.tf`, `cloudbuild.yaml`, `test_agent.py`, `.env.example`, `.gitignore`, `.gcloudignore`, and `README.md`.
 
+### SESSION MEMORY & PRODUCTION CHECKPOINTERS:
+- Inspect `{{WORKFLOW_JSON}}` for session memory configuration (`memoryConfig` on nodes or workflow metadata).
+- **Supported Memory Backends**:
+  * `'in_memory'`: In-Memory Turn Buffer (`InMemorySessionStore`)
+  * `'firestore'`: Google Cloud Firestore / Firebase Checkpointer (`FirestoreSessionStore` using `google-cloud-firestore`)
+  * `'postgres'` | `'cloud_sql'`: Google Cloud SQL (PostgreSQL / MySQL) Checkpointer (`CloudSqlSessionStore` using `psycopg2-binary` and `sqlalchemy`)
+  * `'spanner'`: Google Cloud Spanner Enterprise Checkpointer (`SpannerSessionStore` using `google-cloud-spanner`)
+  * `'redis'`: Cloud Memorystore (Redis / Valkey) Checkpointer (`RedisSessionStore` using `redis` client)
+  * `'none'`: Stateless (`StatelessSessionStore`)
+- You MUST generate `session_store.py` providing `BaseSessionStore`, `StatelessSessionStore`, `InMemorySessionStore`, `FirestoreSessionStore`, `CloudSqlSessionStore`, `SpannerSessionStore`, `RedisSessionStore`, and a factory function `get_session_store(backend: Optional[str] = None) -> BaseSessionStore`.
+- In `agent.py` (and test harnesses), import `from session_store import get_session_store` and use `session_store = get_session_store()` to manage conversation state across multi-turn interactions.
+- In `requirements.txt`, include the corresponding driver packages:
+  * For Firestore: `google-cloud-firestore>=2.16.0`
+  * For Cloud SQL / Postgres: `psycopg2-binary>=2.9.9`, `sqlalchemy>=2.0.0`
+  * For Spanner: `google-cloud-spanner>=3.40.0`
+  * For Redis: `redis>=5.0.0`
+- In `.env.example`, include `SESSION_STORE_BACKEND=<configured_type>` along with any relevant connection parameters.
 
 1. **Agent Harness & Agent Architecture (Google ADK)**:
    - You MUST implement agents using the official Google ADK SDK (`from google.adk.agents import Agent, SequentialAgent, ParallelAgent, LoopAgent` and `from google.adk.agents.remote_a2a_agent import RemoteA2aAgent`).

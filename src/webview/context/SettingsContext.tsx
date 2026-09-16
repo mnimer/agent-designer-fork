@@ -64,7 +64,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   defaultUseStreaming: true,
   defaultModel: 'gemini-3.8-flash',
   defaultTemperature: 0.7,
-  defaultMemoryType: 'none',
+  defaultMemoryType: 'in_memory',
   defaultSubAgentPattern: 'parallel',
   defaultMaxIterations: 10,
   defaultGcpProject: 'my-gcp-ai-agents',
