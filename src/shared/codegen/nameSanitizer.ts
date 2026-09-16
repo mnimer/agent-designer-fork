@@ -95,9 +95,17 @@ export function topologicalSortAgents<T extends { id: string; data?: any }>(
     adj.set(agent.id, new Set<string>());
   }
 
-  // 1. Add direct delegation edges
+  // 1. Add direct delegation edges (excluding feedback/loopback edges for loop agents)
   for (const edge of edges) {
-    if (agentIds.has(edge.source) && agentIds.has(edge.target)) {
+    const isFeedbackEdge = 
+      (edge as any).isLoop || 
+      (edge as any).isFeedback || 
+      (edge as any).id?.includes('_loop') || 
+      (edge as any).id?.includes('_refine') ||
+      (edge as any).sourceHandle === 'feedback' ||
+      ((edge as any).sourceHandle === 'subagent' && agents.find((a) => a.id === edge.source)?.data?.isEvaluator);
+
+    if (agentIds.has(edge.source) && agentIds.has(edge.target) && !isFeedbackEdge) {
       adj.get(edge.source)!.add(edge.target);
     }
   }

@@ -33,11 +33,16 @@ describe('Basic Agent Types Palette & Node Creation', () => {
   });
 
   it('should include active Multi-Agent Pattern definitions', () => {
-    assert.equal(PATTERN_DEFINITIONS.length, 3);
+    assert.equal(PATTERN_DEFINITIONS.length, 8);
     const patternTypes = PATTERN_DEFINITIONS.map(p => p.type);
     assert.deepEqual(patternTypes, [
       'sequential',
       'parallel',
+      'router',
+      'loop',
+      'debate',
+      'hierarchical_decomposition',
+      'review_critique',
       'coordinator'
     ]);
   });
@@ -131,5 +136,19 @@ describe('Basic Agent Types Palette & Node Creation', () => {
     const routerNode = createSingleAgentNode(100, 100, undefined, undefined, 'router');
     assert.equal(routerNode.data.agentKind, 'router');
     assert.ok(routerNode.data.routerConfig);
+  });
+
+  it('should verify Flow & Control Nodes catalog contains all 5 flow node definitions with correct metadata', () => {
+    assert.equal(FLOW_CONTROL_AGENT_TYPES.length, 5);
+    const kinds = FLOW_CONTROL_AGENT_TYPES.map((a) => a.kind);
+    assert.deepEqual(kinds, ['router', 'synthesizer', 'hitl', 'fallback', 'guardrail']);
+
+    FLOW_CONTROL_AGENT_TYPES.forEach((flowNode) => {
+      assert.ok(flowNode.name, `FlowNode ${flowNode.kind} must have a name`);
+      assert.ok(flowNode.description, `FlowNode ${flowNode.kind} must have a description`);
+      assert.ok(flowNode.badge, `FlowNode ${flowNode.kind} must have a badge`);
+      assert.ok(flowNode.colorTheme, `FlowNode ${flowNode.kind} must have a colorTheme`);
+      assert.ok(flowNode.iconName, `FlowNode ${flowNode.kind} must have an iconName`);
+    });
   });
 });

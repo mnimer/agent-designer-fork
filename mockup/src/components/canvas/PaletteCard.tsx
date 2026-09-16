@@ -77,7 +77,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   onOpenSample,
 }) => {
   const [activeTab, setActiveTab] = useState<'agents' | 'tools' | 'triggers' | 'samples'>('agents');
-  const [isPatternsOpen, setIsPatternsOpen] = useState(true);
+  const [isPatternsOpen, setIsPatternsOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   const [toolSearch, setToolSearch] = useState('');
   const [toolCategoryFilter, setToolCategoryFilter] = useState<'all' | 'mcp' | 'api' | 'builtin'>('all');

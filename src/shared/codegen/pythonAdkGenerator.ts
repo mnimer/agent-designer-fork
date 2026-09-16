@@ -449,7 +449,7 @@ export class PythonAdkGenerator {
     workflow: AgentWorkflowDocument, 
     options?: PythonAdkGeneratorOptions
   ): string {
-    const defaultModel = options?.defaultModel || 'gemini-3.8-flash';
+    const defaultModel = options?.defaultModel || 'gemini-3.7-flash';
     const agentNodes = (workflow.nodes || []).filter(
       (n) => n.data && (
         n.data.agentKind === 'standard' || 
@@ -459,6 +459,9 @@ export class PythonAdkGenerator {
         n.data.agentKind === 'hitl' || 
         n.data.agentKind === 'fallback' || 
         n.data.agentKind === 'guardrail' || 
+        n.data.agentKind === 'loop' || 
+        n.data.agentKind === 'sequential' || 
+        n.data.agentKind === 'parallel' || 
         !n.data.agentKind
       )
     );
@@ -481,9 +484,18 @@ export class PythonAdkGenerator {
     const synthesizerNodes = sortedAgents.filter(
       (n) => n.data && (n.data.agentKind === 'synthesizer' || (n.data.structuredOutput?.enabled && n.data.structuredOutput?.fields?.length))
     );
+    const hasLoop = sortedAgents.some((n) => n.data?.agentKind === 'loop' || n.data?.subAgentPattern === 'loop');
+    const hasSequential = sortedAgents.some((n) => n.data?.agentKind === 'sequential' || n.data?.subAgentPattern === 'sequential' || n.data?.subAgentPattern === 'review_critique');
+    const hasParallel = sortedAgents.some((n) => n.data?.agentKind === 'parallel' || n.data?.subAgentPattern === 'parallel');
 
     const hasCustomBaseAgent = routerNodes.length > 0 || hitlNodes.length > 0 || fallbackNodes.length > 0 || guardrailNodes.length > 0;
     const hasPydantic = synthesizerNodes.length > 0;
+
+    const agentClassImports = ['Agent'];
+    if (hasLoop) agentClassImports.push('LoopAgent');
+    if (hasSequential) agentClassImports.push('SequentialAgent');
+    if (hasParallel) agentClassImports.push('ParallelAgent');
+    if (hasCustomBaseAgent) agentClassImports.push('BaseAgent');
 
     const lines: string[] = [
       '"""',
@@ -496,6 +508,7 @@ export class PythonAdkGenerator {
       'import os',
       'import logging',
       'from typing import Any, AsyncGenerator, Dict, List, Optional, Literal',
+      `from google.adk.agents import ${Array.from(new Set(agentClassImports)).join(', ')}`,
     ];
 
     if (hasPydantic) {
@@ -504,12 +517,9 @@ export class PythonAdkGenerator {
 
     if (hasCustomBaseAgent) {
       lines.push(
-        'from google.adk.agents import Agent, BaseAgent',
         'from google.adk.agents.invocation_context import InvocationContext',
         'from google.adk.events import Event'
       );
-    } else {
-      lines.push('from google.adk.agents import Agent');
     }
 
     lines.push(
@@ -947,6 +957,49 @@ export class PythonAdkGenerator {
         lines.push(`    tools=setup_agent_tools(${pyStr(node.id)})`);
         lines.push(')');
         lines.push('');
+      } else if (data.agentKind === 'loop') {
+        lines.push(`${safeVar} = LoopAgent(`);
+        lines.push(`    name=${pyStr(data.label || node.id)},`);
+        if (Array.isArray(data.subAgents) && data.subAgents.length > 0) {
+          lines.push('    sub_agents=[');
+          for (const sub of data.subAgents) {
+            const childNode = sortedAgents.find((n) => n.id === sub.agentId);
+            const childVar = childNode ? idToVar.get(childNode.id) : sanitizeIdentifier(sub.name || sub.agentId);
+            lines.push(`        ${childVar},`);
+          }
+          lines.push('    ],');
+        }
+        lines.push(`    max_iterations=${data.maxIterations || 5}`);
+        lines.push(')');
+        lines.push('');
+      } else if (data.agentKind === 'sequential') {
+        lines.push(`${safeVar} = SequentialAgent(`);
+        lines.push(`    name=${pyStr(data.label || node.id)},`);
+        if (Array.isArray(data.subAgents) && data.subAgents.length > 0) {
+          lines.push('    sub_agents=[');
+          for (const sub of data.subAgents) {
+            const childNode = sortedAgents.find((n) => n.id === sub.agentId);
+            const childVar = childNode ? idToVar.get(childNode.id) : sanitizeIdentifier(sub.name || sub.agentId);
+            lines.push(`        ${childVar},`);
+          }
+          lines.push('    ],');
+        }
+        lines.push(')');
+        lines.push('');
+      } else if (data.agentKind === 'parallel') {
+        lines.push(`${safeVar} = ParallelAgent(`);
+        lines.push(`    name=${pyStr(data.label || node.id)},`);
+        if (Array.isArray(data.subAgents) && data.subAgents.length > 0) {
+          lines.push('    sub_agents=[');
+          for (const sub of data.subAgents) {
+            const childNode = sortedAgents.find((n) => n.id === sub.agentId);
+            const childVar = childNode ? idToVar.get(childNode.id) : sanitizeIdentifier(sub.name || sub.agentId);
+            lines.push(`        ${childVar},`);
+          }
+          lines.push('    ],');
+        }
+        lines.push(')');
+        lines.push('');
       } else if (data.agentKind === 'hitl') {
         let hitlClassName = toPascalCase(data.label || node.id);
         if (!hitlClassName.endsWith('ApprovalGate')) hitlClassName += 'ApprovalGate';
@@ -1050,7 +1103,7 @@ export class PythonAdkGenerator {
           lines.push('    sub_agents=[');
           for (const sub of data.subAgents) {
             const childNode = sortedAgents.find((n) => n.id === sub.agentId);
-            const childVar = childNode ? idToVar.get(childNode.id) : sanitizePythonIdentifier(sub.name || sub.agentId);
+            const childVar = childNode ? idToVar.get(childNode.id) : sanitizeIdentifier(sub.name || sub.agentId);
             lines.push(`        ${childVar},`);
           }
           lines.push('    ],');

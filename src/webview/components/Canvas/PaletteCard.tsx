@@ -110,7 +110,8 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   onLoadSampleIntoCurrentFlow,
 }) => {
   const [activeTab, setActiveTab] = useState<'agents' | 'tools' | 'triggers' | 'samples'>('agents');
-  const [isPatternsOpen, setIsPatternsOpen] = useState(true);
+  const [isFlowControlOpen, setIsFlowControlOpen] = useState(false);
+  const [isPatternsOpen, setIsPatternsOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   const [toolSearch, setToolSearch] = useState('');
   const [toolCategoryFilter, setToolCategoryFilter] = useState<'all' | 'mcp' | 'api' | 'builtin'>('all');
@@ -217,6 +218,12 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
     if (agentKind) {
       e.dataTransfer.setData('application/reactflow/agentKind', agentKind);
     }
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragStartPattern = (e: React.DragEvent, patternType: PatternType) => {
+    e.dataTransfer.setData('application/reactflow/type', patternType);
+    e.dataTransfer.setData('application/reactflow/isPattern', 'true');
     e.dataTransfer.effectAllowed = 'move';
   };
 
@@ -637,47 +644,56 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
 
           {/* Multi-Agent Flow & Control Nodes Section */}
           <div className="border-t border-[#30363d] pt-3">
-            <div className="text-[11px] font-semibold text-indigo-400 mb-2 uppercase tracking-wide flex items-center justify-between">
-              <span>Flow & Control Nodes</span>
-              <span className="text-[9px] text-gray-400 font-normal lowercase">drag to canvas</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsFlowControlOpen(!isFlowControlOpen)}
+              className="w-full flex items-center justify-between text-[11px] font-semibold text-indigo-400 mb-2 uppercase tracking-wide cursor-pointer hover:text-indigo-300"
+            >
+              <div className="flex items-center gap-1.5">
+                <Workflow className="w-3.5 h-3.5" />
+                <span>Flow & Control Nodes ({FLOW_CONTROL_AGENT_TYPES.length})</span>
+              </div>
+              {isFlowControlOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
 
-            <div className="space-y-1.5">
-              {FLOW_CONTROL_AGENT_TYPES.map((agentType) => {
-                const styles = getAgentCardStyles(agentType.colorTheme);
-                return (
-                  <div
-                    key={agentType.kind}
-                    draggable
-                    onDragStart={(e) => handleDragStartAgent(e, agentType.kind, false, agentType.kind)}
-                    onClick={() => onAddAgent(agentType.kind)}
-                    className={`group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] ${styles.border} cursor-grab active:cursor-grabbing hover:bg-[#30363d] shadow-sm transition-all`}
-                    title={`Drag and drop ${agentType.name} onto canvas`}
-                    data-testid={`palette-agent-${agentType.kind}`}
-                  >
-                    <div className="flex items-start gap-2.5 min-w-0">
-                      <GripVertical className={`w-3.5 h-3.5 text-gray-400 ${styles.hoverGrip} shrink-0 mt-1`} />
-                      <div className={`p-1.5 rounded-md bg-[#0d1117] ${styles.iconBorder} shrink-0 mt-0.5 border shadow-xs`}>
-                        {getAgentTypeIcon(agentType.iconName)}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-xs text-white truncate max-w-[150px]">
-                            {agentType.name}
-                          </span>
-                          <span className={`text-[8px] uppercase font-mono px-1.5 py-0.2 rounded ${styles.badge}`}>
-                            {agentType.badge}
-                          </span>
+            {isFlowControlOpen && (
+              <div className="space-y-1.5">
+                {FLOW_CONTROL_AGENT_TYPES.map((agentType) => {
+                  const styles = getAgentCardStyles(agentType.colorTheme);
+                  return (
+                    <div
+                      key={agentType.kind}
+                      draggable
+                      onDragStart={(e) => handleDragStartAgent(e, agentType.kind, false, agentType.kind)}
+                      onClick={() => onAddAgent(agentType.kind)}
+                      className={`group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] ${styles.border} cursor-grab active:cursor-grabbing hover:bg-[#30363d] shadow-sm transition-all`}
+                      title={`Drag and drop ${agentType.name} onto canvas`}
+                      data-testid={`palette-agent-${agentType.kind}`}
+                    >
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <GripVertical className={`w-3.5 h-3.5 text-gray-400 ${styles.hoverGrip} shrink-0 mt-1`} />
+                        <div className={`p-1.5 rounded-md bg-[#0d1117] ${styles.iconBorder} shrink-0 mt-0.5 border shadow-xs`}>
+                          {getAgentTypeIcon(agentType.iconName)}
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
-                          {agentType.description}
-                        </p>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-xs text-white truncate max-w-[150px]">
+                              {agentType.name}
+                            </span>
+                            <span className={`text-[8px] uppercase font-mono px-1.5 py-0.2 rounded ${styles.badge}`}>
+                              {agentType.badge}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                            {agentType.description}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Multi-Agent Patterns Section */}
@@ -700,7 +716,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                   <div
                     key={pattern.id}
                     draggable
-                    onDragStart={(e) => handleDragStartAgent(e, pattern.type, true)}
+                    onDragStart={(e) => handleDragStartPattern(e, pattern.type)}
                     onClick={() => onAddPattern(pattern.type)}
                     className="group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] border-purple-500/40 cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-purple-400 shadow-sm transition-all shadow-purple-950/20"
                     title={`Drag and drop ${pattern.name} pattern onto canvas`}
@@ -996,14 +1012,6 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                               >
                                                 <Edit2 className="w-3 h-3" />
                                               </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => onAddToolToAgent(t)}
-                                                className="p-1 rounded text-sky-400 hover:text-sky-200 hover:bg-sky-900/40 transition-colors cursor-pointer"
-                                                title="Add to selected Agent"
-                                              >
-                                                <Plus className="w-3 h-3" />
-                                              </button>
                                             </div>
                                           </div>
                                         );
@@ -1059,14 +1067,6 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                       title="Configure tool properties"
                                     >
                                       <Edit2 className="w-3 h-3" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => onAddToolToAgent(t)}
-                                      className="p-1 rounded text-purple-400 hover:text-purple-200 hover:bg-purple-900/40 transition-colors cursor-pointer"
-                                      title="Add to selected Agent"
-                                    >
-                                      <Plus className="w-3 h-3" />
                                     </button>
                                   </div>
                                 </div>

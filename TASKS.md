@@ -33,7 +33,7 @@
 | **TASK-121** | v1.0.9 | Triggers & IAM | Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise IAM OIDC Auth | **Not Started** | TASK-105, TASK-111, TASK-116 |
 | **TASK-122** | v1.1.0 | Framework | LangGraph Framework Support (Python StateGraph Target) | **Not Started** | TASK-106, TASK-114 |
 | **TASK-123** | v1.1.1 | Runtime | TypeScript Runtime Support (@google/genai SDK & Vitest) | **Not Started** | TASK-106, TASK-122 |
-| **TASK-124** | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Not Started** | TASK-113, TASK-117 |
+| **TASK-124** | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Complete** | TASK-113, TASK-117 |
 | **TASK-125** | v1.0.1 | Deployment | Native Vertex AI Agent Engine (Agent Runtime) Container Deployment & Lifecycle Management | **Complete** | TASK-106, TASK-110 |
 | **TASK-126** | v1.0.0 | Extension Host | VS Code Activity Bar Container & Sidebar Workflows Explorer | **Done** | TASK-100, TASK-108 |
 | **TASK-127** | v1.0.0 | Release & CI | Automated VSIX Packaging & Tag-Triggered GitHub Actions Release Workflow | **Done** | TASK-100, TASK-109 |
@@ -100,11 +100,11 @@
 | **TASK-188** | v1.1.2 | Agent Types | Human-in-the-Loop (HITL / Approval Gate) Agent Type | **Not Started** | TASK-103, TASK-115 |
 | **TASK-189** | v1.1.2 | Agent Types | Fallback & Circuit Breaker Agent Type (Resilience & Quota Safety) | **Not Started** | TASK-103, TASK-117 |
 | **TASK-190** | v1.1.2 | Agent Types | Guardrail & Filter Shield Agent Type (Pre/Post-Flight Safety) | **Not Started** | TASK-103, TASK-114 |
-| **TASK-191** | v1.1.2 | Palette | Multi-Agent Patterns Palette Catalog Integration in Agents Tab | **Not Started** | TASK-113, TASK-124 |
-| **TASK-192** | v1.1.2 | Patterns | Evaluator-Optimizer (LoopAgent) Pattern & Refinement Code Generation | **Not Started** | TASK-114, TASK-191 |
-| **TASK-193** | v1.1.2 | Patterns | Multi-Agent Debate & Consensus Panel Pattern & Code Generation | **Not Started** | TASK-114, TASK-191 |
-| **TASK-194** | v1.1.2 | Patterns | Hierarchical Delegation (Supervisor-Workers) Pattern & Code Generation | **Not Started** | TASK-114, TASK-191 |
-| **TASK-195** | v1.1.2 | Patterns | Review & Critique Triad Pattern & Editorial Code Generation | **Not Started** | TASK-114, TASK-191 |
+| **TASK-191** | v1.1.2 | Palette | Multi-Agent Patterns Palette Catalog Integration in Agents Tab | **Complete** | TASK-113, TASK-124 |
+| **TASK-192** | v1.1.2 | Patterns | Evaluator-Optimizer (LoopAgent) Pattern & Refinement Code Generation | **Complete** | TASK-114, TASK-191 |
+| **TASK-193** | v1.1.2 | Patterns | Multi-Agent Debate & Consensus Panel Pattern & Code Generation | **Complete** | TASK-114, TASK-191 |
+| **TASK-194** | v1.1.2 | Patterns | Hierarchical Delegation (Supervisor-Workers) Pattern & Code Generation | **Complete** | TASK-114, TASK-191 |
+| **TASK-195** | v1.1.2 | Patterns | Review & Critique Triad Pattern & Editorial Code Generation | **Complete** | TASK-114, TASK-191 |
 | **TASK-196** | v1.0.7 | Schema / Agent Nodes | Structured Input Schema Builder for Standard & Router Agent Nodes | **Not Started** | TASK-103, TASK-117, TASK-119 |
 | **TASK-197** | v1.0.3 | Memory / Local Runner | Local Runner SQLite Checkpointer Override & Ephemeral DB Lifecycle | **Complete** | TASK-107, TASK-115 |
 | **TASK-198** | v1.0.3 | Memory / Cloud SQL | Google Cloud SQL (PostgreSQL/MySQL) Checkpointer & Pre-Deployment Validation | **Complete** | TASK-115 |
