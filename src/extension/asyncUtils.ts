@@ -19,7 +19,8 @@
  * Author: Mike Nimer <mikenimer@google.com>
  */
 
-import { ChildProcess } from 'child_process';
+import * as child_process from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 
 /**
  * Options configuration for execFileAsync.
@@ -171,7 +172,7 @@ export function execFileAsync(
     let stderrBuffer = '';
 
     // Spawn child process without a shell wrapper to prevent command injection
-    const child = require('child_process').execFile(file, args, {
+    const child = child_process.execFile(file, args, {
       cwd,
       env,
       shell: false,

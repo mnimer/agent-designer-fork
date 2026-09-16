@@ -23,6 +23,7 @@ import * as vscode from 'vscode';
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as child_process from 'node:child_process';
 import { URL } from 'url';
 import { outputChannel } from './extension';
 
@@ -267,13 +268,12 @@ export class McpOAuthManager {
           // If vscode.env.openExternal returned false or was blocked, invoke OS-level browser opener
           if (!opened) {
             try {
-              const { spawn } = await import('child_process');
               if (process.platform === 'darwin') {
-                spawn('open', [finalUrl], { shell: false });
+                child_process.spawn('open', [finalUrl], { shell: false });
               } else if (process.platform === 'win32') {
-                spawn('cmd.exe', ['/c', 'start', '""', finalUrl], { shell: false });
+                child_process.spawn('cmd.exe', ['/c', 'start', '""', finalUrl], { shell: false });
               } else {
-                spawn('xdg-open', [finalUrl], { shell: false });
+                child_process.spawn('xdg-open', [finalUrl], { shell: false });
               }
             } catch {
               // Ignore fallback error and let user complete via URL

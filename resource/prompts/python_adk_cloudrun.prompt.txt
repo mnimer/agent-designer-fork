@@ -138,6 +138,7 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
       * Environment Settings: Configure `PYTHONUNBUFFERED=1`, `GOOGLE_GENAI_USE_VERTEXAI=true`, and `GOOGLE_CLOUD_LOCATION=global`, and establish an application working directory (e.g., `/app`).
       * Dependency Layer Caching: Copy `requirements.txt` and execute `pip install --no-cache-dir -r requirements.txt` prior to copying application source code to maximize Docker build layer caching.
       * Container Execution: Expose port `8080` and configure the entrypoint to serve the FastAPI app using Uvicorn (`python -m uvicorn server:app --host 0.0.0.0 --port 8080`).
+      * Ensure a .dockerignore file is provided to prevent copying sensitive local files (.env, .git) into build layers.
     - `main.tf`: Complete, production-grade Terraform configuration deploying to Google Cloud Run and connecting to an existing project:
        * **Terraform Specification & Provider**:
          - Configure `terraform` block requiring `google` provider (`~> 5.0`) and Terraform version `>= 1.5.0`.
@@ -193,20 +194,21 @@ You MUST output EVERY single one of the following files in the returned JSON arr
 1. `agent.py`: Complete Google ADK root_agent, sub-agents, and state flow.
 2. `server.py`: Production FastAPI server mounting ADK endpoints and health checks.
 3. `main.py`: Local CLI test runner using ADK Runner.
-4. `test_agent.py`: Pytest test suite validating all test scenarios against root_agent.
+4. `test_agent.py`: Pytest test suite validating all test scenarios against root_agent. When the workflow specification contains trigger nodes of type `tester` (or `triggerType == 'tester'`), inspect `config.testScenarios`, `config.testPrompts`, and `config.expectedOutput`. For EVERY defined test scenario (e.g. 'Test Case #1' with prompt 'Let\'s play a game.'), generate a dedicated pytest test function in `test_agent.py` that executes the scenario prompt against `root_agent` and asserts the expected output criteria.
 5. `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios.
 6. `evaluate.py`: Vertex AI Agent Evaluation script using vertexai.evaluation.EvalTask.
 7. `requirements.txt`: Complete pinned dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
-8. `Dockerfile`: Production Python 3.11 container definition.
-9. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building container, and deploying.
-10. `main.tf`: Complete Terraform configuration deploying google_cloud_run_v2_service, Artifact Registry, Service Account, IAM roles, and triggers.
-11. `variables.tf`: Input variable definitions for Terraform.
-12. `outputs.tf`: Output values (service_url, service_id, artifact_repo_id, service_account_email).
-13. `terraform.tfvars`: Default variable values for local initialization.
-14. `pyproject.toml`: Modern packaging metadata and dependencies.
-15. `.gitignore`: Git ignore patterns for Python, venv, and cache.
-16. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
-17. `README.md`: Architecture overview, local execution, and deployment instructions.
+8. `Dockerfile`: Clean production container definition using python:3.11-slim. Always enforce non-root execution by creating a dedicated non-privileged user (`RUN useradd -u 8888 -m appuser && chown -R appuser:appuser /app` and `USER 8888`).
+9. `.dockerignore`: Docker ignore patterns excluding `.git`, `.venv`, `__pycache__`, `*.pyc`, `.env*`, `dist`, and build artifacts.
+10. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building container, and deploying.
+11. `main.tf`: Complete Terraform configuration deploying google_cloud_run_v2_service, Artifact Registry, Service Account, IAM roles, and triggers.
+12. `variables.tf`: Input variable definitions for Terraform.
+13. `outputs.tf`: Output values (service_url, service_id, artifact_repo_id, service_account_email).
+14. `terraform.tfvars`: Default variable values for local initialization.
+15. `pyproject.toml`: Modern packaging metadata and dependencies.
+16. `.gitignore`: Git ignore patterns for Python, venv, and cache.
+17. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
+18. `README.md`: Architecture overview, local execution, and deployment instructions.
 18. Auxiliary files as needed:
     - `pydantic_models.py` (when structured output schemas or Pydantic models are used)
     - `tools/*.py` (when custom tools are defined)
