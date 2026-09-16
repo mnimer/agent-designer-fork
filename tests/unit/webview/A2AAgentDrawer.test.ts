@@ -18,7 +18,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { AgentData, A2AConfig } from '../../../src/webview/types';
-import { normalizeA2AConfig } from '../../../src/shared/codegen/pythonAdkGenerator';
+import { normalizeA2AConfig } from '../../../src/shared/agentSpec';
 import { parseA2AAgentCard, extractExtensionSlug } from '../../../src/shared/a2aCardParser';
 
 describe('A2A Agent Inspector Logic & Configuration', () => {

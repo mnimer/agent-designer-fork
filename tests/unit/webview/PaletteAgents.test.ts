@@ -33,11 +33,16 @@ describe('Basic Agent Types Palette & Node Creation', () => {
   });
 
   it('should include active Multi-Agent Pattern definitions', () => {
-    assert.equal(PATTERN_DEFINITIONS.length, 3);
+    assert.equal(PATTERN_DEFINITIONS.length, 8);
     const patternTypes = PATTERN_DEFINITIONS.map(p => p.type);
     assert.deepEqual(patternTypes, [
       'sequential',
       'parallel',
+      'router',
+      'loop',
+      'debate',
+      'hierarchical_decomposition',
+      'review_critique',
       'coordinator'
     ]);
   });

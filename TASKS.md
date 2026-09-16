@@ -8,8 +8,6 @@
 
 ## Task Summary Matrix
 
-## Task Summary Matrix
-
 | Task ID | Release | Component | Task Title | Status | Dependencies |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **TASK-100** | v1.0.0 | Extension Host | VS Code Extension Scaffolding & Custom Editor Provider | **Complete** | None |
@@ -26,11 +24,14 @@
 | **TASK-111** | v1.0.1 | Deployment | Cloud Infrastructure IaC Panel (Cloud Run & Shared GCP Resources) | **Complete** | TASK-106 |
 | **TASK-112** | v1.0.2 | Canvas | Multi-Agent Wiring, Sockets & Connection Validation | **Complete** | TASK-103 |
 | **TASK-113** | v1.0.2 | Patterns | Sequential Pipeline & Parallel Fan-Out Patterns | **Complete** | TASK-112 |
+| **TASK-114** | v1.0.2 | Codegen | Multi-Agent DAG Python ADK Code Generation & Tracing | **Complete** | TASK-113 |
 | **TASK-115** | v1.0.3 | Memory | Session Store Factory & Production Checkpointer Configuration | **Complete** | TASK-103, TASK-111 |
+| **TASK-116** | v1.0.4 | Protocol / A2A | Agent-to-Agent (A2A) Protocol Node & JSON-RPC Client | **Complete** | TASK-107, TASK-114 |
+| **TASK-117** | v1.0.5 | Router | Router Node & Dynamic Branching Logic | **Complete** | TASK-112 |
 | **TASK-118** | v1.0.6 | Tools | Custom REST API Tool Builder & Python Code Sandbox | **Complete** | TASK-104 |
 | **TASK-119** | v1.0.7 | Schema | Structured Output Schema Builder & Pydantic Validation | **Complete** | TASK-103, TASK-106 |
 | **TASK-120** | v1.0.8 | MCP | Model Context Protocol (MCP) Client & Handshake Test | **Complete** | TASK-104, TASK-107 |
-| **TASK-121** | v1.0.9 | Triggers & IAM | Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise IAM OIDC Auth | **Not Started** | TASK-105, TASK-111, TASK-116 |
+| **TASK-121** | v1.0.9 | Triggers & IAM | Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise IAM OIDC Auth | **Complete** | TASK-105, TASK-111, TASK-116 |
 | **TASK-122** | v1.1.0 | Framework | LangGraph Framework Support (Python StateGraph Target) | **Not Started** | TASK-106, TASK-114 |
 | **TASK-123** | v1.1.1 | Runtime | TypeScript Runtime Support (@google/genai SDK & Vitest) | **Not Started** | TASK-106, TASK-122 |
 | **TASK-124** | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Not Started** | TASK-113, TASK-117 |
@@ -96,15 +97,18 @@
 | **TASK-184** | v1.2.0 | Samples / Patterns | Reverse Engineer `oauth-user-consent-flow` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
 | **TASK-185** | v1.2.0 | Samples / Patterns | Reverse Engineer `rag-agent-search` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
 | **TASK-186** | v1.2.0 | Samples / Patterns | Reverse Engineer `rag-vector-search` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| **TASK-187** | v1.1.2 | Agent Types | Synthesizer Agent Type (Basic Agent Node & Schema Reducer) | **Not Started** | TASK-103, TASK-119 |
-| **TASK-188** | v1.1.2 | Agent Types | Human-in-the-Loop (HITL / Approval Gate) Agent Type | **Not Started** | TASK-103, TASK-115 |
-| **TASK-189** | v1.1.2 | Agent Types | Fallback & Circuit Breaker Agent Type (Resilience & Quota Safety) | **Not Started** | TASK-103, TASK-117 |
-| **TASK-190** | v1.1.2 | Agent Types | Guardrail & Filter Shield Agent Type (Pre/Post-Flight Safety) | **Not Started** | TASK-103, TASK-114 |
-| **TASK-191** | v1.1.2 | Palette | Multi-Agent Patterns Palette Catalog Integration in Agents Tab | **Not Started** | TASK-113, TASK-124 |
-| **TASK-192** | v1.1.2 | Patterns | Evaluator-Optimizer (LoopAgent) Pattern & Refinement Code Generation | **Not Started** | TASK-114, TASK-191 |
-| **TASK-193** | v1.1.2 | Patterns | Multi-Agent Debate & Consensus Panel Pattern & Code Generation | **Not Started** | TASK-114, TASK-191 |
-| **TASK-194** | v1.1.2 | Patterns | Hierarchical Delegation (Supervisor-Workers) Pattern & Code Generation | **Not Started** | TASK-114, TASK-191 |
-| **TASK-195** | v1.1.2 | Patterns | Review & Critique Triad Pattern & Editorial Code Generation | **Not Started** | TASK-114, TASK-191 |
+| **TASK-187** | v1.1.2 | Agent Types | Synthesizer Agent Type (Basic Agent Node & Schema Reducer) | **Complete** | TASK-103, TASK-119 |
+| **TASK-188** | v1.1.2 | Agent Types | Human-in-the-Loop (HITL / Approval Gate) Agent Type | **Complete** | TASK-103, TASK-115 |
+| **TASK-189** | v1.1.2 | Agent Types | Fallback & Circuit Breaker Agent Type (Resilience & Quota Safety) | **Complete** | TASK-103, TASK-117 |
+| **TASK-190** | v1.1.2 | Agent Types | Guardrail & Filter Shield Agent Type (Pre/Post-Flight Safety) | **Complete** | TASK-103, TASK-114 |
+| **TASK-191** | v1.1.2 | Palette | Multi-Agent Patterns Palette Catalog Integration in Agents Tab | **Complete** | TASK-113, TASK-124 |
+| **TASK-192A** | v1.1.2 | Patterns | Evaluator-Optimizer (Loop) Pattern UI Card, 2-Node Topology & Max Iterations Drawer | **Complete** | TASK-114, TASK-191 |
+| **TASK-192B** | v1.1.2 | Prompts / Codegen | Evaluator-Optimizer (LoopAgent) Prompt Engineering & Cyclic Edge Validation | **Complete** | TASK-192A |
+| **TASK-193A** | v1.1.2 | Patterns | Multi-Agent Debate Pattern UI Card, 4-Node Topology & Consensus Drawer | **Complete** | TASK-114, TASK-191 |
+| **TASK-193B** | v1.1.2 | Prompts / Codegen | Multi-Agent Debate Turn Orchestration & Consensus Prompt Engineering | **Complete** | TASK-193A |
+| **TASK-194** | v1.1.2 | Patterns | Hierarchical Delegation (Supervisor-Workers) Pattern, Dagre Topology & Codegen | **Complete** | TASK-114, TASK-191 |
+| **TASK-195A** | v1.1.2 | Patterns | Review & Critique Triad Pattern UI Card, 3-Node Topology & Rubric Prompt Presets | **Complete** | TASK-114, TASK-191 |
+| **TASK-195B** | v1.1.2 | Prompts / Codegen | Review & Critique Sequential State-Passing Pipeline Prompt Engineering | **Complete** | TASK-195A |
 | **TASK-196** | v1.0.7 | Schema / Agent Nodes | Structured Input Schema Builder for Standard & Router Agent Nodes | **Not Started** | TASK-103, TASK-117, TASK-119 |
 | **TASK-197** | v1.0.3 | Memory / Local Runner | Local Runner SQLite Checkpointer Override & Ephemeral DB Lifecycle | **Complete** | TASK-107, TASK-115 |
 | **TASK-198** | v1.0.3 | Memory / Cloud SQL | Google Cloud SQL (PostgreSQL/MySQL) Checkpointer & Pre-Deployment Validation | **Complete** | TASK-115 |
@@ -579,6 +583,7 @@
 
 ### [TASK-121] Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise IAM OIDC Auth
 * **Release**: `v1.0.9`
+* **Status**: Complete
 * **Target Package/Files**:
   - `src/webview/components/nodes/TriggerNode.tsx`
   - `src/webview/components/inspector/TriggerDrawer.tsx`
@@ -2918,13 +2923,15 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-187] Synthesizer Agent Type (Basic Agent Node & Schema Reducer)
 * **Release**: `v1.1.2`
+* **Status**: Complete
 * **Target Package/Files**:
   - `src/shared/types.ts`
   - `src/webview/types.ts`
   - `src/webview/components/Canvas/nodes/AgentNode.tsx`
   - `src/webview/components/Canvas/PaletteCard.tsx`
   - `src/webview/components/inspector/SynthesizerDrawer.tsx`
-  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
 * **Context**:
   In multi-agent architectures (especially following parallel fan-outs), raw research and data from upstream workers must be collated and synthesized into a structured response. Vertex AI Gemini restricts combining search tools with controlled generation (`output_schema`) on the same agent. The Synthesizer Agent provides a dedicated leaf agent node with no tools, specialized input state key mapping, and tight integration with the Structured Output Schema Builder to guarantee deterministic JSON output schemas.
 * **Sub-Agent Prompt**:
@@ -2934,8 +2941,8 @@ Each task specifies reverse-engineering the sample Python code into a production
   2. Add Synthesizer Agent to Basic Agent Types in PaletteCard.tsx with emerald styling, Layers icon, and one-click/drag insertion.
   3. Render AgentNode with distinct emerald accent and 'Synthesizer' badge.
   4. Create SynthesizerDrawer.tsx allowing users to configure input state keys to aggregate, synthesis system prompt, and structured Pydantic output schema.
-  5. Update pythonAdkGenerator.ts to generate an Agent with output_schema, instruction referencing upstream state keys, and no tools.
-  6. Add unit tests for synthesizer node creation, drawer state changes, and Python ADK codegen.
+  5. Update resource/prompts/ prompt templates to instruct Gemini to generate an Agent with output_schema, instruction referencing upstream state keys, and no tools.
+  6. Add unit tests for synthesizer node creation and drawer state changes.
   ```
 * **Verification**:
   - Dragging Synthesizer Agent onto canvas renders emerald card with proper handles.
@@ -2946,13 +2953,15 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-188] Human-in-the-Loop (HITL / Approval Gate) Agent Type
 * **Release**: `v1.1.2`
+* **Status**: Complete
 * **Target Package/Files**:
   - `src/shared/types.ts`
   - `src/webview/types.ts`
   - `src/webview/components/Canvas/nodes/AgentNode.tsx`
   - `src/webview/components/Canvas/PaletteCard.tsx`
   - `src/webview/components/inspector/ApprovalDrawer.tsx`
-  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
 * **Context**:
   Enterprise multi-agent workflows require governance and human authorization before executing high-risk tool actions (financial disbursements, database modifications, external communications). The Human-in-the-Loop (HITL) Approval Agent provides an asynchronous gatekeeper node that pauses workflow execution using ADK's `request_input` tool and `ResumabilityConfig(is_resumable=True)` until an operator approves or rejects the action via webhook or UI.
 * **Sub-Agent Prompt**:
@@ -2962,7 +2971,7 @@ Each task specifies reverse-engineering the sample Python code into a production
   2. Add Approval Gate Agent to Basic Agent Types in PaletteCard.tsx with amber styling, ShieldAlert icon, and drag/click insertion.
   3. Render AgentNode with amber border, paused/resumed badge status, and dual approved/rejected output sockets.
   4. Create ApprovalDrawer.tsx allowing configuration of approval condition expression, timeout hours, auto-reject fallback, and notification payload.
-  5. Update pythonAdkGenerator.ts to generate ADK code utilizing ResumabilityConfig(is_resumable=True) and request_input tool handler.
+  5. Update resource/prompts/ prompt templates to instruct Gemini to generate ADK code evaluating approval state and routing to approved/rejected candidate agents.
   6. Add comprehensive unit tests.
   ```
 * **Verification**:
@@ -2973,13 +2982,15 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-189] Fallback & Circuit Breaker Agent Type (Resilience & Quota Safety)
 * **Release**: `v1.1.2`
+* **Status**: Complete
 * **Target Package/Files**:
   - `src/shared/types.ts`
   - `src/webview/types.ts`
   - `src/webview/components/Canvas/nodes/AgentNode.tsx`
   - `src/webview/components/Canvas/PaletteCard.tsx`
   - `src/webview/components/inspector/FallbackDrawer.tsx`
-  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
 * **Context**:
   To maintain enterprise SLAs against model rate limits (HTTP 429 quota exhaustion), context window overflows, or remote A2A endpoint dropouts, workflows need graceful degradation. The Fallback Agent acts as a structural control-flow node extending `BaseAgent` with `primary` and `fallback` execution paths, automatic retry counters, and error-catching fallbacks.
 * **Sub-Agent Prompt**:
@@ -2989,8 +3000,8 @@ Each task specifies reverse-engineering the sample Python code into a production
   2. Add Fallback Agent to Basic Agent Types in PaletteCard.tsx with rose styling, LifeBuoy icon, and drag/click insertion.
   3. Render AgentNode with distinct primary and fallback output sockets.
   4. Create FallbackDrawer.tsx to configure retry attempts, caught error codes (429, 503, timeout, schema validation failure), and fallback behavior.
-  5. Update pythonAdkGenerator.ts to generate a custom BaseAgent fallback wrapper catching runtime exceptions and delegating to the fallback candidate.
-  6. Add unit tests for node wiring and code generation.
+  5. Update resource/prompts/ prompt templates to instruct Gemini to generate a custom BaseAgent fallback wrapper catching runtime exceptions and delegating to the fallback candidate.
+  6. Add unit tests for node wiring.
   ```
 * **Verification**:
   - Fallback node connects primary and fallback branches to child agents.
@@ -3000,13 +3011,15 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-190] Guardrail & Filter Shield Agent Type (Pre/Post-Flight Safety)
 * **Release**: `v1.1.2`
+* **Status**: Complete
 * **Target Package/Files**:
   - `src/shared/types.ts`
   - `src/webview/types.ts`
   - `src/webview/components/Canvas/nodes/AgentNode.tsx`
   - `src/webview/components/Canvas/PaletteCard.tsx`
   - `src/webview/components/inspector/GuardrailDrawer.tsx`
-  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
 * **Context**:
   Enterprise applications mandate input prompt inspection (jailbreak defense, prompt injection detection) and output scrubbing (PII redaction, secret leakage prevention, hallucination validation). The Guardrail Agent acts as a fast, lightweight security filter node that can be placed at ingress or egress of an agent workflow.
 * **Sub-Agent Prompt**:
@@ -3016,7 +3029,7 @@ Each task specifies reverse-engineering the sample Python code into a production
   2. Add Guardrail Agent to Basic Agent Types in PaletteCard.tsx with teal styling, ShieldCheck icon, and drag/click insertion.
   3. Render AgentNode with teal accent and pass/block output handles.
   4. Create GuardrailDrawer.tsx configuring inspection direction (ingress/egress), safety policy presets (PII, Prompt Injection, Toxicity), regex filters, and action on violation (block with message vs redact).
-  5. Update pythonAdkGenerator.ts to implement ADK before_agent_callback / after_agent_callback or inline classifier guardrail.
+  5. Update resource/prompts/ prompt templates to instruct Gemini to implement ADK before_agent_callback / after_agent_callback or inline classifier guardrail.
   6. Add full unit tests.
   ```
 * **Verification**:
@@ -3027,11 +3040,13 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-191] Multi-Agent Patterns Palette Catalog Integration in Agents Tab
 * **Release**: `v1.1.2`
+* **Status**: Complete
 * **Target Package/Files**:
   - `src/webview/components/Canvas/PaletteCard.tsx`
   - `src/webview/data/patterns.ts`
+  - `tests/unit/webview/PaletteAgents.test.ts`
 * **Context**:
-  The PaletteCard's "Agents" tab currently has an accordion for "Multi-Agent Patterns (0)" displaying an empty placeholder ("No multi-agent patterns available in this release"), despite `PATTERN_DEFINITIONS` already having 8 complete pattern templates in `src/webview/data/patterns.ts`. This task integrates the pattern catalog into the UI with full drag-and-drop and '+' insertion support.
+  The PaletteCard's "Agents" tab provides an accordion for "Multi-Agent Patterns (8)" displaying all 8 predefined architecture templates with rich icons, category badges, agent counts, descriptive subtitles, full drag-and-drop (`handleDragStartAgent`), and one-click '+' insertion (`onAddPattern`).
 * **Sub-Agent Prompt**:
   ```
   Integrate Multi-Agent Patterns into the PaletteCard Agents Tab:
@@ -3045,91 +3060,133 @@ Each task specifies reverse-engineering the sample Python code into a production
 * **Verification**:
   - Expanding the "Multi-Agent Patterns" accordion reveals all 8 pattern cards.
   - Dragging or clicking '+' on a pattern drops the multi-node cluster onto the canvas.
+  - Unit tests in `PaletteAgents.test.ts` verify all 8 pattern definitions are active.
 
 ---
 
-### [TASK-192] Evaluator-Optimizer (LoopAgent) Pattern & Refinement Code Generation
+### [TASK-192A] Evaluator-Optimizer (Loop) Pattern UI Card, 2-Node Topology & Max Iterations Drawer
 * **Release**: `v1.1.2`
+* **Status**: Complete
 * **Target Package/Files**:
   - `src/webview/data/patterns.ts`
-  - `src/shared/codegen/pythonAdkGenerator.ts`
-  - `src/webview/components/Canvas/edges/`
+  - `src/webview/components/inspector/StandardAgentDrawer.tsx`
+  - `src/webview/components/Canvas/PaletteCard.tsx`
 * **Context**:
-  The Evaluator-Optimizer pattern implements an iterative self-correction loop where a Generator agent produces an output and an Evaluator agent critiques it against a rubric or tests. In Google ADK, this maps directly to `LoopAgent(sub_agents=[generator, evaluator], max_iterations=N)`. This task wires canvas cyclic edge validation and implements `LoopAgent` code generation in the Python ADK generator.
-* **Sub-Agent Prompt**:
-  ```
-  Implement the Evaluator-Optimizer (LoopAgent) Topology & Codegen:
-  1. Ensure patterns.ts initializes 2 nodes (Generator and Evaluator) connected with forward execution and feedback loop edges.
-  2. Add cyclic connection validation support specifically for LoopAgent topologies in edge validation.
-  3. Update pythonAdkGenerator.ts to import LoopAgent from google.adk.agents and generate a LoopAgent composite instance with max_iterations and evaluation state threshold logic.
-  4. Add unit tests validating that the generated Python code executes iterative evaluation loops.
-  ```
+  The Evaluator-Optimizer pattern implements an iterative self-correction loop between a Generator agent producing candidates and an Evaluator agent critiquing outputs against a rubric or regression tests.
+  - **Palette Card**: Exposed in PaletteCard with `Repeat` purple icon and "Generate & Refine" badge.
+  - **Canvas Topology**: `generateRawPattern('loop')` produces a 2-node cluster: "Draft Generator" and "Critic Evaluator" with forward output and feedback loop edges.
+  - **Inspector Drawer**: `StandardAgentDrawer.tsx` renders dedicated "Max Iterations" input (1 to 100) when the loop pattern is active.
 * **Verification**:
-  - Dragging Evaluator-Optimizer pattern onto canvas loads the 2-agent loop.
-  - Generated code compiles into a valid Google ADK `LoopAgent` setup with feedback handoff.
+  - Evaluator-Optimizer card is selectable and draggable from the palette onto canvas.
+  - Selecting the agent opens the inspector drawer with the Max Iterations configuration field.
 
 ---
 
-### [TASK-193] Multi-Agent Debate & Consensus Panel Pattern & Code Generation
+### [TASK-192B] Evaluator-Optimizer (LoopAgent) Prompt Engineering & Cyclic Edge Validation
 * **Release**: `v1.1.2`
+* **Status**: Complete
 * **Target Package/Files**:
-  - `src/webview/data/patterns.ts`
-  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+  - `tests/unit/extension/GeminiCodeGenEngine.test.ts`
 * **Context**:
-  The Multi-Agent Debate pattern coordinates 2 opposing agents (Proponent and Opponent) debating a complex subject across structured rounds, culminating in a Judge/Consensus agent synthesizing the arguments and delivering a balanced verdict. This task implements full topology setup, multi-round state passing, and ADK Python code generation.
-* **Sub-Agent Prompt**:
-  ```
-  Implement Multi-Agent Debate Pattern Topology & Codegen:
-  1. Update patterns.ts with configured Proponent, Opponent, and Judge agents with prompt archetypes for adversarial analysis.
-  2. Implement code generation in pythonAdkGenerator.ts coordinating the debate turns, round state history, and Judge synthesis turn.
-  3. Add test scenarios testing diverse reasoning prompts and consensus assertion validation.
-  4. Write unit tests for debate code generation.
-  ```
+  Google ADK provides `LoopAgent(sub_agents=[generator, evaluator], max_iterations=N)` for cyclic agent evaluation. Code synthesis in this system is 100% prompt-driven via Gemini LLM using the templates in `resource/prompts/`.
+  1. In `resource/prompts/python_adk_agent-engine.prompt.txt` and `resource/prompts/python_adk_cloudrun.prompt.txt`, instruct Gemini to synthesize `LoopAgent(name="...", sub_agents=[generator, evaluator], max_iterations=N)` with quality evaluation convergence callback and state handoff when `subAgentPattern === 'loop'`.
+  2. Added unit tests in `GeminiCodeGenEngine.test.ts` verifying prompt template instructions for LoopAgent.
 * **Verification**:
-  - Debate pattern drops 3 agents onto canvas with clear debate and adjudication wiring.
-  - Python ADK runner executes debate turns and passes intermediate arguments to the judge.
+  - Gemini prompts contain exhaustive instructions for Google ADK `LoopAgent` generation.
+  - Tests in `GeminiCodeGenEngine.test.ts` pass verifying template rules.
 
 ---
 
-### [TASK-194] Hierarchical Delegation (Supervisor-Workers) Pattern & Code Generation
+### [TASK-193A] Multi-Agent Debate Pattern UI Card, 4-Node Topology & Consensus Drawer
 * **Release**: `v1.1.2`
+* **Status**: Complete
 * **Target Package/Files**:
   - `src/webview/data/patterns.ts`
-  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `src/webview/components/inspector/StandardAgentDrawer.tsx`
+  - `src/webview/components/Canvas/PaletteCard.tsx`
 * **Context**:
-  Large-scale agentic workflows require a multi-tier hierarchy: an Executive Supervisor that breaks problems into high-level milestones, Domain Leads that coordinate functional areas, and leaf Workers that execute specific tasks with tools. This task formalizes the supervisor-worker pattern in ADK using hierarchical `sub_agents` delegation.
-* **Sub-Agent Prompt**:
-  ```
-  Implement Hierarchical Delegation (Supervisor-Workers) Pattern & Codegen:
-  1. Configure 6-node hierarchical topology in patterns.ts: Executive Director -> 2 Domain Leads -> 3 leaf Workers.
-  2. Update pythonAdkGenerator.ts to generate nested sub_agents wiring where the supervisor delegates to leads, and leads delegate to workers using ADK agent transfer semantics.
-  3. Add multi-tier trace visualization support in the test runner.
-  4. Add unit tests for recursive hierarchical code generation.
-  ```
+  The Multi-Agent Debate pattern coordinates 2 opposing agents debating a complex subject across structured rounds, culminating in a Judge synthesizing the arguments and delivering a balanced verdict.
+  - **Palette Card**: Exposed in PaletteCard with `Scale` pink icon and "Consensus Panel" badge.
+  - **Canvas Topology**: `generateRawPattern('debate')` initializes 4 nodes: Debate Moderator (framing/rules), Affirmative Proponent (upside/viability), Skeptical Opponent (red-teaming/risks), and Consensus Judge (with structured `ConsensusVerdict` output schema).
+  - **Inspector Drawer**: `StandardAgentDrawer.tsx` renders full "Debate & Consensus Settings" with Max Debate Rounds slider (1 to 6), Consensus Agreement Threshold slider (50% to 99%), Debate Style, Tie-Breaker Strategy, and evidence toggles.
+* **Verification**:
+  - Multi-Agent Debate card is draggable onto canvas, creating the 4-node debate topology.
+  - Debate & Consensus settings panel renders with reactive sliders and strategy selectors.
+
+---
+
+### [TASK-193B] Multi-Agent Debate Turn Orchestration & Consensus Verification Prompt Engineering
+* **Release**: `v1.1.2`
+* **Status**: Complete
+* **Target Package/Files**:
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+  - `tests/unit/extension/GeminiCodeGenEngine.test.ts`
+* **Context**:
+  Orchestrate multi-turn debate execution in Gemini code generation prompts:
+  1. In `resource/prompts/python_adk_agent-engine.prompt.txt` and `resource/prompts/python_adk_cloudrun.prompt.txt`, instruct Gemini to generate structured debate coordination when `subAgentPattern === 'debate'` or when `isDebateNode` is present:
+     - Proponent and Opponent present contrasting perspectives across debate stages.
+     - Consensus Judge evaluates the cumulative transcript in state and outputs structured `ConsensusVerdict`.
+  2. Added unit tests in `GeminiCodeGenEngine.test.ts` verifying prompt rules and template structure.
+* **Verification**:
+  - Gemini prompts instruct complete debate pipelines with structured consensus reports.
+  - Unit tests in `GeminiCodeGenEngine.test.ts` verify prompt compliance.
+
+---
+
+### [TASK-194] Hierarchical Delegation (Supervisor-Workers) Pattern, Dagre Topology & Codegen
+* **Release**: `v1.1.2`
+* **Status**: Complete
+* **Target Package/Files**:
+  - `src/webview/data/patterns.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+* **Context**:
+  Large-scale agentic workflows require a multi-tier hierarchy: an Executive Supervisor that breaks problems into high-level milestones, Domain Leads that coordinate functional areas, and leaf Workers that execute specific tasks with tools.
+  - **Palette Card**: Exposed in PaletteCard with `Layers` indigo icon and "Supervisor-Workers" badge.
+  - **Canvas Topology**: `generateRawPattern('hierarchical_decomposition')` initializes a 7-node Dagre tree: Chief System Architect -> 2 Leads (Frontend Lead, Backend Lead) -> 4 Workers (UI Components, Client State, API Services, Database Model).
+  - **ADK Code Generation via Prompts**: The Gemini prompts in `resource/prompts/python_adk_agent-engine.prompt.txt` and `python_adk_cloudrun.prompt.txt` already contain comprehensive instructions for N-layer hierarchical composition (`subAgentPattern: "coordinator"` -> `Agent(name=..., sub_agents=[...])`), directing Gemini to recursively assemble leaf workers into domain leads, and domain leads into the supervisor.
 * **Verification**:
   - Hierarchical pattern loads with clean Dagre tree layout.
-  - Generated Python ADK script correctly sets up recursive `sub_agents=[...]` delegation.
+  - Prompt instructions guide Gemini to correctly assemble multi-tier `sub_agents=[...]` recursive hierarchies.
 
 ---
 
-### [TASK-195] Review & Critique Triad Pattern & Editorial Code Generation
+### [TASK-195A] Review & Critique Triad Pattern UI Card, 3-Node Topology & Rubric Prompt Presets
 * **Release**: `v1.1.2`
+* **Status**: Complete
 * **Target Package/Files**:
   - `src/webview/data/patterns.ts`
-  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `src/webview/components/Canvas/PaletteCard.tsx`
 * **Context**:
-  The Review & Critique Triad pattern consists of an Author (drafts technical or legal content), an Adversarial Critic (rigorously checks against compliance, accuracy, and style rules), and an Editor (revises the draft based on the critique to produce the final deliverable). This task implements this pattern's canvas presets and linear-with-review code generation.
-* **Sub-Agent Prompt**:
-  ```
-  Implement Review & Critique Triad Pattern & Codegen:
-  1. Configure 3-node Triad topology in patterns.ts: Author -> Adversarial Critic -> Editor.
-  2. Setup prompt defaults with dedicated drafting instructions, critique rubric schemas, and editorial reconciliation instructions.
-  3. Update pythonAdkGenerator.ts to pass draft and critique payloads sequentially through state keys.
-  4. Add unit tests.
-  ```
+  The Review & Critique Triad pattern consists of an Author (drafts technical or legal content), an Adversarial Critic (rigorously checks against compliance, accuracy, and style rules), and an Editor (revises the draft based on the critique to produce the final deliverable).
+  - **Palette Card**: Exposed in PaletteCard with `CheckSquare` rose icon and "Triad Review" badge.
+  - **Canvas Topology**: `generateRawPattern('review_critique')` creates 3 nodes: Content Author -> Adversarial Critic -> Synthesis Editor, connected in sequence.
+  - **Prompt Presets**: Pre-configured with dedicated drafting instructions, adversarial critique rubrics, and editorial reconciliation instructions.
 * **Verification**:
   - Triad pattern drops 3 nodes onto canvas with sequential critique state handoff.
-  - Generated ADK Python pipeline executes author, critic, and editor in order.
+
+---
+
+### [TASK-195B] Review & Critique Sequential State-Passing Pipeline Prompt Engineering
+* **Release**: `v1.1.2`
+* **Status**: Complete
+* **Target Package/Files**:
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+  - `tests/unit/extension/GeminiCodeGenEngine.test.ts`
+* **Context**:
+  In Gemini code generation prompts, wire the sequential state-passing pipeline for the Review & Critique Triad:
+  1. In `resource/prompts/python_adk_agent-engine.prompt.txt` and `resource/prompts/python_adk_cloudrun.prompt.txt`, instruct Gemini to synthesize a sequential pipeline (`SequentialAgent`) for the Triad pattern:
+     - Author produces initial draft and stores output into session state (`output_key="initial_draft"`).
+     - Critic evaluates draft against rubrics and writes critique into session state (`output_key="critique"`).
+     - Editor ingests both draft and critique from state to produce the final polished deliverable in `output_key="final_output"`.
+  2. Unit tests in `GeminiCodeGenEngine.test.ts` verify prompt instructions and sequential state handoffs.
+* **Verification**:
+  - Gemini prompts specify SequentialAgent triad passing draft and critique payloads sequentially through state keys.
+  - Tests in `GeminiCodeGenEngine.test.ts` pass verifying template rules.
 
 ---
 
@@ -3141,7 +3198,8 @@ Each task specifies reverse-engineering the sample Python code into a production
   - `src/webview/components/inspector/RouterAgentDrawer.tsx`
   - `src/shared/agentSpec.ts`
   - `src/webview/types.ts`
-  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
   - `src/extension/AgentRunnerManager.ts`
   - `tests/webview/StructuredInputBuilder.test.ts`
 * **Context**:
@@ -3163,7 +3221,7 @@ Each task specifies reverse-engineering the sample Python code into a production
   1. Create StructuredInputBuilder component (or generalize StructuredOutputBuilder into a reusable TypedSchemaBuilder) with field name, type, description, and required toggles.
   2. Integrate StructuredInputBuilder accordion into StandardAgentDrawer.tsx and RouterAgentDrawer.tsx.
   3. Update agentSpec.ts and types.ts to support inputSchema on AgentData and RouterData.
-  4. Update pythonAdkGenerator.ts to generate Pydantic input models (e.g., class AgentInput(BaseModel)) and validate incoming payloads in main.py and agent runner harnesses.
+  4. Update resource/prompts/ templates to instruct Gemini to generate Pydantic input models (e.g., class AgentInput(BaseModel)) and validate incoming payloads in main.py and agent runner harnesses.
   5. Update RouterAgentDrawer condition builder to provide variable suggestions matching inputSchema fields.
   6. Add comprehensive unit tests in tests/webview/StructuredInputBuilder.test.ts verifying schema state mutations, Pydantic code generation, and drawer persistence.
   ```
@@ -3180,7 +3238,9 @@ Each task specifies reverse-engineering the sample Python code into a production
 * **Target Package/Files**:
   - `src/webview/components/deployment/DeploymentTab.tsx`
   - `src/extension/AgentRunnerManager.ts`
-  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `src/extension/sessionStoreTemplate.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
   - `src/webview/types.ts`
   - `src/shared/types.ts`
   - `tests/extension/AgentRunnerManager.test.ts`
@@ -3202,7 +3262,7 @@ Each task specifies reverse-engineering the sample Python code into a production
      "Use local SQLite instead of {backend} for agent memory while testing" (unchecked by default).
   2. Pass useLocalSqliteMemory flag in RunnerOptions over WebviewBridge RPC to AgentRunnerManager.
   3. In AgentRunnerManager.ts, when flag is active, set SESSION_STORE_BACKEND=sqlite and generate an ephemeral database path.
-  4. Ensure session_store.py codegen supports SqliteSessionStore / SqliteSaver fallback when SESSION_STORE_BACKEND=sqlite.
+  4. Ensure sessionStoreTemplate.ts and prompt templates support SqliteSessionStore when SESSION_STORE_BACKEND=sqlite.
   5. In AgentRunnerManager.stopLocalRunner, add file cleanup logic removing the ephemeral SQLite database files (.db, .db-wal, .db-shm).
   6. Add unit tests for DeploymentTab UI checkbox toggle and AgentRunnerManager ephemeral DB creation & teardown.
   ```
@@ -3222,7 +3282,9 @@ Each task specifies reverse-engineering the sample Python code into a production
   - `src/webview/components/deployment/CloudRunDeployTab.tsx`
   - `src/shared/agentSpec.ts`
   - `src/webview/types.ts`
-  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `src/extension/sessionStoreTemplate.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
   - `tests/webview/MemoryDrawer.test.ts`
 * **Context**:
   Add Google Cloud SQL (PostgreSQL / MySQL) as an enterprise relational checkpointer target for multi-agent workflows.
@@ -3234,15 +3296,15 @@ Each task specifies reverse-engineering the sample Python code into a production
   - **Pre-Deployment Gate / Validation**:
     - When Cloud SQL is selected as the production checkpointer, the Deployment Tab (`CloudRunDeployTab.tsx` / `AgentEngineDeployTab.tsx`) enforces a pre-flight validation gate ensuring `instanceConnectionName`, `databaseName`, and `databaseUrlSecret` are populated before allowing container deployment. Displays visual alerts and highlights missing fields.
   - **Auto-DDL & Runtime Codegen**:
-    - Generates `CloudSqlSessionStore` / `PostgresSaver` integration in `session_store.py`.
+    - Generates `CloudSqlSessionStore` in `session_store.py`.
     - Automatically executes `CREATE TABLE IF NOT EXISTS agent_sessions (session_id VARCHAR(128) PRIMARY KEY, user_id VARCHAR(128), created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, state JSONB DEFAULT '{}'::jsonb, history JSONB DEFAULT '[]'::jsonb, metadata JSONB DEFAULT '{}'::jsonb)` and index creation on startup.
 * **Sub-Agent Prompt**:
   ```
   Implement Google Cloud SQL Checkpointer & Pre-Deployment Validation:
   1. Add Cloud SQL configuration fields to MemoryDrawer / StandardAgentDrawer (instanceConnectionName, databaseName, databaseUrlSecret, tableName).
   2. Implement pre-deployment validation rules blocking deployment if required Cloud SQL parameters are empty.
-  3. Update pythonAdkGenerator.ts to generate Cloud SQL session adapter in session_store.py with auto-DDL execution and Secret Manager secret resolution.
-  4. Add unit tests for validation rules, drawer inputs, and code generation.
+  3. Ensure sessionStoreTemplate.ts and resource/prompts include Cloud SQL session adapter in session_store.py with auto-DDL execution and Secret Manager secret resolution.
+  4. Add unit tests for validation rules and drawer inputs.
   ```
 * **Verification**:
   - Empty Cloud SQL configuration blocks deployment with informative error badges.
@@ -3260,7 +3322,9 @@ Each task specifies reverse-engineering the sample Python code into a production
   - `src/webview/components/deployment/DeploymentTab.tsx`
   - `src/shared/agentSpec.ts`
   - `src/webview/types.ts`
-  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `src/extension/sessionStoreTemplate.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
   - `tests/webview/MemoryDrawer.test.ts`
 * **Context**:
   Add Google Cloud Spanner as a globally distributed, horizontally scalable checkpointer target for mission-critical enterprise agents.
@@ -3279,7 +3343,7 @@ Each task specifies reverse-engineering the sample Python code into a production
   Implement Google Cloud Spanner Checkpointer & Resource Validation:
   1. Add Cloud Spanner configuration fields to MemoryDrawer (instanceId, databaseId, tableName).
   2. Implement pre-deployment gate in DeploymentTab verifying Spanner instance and database are configured.
-  3. Update pythonAdkGenerator.ts to generate SpannerSessionStore in session_store.py.
+  3. Ensure sessionStoreTemplate.ts and resource/prompts generate SpannerSessionStore in session_store.py.
   4. Add unit tests.
   ```
 * **Verification**:
@@ -3298,7 +3362,9 @@ Each task specifies reverse-engineering the sample Python code into a production
   - `src/webview/components/deployment/DeploymentTab.tsx`
   - `src/shared/agentSpec.ts`
   - `src/webview/types.ts`
-  - `src/shared/codegen/pythonAdkGenerator.ts`
+  - `src/extension/sessionStoreTemplate.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
   - `tests/webview/MemoryDrawer.test.ts`
 * **Context**:
   Add Cloud Memorystore (Redis / Valkey) as a sub-millisecond, low-latency in-memory cache checkpointer with automatic session expiration for high-volume customer service bots.
@@ -3316,7 +3382,7 @@ Each task specifies reverse-engineering the sample Python code into a production
   Implement Cloud Memorystore (Redis) Checkpointer & TTL Expiration:
   1. Add Redis configuration fields to MemoryDrawer (redisHost, redisPort, authSecretName, ttlSeconds).
   2. Implement pre-deployment check requiring redisHost and port.
-  3. Update pythonAdkGenerator.ts to generate RedisSessionStore with automatic TTL key expiration.
+  3. Ensure sessionStoreTemplate.ts and resource/prompts generate RedisSessionStore with automatic TTL key expiration.
   4. Add unit tests.
   ```
 * **Verification**:

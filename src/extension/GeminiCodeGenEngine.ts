@@ -23,7 +23,6 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { GeneratedFile, CodeGenRequest, CodeGenResult } from '../shared/codegen/types';
 import { sanitizeAgentIdentifier } from '../shared/identifierValidation';
-import { PythonAdkGenerator } from '../shared/codegen/pythonAdkGenerator';
 
 export interface AssertionEvaluationRequest {
   inputQuery: string;
@@ -1154,14 +1153,13 @@ Instructions:
   }
 
   /**
-   * Ensures that session_store.py is present and requirements.txt / .env.example
-   * contain the necessary checkpointer configurations and driver libraries for the selected memory backend.
+   * Ensures that requirements.txt and .env.example contain the necessary
+   * checkpointer driver libraries and backend configuration for the selected memory backend.
    *
    * Logic Flow:
    * 1. Inspects the workflow document and nodes for session memory configuration.
-   * 2. If 'session_store.py' is missing or incomplete, generates canonical session_store.py via PythonAdkGenerator.
-   * 3. Guarantees driver packages in requirements.txt (e.g. google-cloud-firestore, psycopg2-binary, google-cloud-spanner, redis).
-   * 4. Guarantees SESSION_STORE_BACKEND in .env.example.
+   * 2. Guarantees driver packages in requirements.txt (e.g. google-cloud-firestore, psycopg2-binary, google-cloud-spanner, redis).
+   * 3. Guarantees SESSION_STORE_BACKEND in .env.example.
    *
    * @param doc The workflow document
    * @param files The array of generated files
@@ -1180,35 +1178,7 @@ Instructions:
     const hasSpanner = nodes.some((n: any) => n.data?.memoryConfig?.type === 'spanner') || memType === 'spanner';
     const hasRedis = nodes.some((n: any) => n.data?.memoryConfig?.type === 'redis') || memType === 'redis';
 
-    // 1. Ensure session_store.py is present
-    const sessionStoreIndex = updatedFiles.findIndex(
-      (f) => f.path === 'session_store.py' || f.path.endsWith('/session_store.py')
-    );
-
-    const generator = new PythonAdkGenerator();
-    const canonicalSessionStoreContent = generator.generateSessionStoreFile(doc);
-
-    if (sessionStoreIndex >= 0) {
-      const existing = updatedFiles[sessionStoreIndex];
-      // If the LLM emitted a stub without get_session_store, replace it with canonical code
-      if (!existing.content.includes('get_session_store')) {
-        updatedFiles[sessionStoreIndex] = {
-          ...existing,
-          content: canonicalSessionStoreContent,
-          language: 'python',
-          description: 'Session memory checkpointer store and factory',
-        };
-      }
-    } else {
-      updatedFiles.push({
-        path: 'session_store.py',
-        content: canonicalSessionStoreContent,
-        language: 'python',
-        description: 'Session memory checkpointer store and factory',
-      });
-    }
-
-    // 2. Ensure requirements.txt includes the appropriate backend driver packages
+    // 1. Ensure requirements.txt includes the appropriate backend driver packages
     const reqIndex = updatedFiles.findIndex(
       (f) => f.path === 'requirements.txt' || f.path.endsWith('/requirements.txt')
     );
