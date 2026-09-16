@@ -48,6 +48,7 @@ import { useWebviewBridge } from '../../hooks/useWebviewBridge';
 import { DeploymentMetadataRecord } from '../../../extension/AgentEngineDeployer';
 import { validateTargetFolder } from '../../../shared/folderValidation';
 import { isValidAgentEngineId } from '../../../shared/identifierValidation';
+import { validateWorkflowMemory } from '../../../shared/memoryValidation';
 
 export interface AgentEngineDeployTabProps {
   document?: AgentWorkflowDocument;
@@ -78,6 +79,11 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
   const folderValidation = useMemo(() => {
     return validateTargetFolder(currentFolder);
   }, [currentFolder]);
+
+  // Validate agent session memory checkpointer configuration
+  const memoryValidation = useMemo(() => {
+    return validateWorkflowMemory(workflowDoc);
+  }, [workflowDoc]);
 
   // GCP Target Parameters - Sync with shared state, doc metadata, or localStorage
   const [projectId, setProjectId] = useState<string>(() => {
@@ -247,6 +253,12 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
         folderValidation.error ||
           `Target folder '${folderValidation.folderBase}' is not a valid Python identifier. Vertex AI Agent Engine requires the agent directory to be a valid Python module name.`
       );
+      return;
+    }
+
+    // Validate agent session memory checkpointer configuration
+    if (!memoryValidation.isValid) {
+      setErrorMessage(`Cannot deploy: ${memoryValidation.errors.join(' ')}`);
       return;
     }
 
@@ -432,7 +444,35 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
           </div>
 
           {/* Action Button */}
-          <div>
+          <div className="flex flex-col gap-2">
+            {!memoryValidation.isValid && (
+              <div className="p-2.5 bg-rose-950/40 border border-rose-600/40 rounded text-xs text-rose-200 flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 font-semibold text-rose-300">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                  <span>Session Memory Configuration Required</span>
+                </div>
+                {memoryValidation.errors.map((err, idx) => (
+                  <p key={idx} className="text-[11px] leading-tight text-gray-300 ml-5">
+                    • {err}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {memoryValidation.warnings.length > 0 && memoryValidation.isValid && (
+              <div className="p-2.5 bg-amber-950/40 border border-amber-600/40 rounded text-xs text-amber-200 flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 font-semibold text-amber-300">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                  <span>Memory Configuration Notice</span>
+                </div>
+                {memoryValidation.warnings.map((warn, idx) => (
+                  <p key={idx} className="text-[11px] leading-tight text-gray-300 ml-5">
+                    • {warn}
+                  </p>
+                ))}
+              </div>
+            )}
+
             {isDeploying ? (
               <div className="flex gap-2">
                 <button
@@ -452,9 +492,9 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
             ) : (
               <button
                 onClick={handleDeploy}
-                disabled={!isProjectIdValid || !folderValidation.isValid}
+                disabled={!isProjectIdValid || !folderValidation.isValid || !memoryValidation.isValid}
                 className={`w-full py-2.5 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2 ${
-                  isProjectIdValid && folderValidation.isValid
+                  isProjectIdValid && folderValidation.isValid && memoryValidation.isValid
                     ? 'bg-[#238636] hover:bg-[#2ea043] text-white shadow-md cursor-pointer'
                     : 'bg-[#21262d] text-gray-500 border border-[#30363d] cursor-not-allowed opacity-60'
                 }`}
@@ -463,6 +503,8 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
                     ? 'Please enter a valid GCP Project ID'
                     : !folderValidation.isValid
                     ? folderValidation.error || 'Target folder must be a valid Python identifier'
+                    : !memoryValidation.isValid
+                    ? memoryValidation.errors.join(' ')
                     : undefined
                 }
               >

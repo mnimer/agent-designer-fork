@@ -1489,6 +1489,15 @@ export function FlowCanvas() {
     setHasGeneratedCode(false);
     setIsGenerating(true);
 
+    // NOTE: Auto-save the .agent document before initiating code generation
+    bridge.postMessage({
+      type: 'SAVE_DOCUMENT',
+      payload: {
+        document: currentWorkflowDocument,
+        docVersion: (currentWorkflowDocument as any).version || 1,
+      },
+    });
+
     bridge.postMessage({
       type: 'GENERATE_CODE',
       payload: {

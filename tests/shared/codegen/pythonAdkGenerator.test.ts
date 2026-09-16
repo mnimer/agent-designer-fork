@@ -218,10 +218,11 @@ describe('Python ADK Generator & A2A JSON-RPC 2.0 Client', () => {
       location: 'global',
     });
 
-    assert.equal(files.length, 5);
+    assert.equal(files.length, 6);
     const paths = files.map((f) => f.path);
     assert.ok(paths.includes('tools.py'));
     assert.ok(paths.includes('agent_workflow.py'));
+    assert.ok(paths.includes('session_store.py'));
     assert.ok(paths.includes('requirements.txt'));
     assert.ok(paths.includes('.env.example'));
     assert.ok(paths.includes('README.md'));

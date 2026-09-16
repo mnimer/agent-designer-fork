@@ -49,6 +49,7 @@ export interface StartLocalRunnerOptions {
   targetDirectory?: string;
   port?: number;
   envVars?: Record<string, string>;
+  useLocalSqliteMemory?: boolean;
   bridge: WebviewBridge;
 }
 
@@ -251,7 +252,20 @@ export class AgentRunnerManager {
     }
 
     await this.killPort(port);
-    const runEnv = await this.environment.sanitizeExecutionEnv({ ...envVars, PORT: String(port) });
+    let sessionOverrides: Record<string, string> = {};
+    if (options.useLocalSqliteMemory) {
+      const ephemeralDbPath = path.join(targetDir, `.sessions_${Date.now()}.sqlite`);
+      this.ephemeralFiles.add(ephemeralDbPath);
+      this.ephemeralFiles.add(`${ephemeralDbPath}-wal`);
+      this.ephemeralFiles.add(`${ephemeralDbPath}-shm`);
+      sessionOverrides = {
+        SESSION_STORE_BACKEND: 'sqlite',
+        SQLITE_DB_PATH: ephemeralDbPath,
+      };
+      this.appendRunnerLog(`[Local Runner] Ephemeral SQLite session memory checkpointer override enabled: ${path.basename(ephemeralDbPath)}`);
+    }
+
+    const runEnv = await this.environment.sanitizeExecutionEnv({ ...envVars, ...sessionOverrides, PORT: String(port) });
 
     let child: ChildProcess;
     try {

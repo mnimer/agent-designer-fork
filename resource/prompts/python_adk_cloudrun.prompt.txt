@@ -11,17 +11,26 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
 ### CRITICAL MANDATE: COMPLETE REPOSITORY GENERATION (ALL FILES REQUIRED, STARTING WITH agent.py)
 - `agent.py` IS THE CORE WORKFLOW FILE AND MUST ALWAYS BE GENERATED AS THE FIRST FILE IN THE RETURNED JSON ARRAY. It defines `root_agent`, all sub-agents, tools, callbacks, and orchestration logic. Every other file (main.py, test_agent.py, server.py) directly imports `root_agent` from `agent.py`.
 - You MUST generate the COMPLETE repository and emit EVERY required file in the output JSON array.
-- Emitting only a partial project or omitting core files like `agent.py` is strictly forbidden and breaks testing and deployment.
-- Every response MUST include the full project manifest: `agent.py` (with `root_agent`), FastAPI server (`server.py`), packaging, CLI runner, test suite, evaluation dataset and script, dependencies, Dockerfile, CI/CD pipeline, Terraform infrastructure, and documentation.
+- Emitting only a partial project or omitting core files like `agent.py` or `session_store.py` is strictly forbidden and breaks testing and deployment.
+- Every response MUST include the full project manifest: `agent.py` (with `root_agent`), `session_store.py`, FastAPI server (`server.py`), packaging, CLI runner, test suite, evaluation dataset and script, dependencies (`requirements.txt`), Dockerfile, CI/CD pipeline, Terraform infrastructure, and documentation.
 
-### WORKFLOW SPECIFICATION:
-```json
-{{WORKFLOW_JSON}}
-```
-
----
-
-### REQUIREMENTS & ARCHITECTURE:
+### SESSION MEMORY & PRODUCTION CHECKPOINTERS:
+- Inspect `{{WORKFLOW_JSON}}` for session memory configuration (`memoryConfig` on nodes or workflow metadata).
+- **Supported Memory Backends**:
+  * `'in_memory'`: In-Memory Turn Buffer (`InMemorySessionStore`)
+  * `'firestore'`: Google Cloud Firestore / Firebase Checkpointer (`FirestoreSessionStore` using `google-cloud-firestore`)
+  * `'postgres'` | `'cloud_sql'`: Google Cloud SQL (PostgreSQL / MySQL) Checkpointer (`CloudSqlSessionStore` using `psycopg2-binary` and `sqlalchemy`)
+  * `'spanner'`: Google Cloud Spanner Enterprise Checkpointer (`SpannerSessionStore` using `google-cloud-spanner`)
+  * `'redis'`: Cloud Memorystore (Redis / Valkey) Checkpointer (`RedisSessionStore` using `redis` client)
+  * `'none'`: Stateless (`StatelessSessionStore`)
+- You MUST generate `session_store.py` providing `BaseSessionStore`, `StatelessSessionStore`, `InMemorySessionStore`, `FirestoreSessionStore`, `CloudSqlSessionStore`, `SpannerSessionStore`, `RedisSessionStore`, and a factory function `get_session_store(backend: Optional[str] = None) -> BaseSessionStore`.
+- In `server.py` and `agent.py`, import `from session_store import get_session_store` and use `session_store = get_session_store()` to persist session history and state between FastAPI request turns.
+- In `requirements.txt`, include the corresponding driver packages:
+  * For Firestore: `google-cloud-firestore>=2.16.0`
+  * For Cloud SQL / Postgres: `psycopg2-binary>=2.9.9`, `sqlalchemy>=2.0.0`
+  * For Spanner: `google-cloud-spanner>=3.40.0`
+  * For Redis: `redis>=5.0.0`
+- In `.env.example`, include `SESSION_STORE_BACKEND=<configured_type>` along with any relevant connection parameters.
 
 1. **Google Agent Development Kit (ADK) Architecture & Primitives**:
    - MANDATORY: Build agents exclusively using the Google Agent Development Kit (`google-adk>=2.0.0`). Do NOT hand-roll custom orchestration loops or direct `genai.Client()` call harnesses.

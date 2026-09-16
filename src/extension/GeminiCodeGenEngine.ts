@@ -23,6 +23,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { GeneratedFile, CodeGenRequest, CodeGenResult } from '../shared/codegen/types';
 import { sanitizeAgentIdentifier } from '../shared/identifierValidation';
+import { PythonAdkGenerator } from '../shared/codegen/pythonAdkGenerator';
 
 export interface AssertionEvaluationRequest {
   inputQuery: string;
@@ -1153,10 +1154,121 @@ Instructions:
   }
 
   /**
+   * Ensures that session_store.py is present and requirements.txt / .env.example
+   * contain the necessary checkpointer configurations and driver libraries for the selected memory backend.
+   *
+   * Logic Flow:
+   * 1. Inspects the workflow document and nodes for session memory configuration.
+   * 2. If 'session_store.py' is missing or incomplete, generates canonical session_store.py via PythonAdkGenerator.
+   * 3. Guarantees driver packages in requirements.txt (e.g. google-cloud-firestore, psycopg2-binary, google-cloud-spanner, redis).
+   * 4. Guarantees SESSION_STORE_BACKEND in .env.example.
+   *
+   * @param doc The workflow document
+   * @param files The array of generated files
+   * @returns Updated array of generated files
+   */
+  public ensureSessionStore(doc: any, files: GeneratedFile[]): GeneratedFile[] {
+    const updatedFiles = [...files];
+    const nodes = doc?.nodes || [];
+
+    const startNode = nodes.find((n: any) => n.data?.isStartNode) || nodes[0];
+    const memoryConfig = startNode?.data?.memoryConfig || doc?.metadata?.settings?.customFields?.memoryConfig;
+    const memType = memoryConfig?.type || 'in_memory';
+
+    const hasFirestore = nodes.some((n: any) => n.data?.memoryConfig?.type === 'firestore') || memType === 'firestore';
+    const hasPostgres = nodes.some((n: any) => n.data?.memoryConfig?.type === 'postgres' || n.data?.memoryConfig?.type === 'cloud_sql') || memType === 'postgres' || memType === 'cloud_sql';
+    const hasSpanner = nodes.some((n: any) => n.data?.memoryConfig?.type === 'spanner') || memType === 'spanner';
+    const hasRedis = nodes.some((n: any) => n.data?.memoryConfig?.type === 'redis') || memType === 'redis';
+
+    // 1. Ensure session_store.py is present
+    const sessionStoreIndex = updatedFiles.findIndex(
+      (f) => f.path === 'session_store.py' || f.path.endsWith('/session_store.py')
+    );
+
+    const generator = new PythonAdkGenerator();
+    const canonicalSessionStoreContent = generator.generateSessionStoreFile(doc);
+
+    if (sessionStoreIndex >= 0) {
+      const existing = updatedFiles[sessionStoreIndex];
+      // If the LLM emitted a stub without get_session_store, replace it with canonical code
+      if (!existing.content.includes('get_session_store')) {
+        updatedFiles[sessionStoreIndex] = {
+          ...existing,
+          content: canonicalSessionStoreContent,
+          language: 'python',
+          description: 'Session memory checkpointer store and factory',
+        };
+      }
+    } else {
+      updatedFiles.push({
+        path: 'session_store.py',
+        content: canonicalSessionStoreContent,
+        language: 'python',
+        description: 'Session memory checkpointer store and factory',
+      });
+    }
+
+    // 2. Ensure requirements.txt includes the appropriate backend driver packages
+    const reqIndex = updatedFiles.findIndex(
+      (f) => f.path === 'requirements.txt' || f.path.endsWith('/requirements.txt')
+    );
+
+    if (reqIndex >= 0) {
+      let reqContent = updatedFiles[reqIndex].content;
+      const additions: string[] = [];
+
+      if (hasFirestore && !reqContent.includes('google-cloud-firestore')) {
+        additions.push('google-cloud-firestore>=2.16.0');
+      }
+      if (hasPostgres) {
+        if (!reqContent.includes('psycopg2')) {
+          additions.push('psycopg2-binary>=2.9.9');
+        }
+        if (!reqContent.includes('sqlalchemy')) {
+          additions.push('sqlalchemy>=2.0.0');
+        }
+      }
+      if (hasSpanner && !reqContent.includes('google-cloud-spanner')) {
+        additions.push('google-cloud-spanner>=3.40.0');
+      }
+      if (hasRedis && !reqContent.includes('redis')) {
+        additions.push('redis>=5.0.0');
+      }
+
+      if (additions.length > 0) {
+        reqContent = reqContent.trimEnd() + '\n' + additions.join('\n') + '\n';
+        updatedFiles[reqIndex] = {
+          ...updatedFiles[reqIndex],
+          content: reqContent,
+        };
+      }
+    }
+
+    // 3. Ensure .env.example includes SESSION_STORE_BACKEND
+    const envIndex = updatedFiles.findIndex(
+      (f) => f.path === '.env.example' || f.path.endsWith('/.env.example')
+    );
+
+    if (envIndex >= 0) {
+      let envContent = updatedFiles[envIndex].content;
+      if (!envContent.includes('SESSION_STORE_BACKEND')) {
+        envContent = envContent.trimEnd() + `\n# Session Memory Checkpointer Configuration\nSESSION_STORE_BACKEND=${memType}\n`;
+        updatedFiles[envIndex] = {
+          ...updatedFiles[envIndex],
+          content: envContent,
+        };
+      }
+    }
+
+    return updatedFiles;
+  }
+
+  /**
    * Finalizes the generated file repository:
    * 1. Validates that core files ('agent.py') and 'root_agent' exist
    * 2. Guarantees required runtime packages (such as A2A) in requirements.txt
-   * 3. Extracts and writes dedicated agent card JSON files for any A2A nodes
+   * 3. Guarantees production session store checkpointers ('session_store.py') and driver dependencies
+   * 4. Extracts and writes dedicated agent card JSON files for any A2A nodes
    *
    * @param doc The workflow document
    * @param files The raw generated files from Gemini
@@ -1165,7 +1277,8 @@ Instructions:
   public finalizeGeneratedFiles(doc: any, files: GeneratedFile[]): GeneratedFile[] {
     this.validateGeneratedFiles(doc, files);
     this.validateRequiredDependencies(doc, files);
-    const result = this.ensureAgentCards(doc, files);
+    let result = this.ensureSessionStore(doc, files);
+    result = this.ensureAgentCards(doc, result);
     return result;
   }
 }

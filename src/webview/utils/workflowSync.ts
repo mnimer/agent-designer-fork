@@ -107,7 +107,12 @@ export function normalizeLoadedNodes(loadedNodes: any[]): Node<any>[] {
         description: data.description || '',
         systemPrompt: data.systemPrompt || data.standardConfig?.systemInstruction || '',
         tools: sanitizeToolList(data.tools || data.standardConfig?.tools || []),
-        memoryType: data.memoryType || data.standardConfig?.memory || 'none',
+        memoryType: data.memoryType || data.standardConfig?.memory || 'in_memory',
+        memoryConfig: data.memoryConfig || {
+          type: data.memoryType || data.standardConfig?.memory || 'in_memory',
+          windowTurns: 10,
+          maxTokens: 4096,
+        },
       };
     }
 

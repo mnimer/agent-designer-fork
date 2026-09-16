@@ -275,10 +275,15 @@ describe('AgentEditorProvider', { concurrency: 1 }, () => {
       }),
     };
 
+    let saveCalled = false;
     const mockDoc: any = {
       uri: vscode.Uri.file('/mock/workspace/sample.agent'),
       getText: () => '{}',
       positionAt: () => new vscode.Position(0, 0),
+      save: async () => {
+        saveCalled = true;
+        return true;
+      },
     };
 
     let messageCallback: ((msg: any) => Promise<void>) | null = null;
@@ -327,6 +332,7 @@ describe('AgentEditorProvider', { concurrency: 1 }, () => {
       assert.equal(codeGenMsg.payload.files.length, 2);
       assert.equal(codeGenMsg.payload.modelUsed, 'gemini-flash-latest');
       assert.ok(codeGenMsg.payload.targetDirectory);
+      assert.equal(saveCalled, true, 'Document must be auto-saved before code generation');
     }
   });
 

@@ -742,6 +742,220 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
     });
   });
 
+  describe('Session Memory & Checkpointer Codegen (ensureSessionStore)', () => {
+    it('should inject session_store.py and google-cloud-firestore for firestore backend', () => {
+      const firestoreDoc: AgentWorkflowDocument = {
+        version: '1.0.0',
+        name: 'FirestoreMemoryWorkflow',
+        framework: 'google-adk',
+        language: 'python',
+        nodes: [
+          {
+            id: 'agent-1',
+            type: 'agent',
+            position: { x: 0, y: 0 },
+            data: {
+              label: 'SupportAgent',
+              isStartNode: true,
+              memoryConfig: {
+                type: 'firestore',
+                collectionName: 'customer_sessions',
+                databaseId: '(default)',
+              },
+            },
+          },
+        ],
+        edges: [],
+      };
+
+      const initialFiles = [
+        { path: 'agent.py', content: 'root_agent = Agent(name="support_agent")', language: 'python' },
+        { path: 'requirements.txt', content: 'google-adk>=0.1.0\ngoogle-cloud-aiplatform>=1.70.0', language: 'text' },
+        { path: '.env.example', content: 'GOOGLE_CLOUD_PROJECT=test-proj', language: 'text' },
+      ];
+
+      const finalized = engine.ensureSessionStore(firestoreDoc, initialFiles);
+
+      const sessionStore = finalized.find((f) => f.path === 'session_store.py');
+      assert.ok(sessionStore, 'session_store.py must be present');
+      assert.ok(sessionStore.content.includes('class FirestoreSessionStore'));
+      assert.ok(sessionStore.content.includes('customer_sessions'));
+
+      const reqFile = finalized.find((f) => f.path === 'requirements.txt');
+      assert.ok(reqFile, 'requirements.txt must be present');
+      assert.ok(reqFile.content.includes('google-cloud-firestore>=2.16.0'));
+
+      const envFile = finalized.find((f) => f.path === '.env.example');
+      assert.ok(envFile, '.env.example must be present');
+      assert.ok(envFile.content.includes('SESSION_STORE_BACKEND=firestore'));
+    });
+
+    it('should inject session_store.py and psycopg2/sqlalchemy for cloud_sql / postgres backend', () => {
+      const sqlDoc: AgentWorkflowDocument = {
+        version: '1.0.0',
+        name: 'CloudSqlMemoryWorkflow',
+        framework: 'google-adk',
+        language: 'python',
+        nodes: [
+          {
+            id: 'agent-1',
+            type: 'agent',
+            position: { x: 0, y: 0 },
+            data: {
+              label: 'SqlAgent',
+              isStartNode: true,
+              memoryConfig: {
+                type: 'cloud_sql',
+                instanceConnectionName: 'proj:region:sql-inst',
+                databaseName: 'agent_sessions_db',
+                tableName: 'custom_sql_sessions',
+              },
+            },
+          },
+        ],
+        edges: [],
+      };
+
+      const initialFiles = [
+        { path: 'agent.py', content: 'root_agent = Agent(name="sql_agent")', language: 'python' },
+        { path: 'requirements.txt', content: 'google-adk>=0.1.0\ngoogle-cloud-aiplatform>=1.70.0', language: 'text' },
+      ];
+
+      const finalized = engine.ensureSessionStore(sqlDoc, initialFiles);
+
+      const sessionStore = finalized.find((f) => f.path === 'session_store.py');
+      assert.ok(sessionStore, 'session_store.py must be present');
+      assert.ok(sessionStore.content.includes('class CloudSqlSessionStore'));
+      assert.ok(sessionStore.content.includes('custom_sql_sessions'));
+
+      const reqFile = finalized.find((f) => f.path === 'requirements.txt');
+      assert.ok(reqFile, 'requirements.txt must be present');
+      assert.ok(reqFile.content.includes('psycopg2-binary>=2.9.9'));
+      assert.ok(reqFile.content.includes('sqlalchemy>=2.0.0'));
+    });
+
+    it('should inject session_store.py and google-cloud-spanner for spanner backend', () => {
+      const spannerDoc: AgentWorkflowDocument = {
+        version: '1.0.0',
+        name: 'SpannerMemoryWorkflow',
+        framework: 'google-adk',
+        language: 'python',
+        nodes: [
+          {
+            id: 'agent-1',
+            type: 'agent',
+            position: { x: 0, y: 0 },
+            data: {
+              label: 'SpannerAgent',
+              isStartNode: true,
+              memoryConfig: {
+                type: 'spanner',
+                instanceId: 'spanner-inst-1',
+                databaseId: 'spanner-db-1',
+                tableName: 'EnterpriseSessions',
+              },
+            },
+          },
+        ],
+        edges: [],
+      };
+
+      const initialFiles = [
+        { path: 'agent.py', content: 'root_agent = Agent(name="spanner_agent")', language: 'python' },
+        { path: 'requirements.txt', content: 'google-adk>=0.1.0', language: 'text' },
+      ];
+
+      const finalized = engine.ensureSessionStore(spannerDoc, initialFiles);
+
+      const sessionStore = finalized.find((f) => f.path === 'session_store.py');
+      assert.ok(sessionStore);
+      assert.ok(sessionStore.content.includes('class SpannerSessionStore'));
+      assert.ok(sessionStore.content.includes('EnterpriseSessions'));
+
+      const reqFile = finalized.find((f) => f.path === 'requirements.txt');
+      assert.ok(reqFile.content.includes('google-cloud-spanner>=3.40.0'));
+    });
+
+    it('should inject session_store.py and redis driver for redis backend', () => {
+      const redisDoc: AgentWorkflowDocument = {
+        version: '1.0.0',
+        name: 'RedisMemoryWorkflow',
+        framework: 'google-adk',
+        language: 'python',
+        nodes: [
+          {
+            id: 'agent-1',
+            type: 'agent',
+            position: { x: 0, y: 0 },
+            data: {
+              label: 'RedisAgent',
+              isStartNode: true,
+              memoryConfig: {
+                type: 'redis',
+                redisHost: '10.0.0.5',
+                redisPort: 6379,
+                ttlSeconds: 7200,
+              },
+            },
+          },
+        ],
+        edges: [],
+      };
+
+      const initialFiles = [
+        { path: 'agent.py', content: 'root_agent = Agent(name="redis_agent")', language: 'python' },
+        { path: 'requirements.txt', content: 'google-adk>=0.1.0', language: 'text' },
+      ];
+
+      const finalized = engine.ensureSessionStore(redisDoc, initialFiles);
+
+      const sessionStore = finalized.find((f) => f.path === 'session_store.py');
+      assert.ok(sessionStore);
+      assert.ok(sessionStore.content.includes('class RedisSessionStore'));
+      assert.ok(sessionStore.content.includes('10.0.0.5'));
+
+      const reqFile = finalized.find((f) => f.path === 'requirements.txt');
+      assert.ok(reqFile.content.includes('redis>=5.0.0'));
+    });
+
+    it('should guarantee session_store.py in finalizeGeneratedFiles pipeline', () => {
+      const doc: AgentWorkflowDocument = {
+        version: '1.0.0',
+        name: 'FinalizeWorkflow',
+        framework: 'google-adk',
+        language: 'python',
+        nodes: [
+          {
+            id: 'agent-1',
+            type: 'agent',
+            position: { x: 0, y: 0 },
+            data: {
+              label: 'FinalizeAgent',
+              isStartNode: true,
+              memoryConfig: {
+                type: 'in_memory',
+                windowTurns: 20,
+              },
+            },
+          },
+        ],
+        edges: [],
+      };
+
+      const rawGenerated = [
+        { path: 'agent.py', content: 'root_agent = Agent(name="finalize_agent")', language: 'python' },
+        { path: 'requirements.txt', content: 'google-adk>=0.1.0', language: 'text' },
+      ];
+
+      const finalized = engine.finalizeGeneratedFiles(doc, rawGenerated);
+
+      const sessionStore = finalized.find((f) => f.path === 'session_store.py');
+      assert.ok(sessionStore);
+      assert.ok(sessionStore.content.includes('get_session_store'));
+      assert.ok(sessionStore.content.includes('class InMemorySessionStore'));
+    });
+  });
+
   describe('AbortSignal Cancellation Support', () => {
     it('should immediately return cancelled result when signal is aborted', async () => {
       const controller = new AbortController();

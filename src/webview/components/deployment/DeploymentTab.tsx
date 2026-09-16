@@ -95,6 +95,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
 
   const [serviceUrl, setServiceUrl] = useState<string | null>(null);
   const [diskFilesExist, setDiskFilesExist] = useState<boolean>(false);
+  const [useLocalSqliteMemory, setUseLocalSqliteMemory] = useState<boolean>(false);
 
   // Runtime secret values entered by user in the UI
   const [secretValues, setSecretValues] = useState<Record<string, string>>({});
@@ -283,6 +284,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
           targetDirectory: generationConfig.outputFolder,
           port: deployConfig.localPort || 8000,
           envVars: secretValues,
+          useLocalSqliteMemory,
         },
       });
     }
@@ -403,6 +405,31 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                 )}
               </select>
             </div>
+
+          {/* Local Runner Specific Options */}
+          {isLocalSelected && (
+            <div className="p-3 bg-[#0d1117] rounded-lg border border-[#30363d] space-y-2.5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center justify-between">
+                <span>Local Runner Configuration</span>
+                <span className="text-[9px] font-mono text-emerald-400">Port {deployConfig.localPort || 8000}</span>
+              </div>
+
+              <label className="flex items-start gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={useLocalSqliteMemory}
+                  onChange={(e) => setUseLocalSqliteMemory(e.target.checked)}
+                  className="mt-0.5 rounded border-[#30363d] bg-[#161b22] text-emerald-500 focus:ring-0 cursor-pointer"
+                />
+                <div className="text-[11px] text-gray-300">
+                  <span className="font-semibold text-white block">Override Memory with Local SQLite</span>
+                  <span className="text-[10px] text-gray-400 block leading-tight">
+                    Uses temporary SQLite database instead of configured cloud checkpointers (Cloud SQL, Spanner, Redis) for local testing. Ephemeral DB is cleaned up when stopped.
+                  </span>
+                </div>
+              </label>
+            </div>
+          )}
 
           {/* Target Specific Parameters Form */}
           {(selectedTarget === 'agent_engine' || selectedTarget === 'cloud_run') && (

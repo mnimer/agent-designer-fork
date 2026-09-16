@@ -103,6 +103,7 @@ export type WebviewToExtensionMessage =
         targetDirectory?: string;
         port?: number;
         envVars?: Record<string, string>;
+        useLocalSqliteMemory?: boolean;
       };
     }
   | {
@@ -768,7 +769,7 @@ export function isWriteFilesPayload(payload: any): payload is { files: { path: s
  *
  * @param payload Candidate payload
  */
-export function isStartRunnerPayload(payload: any): payload is { document?: any; targetDirectory?: string; port?: number; envVars?: Record<string, string> } {
+export function isStartRunnerPayload(payload: any): payload is { document?: any; targetDirectory?: string; port?: number; envVars?: Record<string, string>; useLocalSqliteMemory?: boolean } {
   if (!payload || typeof payload !== 'object') {
     return false;
   }
@@ -776,6 +777,9 @@ export function isStartRunnerPayload(payload: any): payload is { document?: any;
     return false;
   }
   if ('port' in payload && payload.port !== undefined && typeof payload.port !== 'number') {
+    return false;
+  }
+  if ('useLocalSqliteMemory' in payload && payload.useLocalSqliteMemory !== undefined && typeof payload.useLocalSqliteMemory !== 'boolean') {
     return false;
   }
   if ('envVars' in payload && payload.envVars !== undefined) {

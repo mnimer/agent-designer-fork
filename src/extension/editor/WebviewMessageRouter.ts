@@ -270,12 +270,27 @@ export class WebviewMessageRouter {
     bridge.onMessage('GENERATE_CODE', async (payload) => {
       if (!payload) return;
 
-      // Abort any prior in-flight code generation
+      // Abort any prior in-flight code generation and establish new controller
       if (this.activeCodeGenAbortController) {
         this.activeCodeGenAbortController.abort();
       }
       const abortController = new AbortController();
       this.activeCodeGenAbortController = abortController;
+
+      // NOTE: Auto-save the .agent document to disk with the latest workflow payload before generating code
+      if (payload.document) {
+        try {
+          const updatedJson = JSON.stringify(payload.document, null, 2);
+          await this.documentSyncManager.updateTextDocument(document, updatedJson);
+          if (typeof document.save === 'function') {
+            await document.save();
+          }
+        } catch (saveErr) {
+          this.outputChannel?.appendLine(
+            `[AgentEditorProvider] Warning: Failed to auto-save .agent document prior to code generation: ${saveErr}`
+          );
+        }
+      }
 
       const secretsProvider = SecretsProvider.getInstance();
       const apiKey = (await secretsProvider.getGeminiApiKey()) || process.env.GEMINI_API_KEY || '';
@@ -500,6 +515,22 @@ export class WebviewMessageRouter {
 
     bridge.onMessage('EXPORT_CODE', async (payload) => {
       if (!payload) return;
+
+      // NOTE: Auto-save the .agent document before exporting code
+      if (payload.document) {
+        try {
+          const updatedJson = JSON.stringify(payload.document, null, 2);
+          await this.documentSyncManager.updateTextDocument(document, updatedJson);
+          if (typeof document.save === 'function') {
+            await document.save();
+          }
+        } catch (saveErr) {
+          this.outputChannel?.appendLine(
+            `[AgentEditorProvider] Warning: Failed to auto-save .agent document prior to code export: ${saveErr}`
+          );
+        }
+      }
+
       const secretsProvider = SecretsProvider.getInstance();
       const apiKey = (await secretsProvider.getGeminiApiKey()) || process.env.GEMINI_API_KEY || '';
 
@@ -662,6 +693,7 @@ export class WebviewMessageRouter {
           targetDirectory: targetDir,
           port: payload?.port || 8000,
           envVars: payload?.envVars,
+          useLocalSqliteMemory: payload?.useLocalSqliteMemory,
           bridge,
         });
       } catch (err: any) {

@@ -664,7 +664,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
               topP: 0.95,
               maxOutputTokens: 2048,
               tools: [],
-              memory: 'none',
+              memory: 'in_memory',
             },
           },
         },

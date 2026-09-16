@@ -48,6 +48,7 @@ import { GeneratedFile } from '../../types';
 import { useWebviewBridge } from '../../hooks/useWebviewBridge';
 import { CloudRunDeploymentMetadataRecord } from '../../../extension/CloudRunDeployer';
 import { extractRuntimeSecrets } from '../../utils/runtimeSecrets';
+import { validateWorkflowMemory } from '../../../shared/memoryValidation';
 
 export interface CloudRunDeployTabProps {
   document?: AgentWorkflowDocument;
@@ -113,6 +114,11 @@ export const CloudRunDeployTab: React.FC<CloudRunDeployTabProps> = ({
   const detectedSecrets = useMemo(() => {
     return extractRuntimeSecrets((workflowDoc?.nodes as any) || []);
   }, [workflowDoc?.nodes]);
+
+  // Validate agent session memory checkpointer configuration
+  const memoryValidation = useMemo(() => {
+    return validateWorkflowMemory(workflowDoc);
+  }, [workflowDoc]);
 
   // Sync Project ID updates with shared props and localStorage
   const handleProjectIdChange = (val: string) => {
@@ -184,6 +190,11 @@ export const CloudRunDeployTab: React.FC<CloudRunDeployTabProps> = ({
   const handleDeploy = () => {
     if (!projectId.trim()) {
       setErrorMessage('Please provide a Google Cloud Project ID.');
+      return;
+    }
+
+    if (!memoryValidation.isValid) {
+      setErrorMessage(`Cannot deploy: ${memoryValidation.errors.join(' ')}`);
       return;
     }
 
@@ -436,6 +447,34 @@ export const CloudRunDeployTab: React.FC<CloudRunDeployTabProps> = ({
 
           {/* Action Buttons */}
           <div className="mt-auto pt-4 flex flex-col gap-2">
+            {!memoryValidation.isValid && (
+              <div className="p-2.5 bg-[#f85149]/10 border border-[#f85149]/30 rounded text-xs text-[#f85149] flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 font-semibold">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-[#f85149]" />
+                  <span>Session Memory Configuration Required</span>
+                </div>
+                {memoryValidation.errors.map((err, idx) => (
+                  <p key={idx} className="text-[11px] leading-tight text-gray-300 ml-5">
+                    • {err}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {memoryValidation.warnings.length > 0 && memoryValidation.isValid && (
+              <div className="p-2.5 bg-[#d29922]/10 border border-[#d29922]/30 rounded text-xs text-[#d29922] flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 font-semibold">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-[#d29922]" />
+                  <span>Memory Configuration Notice</span>
+                </div>
+                {memoryValidation.warnings.map((warn, idx) => (
+                  <p key={idx} className="text-[11px] leading-tight text-gray-300 ml-5">
+                    • {warn}
+                  </p>
+                ))}
+              </div>
+            )}
+
             {isDeploying ? (
               <button
                 onClick={handleCancel}
@@ -447,7 +486,13 @@ export const CloudRunDeployTab: React.FC<CloudRunDeployTabProps> = ({
             ) : (
               <button
                 onClick={handleDeploy}
-                className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-md bg-[#238636] text-white text-xs font-medium hover:bg-[#2ea043] transition-colors shadow-sm"
+                disabled={!memoryValidation.isValid}
+                title={!memoryValidation.isValid ? memoryValidation.errors.join(' ') : undefined}
+                className={`w-full flex items-center justify-center gap-2 py-2 px-4 rounded-md text-white text-xs font-medium transition-colors shadow-sm ${
+                  !memoryValidation.isValid
+                    ? 'bg-gray-700 opacity-50 cursor-not-allowed'
+                    : 'bg-[#238636] hover:bg-[#2ea043] cursor-pointer'
+                }`}
               >
                 <Rocket className="w-3.5 h-3.5" />
                 Deploy to Cloud Run
