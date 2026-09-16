@@ -24,7 +24,7 @@ export type FrameworkTarget = 'google-adk' | 'langgraph' | 'google_adk';
 export type LanguageType = 'python' | 'typescript';
 export type LanguageTarget = 'python' | 'typescript';
 
-export type AgentKind = 'standard' | 'a2a' | 'router';
+export type AgentKind = 'standard' | 'a2a' | 'router' | 'synthesizer' | 'hitl' | 'fallback' | 'guardrail';
 
 export type DelegationPattern = 
   | 'sequential' 
@@ -608,6 +608,49 @@ export interface DebateConfig {
 // 11. Orchestration Configurations
 // ============================================================================
 
+export interface SynthesizerConfig {
+  inputStateKeys?: string[];
+  reductionStrategy?: 'concatenate' | 'merge_json' | 'summarize';
+  outputSchemaName?: string;
+}
+
+export interface HitlConfig {
+  approvalCondition?: string;
+  timeoutHours?: number;
+  autoRejectOnTimeout?: boolean;
+  notificationPayload?: string;
+  approverRoles?: string[];
+  requestPrompt?: string;
+  approvedAgentId?: string;
+  rejectedAgentId?: string;
+}
+
+export interface FallbackConfig {
+  maxRetries?: number;
+  retryDelaySeconds?: number;
+  caughtErrorCodes?: string[];
+  fallbackStrategy?: 'switch_agent' | 'return_static' | 'retry_with_backoff';
+  primaryTargetAgentId?: string;
+  fallbackTargetAgentId?: string;
+  staticFallbackMessage?: string;
+}
+
+export interface GuardrailConfig {
+  direction?: 'ingress' | 'egress' | 'both';
+  safetyPolicies?: ('pii' | 'prompt_injection' | 'toxicity' | 'hallucination' | 'secrets')[];
+  regexPatterns?: string[];
+  blockedKeywords?: string[];
+  actionOnViolation?: 'block' | 'redact' | 'warn';
+  customViolationMessage?: string;
+  passTargetAgentId?: string;
+  blockTargetAgentId?: string;
+}
+
+/**
+ * SubAgentRef - Reference to a child delegated agent
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
 export interface SubAgentRef {
   agentId: string;
   name: string;
@@ -646,6 +689,10 @@ export interface AgentNodeData {
   a2aConfig?: A2AConfig;
   routerConfig?: RouterConfig;
   debateConfig?: DebateConfig;
+  synthesizerConfig?: SynthesizerConfig;
+  hitlConfig?: HitlConfig;
+  fallbackConfig?: FallbackConfig;
+  guardrailConfig?: GuardrailConfig;
   structuredOutput?: StructuredOutputSchema;
   structuredOutputSchema?: StructuredOutputSchema; // Compatibility alias
   standardConfig?: any; // Compatibility alias

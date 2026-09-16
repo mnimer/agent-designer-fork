@@ -8,8 +8,10 @@ import { DrawerField } from './DrawerField';
  * @author Mike Nimer <mikenimer@google.com>
  */
 export interface ModelSelectorProps {
-  selectedModel: string;
-  onChangeModel: (model: string) => void;
+  selectedModel?: string;
+  value?: string;
+  onChangeModel?: (model: string) => void;
+  onChange?: (model: string) => void;
   temperature?: number;
   onChangeTemperature?: (temp: number) => void;
   thinkingBudget?: number;
@@ -55,15 +57,20 @@ const SUPPORTED_MODELS = [
  */
 export const ModelSelector: React.FC<ModelSelectorProps> = ({
   selectedModel,
+  value,
   onChangeModel,
+  onChange,
   temperature = 1.0,
   onChangeTemperature,
   thinkingBudget,
   onChangeThinkingBudget,
   className = '',
 }) => {
+  const currentModel = selectedModel || value || 'gemini-3.7-flash';
+  const handleModelChangeCallback = onChangeModel || onChange || (() => {});
+
   // Determine if the current model supports a reasoning budget (e.g., Gemini 3.8, Gemini 3.7)
-  const supportsReasoning = selectedModel.includes('3.8') || selectedModel.includes('3.7');
+  const supportsReasoning = Boolean(currentModel && (currentModel.includes('3.8') || currentModel.includes('3.7')));
   const isReasoningEnabled = thinkingBudget !== undefined && thinkingBudget > 0;
 
   const handleReasoningToggle = (enabled: boolean) => {
@@ -75,7 +82,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const nextModel = e.target.value;
-    onChangeModel(nextModel);
+    handleModelChangeCallback(nextModel);
     
     // Automatically disable reasoning budget if moving to a model that does not support it
     if (!nextModel.includes('3.8') && !nextModel.includes('3.7') && onChangeThinkingBudget) {
@@ -94,7 +101,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         <div className="relative">
           <Cpu className="absolute left-3 top-2.5 w-4 h-4 text-emerald-500 pointer-events-none" />
           <select
-            value={selectedModel}
+            value={currentModel}
             onChange={handleModelChange}
             className="w-full pl-9 pr-8 py-2 bg-[#161b22] border border-[#30363d] rounded text-xs text-gray-200 focus:outline-none focus:border-emerald-500 appearance-none font-mono cursor-pointer"
             data-testid="model-select"
@@ -115,7 +122,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       <div className="p-3 bg-emerald-950/10 border border-emerald-500/10 rounded-lg flex gap-2">
         <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
         <p className="text-[10px] text-gray-400 leading-relaxed">
-          {SUPPORTED_MODELS.find(m => m.id === selectedModel)?.desc || 'Custom selected LLM foundation engine.'}
+          {SUPPORTED_MODELS.find(m => m.id === currentModel)?.desc || 'Custom selected LLM foundation engine.'}
         </p>
       </div>
 

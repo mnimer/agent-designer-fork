@@ -22,7 +22,7 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 - `agent.py` IS THE CORE WORKFLOW FILE AND MUST ALWAYS BE GENERATED AS THE FIRST FILE IN THE RETURNED JSON ARRAY. It defines `root_agent`, all sub-agents, tools, callbacks, and orchestration logic. Every other file (`test_agent.py`, `Dockerfile`, `main.tf`) directly uses `agent.py`.
 - You MUST generate the COMPLETE repository and emit EVERY required file in the output JSON array.
 - Emitting only a partial project or omitting core files like `agent.py` or `session_store.py` is strictly forbidden and breaks testing and deployment.
-- Every response MUST include the standard project manifest: `agent.py` (with `root_agent`), `session_store.py`, `requirements.txt`, `Dockerfile`, `main.tf`, `cloudbuild.yaml`, `test_agent.py`, `.env.example`, `.gitignore`, `.gcloudignore`, and `README.md`.
+- Every response MUST include the standard project manifest: `agent.py` (with `root_agent`), `session_store.py`, `requirements.txt`, `Dockerfile`, `.dockerignore`, `main.tf`, `cloudbuild.yaml`, `test_agent.py`, `.env.example`, `.gitignore`, `.gcloudignore`, and `README.md`.
 
 ### SESSION MEMORY & PRODUCTION CHECKPOINTERS:
 - Inspect `{{WORKFLOW_JSON}}` for session memory configuration (`memoryConfig` on nodes or workflow metadata).
@@ -203,6 +203,7 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
      * Environment & Working Directory: Establish working directory `/app` and configure environment variables `PYTHONUNBUFFERED=1` and `PORT=8080`.
      * Layer Caching: Copy `requirements.txt` and execute `pip install --no-cache-dir -r requirements.txt` prior to copying application source files.
      * Container Execution: Expose port `8080` and configure entrypoint `adk api_server --host=0.0.0.0 --port=8080 .` to launch ADK's native API server.
+     * Ensure a .dockerignore file is provided to prevent copying sensitive local files (.env, .git) into build layers.
    - `main.tf`: Complete Terraform configuration provisioning:
      * Dedicated Service Account with least-privilege IAM bindings (`roles/aiplatform.user`, `roles/logging.logWriter`).
      * Automated container build: `null_resource.build_container` with `local-exec` provisioner running `gcloud builds submit --config=cloudbuild-buildonly.yaml ...` when `var.build_image` is `true`.
@@ -338,15 +339,16 @@ Every response MUST create the complete project. Emitting only 1 or 2 files is s
 You MUST output EVERY single one of the following files in the returned JSON array:
 1. `agent.py`: Complete Google ADK root_agent, sub-agents, and state flow.
 2. `requirements.txt`: Complete pinned runtime dependencies (including google-adk[a2a] if an A2A agent is present, google-cloud-aiplatform, pydantic, pytest).
-3. `Dockerfile`: Clean production container definition using python:3.11-slim running native `adk api_server --host=0.0.0.0 --port=8080 .`.
-4. `main.tf`: Complete Terraform configuration deploying google_vertex_ai_reasoning_engine with container_spec, Service Account, IAM bindings, and null_resource build_container invoking cloudbuild-buildonly.yaml (including google_secret_manager_secret, secret version, and secretAccessor IAM member when tools require OAuth / Bearer secret tokens; only generate Pub/Sub resources if a pubsub trigger node is present).
-5. `cloudbuild-buildonly.yaml`: Focused Cloud Build configuration running unit tests, building the container image, and pushing to Artifact Registry for initial Day 0 Terraform setup.
-6. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building the container image, pushing to Artifact Registry, and updating the Reasoning Engine container.
-7. `.env.example`: Template for environment variables (project ID, location, etc.).
-8. `test_agent.py`: Pytest test suite covering all workflow test scenarios.
-9. `.gitignore`: Git ignore patterns for Python, venv, and cache.
-10. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
-11. `README.md`: Architecture overview, local execution via `adk run .`, and Terraform deployment instructions (`terraform init && terraform apply`).
+3. `Dockerfile`: Clean production container definition using python:3.11-slim. Always enforce non-root execution by creating a dedicated non-privileged user (`RUN useradd -u 8888 -m appuser && chown -R appuser:appuser /app` and `USER 8888`) running native `adk api_server --host=0.0.0.0 --port=8080 .`.
+4. `.dockerignore`: Docker ignore patterns excluding `.git`, `.venv`, `__pycache__`, `*.pyc`, `.env*`, `dist`, and build artifacts.
+5. `main.tf`: Complete Terraform configuration deploying google_vertex_ai_reasoning_engine with container_spec, Service Account, IAM bindings, and null_resource build_container invoking cloudbuild-buildonly.yaml (including google_secret_manager_secret, secret version, and secretAccessor IAM member when tools require OAuth / Bearer secret tokens; only generate Pub/Sub resources if a pubsub trigger node is present).
+6. `cloudbuild-buildonly.yaml`: Focused Cloud Build configuration running unit tests, building the container image, and pushing to Artifact Registry for initial Day 0 Terraform setup.
+7. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building the container image, pushing to Artifact Registry, and updating the Reasoning Engine container.
+8. `.env.example`: Template for environment variables (project ID, location, etc.).
+9. `test_agent.py`: Pytest test suite covering all workflow test scenarios. When the workflow specification contains trigger nodes of type `tester` (or `triggerType == 'tester'`), you MUST inspect `config.testScenarios`, `config.testPrompts`, and `config.expectedOutput`. For EVERY defined test scenario (e.g. 'Test Case #1' with prompt 'Let\'s play a game.'), generate a dedicated pytest test function in `test_agent.py` that executes the scenario prompt against `root_agent` and asserts the expected output criteria.
+10. `.gitignore`: Git ignore patterns for Python, venv, and cache.
+11. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
+12. `README.md`: Architecture overview, local execution via `adk run .`, and Terraform deployment instructions (`terraform init && terraform apply`).
 12. Auxiliary files as needed:
     - `pydantic_models.py` (when structured output schemas or Pydantic models are used)
     - `tools/*.py` (when custom tools are defined)

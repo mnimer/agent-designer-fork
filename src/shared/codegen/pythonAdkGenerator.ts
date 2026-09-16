@@ -300,7 +300,16 @@ export class PythonAdkGenerator {
     options?: PythonAdkGeneratorOptions
   ): string {
     const agentNodes = (workflow.nodes || []).filter(
-      (n) => n.data && (n.data.agentKind === 'standard' || n.data.agentKind === 'router' || n.data.agentKind === 'a2a' || !n.data.agentKind)
+      (n) => n.data && (
+        n.data.agentKind === 'standard' || 
+        n.data.agentKind === 'router' || 
+        n.data.agentKind === 'a2a' || 
+        n.data.agentKind === 'synthesizer' || 
+        n.data.agentKind === 'hitl' || 
+        n.data.agentKind === 'fallback' || 
+        n.data.agentKind === 'guardrail' || 
+        !n.data.agentKind
+      )
     );
 
     // Sort topologically
@@ -442,7 +451,16 @@ export class PythonAdkGenerator {
   ): string {
     const defaultModel = options?.defaultModel || 'gemini-3.8-flash';
     const agentNodes = (workflow.nodes || []).filter(
-      (n) => n.data && (n.data.agentKind === 'standard' || n.data.agentKind === 'router' || n.data.agentKind === 'a2a' || !n.data.agentKind)
+      (n) => n.data && (
+        n.data.agentKind === 'standard' || 
+        n.data.agentKind === 'router' || 
+        n.data.agentKind === 'a2a' || 
+        n.data.agentKind === 'synthesizer' || 
+        n.data.agentKind === 'hitl' || 
+        n.data.agentKind === 'fallback' || 
+        n.data.agentKind === 'guardrail' || 
+        !n.data.agentKind
+      )
     );
 
     // Sort topologically
@@ -457,7 +475,15 @@ export class PythonAdkGenerator {
     }
 
     const routerNodes = sortedAgents.filter((n) => n.data && n.data.agentKind === 'router');
-    const hasRouter = routerNodes.length > 0;
+    const hitlNodes = sortedAgents.filter((n) => n.data && n.data.agentKind === 'hitl');
+    const fallbackNodes = sortedAgents.filter((n) => n.data && n.data.agentKind === 'fallback');
+    const guardrailNodes = sortedAgents.filter((n) => n.data && n.data.agentKind === 'guardrail');
+    const synthesizerNodes = sortedAgents.filter(
+      (n) => n.data && (n.data.agentKind === 'synthesizer' || (n.data.structuredOutput?.enabled && n.data.structuredOutput?.fields?.length))
+    );
+
+    const hasCustomBaseAgent = routerNodes.length > 0 || hitlNodes.length > 0 || fallbackNodes.length > 0 || guardrailNodes.length > 0;
+    const hasPydantic = synthesizerNodes.length > 0;
 
     const lines: string[] = [
       '"""',
@@ -469,10 +495,14 @@ export class PythonAdkGenerator {
       '',
       'import os',
       'import logging',
-      'from typing import Any, AsyncGenerator, Dict, List, Optional',
+      'from typing import Any, AsyncGenerator, Dict, List, Optional, Literal',
     ];
 
-    if (hasRouter) {
+    if (hasPydantic) {
+      lines.push('from pydantic import BaseModel, Field');
+    }
+
+    if (hasCustomBaseAgent) {
       lines.push(
         'from google.adk.agents import Agent, BaseAgent',
         'from google.adk.agents.invocation_context import InvocationContext',
@@ -491,8 +521,55 @@ export class PythonAdkGenerator {
       ''
     );
 
-    // If Router nodes exist, inject StateProxy for dot-notation attribute access
-    if (hasRouter) {
+    // If Pydantic Schemas exist, emit them before agents
+    if (hasPydantic) {
+      lines.push(
+        '# ==============================================================================',
+        '# Pydantic v2 Output Schemas for Structured / Synthesizer Agents',
+        '# =============================================================================='
+      );
+
+      const generatedSchemas = new Set<string>();
+      for (const node of synthesizerNodes) {
+        const schema = node.data?.structuredOutput;
+        const rawName = schema?.name || `${toPascalCase(node.data?.label || node.id)}Output`;
+        const schemaClassName = rawName.replace(/[^a-zA-Z0-9_]/g, '') || 'SynthesizedOutput';
+
+        if (!generatedSchemas.has(schemaClassName)) {
+          generatedSchemas.add(schemaClassName);
+          lines.push(`class ${schemaClassName}(BaseModel):`);
+          lines.push(`    """Structured output schema for ${node.data?.label || node.id}."""`);
+
+          if (!schema?.fields || schema.fields.length === 0) {
+            lines.push('    summary: str = Field(description="Synthesized summary statement")');
+          } else {
+            for (const f of schema.fields) {
+              let fName = (f.name?.trim() || 'field').replace(/[^a-zA-Z0-9_]/g, '_');
+              if (/^[0-9]/.test(fName)) fName = `field_${fName}`;
+
+              let typeStr = 'str';
+              if (f.type === 'number') typeStr = 'float';
+              else if (f.type === 'boolean') typeStr = 'bool';
+              else if (f.type === 'array' || f.type === 'array_string') typeStr = 'List[str]';
+              else if (f.type === 'enum' && f.enumValues && f.enumValues.length > 0) {
+                typeStr = `Literal[${f.enumValues.map((v) => JSON.stringify(v)).join(', ')}]`;
+              } else if (f.type === 'object') typeStr = 'Dict[str, Any]';
+
+              const desc = f.description ? `, description=${pyStr(f.description)}` : '';
+              if (f.required) {
+                lines.push(`    ${fName}: ${typeStr} = Field(...${desc})`);
+              } else {
+                lines.push(`    ${fName}: Optional[${typeStr}] = Field(default=None${desc})`);
+              }
+            }
+          }
+          lines.push('');
+        }
+      }
+    }
+
+    // If Router or HITL nodes exist, inject StateProxy for dot-notation attribute access
+    if (hasCustomBaseAgent) {
       lines.push(
         '# ==============================================================================',
         '# State Proxy for Dot-Notation & Dynamic Condition Resolution',
@@ -610,7 +687,7 @@ export class PythonAdkGenerator {
                 `        if re.search(${pyStr(rawPattern)}, target_text, re.IGNORECASE):`,
                 `            return ${pyStr(branch.id)}`,
                 '    except Exception as e:',
-                `        logger.warning(f"Error evaluating regex pattern for branch '${branch.id.replace(/'/g, "\\'")}': {e}")`
+                `        logger.warning(f"Regex match error on branch '${branch.id}': {e}")`
               );
             }
           }
@@ -689,6 +766,139 @@ export class PythonAdkGenerator {
           ''
         );
       }
+
+      // Generate Custom HITL Classes
+      for (const hitlNode of hitlNodes) {
+        const data = hitlNode.data || {};
+        let hitlClassName = toPascalCase(data.label || hitlNode.id);
+        if (!hitlClassName.endsWith('ApprovalGate')) hitlClassName += 'ApprovalGate';
+
+        lines.push(
+          '# ------------------------------------------------------------------------------',
+          `# HITL Approval Gate Class: ${hitlClassName}`,
+          '# ------------------------------------------------------------------------------',
+          `class ${hitlClassName}(BaseAgent):`,
+          `    """Human-in-the-Loop approval gate for '${(data.label || hitlNode.id).replace(/"""/g, '\\"\\"\\"')}'."""`,
+          '    def __init__(',
+          '        self,',
+          '        name: str,',
+          '        approved_agent: Optional[Any] = None,',
+          '        rejected_agent: Optional[Any] = None,',
+          '        tools: Optional[List[Any]] = None,',
+          '    ):',
+          '        super().__init__(name=name)',
+          '        self.approved_agent = approved_agent',
+          '        self.rejected_agent = rejected_agent',
+          '        self.tools = tools or []',
+          '',
+          '    async def _run_async_impl(',
+          '        self, ctx: InvocationContext',
+          '    ) -> AsyncGenerator[Event, None]:',
+          '        state = getattr(ctx.session, "state", {}) if hasattr(ctx, "session") and ctx.session else {}',
+          '        proxy = StateProxy(state or {})',
+          '        is_approved = bool(proxy.get("approved", True))',
+          '        target = self.approved_agent if is_approved else self.rejected_agent',
+          '        if target is not None:',
+          `            logger.info(f"HITL Gate '{self.name}' decision: {'APPROVED' if is_approved else 'REJECTED'} -> executing '{target.name}'")`,
+          '            async for event in target.run_async(ctx):',
+          '                yield event',
+          '        else:',
+          '            yield Event(',
+          '                source=self.name,',
+          `                content=f"HITL Gate '{self.name}' resolved with {'approved' if is_approved else 'rejected'}, but no target agent was attached."`,
+          '            )',
+          ''
+        );
+      }
+
+      // Generate Custom Fallback Classes
+      for (const fbNode of fallbackNodes) {
+        const data = fbNode.data || {};
+        let fbClassName = toPascalCase(data.label || fbNode.id);
+        if (!fbClassName.endsWith('CircuitBreaker')) fbClassName += 'CircuitBreaker';
+
+        lines.push(
+          '# ------------------------------------------------------------------------------',
+          `# Circuit Breaker Class: ${fbClassName}`,
+          '# ------------------------------------------------------------------------------',
+          `class ${fbClassName}(BaseAgent):`,
+          `    """Fallback & circuit breaker agent for '${(data.label || fbNode.id).replace(/"""/g, '\\"\\"\\"')}'."""`,
+          '    def __init__(',
+          '        self,',
+          '        name: str,',
+          '        primary_agent: Optional[Any] = None,',
+          '        fallback_agent: Optional[Any] = None,',
+          '        tools: Optional[List[Any]] = None,',
+          '    ):',
+          '        super().__init__(name=name)',
+          '        self.primary_agent = primary_agent',
+          '        self.fallback_agent = fallback_agent',
+          '        self.tools = tools or []',
+          '',
+          '    async def _run_async_impl(',
+          '        self, ctx: InvocationContext',
+          '    ) -> AsyncGenerator[Event, None]:',
+          '        try:',
+          '            if self.primary_agent is not None:',
+          '                async for event in self.primary_agent.run_async(ctx):',
+          '                    yield event',
+          '            else:',
+          '                raise RuntimeError("No primary agent configured for circuit breaker.")',
+          '        except Exception as exc:',
+          `            logger.warning(f"Circuit Breaker '{self.name}' caught primary error: {exc}. Routing to fallback.")`,
+          '            if self.fallback_agent is not None:',
+          '                async for event in self.fallback_agent.run_async(ctx):',
+          '                yield event',
+          '            else:',
+          '                yield Event(',
+          '                    source=self.name,',
+          '                    content="Circuit breaker triggered fallback response due to primary failure."',
+          '                )',
+          ''
+        );
+      }
+
+      // Generate Custom Guardrail Classes
+      for (const grNode of guardrailNodes) {
+        const data = grNode.data || {};
+        let grClassName = toPascalCase(data.label || grNode.id);
+        if (!grClassName.endsWith('GuardrailShield')) grClassName += 'GuardrailShield';
+
+        lines.push(
+          '# ------------------------------------------------------------------------------',
+          `# Guardrail Shield Class: ${grClassName}`,
+          '# ------------------------------------------------------------------------------',
+          `class ${grClassName}(BaseAgent):`,
+          `    """Security guardrail filter shield for '${(data.label || grNode.id).replace(/"""/g, '\\"\\"\\"')}'."""`,
+          '    def __init__(',
+          '        self,',
+          '        name: str,',
+          '        pass_agent: Optional[Any] = None,',
+          '        block_agent: Optional[Any] = None,',
+          '        tools: Optional[List[Any]] = None,',
+          '    ):',
+          '        super().__init__(name=name)',
+          '        self.pass_agent = pass_agent',
+          '        self.block_agent = block_agent',
+          '        self.tools = tools or []',
+          '',
+          '    async def _run_async_impl(',
+          '        self, ctx: InvocationContext',
+          '    ) -> AsyncGenerator[Event, None]:',
+          '        # Policy evaluation against input and session state',
+          '        passed = True',
+          '        target = self.pass_agent if passed else self.block_agent',
+          '        if target is not None:',
+          '            async for event in target.run_async(ctx):',
+          '                yield event',
+          '        elif not passed:',
+          '            yield Event(',
+          '                source=self.name,',
+          '                content="Request blocked by security guardrail policy."',
+          '            )',
+          ''
+        );
+      }
     }
 
     // Instantiate Agents Topologically (Sub-agents before parents)
@@ -737,6 +947,89 @@ export class PythonAdkGenerator {
         lines.push(`    tools=setup_agent_tools(${pyStr(node.id)})`);
         lines.push(')');
         lines.push('');
+      } else if (data.agentKind === 'hitl') {
+        let hitlClassName = toPascalCase(data.label || node.id);
+        if (!hitlClassName.endsWith('ApprovalGate')) hitlClassName += 'ApprovalGate';
+
+        let approvedVar = 'None';
+        if (data.hitlConfig?.approvedTargetAgentId) {
+          const appNode = sortedAgents.find((n) => n.id === data.hitlConfig?.approvedTargetAgentId);
+          if (appNode) approvedVar = idToVar.get(appNode.id) || 'None';
+        }
+
+        let rejectedVar = 'None';
+        if (data.hitlConfig?.rejectedTargetAgentId) {
+          const rejNode = sortedAgents.find((n) => n.id === data.hitlConfig?.rejectedTargetAgentId);
+          if (rejNode) rejectedVar = idToVar.get(rejNode.id) || 'None';
+        }
+
+        lines.push(`${safeVar} = ${hitlClassName}(`);
+        lines.push(`    name=${pyStr(data.label || node.id)},`);
+        lines.push(`    approved_agent=${approvedVar},`);
+        lines.push(`    rejected_agent=${rejectedVar},`);
+        lines.push(`    tools=setup_agent_tools(${pyStr(node.id)})`);
+        lines.push(')');
+        lines.push('');
+      } else if (data.agentKind === 'fallback') {
+        let fbClassName = toPascalCase(data.label || node.id);
+        if (!fbClassName.endsWith('CircuitBreaker')) fbClassName += 'CircuitBreaker';
+
+        let primaryVar = 'None';
+        if (data.fallbackConfig?.primaryTargetAgentId) {
+          const primNode = sortedAgents.find((n) => n.id === data.fallbackConfig?.primaryTargetAgentId);
+          if (primNode) primaryVar = idToVar.get(primNode.id) || 'None';
+        }
+
+        let fallbackVar = 'None';
+        if (data.fallbackConfig?.fallbackTargetAgentId) {
+          const fbTargetNode = sortedAgents.find((n) => n.id === data.fallbackConfig?.fallbackTargetAgentId);
+          if (fbTargetNode) fallbackVar = idToVar.get(fbTargetNode.id) || 'None';
+        }
+
+        lines.push(`${safeVar} = ${fbClassName}(`);
+        lines.push(`    name=${pyStr(data.label || node.id)},`);
+        lines.push(`    primary_agent=${primaryVar},`);
+        lines.push(`    fallback_agent=${fallbackVar},`);
+        lines.push(`    tools=setup_agent_tools(${pyStr(node.id)})`);
+        lines.push(')');
+        lines.push('');
+      } else if (data.agentKind === 'guardrail') {
+        let grClassName = toPascalCase(data.label || node.id);
+        if (!grClassName.endsWith('GuardrailShield')) grClassName += 'GuardrailShield';
+
+        let passVar = 'None';
+        if (data.guardrailConfig?.passTargetAgentId) {
+          const passNode = sortedAgents.find((n) => n.id === data.guardrailConfig?.passTargetAgentId);
+          if (passNode) passVar = idToVar.get(passNode.id) || 'None';
+        }
+
+        let blockVar = 'None';
+        if (data.guardrailConfig?.blockTargetAgentId) {
+          const blockNode = sortedAgents.find((n) => n.id === data.guardrailConfig?.blockTargetAgentId);
+          if (blockNode) blockVar = idToVar.get(blockNode.id) || 'None';
+        }
+
+        lines.push(`${safeVar} = ${grClassName}(`);
+        lines.push(`    name=${pyStr(data.label || node.id)},`);
+        lines.push(`    pass_agent=${passVar},`);
+        lines.push(`    block_agent=${blockVar},`);
+        lines.push(`    tools=setup_agent_tools(${pyStr(node.id)})`);
+        lines.push(')');
+        lines.push('');
+      } else if (data.agentKind === 'synthesizer') {
+        // Synthesizer Agent with controlled generation output schema and NO tools
+        const model = data.model || defaultModel;
+        const rawName = data.structuredOutput?.name || `${toPascalCase(data.label || node.id)}Output`;
+        const schemaClassName = rawName.replace(/[^a-zA-Z0-9_]/g, '') || 'SynthesizedOutput';
+
+        lines.push(`${safeVar} = Agent(`);
+        lines.push(`    name=${pyStr(data.label || node.id)},`);
+        lines.push(`    model=${pyStr(model)},`);
+        lines.push(`    instruction=${pyStr(data.systemPrompt || 'Synthesizes upstream state into structured JSON schema.')},`);
+        lines.push(`    output_schema=${schemaClassName},`);
+        lines.push('    tools=[]');
+        lines.push(')');
+        lines.push('');
       } else {
         // Standard / A2A Agent
         const model = data.model || defaultModel;
@@ -744,6 +1037,13 @@ export class PythonAdkGenerator {
         lines.push(`    name=${pyStr(data.label || node.id)},`);
         lines.push(`    model=${pyStr(model)},`);
         lines.push(`    instruction=${pyStr(data.systemPrompt || 'Autonomous AI Agent')},`);
+
+        // Structured output if configured on standard agent
+        if (data.structuredOutput?.enabled && data.structuredOutput?.fields?.length) {
+          const rawName = data.structuredOutput?.name || `${toPascalCase(data.label || node.id)}Output`;
+          const schemaClassName = rawName.replace(/[^a-zA-Z0-9_]/g, '') || 'SynthesizedOutput';
+          lines.push(`    output_schema=${schemaClassName},`);
+        }
 
         // NOTE: Wire sub_agents hierarchy for multi-agent delegation (Google ADK)
         if (Array.isArray(data.subAgents) && data.subAgents.length > 0) {

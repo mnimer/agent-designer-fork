@@ -32,3 +32,7 @@ Thumbs.db
 .env.*
 !.env.example
 !.env.template
+
+
+# temporary files
+test-report.md
