@@ -34,46 +34,6 @@ export const PATTERN_DEFINITIONS: PatternDefinition[] = [
     type: 'parallel',
   },
   {
-    id: 'pattern_router',
-    name: 'Router',
-    description: 'Classify & Route • Dynamic intent classifier delegating to 3 specialized branch experts',
-    iconName: 'Network',
-    badge: 'Classify & Route',
-    type: 'router',
-  },
-  {
-    id: 'pattern_loop',
-    name: 'Evaluator-Optimizer',
-    description: 'Generate & Refine Loop • Cyclic quality feedback loop between Generator and Evaluator',
-    iconName: 'Repeat',
-    badge: 'Generate & Refine',
-    type: 'loop',
-  },
-  {
-    id: 'pattern_debate',
-    name: 'Multi-Agent Debate',
-    description: 'Consensus & Panel • Proponent & Opponent agents debate across rounds to reach Judge consensus',
-    iconName: 'Scale',
-    badge: 'Consensus Panel',
-    type: 'debate',
-  },
-  {
-    id: 'pattern_hierarchical_decomposition',
-    name: 'Hierarchical Delegation',
-    description: 'Supervisor-Workers • Multi-tier supervisor delegating sub-tasks to Domain Leads & Workers',
-    iconName: 'Layers',
-    badge: 'Supervisor-Workers',
-    type: 'hierarchical_decomposition',
-  },
-  {
-    id: 'pattern_review_critique',
-    name: 'Review & Critique',
-    description: 'Triad Consensus • Author drafts proposal, Critic reviews, Editor synthesizes final artifact',
-    iconName: 'CheckSquare',
-    badge: 'Triad Review',
-    type: 'review_critique',
-  },
-  {
     id: 'pattern_coordinator',
     name: 'Coordinator',
     description: 'Central Supervisor • Maintains shared state and manages dynamic handoffs across sub-agents',
@@ -81,6 +41,82 @@ export const PATTERN_DEFINITIONS: PatternDefinition[] = [
     badge: 'Central State',
     type: 'coordinator',
   },
+];
+
+export interface BasicAgentTypeDefinition {
+  kind: AgentKind;
+  name: string;
+  badge: string;
+  colorTheme: 'blue' | 'cyan' | 'purple' | 'emerald' | 'amber' | 'rose' | 'teal';
+  description: string;
+  iconName: 'Bot' | 'Globe2' | 'Split' | 'Layers' | 'ShieldAlert' | 'LifeBuoy' | 'ShieldCheck';
+}
+
+export const CORE_AGENT_TYPES: BasicAgentTypeDefinition[] = [
+  {
+    kind: 'standard',
+    name: 'Agent',
+    badge: 'Standard',
+    colorTheme: 'blue',
+    description: 'LLM agent with tools & system instructions',
+    iconName: 'Bot',
+  },
+  {
+    kind: 'a2a',
+    name: 'A2A Agent',
+    badge: 'Protocol',
+    colorTheme: 'cyan',
+    description: 'Decentralized JSON-RPC A2A agent endpoint',
+    iconName: 'Globe2',
+  },
+];
+
+export const FLOW_CONTROL_AGENT_TYPES: BasicAgentTypeDefinition[] = [
+  {
+    kind: 'router',
+    name: 'Router',
+    badge: 'Branching',
+    colorTheme: 'purple',
+    description: 'Conditional branching & if/else routing',
+    iconName: 'Split',
+  },
+  {
+    kind: 'synthesizer',
+    name: 'Synthesizer',
+    badge: 'Reducer',
+    colorTheme: 'emerald',
+    description: 'Aggregates state & formats structured JSON',
+    iconName: 'Layers',
+  },
+  {
+    kind: 'hitl',
+    name: 'Approval Gate',
+    badge: 'HITL',
+    colorTheme: 'amber',
+    description: 'Human review & gatekeeper pause',
+    iconName: 'ShieldAlert',
+  },
+  {
+    kind: 'fallback',
+    name: 'Fallback',
+    badge: 'Resilience',
+    colorTheme: 'rose',
+    description: 'Circuit breaker & quota fallback',
+    iconName: 'LifeBuoy',
+  },
+  {
+    kind: 'guardrail',
+    name: 'Guardrail',
+    badge: 'Shield',
+    colorTheme: 'teal',
+    description: 'Pre/post-flight safety & PII scrubbing',
+    iconName: 'ShieldCheck',
+  },
+];
+
+export const BASIC_AGENT_TYPES: BasicAgentTypeDefinition[] = [
+  ...CORE_AGENT_TYPES,
+  ...FLOW_CONTROL_AGENT_TYPES,
 ];
 
 let idCounter = 0;
@@ -94,9 +130,197 @@ export function createSingleAgentNode(
   agentKind: AgentKind = 'standard',
   defaults?: Partial<AgentData>
 ): Node<AgentData> {
-  const id = getNextId(agentKind === 'a2a' ? 'a2a_agent' : agentKind === 'router' ? 'router_node' : 'agent');
-  const agentLabel = customLabel || (agentKind === 'router' ? `Router (if/else) ${++idCounter}` : agentKind === 'a2a' ? `A2A Agent ${++idCounter}` : `Agent ${++idCounter}`);
+  const prefix = agentKind === 'a2a' 
+    ? 'a2a_agent' 
+    : agentKind === 'router' 
+    ? 'router_node' 
+    : agentKind === 'synthesizer'
+    ? 'synthesizer_agent'
+    : agentKind === 'hitl'
+    ? 'hitl_agent'
+    : agentKind === 'fallback'
+    ? 'fallback_agent'
+    : agentKind === 'guardrail'
+    ? 'guardrail_agent'
+    : 'agent';
+  const id = getNextId(prefix);
+  const agentLabel = customLabel || (
+    agentKind === 'router' 
+      ? `Router (if/else) ${++idCounter}` 
+      : agentKind === 'a2a' 
+      ? `A2A Agent ${++idCounter}` 
+      : agentKind === 'synthesizer'
+      ? `Synthesizer ${++idCounter}`
+      : agentKind === 'hitl'
+      ? `Approval Gate ${++idCounter}`
+      : agentKind === 'fallback'
+      ? `Fallback ${++idCounter}`
+      : agentKind === 'guardrail'
+      ? `Guardrail ${++idCounter}`
+      : `Agent ${++idCounter}`
+  );
   const agentName = sanitizeAgentIdentifier(defaults?.identifier || defaults?.name || agentLabel || id);
+
+  if (agentKind === 'synthesizer') {
+    return {
+      id,
+      type: 'agentNode',
+      position: { x, y },
+      data: {
+        id,
+        label: agentLabel,
+        name: agentName,
+        identifier: agentName,
+        role: customRole || defaults?.role || 'Aggregates and synthesizes upstream state into structured output',
+        model: defaults?.model || 'gemini-3.8-flash',
+        systemPrompt: defaults?.systemPrompt || 'You are a synthesis agent. You aggregate upstream analysis, research, and data from state variables into a coherent, structured response adhering strictly to the output schema.',
+        temperature: defaults?.temperature !== undefined ? defaults.temperature : 0.2,
+        maxIterations: 5,
+        agentKind: 'synthesizer',
+        synthesizerConfig: defaults?.synthesizerConfig || {
+          inputStateKeys: ['research_summary', 'extracted_data'],
+          reductionStrategy: 'summarize',
+          outputSchemaName: 'SynthesizedOutput',
+        },
+        structuredOutput: defaults?.structuredOutput || {
+          enabled: true,
+          formatType: 'json_schema',
+          name: 'SynthesizedOutput',
+          fields: [
+            {
+              id: 'f1',
+              name: 'summary',
+              type: 'string',
+              required: true,
+              description: 'Comprehensive synthesized summary',
+            },
+          ],
+        },
+        tools: [],
+        subAgents: [],
+        subAgentPattern: defaults?.subAgentPattern || 'parallel',
+        memoryType: defaults?.memoryType || 'none',
+        memoryConfig: defaults?.memoryConfig || {
+          type: defaults?.memoryType || 'none',
+        },
+        outputFormat: 'structured',
+        colorTheme: 'green',
+        ...defaults,
+      },
+    };
+  }
+
+  if (agentKind === 'hitl') {
+    return {
+      id,
+      type: 'agentNode',
+      position: { x, y },
+      data: {
+        id,
+        label: agentLabel,
+        name: agentName,
+        identifier: agentName,
+        role: customRole || defaults?.role || 'Human-in-the-loop approval gatekeeper and authorization checkpoint',
+        model: defaults?.model || 'gemini-3.8-flash',
+        systemPrompt: defaults?.systemPrompt || 'Pause workflow execution and solicit explicit human authorization before continuing.',
+        temperature: defaults?.temperature !== undefined ? defaults.temperature : 0.0,
+        maxIterations: 3,
+        agentKind: 'hitl',
+        hitlConfig: defaults?.hitlConfig || {
+          approvalCondition: "state.requires_review == True",
+          timeoutHours: 24,
+          autoRejectOnTimeout: true,
+          notificationPayload: 'Human approval required before continuing workflow',
+          requestPrompt: 'Please review and approve the proposed action.',
+        },
+        tools: [],
+        subAgents: [],
+        subAgentPattern: defaults?.subAgentPattern || 'sequential',
+        memoryType: defaults?.memoryType || 'none',
+        memoryConfig: defaults?.memoryConfig || {
+          type: defaults?.memoryType || 'none',
+        },
+        outputFormat: 'text',
+        colorTheme: 'amber',
+        ...defaults,
+      },
+    };
+  }
+
+  if (agentKind === 'fallback') {
+    return {
+      id,
+      type: 'agentNode',
+      position: { x, y },
+      data: {
+        id,
+        label: agentLabel,
+        name: agentName,
+        identifier: agentName,
+        role: customRole || defaults?.role || 'Circuit breaker and graceful degradation fallback handler',
+        model: defaults?.model || 'gemini-3.8-flash',
+        systemPrompt: defaults?.systemPrompt || 'Catch runtime exceptions, rate limit quotas (429), and remote service outages to gracefully reroute execution.',
+        temperature: defaults?.temperature !== undefined ? defaults.temperature : 0.1,
+        maxIterations: 5,
+        agentKind: 'fallback',
+        fallbackConfig: defaults?.fallbackConfig || {
+          maxRetries: 3,
+          retryDelaySeconds: 2,
+          caughtErrorCodes: ['429', '503', 'RESOURCE_EXHAUSTED', 'TIMEOUT'],
+          fallbackStrategy: 'switch_agent',
+          staticFallbackMessage: 'Primary agent unavailable. Workflow gracefully routed to fallback safety handler.',
+        },
+        tools: [],
+        subAgents: [],
+        subAgentPattern: defaults?.subAgentPattern || 'sequential',
+        memoryType: defaults?.memoryType || 'none',
+        memoryConfig: defaults?.memoryConfig || {
+          type: defaults?.memoryType || 'none',
+        },
+        outputFormat: 'text',
+        colorTheme: 'rose',
+        ...defaults,
+      },
+    };
+  }
+
+  if (agentKind === 'guardrail') {
+    return {
+      id,
+      type: 'agentNode',
+      position: { x, y },
+      data: {
+        id,
+        label: agentLabel,
+        name: agentName,
+        identifier: agentName,
+        role: customRole || defaults?.role || 'Pre/post-flight security shield, PII sanitizer, and content filter',
+        model: defaults?.model || 'gemini-3.8-flash',
+        systemPrompt: defaults?.systemPrompt || 'Inspect input prompts and agent responses against safety policies, redacting sensitive PII and blocking toxic content.',
+        temperature: defaults?.temperature !== undefined ? defaults.temperature : 0.0,
+        maxIterations: 3,
+        agentKind: 'guardrail',
+        guardrailConfig: defaults?.guardrailConfig || {
+          direction: 'ingress',
+          safetyPolicies: ['pii', 'prompt_injection', 'toxicity', 'secrets'],
+          regexPatterns: [],
+          blockedKeywords: [],
+          actionOnViolation: 'block',
+          customViolationMessage: 'Content blocked: Security policy guardrail violation detected.',
+        },
+        tools: [],
+        subAgents: [],
+        subAgentPattern: defaults?.subAgentPattern || 'sequential',
+        memoryType: defaults?.memoryType || 'none',
+        memoryConfig: defaults?.memoryConfig || {
+          type: defaults?.memoryType || 'none',
+        },
+        outputFormat: 'text',
+        colorTheme: 'teal',
+        ...defaults,
+      },
+    };
+  }
 
   if (agentKind === 'router') {
     return {

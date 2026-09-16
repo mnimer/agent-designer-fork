@@ -717,8 +717,21 @@ export function FlowCanvas() {
           connection.sourceHandle &&
           connection.sourceHandle !== 'output' &&
           connection.sourceHandle !== 'subagent' &&
-          !connection.sourceHandle.startsWith('branch_')
+          !connection.sourceHandle.startsWith('branch_') &&
+          connection.sourceHandle !== 'approved' &&
+          connection.sourceHandle !== 'rejected' &&
+          connection.sourceHandle !== 'primary' &&
+          connection.sourceHandle !== 'fallback' &&
+          connection.sourceHandle !== 'pass' &&
+          connection.sourceHandle !== 'block'
         ) {
+          const branches = (sourceNode.data as AgentData)?.routerConfig?.branches || [];
+          const matchesBranch = branches.some((b) => b.id === connection.sourceHandle);
+          if (!matchesBranch) {
+            return false;
+          }
+        }
+        if (connection.targetHandle && connection.targetHandle !== 'input') {
           return false;
         }
       }
@@ -951,9 +964,127 @@ export function FlowCanvas() {
             }
             return n;
           });
-          setNodes(nextNodes);
         }
+        nextNodes = syncAgentSubAgents(nextNodes, nextEdges);
+        setNodes(nextNodes);
         recordSnapshot(nextNodes, nextEdges, { description: 'Connect router branch' });
+        return;
+      }
+
+      if (sourceAgentData?.agentKind === 'hitl' && connection.source && connection.target) {
+        const sourceHandle = connection.sourceHandle === 'rejected' ? 'rejected' : 'approved';
+        const isApproved = sourceHandle === 'approved';
+        const newEdge: Edge = {
+          ...connection,
+          sourceHandle,
+          id: `e_hitl_${connection.source}_${sourceHandle}_${connection.target}`,
+          animated: true,
+          style: { stroke: isApproved ? '#10b981' : '#f43f5e', strokeWidth: 2 },
+          targetHandle: connection.targetHandle || 'input',
+        } as Edge;
+
+        const nextEdges = [
+          ...currentEdges.filter((e) => !(e.source === connection.source && (e.sourceHandle === sourceHandle || (!e.sourceHandle && isApproved)))),
+          newEdge,
+        ];
+        setEdges(nextEdges);
+
+        let nextNodes = currentNodes.map((n) => {
+          if (n.id === connection.source) {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                hitlConfig: {
+                  ...sourceAgentData?.hitlConfig,
+                  ...(isApproved ? { approvedTargetAgentId: connection.target } : { rejectedTargetAgentId: connection.target }),
+                },
+              },
+            };
+          }
+          return n;
+        });
+        nextNodes = syncAgentSubAgents(nextNodes, nextEdges);
+        setNodes(nextNodes);
+        recordSnapshot(nextNodes, nextEdges, { description: `Connect approval ${isApproved ? 'approved' : 'rejected'} path` });
+        return;
+      }
+
+      if (sourceAgentData?.agentKind === 'fallback' && connection.source && connection.target) {
+        const sourceHandle = connection.sourceHandle === 'fallback' ? 'fallback' : 'primary';
+        const isPrimary = sourceHandle === 'primary';
+        const newEdge: Edge = {
+          ...connection,
+          sourceHandle,
+          id: `e_fallback_${connection.source}_${sourceHandle}_${connection.target}`,
+          animated: true,
+          style: { stroke: isPrimary ? '#3b82f6' : '#f43f5e', strokeWidth: 2 },
+          targetHandle: connection.targetHandle || 'input',
+        } as Edge;
+
+        const nextEdges = [
+          ...currentEdges.filter((e) => !(e.source === connection.source && (e.sourceHandle === sourceHandle || (!e.sourceHandle && isPrimary)))),
+          newEdge,
+        ];
+        setEdges(nextEdges);
+
+        let nextNodes = currentNodes.map((n) => {
+          if (n.id === connection.source) {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                fallbackConfig: {
+                  ...sourceAgentData?.fallbackConfig,
+                  ...(isPrimary ? { primaryTargetAgentId: connection.target } : { fallbackTargetAgentId: connection.target }),
+                },
+              },
+            };
+          }
+          return n;
+        });
+        nextNodes = syncAgentSubAgents(nextNodes, nextEdges);
+        setNodes(nextNodes);
+        recordSnapshot(nextNodes, nextEdges, { description: `Connect fallback ${isPrimary ? 'primary' : 'recovery'} path` });
+        return;
+      }
+
+      if (sourceAgentData?.agentKind === 'guardrail' && connection.source && connection.target) {
+        const sourceHandle = connection.sourceHandle === 'block' ? 'block' : 'pass';
+        const isPass = sourceHandle === 'pass';
+        const newEdge: Edge = {
+          ...connection,
+          sourceHandle,
+          id: `e_guardrail_${connection.source}_${sourceHandle}_${connection.target}`,
+          animated: true,
+          style: { stroke: isPass ? '#14b8a6' : '#f43f5e', strokeWidth: 2 },
+          targetHandle: connection.targetHandle || 'input',
+        } as Edge;
+
+        const nextEdges = [
+          ...currentEdges.filter((e) => !(e.source === connection.source && (e.sourceHandle === sourceHandle || (!e.sourceHandle && isPass)))),
+          newEdge,
+        ];
+        setEdges(nextEdges);
+
+        let nextNodes = currentNodes.map((n) => {
+          if (n.id === connection.source) {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                guardrailConfig: {
+                  ...sourceAgentData?.guardrailConfig,
+                  ...(isPass ? { passTargetAgentId: connection.target } : { blockTargetAgentId: connection.target }),
+                },
+              },
+            };
+          }
+          return n;
+        });
+        nextNodes = syncAgentSubAgents(nextNodes, nextEdges);
+        setNodes(nextNodes);
+        recordSnapshot(nextNodes, nextEdges, { description: `Connect guardrail ${isPass ? 'pass' : 'block'} path` });
         return;
       }
 
@@ -1146,9 +1277,9 @@ export function FlowCanvas() {
         const hasAnyAgent = nodes.some((n) => n.type === 'agentNode');
         const hasStartNode = nodes.some((n) => n.type === 'agentNode' && (n.data as AgentData).isStartNode);
         const hasTester = nodes.some((n) => n.type === 'triggerNode' && (n.data as TriggerData).triggerType === 'tester');
-        const effectiveKind: AgentKind = (agentKindData === 'a2a' || agentKindData === 'router' || agentKindData === 'standard')
-          ? agentKindData
-          : (type === 'a2a' || type === 'router' ? (type as AgentKind) : 'standard');
+        const effectiveKind: AgentKind = agentKindData 
+          ? agentKindData 
+          : (['a2a', 'router', 'synthesizer', 'hitl', 'fallback', 'guardrail'].includes(type) ? (type as AgentKind) : 'standard');
 
         // If this is the first agent on the canvas, automatically create Root Agent AND connect a Test Suite node to its left handle
         if (!hasAnyAgent && !hasTester) {
@@ -1195,7 +1326,6 @@ export function FlowCanvas() {
           recordSnapshot(nextNodes, nextEdges, { description: `Add root ${effectiveKind || 'agent'} with test suite` });
           return;
         }
-
         const newNode = createSingleAgentNode(
           position.x,
           position.y,

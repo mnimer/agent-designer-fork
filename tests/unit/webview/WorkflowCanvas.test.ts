@@ -181,4 +181,118 @@ describe('Workflow Canvas Topologies & Layouts', () => {
       }
     }
   });
+
+  it('should handle dropping any agent kind onto existing canvas with hasStartNode resolution', () => {
+    const existingNodes = [
+      {
+        id: 'root-1',
+        type: 'agentNode',
+        position: { x: 420, y: 140 },
+        data: { label: 'Root Agent', agentKind: 'standard', isStartNode: true },
+      },
+    ];
+
+    const allKinds: Array<'standard' | 'a2a' | 'router' | 'synthesizer' | 'hitl' | 'fallback' | 'guardrail'> = [
+      'standard',
+      'a2a',
+      'router',
+      'synthesizer',
+      'hitl',
+      'fallback',
+      'guardrail',
+    ];
+
+    for (const kind of allKinds) {
+      const hasAnyAgent = existingNodes.some((n) => n.type === 'agentNode');
+      const hasStartNode = existingNodes.some((n) => n.type === 'agentNode' && Boolean(n.data.isStartNode));
+      assert.equal(hasAnyAgent, true);
+      assert.equal(hasStartNode, true);
+
+      // Dropping node onto canvas where start node already exists
+      const newNode = {
+        id: `node_${kind}`,
+        type: 'agentNode',
+        position: { x: 500, y: 300 },
+        data: { label: `${kind} agent`, agentKind: kind, isStartNode: !hasStartNode },
+      };
+
+      assert.equal(newNode.data.isStartNode, false);
+      assert.equal(newNode.data.agentKind, kind);
+    }
+  });
+
+  it('should validate outgoing connections for all Flow & Control node handles', () => {
+    // Helper replicating isValidConnection logic from FlowCanvas.tsx
+    const isValidConnection = (connection: {
+      source: string;
+      target: string;
+      sourceHandle?: string | null;
+      targetHandle?: string | null;
+    }, nodesList: any[]) => {
+      if (connection.source === connection.target) return false;
+      const sourceNode = nodesList.find((n) => n.id === connection.source);
+      const targetNode = nodesList.find((n) => n.id === connection.target);
+
+      if (sourceNode?.type === 'agentNode' || sourceNode?.type === 'agent') {
+        if (targetNode?.type !== 'agentNode' && targetNode?.type !== 'agent') return false;
+        if (
+          connection.sourceHandle &&
+          connection.sourceHandle !== 'output' &&
+          connection.sourceHandle !== 'subagent' &&
+          !connection.sourceHandle.startsWith('branch_') &&
+          connection.sourceHandle !== 'approved' &&
+          connection.sourceHandle !== 'rejected' &&
+          connection.sourceHandle !== 'primary' &&
+          connection.sourceHandle !== 'fallback' &&
+          connection.sourceHandle !== 'pass' &&
+          connection.sourceHandle !== 'block'
+        ) {
+          const branches = sourceNode.data?.routerConfig?.branches || [];
+          const matchesBranch = branches.some((b: any) => b.id === connection.sourceHandle);
+          if (!matchesBranch) {
+            return false;
+          }
+        }
+        if (connection.targetHandle && connection.targetHandle !== 'input') {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    const canvasNodes = [
+      { id: 'standard_1', type: 'agentNode', data: { agentKind: 'standard' } },
+      { id: 'target_child', type: 'agentNode', data: { agentKind: 'standard' } },
+      { id: 'router_1', type: 'agentNode', data: { agentKind: 'router', routerConfig: { branches: [{ id: 'b_custom_1' }] } } },
+      { id: 'hitl_1', type: 'agentNode', data: { agentKind: 'hitl' } },
+      { id: 'fallback_1', type: 'agentNode', data: { agentKind: 'fallback' } },
+      { id: 'guardrail_1', type: 'agentNode', data: { agentKind: 'guardrail' } },
+      { id: 'synth_1', type: 'agentNode', data: { agentKind: 'synthesizer' } },
+    ];
+
+    // 1. Standard & Synthesizer output/subagent handles
+    assert.equal(isValidConnection({ source: 'standard_1', target: 'target_child', sourceHandle: 'output', targetHandle: 'input' }, canvasNodes), true);
+    assert.equal(isValidConnection({ source: 'synth_1', target: 'target_child', sourceHandle: 'output', targetHandle: 'input' }, canvasNodes), true);
+
+    // 2. Router standard and custom branch handles
+    assert.equal(isValidConnection({ source: 'router_1', target: 'target_child', sourceHandle: 'branch_default', targetHandle: 'input' }, canvasNodes), true);
+    assert.equal(isValidConnection({ source: 'router_1', target: 'target_child', sourceHandle: 'b_custom_1', targetHandle: 'input' }, canvasNodes), true);
+    assert.equal(isValidConnection({ source: 'router_1', target: 'target_child', sourceHandle: 'unrecognized_handle', targetHandle: 'input' }, canvasNodes), false);
+
+    // 3. HITL approved and rejected handles
+    assert.equal(isValidConnection({ source: 'hitl_1', target: 'target_child', sourceHandle: 'approved', targetHandle: 'input' }, canvasNodes), true);
+    assert.equal(isValidConnection({ source: 'hitl_1', target: 'target_child', sourceHandle: 'rejected', targetHandle: 'input' }, canvasNodes), true);
+
+    // 4. Fallback primary and fallback handles
+    assert.equal(isValidConnection({ source: 'fallback_1', target: 'target_child', sourceHandle: 'primary', targetHandle: 'input' }, canvasNodes), true);
+    assert.equal(isValidConnection({ source: 'fallback_1', target: 'target_child', sourceHandle: 'fallback', targetHandle: 'input' }, canvasNodes), true);
+
+    // 5. Guardrail pass and block handles
+    assert.equal(isValidConnection({ source: 'guardrail_1', target: 'target_child', sourceHandle: 'pass', targetHandle: 'input' }, canvasNodes), true);
+    assert.equal(isValidConnection({ source: 'guardrail_1', target: 'target_child', sourceHandle: 'block', targetHandle: 'input' }, canvasNodes), true);
+
+    // 6. Invalid targets or invalid target handles
+    assert.equal(isValidConnection({ source: 'hitl_1', target: 'target_child', sourceHandle: 'approved', targetHandle: 'output' }, canvasNodes), false);
+    assert.equal(isValidConnection({ source: 'hitl_1', target: 'hitl_1', sourceHandle: 'approved', targetHandle: 'input' }, canvasNodes), false);
+  });
 });

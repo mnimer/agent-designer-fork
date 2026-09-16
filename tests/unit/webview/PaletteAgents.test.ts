@@ -12,87 +12,124 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createSingleAgentNode } from '../../../src/webview/data/patterns';
+import { 
+  createSingleAgentNode, 
+  CORE_AGENT_TYPES, 
+  FLOW_CONTROL_AGENT_TYPES, 
+  BASIC_AGENT_TYPES, 
+  PATTERN_DEFINITIONS 
+} from '../../../src/webview/data/patterns';
 import { AgentKind } from '../../../src/webview/types';
 
 describe('Basic Agent Types Palette & Node Creation', () => {
-  const BASIC_AGENT_TYPES: {
-    kind: AgentKind;
-    label: string;
-    badge: string;
-    color: string;
-    description: string;
-  }[] = [
-    {
-      kind: 'standard',
-      label: 'Agent',
-      badge: 'Standard',
-      color: 'blue',
-      description: 'LLM agent with tools & prompt',
-    },
-    {
-      kind: 'a2a',
-      label: 'A2A Agent',
-      badge: 'Protocol',
-      color: 'cyan',
-      description: 'Decentralized JSON-RPC A2A endpoint',
-    },
-    {
-      kind: 'router',
-      label: 'Router',
-      badge: 'Branching',
-      color: 'purple',
-      description: 'Conditional branching & if/else routing',
-    },
-  ];
+  it('should partition basic agent types into Core and Flow & Control groups', () => {
+    assert.equal(CORE_AGENT_TYPES.length, 2);
+    assert.deepEqual(CORE_AGENT_TYPES.map(a => a.kind), ['standard', 'a2a']);
 
-  it('should include exactly 3 basic agent types in the catalog', () => {
-    assert.equal(BASIC_AGENT_TYPES.length, 3);
-    const kinds = BASIC_AGENT_TYPES.map((a) => a.kind);
-    assert.deepEqual(kinds, ['standard', 'a2a', 'router']);
+    assert.equal(FLOW_CONTROL_AGENT_TYPES.length, 5);
+    assert.deepEqual(FLOW_CONTROL_AGENT_TYPES.map(a => a.kind), ['router', 'synthesizer', 'hitl', 'fallback', 'guardrail']);
+
+    assert.equal(BASIC_AGENT_TYPES.length, 7);
+  });
+
+  it('should include active Multi-Agent Pattern definitions', () => {
+    assert.equal(PATTERN_DEFINITIONS.length, 3);
+    const patternTypes = PATTERN_DEFINITIONS.map(p => p.type);
+    assert.deepEqual(patternTypes, [
+      'sequential',
+      'parallel',
+      'coordinator'
+    ]);
   });
 
   it('should configure Router Agent with Branching badge and purple theme', () => {
     const routerType = BASIC_AGENT_TYPES.find((a) => a.kind === 'router');
     assert.ok(routerType);
     assert.equal(routerType?.badge, 'Branching');
-    assert.equal(routerType?.color, 'purple');
+    assert.equal(routerType?.colorTheme, 'purple');
     assert.ok(routerType?.description.includes('branching'));
   });
 
-  it('should generate correct drag-and-drop transfer data for router agent', () => {
-    const mockData: Record<string, string> = {};
-    const handleDragStartAgent = (type: string, isPattern = false, agentKind?: string) => {
-      mockData['application/reactflow/type'] = type;
-      mockData['application/reactflow/isPattern'] = isPattern ? 'true' : 'false';
-      if (agentKind) {
-        mockData['application/reactflow/agentKind'] = agentKind;
-      }
-    };
-
-    handleDragStartAgent('router', false, 'router');
-    assert.equal(mockData['application/reactflow/type'], 'router');
-    assert.equal(mockData['application/reactflow/isPattern'], 'false');
-    assert.equal(mockData['application/reactflow/agentKind'], 'router');
+  it('should configure Synthesizer Agent with Reducer badge and emerald theme', () => {
+    const synType = BASIC_AGENT_TYPES.find((a) => a.kind === 'synthesizer');
+    assert.ok(synType);
+    assert.equal(synType?.badge, 'Reducer');
+    assert.equal(synType?.colorTheme, 'emerald');
+    assert.ok(synType?.description.includes('structured JSON'));
   });
 
-  it('should create valid router node on canvas with default branches and purple theme', () => {
-    const routerNode = createSingleAgentNode(100, 200, undefined, undefined, 'router');
-
-    assert.equal(routerNode.type, 'agentNode');
-    assert.equal(routerNode.data.agentKind, 'router');
-    assert.equal(routerNode.data.colorTheme, 'purple');
-    assert.ok(routerNode.data.routerConfig);
-    assert.equal(routerNode.data.routerConfig?.evaluationMode, 'boolean_expression');
-    assert.ok(routerNode.data.routerConfig?.branches.length >= 2);
+  it('should configure Approval Gate with HITL badge and amber theme', () => {
+    const hitlType = BASIC_AGENT_TYPES.find((a) => a.kind === 'hitl');
+    assert.ok(hitlType);
+    assert.equal(hitlType?.badge, 'HITL');
+    assert.equal(hitlType?.colorTheme, 'amber');
+    assert.ok(hitlType?.description.includes('Human review'));
   });
 
-  it('should create valid standard and A2A nodes on canvas', () => {
+  it('should configure Fallback Circuit Breaker with Resilience badge and rose theme', () => {
+    const fbType = BASIC_AGENT_TYPES.find((a) => a.kind === 'fallback');
+    assert.ok(fbType);
+    assert.equal(fbType?.badge, 'Resilience');
+    assert.equal(fbType?.colorTheme, 'rose');
+    assert.ok(fbType?.description.includes('quota fallback'));
+  });
+
+  it('should configure Guardrail Shield with Shield badge and teal theme', () => {
+    const grType = BASIC_AGENT_TYPES.find((a) => a.kind === 'guardrail');
+    assert.ok(grType);
+    assert.equal(grType?.badge, 'Shield');
+    assert.equal(grType?.colorTheme, 'teal');
+    assert.ok(grType?.description.includes('safety'));
+  });
+
+  it('should create valid synthesizer node on canvas with structuredOutput and no tools', () => {
+    const synNode = createSingleAgentNode(100, 200, undefined, undefined, 'synthesizer');
+    assert.equal(synNode.type, 'agentNode');
+    assert.equal(synNode.data.agentKind, 'synthesizer');
+    assert.equal(synNode.data.colorTheme, 'green');
+    assert.ok(synNode.data.synthesizerConfig);
+    assert.equal(synNode.data.synthesizerConfig?.reductionStrategy, 'summarize');
+    assert.ok(synNode.data.structuredOutput?.enabled);
+    assert.deepEqual(synNode.data.tools, []);
+  });
+
+  it('should create valid HITL approval gate node on canvas', () => {
+    const hitlNode = createSingleAgentNode(100, 200, undefined, undefined, 'hitl');
+    assert.equal(hitlNode.type, 'agentNode');
+    assert.equal(hitlNode.data.agentKind, 'hitl');
+    assert.equal(hitlNode.data.colorTheme, 'amber');
+    assert.ok(hitlNode.data.hitlConfig);
+    assert.equal(hitlNode.data.hitlConfig?.autoRejectOnTimeout, true);
+  });
+
+  it('should create valid fallback circuit breaker node on canvas', () => {
+    const fbNode = createSingleAgentNode(100, 200, undefined, undefined, 'fallback');
+    assert.equal(fbNode.type, 'agentNode');
+    assert.equal(fbNode.data.agentKind, 'fallback');
+    assert.equal(fbNode.data.colorTheme, 'rose');
+    assert.ok(fbNode.data.fallbackConfig);
+    assert.equal(fbNode.data.fallbackConfig?.maxRetries, 3);
+  });
+
+  it('should create valid guardrail shield node on canvas', () => {
+    const grNode = createSingleAgentNode(100, 200, undefined, undefined, 'guardrail');
+    assert.equal(grNode.type, 'agentNode');
+    assert.equal(grNode.data.agentKind, 'guardrail');
+    assert.equal(grNode.data.colorTheme, 'teal');
+    assert.ok(grNode.data.guardrailConfig);
+    assert.equal(grNode.data.guardrailConfig?.actionOnViolation, 'block');
+  });
+
+  it('should create valid standard, A2A, and router nodes on canvas', () => {
     const standardNode = createSingleAgentNode(0, 0, undefined, undefined, 'standard');
     assert.equal(standardNode.data.agentKind, 'standard');
 
     const a2aNode = createSingleAgentNode(50, 50, undefined, undefined, 'a2a');
     assert.equal(a2aNode.data.agentKind, 'a2a');
     assert.ok(a2aNode.data.a2aConfig);
+
+    const routerNode = createSingleAgentNode(100, 100, undefined, undefined, 'router');
+    assert.equal(routerNode.data.agentKind, 'router');
+    assert.ok(routerNode.data.routerConfig);
   });
 });

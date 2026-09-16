@@ -66,10 +66,12 @@ import {
   Cloud,
   BarChart3,
   Shield,
+  ShieldAlert,
+  LifeBuoy,
+  ShieldCheck,
   ExternalLink,
-  GripVertical
 } from 'lucide-react';
-import { PATTERN_DEFINITIONS } from '../../data/patterns';
+import { PATTERN_DEFINITIONS, BASIC_AGENT_TYPES, CORE_AGENT_TYPES, FLOW_CONTROL_AGENT_TYPES } from '../../data/patterns';
 import { TRIGGER_CATALOG, TriggerCatalogItem } from '../../data/triggerDefinitions';
 import { SAMPLES_CATALOG } from '../../data/sampleWorkflows';
 import { categorizeTools, isNativeAdkTool } from '../../data/builtinTools';
@@ -356,6 +358,88 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
     }
   };
 
+  const getAgentTypeIcon = (iconName: string) => {
+    switch (iconName) {
+      case 'Bot':
+        return <Bot className="w-4 h-4 text-blue-400" />;
+      case 'Globe2':
+        return <Globe2 className="w-4 h-4 text-cyan-400" />;
+      case 'Split':
+        return <Split className="w-4 h-4 text-purple-400" />;
+      case 'Layers':
+        return <Layers className="w-4 h-4 text-emerald-400" />;
+      case 'ShieldAlert':
+        return <ShieldAlert className="w-4 h-4 text-amber-400" />;
+      case 'LifeBuoy':
+        return <LifeBuoy className="w-4 h-4 text-rose-400" />;
+      case 'ShieldCheck':
+        return <ShieldCheck className="w-4 h-4 text-teal-400" />;
+      default:
+        return <Bot className="w-4 h-4 text-blue-400" />;
+    }
+  };
+
+  const getAgentCardStyles = (colorTheme: string) => {
+    switch (colorTheme) {
+      case 'blue':
+        return {
+          border: 'border-blue-500/40 hover:border-blue-400 shadow-blue-950/20',
+          hoverGrip: 'group-hover:text-blue-400',
+          iconBorder: 'border-blue-500/30',
+          badge: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+        };
+      case 'cyan':
+        return {
+          border: 'border-cyan-500/40 hover:border-cyan-400 shadow-cyan-950/20',
+          hoverGrip: 'group-hover:text-cyan-400',
+          iconBorder: 'border-cyan-500/30',
+          badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+        };
+      case 'purple':
+        return {
+          border: 'border-purple-500/40 hover:border-purple-400 shadow-purple-950/20',
+          hoverGrip: 'group-hover:text-purple-400',
+          iconBorder: 'border-purple-500/30',
+          badge: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+        };
+      case 'emerald':
+        return {
+          border: 'border-emerald-500/40 hover:border-emerald-400 shadow-emerald-950/20',
+          hoverGrip: 'group-hover:text-emerald-400',
+          iconBorder: 'border-emerald-500/30',
+          badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+        };
+      case 'amber':
+        return {
+          border: 'border-amber-500/40 hover:border-amber-400 shadow-amber-950/20',
+          hoverGrip: 'group-hover:text-amber-400',
+          iconBorder: 'border-amber-500/30',
+          badge: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+        };
+      case 'rose':
+        return {
+          border: 'border-rose-500/40 hover:border-rose-400 shadow-rose-950/20',
+          hoverGrip: 'group-hover:text-rose-400',
+          iconBorder: 'border-rose-500/30',
+          badge: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+        };
+      case 'teal':
+        return {
+          border: 'border-teal-500/40 hover:border-teal-400 shadow-teal-950/20',
+          hoverGrip: 'group-hover:text-teal-400',
+          iconBorder: 'border-teal-500/30',
+          badge: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
+        };
+      default:
+        return {
+          border: 'border-gray-500/40 hover:border-gray-400 shadow-gray-950/20',
+          hoverGrip: 'group-hover:text-gray-400',
+          iconBorder: 'border-gray-500/30',
+          badge: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+        };
+    }
+  };
+
   const filteredTools = tools.filter((t) => {
     const matchesSearch = 
       t.name.toLowerCase().includes(toolSearch.toLowerCase()) ||
@@ -506,131 +590,143 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
       {/* TAB 1: AGENTS & PATTERNS */}
       {activeTab === 'agents' && (
         <div className="p-3 space-y-4 overflow-y-auto flex-1">
-          {/* Basic Agent Types Section */}
+          {/* Core Agent Types Section */}
           <div>
             <div className="text-[11px] font-semibold text-blue-400 mb-2 uppercase tracking-wide flex items-center justify-between">
-              <span>Basic Agent Types</span>
+              <span>Core Agents</span>
               <span className="text-[9px] text-gray-400 font-normal lowercase">drag to canvas</span>
             </div>
 
             <div className="space-y-1.5">
-              {/* Standard Agent */}
-              <div
-                draggable
-                onDragStart={(e) => handleDragStartAgent(e, 'single_agent', false, 'standard')}
-                className="group relative flex items-center justify-between p-2.5 bg-[#21262d] border border-[#30363d] rounded-lg cursor-move hover:bg-[#30363d] hover:border-blue-500/50 transition-all shadow-sm active:cursor-grabbing"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-300 shrink-0" />
-                  <div className="p-1.5 rounded-md bg-[#0d1117] border border-[#30363d] shrink-0">
-                    <Bot className="w-4 h-4 text-blue-400" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-semibold text-xs text-[#c9d1d9] flex items-center gap-1.5">
-                      <span>Agent</span>
-                      <span className="text-[9px] px-1 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                        Standard
-                      </span>
+              {CORE_AGENT_TYPES.map((agentType) => {
+                const styles = getAgentCardStyles(agentType.colorTheme);
+                return (
+                  <div
+                    key={agentType.kind}
+                    draggable
+                    onDragStart={(e) => handleDragStartAgent(e, agentType.kind, false, agentType.kind)}
+                    onClick={() => onAddAgent(agentType.kind)}
+                    className={`group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] ${styles.border} cursor-grab active:cursor-grabbing hover:bg-[#30363d] shadow-sm transition-all`}
+                    title={`Drag and drop ${agentType.name} onto canvas`}
+                    data-testid={`palette-agent-${agentType.kind}`}
+                  >
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <GripVertical className={`w-3.5 h-3.5 text-gray-400 ${styles.hoverGrip} shrink-0 mt-1`} />
+                      <div className={`p-1.5 rounded-md bg-[#0d1117] ${styles.iconBorder} shrink-0 mt-0.5 border shadow-xs`}>
+                        {getAgentTypeIcon(agentType.iconName)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-xs text-white truncate max-w-[150px]">
+                            {agentType.name}
+                          </span>
+                          <span className={`text-[8px] uppercase font-mono px-1.5 py-0.2 rounded ${styles.badge}`}>
+                            {agentType.badge}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                          {agentType.description}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-[10px] text-gray-400 truncate max-w-[140px]">
-                      LLM agent with tools & prompt
-                    </div>
                   </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onAddAgent('standard')}
-                  title="Add Standard Agent"
-                  className="p-1.5 rounded bg-[#0d1117] hover:bg-blue-600 border border-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3 h-3" />
-                </button>
-              </div>
+                );
+              })}
+            </div>
+          </div>
 
-              {/* A2A Protocol Agent */}
-              <div
-                draggable
-                onDragStart={(e) => handleDragStartAgent(e, 'a2a', false, 'a2a')}
-                className="group relative flex items-center justify-between p-2.5 bg-[#21262d] border border-[#30363d] rounded-lg cursor-move hover:bg-[#30363d] hover:border-cyan-500/50 transition-all shadow-sm active:cursor-grabbing"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-300 shrink-0" />
-                  <div className="p-1.5 rounded-md bg-[#0d1117] border border-cyan-500/40 shrink-0">
-                    <Globe2 className="w-4 h-4 text-cyan-400" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-semibold text-xs text-[#c9d1d9] flex items-center gap-1.5">
-                      <span>A2A Agent</span>
-                      <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                        Protocol
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-gray-400 truncate max-w-[140px]">
-                      Decentralized JSON-RPC A2A endpoint
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onAddAgent('a2a')}
-                  title="Add A2A Protocol Agent"
-                  className="p-1.5 rounded bg-[#0d1117] hover:bg-cyan-600 border border-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3 h-3" />
-                </button>
-              </div>
+          {/* Multi-Agent Flow & Control Nodes Section */}
+          <div className="border-t border-[#30363d] pt-3">
+            <div className="text-[11px] font-semibold text-indigo-400 mb-2 uppercase tracking-wide flex items-center justify-between">
+              <span>Flow & Control Nodes</span>
+              <span className="text-[9px] text-gray-400 font-normal lowercase">drag to canvas</span>
+            </div>
 
-              {/* Router Agent */}
-              <div
-                draggable
-                onDragStart={(e) => handleDragStartAgent(e, 'router', false, 'router')}
-                className="group relative flex items-center justify-between p-2.5 bg-[#21262d] border border-[#30363d] rounded-lg cursor-move hover:bg-[#30363d] hover:border-purple-500/50 transition-all shadow-sm active:cursor-grabbing"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-300 shrink-0" />
-                  <div className="p-1.5 rounded-md bg-[#0d1117] border border-purple-500/40 shrink-0">
-                    <Split className="w-4 h-4 text-purple-400" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-semibold text-xs text-[#c9d1d9] flex items-center gap-1.5">
-                      <span>Router</span>
-                      <span className="text-[9px] px-1 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                        Branching
-                      </span>
+            <div className="space-y-1.5">
+              {FLOW_CONTROL_AGENT_TYPES.map((agentType) => {
+                const styles = getAgentCardStyles(agentType.colorTheme);
+                return (
+                  <div
+                    key={agentType.kind}
+                    draggable
+                    onDragStart={(e) => handleDragStartAgent(e, agentType.kind, false, agentType.kind)}
+                    onClick={() => onAddAgent(agentType.kind)}
+                    className={`group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] ${styles.border} cursor-grab active:cursor-grabbing hover:bg-[#30363d] shadow-sm transition-all`}
+                    title={`Drag and drop ${agentType.name} onto canvas`}
+                    data-testid={`palette-agent-${agentType.kind}`}
+                  >
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <GripVertical className={`w-3.5 h-3.5 text-gray-400 ${styles.hoverGrip} shrink-0 mt-1`} />
+                      <div className={`p-1.5 rounded-md bg-[#0d1117] ${styles.iconBorder} shrink-0 mt-0.5 border shadow-xs`}>
+                        {getAgentTypeIcon(agentType.iconName)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-xs text-white truncate max-w-[150px]">
+                            {agentType.name}
+                          </span>
+                          <span className={`text-[8px] uppercase font-mono px-1.5 py-0.2 rounded ${styles.badge}`}>
+                            {agentType.badge}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                          {agentType.description}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-[10px] text-gray-400 truncate max-w-[140px]">
-                      Conditional branching & if/else routing
-                    </div>
                   </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onAddAgent('router')}
-                  title="Add Router Agent"
-                  className="p-1.5 rounded bg-[#0d1117] hover:bg-purple-600 border border-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3 h-3" />
-                </button>
-              </div>
+                );
+              })}
             </div>
           </div>
 
           {/* Multi-Agent Patterns Section */}
           <div className="border-t border-[#30363d] pt-3">
             <button
+              type="button"
               onClick={() => setIsPatternsOpen(!isPatternsOpen)}
               className="w-full flex items-center justify-between text-[11px] font-semibold text-purple-400 mb-2 uppercase tracking-wide cursor-pointer hover:text-purple-300"
             >
               <div className="flex items-center gap-1.5">
                 <Cpu className="w-3.5 h-3.5" />
-                <span>Multi-Agent Patterns (0)</span>
+                <span>Multi-Agent Patterns ({PATTERN_DEFINITIONS.length})</span>
               </div>
               {isPatternsOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
 
             {isPatternsOpen && (
-              <div className="text-[11px] text-gray-500 italic p-3 text-center bg-[#0d1117] rounded-lg border border-dashed border-[#30363d]">
-                No multi-agent patterns available in this release.
+              <div className="space-y-1.5">
+                {PATTERN_DEFINITIONS.map((pattern) => (
+                  <div
+                    key={pattern.id}
+                    draggable
+                    onDragStart={(e) => handleDragStartAgent(e, pattern.type, true)}
+                    onClick={() => onAddPattern(pattern.type)}
+                    className="group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] border-purple-500/40 cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-purple-400 shadow-sm transition-all shadow-purple-950/20"
+                    title={`Drag and drop ${pattern.name} pattern onto canvas`}
+                    data-testid={`palette-pattern-${pattern.type}`}
+                  >
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-purple-400 shrink-0 mt-1" />
+                      <div className="p-1.5 rounded-md bg-[#0d1117] border border-purple-500/30 shrink-0 mt-0.5 shadow-xs">
+                        {getPatternIcon(pattern.iconName)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-xs text-white truncate max-w-[150px]">
+                            {pattern.name}
+                          </span>
+                          <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            {pattern.badge}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                          {pattern.description}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

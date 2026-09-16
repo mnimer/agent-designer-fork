@@ -205,8 +205,11 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
     }
 
     let currentAgentData = (node.data as AgentData) || {};
-    let routerConfigUpdated = false;
+    let configUpdated = false;
     let syncedRouterConfig = currentAgentData.routerConfig;
+    let syncedHitlConfig = currentAgentData.hitlConfig;
+    let syncedFallbackConfig = currentAgentData.fallbackConfig;
+    let syncedGuardrailConfig = currentAgentData.guardrailConfig;
 
     // NOTE: Synchronize router branches if this agent is a router node
     if (currentAgentData.agentKind === 'router' && currentAgentData.routerConfig?.branches) {
@@ -230,10 +233,106 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
       });
 
       if (branchChanged) {
-        routerConfigUpdated = true;
+        configUpdated = true;
         syncedRouterConfig = {
           ...currentAgentData.routerConfig,
           branches: updatedBranches,
+        };
+      }
+    }
+
+    // NOTE: Synchronize HITL gate approved/rejected targets
+    if (currentAgentData.agentKind === 'hitl') {
+      const approvedEdge = edges.find(
+        (e) =>
+          e.source === node.id &&
+          e.sourceHandle === 'approved' &&
+          nodeMap.has(e.target) &&
+          (nodeMap.get(e.target)!.type === 'agentNode' || nodeMap.get(e.target)!.type === 'agent')
+      );
+      const rejectedEdge = edges.find(
+        (e) =>
+          e.source === node.id &&
+          e.sourceHandle === 'rejected' &&
+          nodeMap.has(e.target) &&
+          (nodeMap.get(e.target)!.type === 'agentNode' || nodeMap.get(e.target)!.type === 'agent')
+      );
+      const approvedTargetId = approvedEdge ? approvedEdge.target : undefined;
+      const rejectedTargetId = rejectedEdge ? rejectedEdge.target : undefined;
+
+      if (
+        currentAgentData.hitlConfig?.approvedTargetAgentId !== approvedTargetId ||
+        currentAgentData.hitlConfig?.rejectedTargetAgentId !== rejectedTargetId
+      ) {
+        configUpdated = true;
+        syncedHitlConfig = {
+          ...(currentAgentData.hitlConfig || {}),
+          approvedTargetAgentId: approvedTargetId,
+          rejectedTargetAgentId: rejectedTargetId,
+        };
+      }
+    }
+
+    // NOTE: Synchronize Fallback primary/fallback targets
+    if (currentAgentData.agentKind === 'fallback') {
+      const primaryEdge = edges.find(
+        (e) =>
+          e.source === node.id &&
+          e.sourceHandle === 'primary' &&
+          nodeMap.has(e.target) &&
+          (nodeMap.get(e.target)!.type === 'agentNode' || nodeMap.get(e.target)!.type === 'agent')
+      );
+      const fallbackEdge = edges.find(
+        (e) =>
+          e.source === node.id &&
+          e.sourceHandle === 'fallback' &&
+          nodeMap.has(e.target) &&
+          (nodeMap.get(e.target)!.type === 'agentNode' || nodeMap.get(e.target)!.type === 'agent')
+      );
+      const primaryTargetId = primaryEdge ? primaryEdge.target : undefined;
+      const fallbackTargetId = fallbackEdge ? fallbackEdge.target : undefined;
+
+      if (
+        currentAgentData.fallbackConfig?.primaryTargetAgentId !== primaryTargetId ||
+        currentAgentData.fallbackConfig?.fallbackTargetAgentId !== fallbackTargetId
+      ) {
+        configUpdated = true;
+        syncedFallbackConfig = {
+          ...(currentAgentData.fallbackConfig || {}),
+          primaryTargetAgentId: primaryTargetId,
+          fallbackTargetAgentId: fallbackTargetId,
+        };
+      }
+    }
+
+    // NOTE: Synchronize Guardrail pass/block targets
+    if (currentAgentData.agentKind === 'guardrail') {
+      const passEdge = edges.find(
+        (e) =>
+          e.source === node.id &&
+          e.sourceHandle === 'pass' &&
+          nodeMap.has(e.target) &&
+          (nodeMap.get(e.target)!.type === 'agentNode' || nodeMap.get(e.target)!.type === 'agent')
+      );
+      const blockEdge = edges.find(
+        (e) =>
+          e.source === node.id &&
+          e.sourceHandle === 'block' &&
+          nodeMap.has(e.target) &&
+          (nodeMap.get(e.target)!.type === 'agentNode' || nodeMap.get(e.target)!.type === 'agent')
+      );
+      const passTargetId = passEdge ? passEdge.target : undefined;
+      const blockTargetId = blockEdge ? blockEdge.target : undefined;
+
+      if (
+        currentAgentData.guardrailConfig?.passTargetAgentId !== passTargetId ||
+        currentAgentData.guardrailConfig?.blockTargetAgentId !== blockTargetId
+      ) {
+        configUpdated = true;
+        syncedGuardrailConfig = {
+          ...(currentAgentData.guardrailConfig || {}),
+          passTargetAgentId: passTargetId,
+          blockTargetAgentId: blockTargetId,
         };
       }
     }
@@ -242,7 +341,17 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
 
     const isBottomHandle = (handleId?: string | null) => {
       if (!handleId) return true;
-      if (handleId === 'output' || handleId === 'subagent' || handleId.startsWith('branch_')) return true;
+      if (
+        handleId === 'output' ||
+        handleId === 'subagent' ||
+        handleId.startsWith('branch_') ||
+        handleId === 'approved' ||
+        handleId === 'rejected' ||
+        handleId === 'primary' ||
+        handleId === 'fallback' ||
+        handleId === 'pass' ||
+        handleId === 'block'
+      ) return true;
       return handleId !== 'input' && handleId !== 'input_left';
     };
 
@@ -303,7 +412,7 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
           sub.delegationType === finalSubAgents[idx].delegationType
       );
 
-    if (isSameContent && !routerConfigUpdated) {
+    if (isSameContent && !configUpdated) {
       return node;
     }
 
@@ -312,7 +421,10 @@ export function syncAgentSubAgents(nodes: Node<any>[], edges: Edge[]): Node<any>
       data: {
         ...node.data,
         subAgents: finalSubAgents,
-        ...(routerConfigUpdated ? { routerConfig: syncedRouterConfig } : {}),
+        ...(syncedRouterConfig ? { routerConfig: syncedRouterConfig } : {}),
+        ...(syncedHitlConfig ? { hitlConfig: syncedHitlConfig } : {}),
+        ...(syncedFallbackConfig ? { fallbackConfig: syncedFallbackConfig } : {}),
+        ...(syncedGuardrailConfig ? { guardrailConfig: syncedGuardrailConfig } : {}),
       },
     };
   });
