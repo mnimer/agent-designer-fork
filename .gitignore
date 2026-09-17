@@ -36,3 +36,9 @@ Thumbs.db
 
 # temporary files
 test-report.md
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
