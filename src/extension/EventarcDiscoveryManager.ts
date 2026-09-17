@@ -224,7 +224,10 @@ export interface EventarcDiscoveryResult {
 
 export class EventarcDiscoveryManager {
   private static instance: EventarcDiscoveryManager | null = null;
-  private cache: Map<string, { timestamp: number; data: EventArcCategory[] }> = new Map();
+  private cache: Map<
+    string,
+    { timestamp: number; data: EventArcCategory[]; source: 'gcloud' | 'fallback'; error?: string }
+  > = new Map();
   private readonly CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes cache
   private resolvedGcloudPath: string | null = null;
 
@@ -239,10 +242,31 @@ export class EventarcDiscoveryManager {
   }
 
   /**
-   * Resets singleton instance (useful for unit testing).
+   * Resets singleton instance and clears regional cache (useful for unit testing).
    */
   public static resetInstance(): void {
+    if (EventarcDiscoveryManager.instance) {
+      EventarcDiscoveryManager.instance.clearCache();
+    }
     EventarcDiscoveryManager.instance = null;
+  }
+
+  /**
+   * Clears regional in-memory cache.
+   */
+  public clearCache(): void {
+    this.cache.clear();
+  }
+
+  /**
+   * Checks whether a GCP location is currently cached in memory and not expired.
+   *
+   * @param location Target Google Cloud location
+   */
+  public isLocationCached(location: string = 'global'): boolean {
+    const loc = location || 'global';
+    const entry = this.cache.get(loc);
+    return Boolean(entry && Date.now() - entry.timestamp < this.CACHE_TTL_MS);
   }
 
   /**
@@ -297,8 +321,9 @@ export class EventarcDiscoveryManager {
       if (cached && Date.now() - cached.timestamp < this.CACHE_TTL_MS) {
         return {
           categories: cached.data,
-          source: 'gcloud',
+          source: cached.source,
           location: loc,
+          error: cached.error,
         };
       }
     }
@@ -318,8 +343,8 @@ export class EventarcDiscoveryManager {
       if (Array.isArray(parsed) && parsed.length > 0) {
         const categories = this.transformRawProviders(parsed);
         if (categories.length > 0) {
-          // Store in cache
-          this.cache.set(loc, { timestamp: Date.now(), data: categories });
+          // Store successful gcloud discovery in regional cache
+          this.cache.set(loc, { timestamp: Date.now(), data: categories, source: 'gcloud' });
           return {
             categories,
             source: 'gcloud',
@@ -328,7 +353,12 @@ export class EventarcDiscoveryManager {
         }
       }
 
-      // If output was empty, fallback
+      // If output was empty, cache fallback result to prevent redundant CLI subprocess invocations
+      this.cache.set(loc, {
+        timestamp: Date.now(),
+        data: DEFAULT_EVENTARC_FALLBACK,
+        source: 'fallback',
+      });
       return {
         categories: DEFAULT_EVENTARC_FALLBACK,
         source: 'fallback',
@@ -336,6 +366,13 @@ export class EventarcDiscoveryManager {
       };
     } catch (err: any) {
       const errMsg = err?.message || String(err);
+      // Cache fallback result so offline/CI/unauthenticated states do not repeatedly spawn failing subprocesses
+      this.cache.set(loc, {
+        timestamp: Date.now(),
+        data: DEFAULT_EVENTARC_FALLBACK,
+        source: 'fallback',
+        error: errMsg,
+      });
       // Fallback cleanly to static definitions
       return {
         categories: DEFAULT_EVENTARC_FALLBACK,

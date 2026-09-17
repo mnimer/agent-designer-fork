@@ -68,7 +68,8 @@ export interface McpToolDrawerProps {
   tool: ToolDefinition | null;
   isOpen: boolean;
   onClose: () => void;
-  onSaveTool: (updatedTool: ToolDefinition) => void;
+  onSaveTool?: (updatedTool: ToolDefinition) => void;
+  onUpdateTool?: (updatedTool: ToolDefinition) => void;
   onDeleteTool?: (toolId: string) => void;
   selectedAgent?: AgentData | null;
   onAttachToAgent?: (agentId: string, tool: ToolDefinition) => void;
@@ -94,6 +95,7 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
   isOpen,
   onClose,
   onSaveTool,
+  onUpdateTool,
   onDeleteTool,
   selectedAgent,
   onAttachToAgent,
@@ -109,7 +111,6 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
   const [newHeaderKey, setNewHeaderKey] = useState('');
   const [newHeaderValue, setNewHeaderValue] = useState('');
   const [newAutoApprovePattern, setNewAutoApprovePattern] = useState('');
-  const [savedSuccess, setSavedSuccess] = useState(false);
 
   // MCP handshake testing state
   const [isTestingMcp, setIsTestingMcp] = useState(false);
@@ -227,13 +228,18 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
   };
 
   const handleUpdate = (updates: Partial<ToolDefinition>) => {
-    setFormData((prev) => (prev ? { ...prev, ...updates } : null));
+    setFormData((prev) => {
+      if (!prev) return null;
+      const next = { ...prev, ...updates };
+      (onUpdateTool || onSaveTool)?.(next);
+      return next;
+    });
   };
 
   const handleUpdateMcpConfig = (updates: Partial<McpToolConfig>) => {
     setFormData((prev) => {
       if (!prev) return null;
-      return {
+      const next: ToolDefinition = {
         ...prev,
         mcpConfig: {
           ...prev.mcpConfig,
@@ -241,6 +247,8 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
           ...updates,
         },
       };
+      (onUpdateTool || onSaveTool)?.(next);
+      return next;
     });
   };
 
@@ -444,16 +452,6 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
     handleUpdateMcpConfig({ autoApproveTools: updated });
   };
 
-  const handleSave = () => {
-    if (!formData) return;
-    onSaveTool(formData);
-    setSavedSuccess(true);
-    setTimeout(() => {
-      setSavedSuccess(false);
-      onClose();
-    }, 800);
-  };
-
   const isAlreadyAttached = selectedAgent?.tools?.some((t) => t.id === formData.id);
   const gcpServerDef = GOOGLE_CLOUD_MCP_SERVERS.find((s) => s.id === formData.id);
   const isGcpMcp = Boolean(gcpServerDef || formData.category === 'google_cloud_mcp' || formData.id.startsWith('gcp_mcp_'));
@@ -491,9 +489,7 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
           onAttachToAgent(selectedAgent.id || '', formData);
         }
       }}
-      onSave={handleSave}
       onDelete={onDeleteTool ? () => onDeleteTool(formData.id) : undefined}
-      savedSuccess={savedSuccess}
     >
       {/* MCP SERVER DEDICATED CONFIGURATION */}
       <div className="space-y-4 bg-[#0d1117] p-4 rounded-lg border border-purple-500/40 shadow-sm">

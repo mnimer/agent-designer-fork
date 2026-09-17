@@ -9,6 +9,7 @@
  * 1. Security Gate: Evaluates input query (ingress) and output responses (egress) against safety policies.
  * 2. Dual Sockets: Routes clean payloads to the Pass branch and policy violations to the Block branch.
  * 3. 8pt Grid & Form Consistency: Adheres to standard drawer architecture and design tokens.
+ * 4. Full-Height Viewport Drawer: Uses fixed inset-y-0 right-0 z-50 w-[420px] overlay to span full viewport height over bottom panels, matching TriggerDrawer.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -145,7 +146,7 @@ export const GuardrailDrawer: React.FC<GuardrailDrawerProps> = ({
   };
 
   return (
-    <div className="absolute top-0 right-0 bottom-0 z-30 w-96 backdrop-blur-2xl bg-[#161b22]/95 border-l border-[#30363d] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 text-[#c9d1d9]">
+    <div className="fixed inset-y-0 right-0 z-50 w-[420px] bg-[#161b22] border-l border-[#30363d] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 text-[#c9d1d9] font-sans">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3.5 bg-[#161b22] border-b border-[#30363d] shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">

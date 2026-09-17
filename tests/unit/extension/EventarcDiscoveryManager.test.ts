@@ -121,12 +121,43 @@ describe('EventarcDiscoveryManager Unit Tests', { concurrency: 1 }, () => {
     const manager = EventarcDiscoveryManager.getInstance();
     const res1 = await manager.getEventarcProviders('us-central1', false);
     assert.ok(res1.categories.length > 0);
+    assert.ok(manager.isLocationCached('us-central1'), 'Location must be cached after first lookup');
 
     const start = Date.now();
     const res2 = await manager.getEventarcProviders('us-central1', false);
     const duration = Date.now() - start;
 
-    assert.ok(duration < 50, 'Cached lookup should be sub-50ms');
+    assert.ok(duration < 250, `Cached lookup should be sub-250ms, took ${duration}ms`);
     assert.equal(res2.categories.length, res1.categories.length);
+    assert.equal(res2.source, res1.source);
+  });
+
+  it('should cache fallback results when gcloud CLI fails to prevent repeated subprocess calls', async () => {
+    const manager = EventarcDiscoveryManager.getInstance();
+    const failingLoc = 'invalid-region-fallback-test';
+    const res1 = await manager.getEventarcProviders(failingLoc, false);
+    assert.equal(res1.source, 'fallback');
+    assert.ok(manager.isLocationCached(failingLoc), 'Fallback result must be cached in memory');
+
+    const start = Date.now();
+    const res2 = await manager.getEventarcProviders(failingLoc, false);
+    const duration = Date.now() - start;
+
+    assert.ok(
+      duration < 250,
+      `Subsequent lookup for failing location should be served from memory cache (<250ms), took ${duration}ms`
+    );
+    assert.equal(res2.source, 'fallback');
+    assert.deepEqual(res2.categories, DEFAULT_EVENTARC_FALLBACK);
+  });
+
+  it('should support clearing cache and checking cached status', async () => {
+    const manager = EventarcDiscoveryManager.getInstance();
+    const loc = 'us-central1';
+    await manager.getEventarcProviders(loc, false);
+    assert.ok(manager.isLocationCached(loc));
+
+    manager.clearCache();
+    assert.equal(manager.isLocationCached(loc), false, 'Cache should be empty after clearCache()');
   });
 });

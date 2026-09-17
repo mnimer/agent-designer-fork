@@ -19,7 +19,8 @@ export interface CodeExecutionToolDrawerProps {
   tool: ToolDefinition | null;
   isOpen: boolean;
   onClose: () => void;
-  onSaveTool: (updatedTool: ToolDefinition) => void;
+  onSaveTool?: (updatedTool: ToolDefinition) => void;
+  onUpdateTool?: (updatedTool: ToolDefinition) => void;
   onDeleteTool?: (toolId: string) => void;
   selectedAgent?: AgentData | null;
   onAttachToAgent?: (agentId: string, tool: ToolDefinition) => void;
@@ -32,6 +33,7 @@ export const CodeExecutionToolDrawer: React.FC<CodeExecutionToolDrawerProps> = (
   isOpen,
   onClose,
   onSaveTool,
+  onUpdateTool,
   onDeleteTool,
   selectedAgent,
   onAttachToAgent,
@@ -39,7 +41,6 @@ export const CodeExecutionToolDrawer: React.FC<CodeExecutionToolDrawerProps> = (
   agentName,
 }) => {
   const [formData, setFormData] = useState<ToolDefinition | null>(null);
-  const [savedSuccess, setSavedSuccess] = useState(false);
   const [timeoutSeconds, setTimeoutSeconds] = useState(30);
 
   useEffect(() => {
@@ -58,21 +59,35 @@ export const CodeExecutionToolDrawer: React.FC<CodeExecutionToolDrawerProps> = (
   if (!isOpen || !formData) return null;
 
   const handleUpdate = (patch: Partial<ToolDefinition>) => {
-    setFormData((prev) => (prev ? { ...prev, ...patch } : null));
+    setFormData((prev) => {
+      if (!prev) return null;
+      const next: ToolDefinition = {
+        ...prev,
+        ...patch,
+        parameters: {
+          code: 'string - Python code block to execute in sandbox',
+          timeout: `number - Execution timeout in seconds (default ${timeoutSeconds})`,
+        },
+      };
+      (onUpdateTool || onSaveTool)?.(next);
+      return next;
+    });
   };
 
-  const handleSave = () => {
-    if (!formData) return;
-    const updated: ToolDefinition = {
-      ...formData,
-      parameters: {
-        code: 'string - Python code block to execute in sandbox',
-        timeout: `number - Execution timeout in seconds (default ${timeoutSeconds})`,
-      },
-    };
-    onSaveTool(updated);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2000);
+  const handleTimeoutChange = (newTimeout: number) => {
+    setTimeoutSeconds(newTimeout);
+    setFormData((prev) => {
+      if (!prev) return null;
+      const next: ToolDefinition = {
+        ...prev,
+        parameters: {
+          code: 'string - Python code block to execute in sandbox',
+          timeout: `number - Execution timeout in seconds (default ${newTimeout})`,
+        },
+      };
+      (onUpdateTool || onSaveTool)?.(next);
+      return next;
+    });
   };
 
   const isAlreadyAttached =
@@ -94,24 +109,22 @@ export const CodeExecutionToolDrawer: React.FC<CodeExecutionToolDrawerProps> = (
         label: 'CODE EXECUTION / SANDBOX',
         subLabel: 'Google ADK Built-in',
         color: 'text-emerald-400',
-        bg: 'bg-emerald-500/10',
-        border: 'border-emerald-500/30',
+        bg: 'bg-emerald-500/20',
+        border: 'border-emerald-500/40',
       }}
-      toolIcon={<Terminal className="w-5 h-5 text-emerald-400" />}
+      toolIcon={<Terminal className="w-4 h-4 text-emerald-400" />}
       scope={scope}
       agentName={agentName}
       selectedAgent={selectedAgent}
-      isAlreadyAttached={Boolean(isAlreadyAttached)}
+      isAlreadyAttached={isAlreadyAttached}
       onAttachToAgent={
         selectedAgent && onAttachToAgent ? () => onAttachToAgent(selectedAgent.id, formData) : undefined
       }
-      onSave={handleSave}
       onDelete={
         onDeleteTool && (scope === 'agent' || formData.id.startsWith('tool_custom_'))
           ? () => onDeleteTool(formData.id)
           : undefined
       }
-      savedSuccess={savedSuccess}
     >
       {/* 1. Sandbox Execution Settings */}
       <div className="space-y-3 bg-[#0d1117] p-4 rounded-lg border border-emerald-500/40 shadow-xs">
@@ -140,7 +153,7 @@ export const CodeExecutionToolDrawer: React.FC<CodeExecutionToolDrawerProps> = (
             max={120}
             step={5}
             value={timeoutSeconds}
-            onChange={(e) => setTimeoutSeconds(parseInt(e.target.value, 10))}
+            onChange={(e) => handleTimeoutChange(parseInt(e.target.value, 10))}
             className="w-full accent-emerald-500 cursor-pointer"
           />
           <div className="flex justify-between text-[9px] text-gray-400 font-mono">

@@ -266,6 +266,7 @@ export function FlowCanvas() {
     handleCreateCustomTool,
     handleCreateMcpTool,
     handleSaveTool,
+    handleUpdateTool,
     handleDeleteTool,
   } = useToolsManager({
     nodes,
@@ -1872,6 +1873,7 @@ export function FlowCanvas() {
             setEditingToolScope={setEditingToolScope}
             setIsToolDrawerOpen={setIsToolDrawerOpen}
             handleSaveTool={handleSaveTool}
+            handleUpdateTool={handleUpdateTool}
             handleDeleteTool={handleDeleteTool}
             editingToolScope={editingToolScope}
             config={config}

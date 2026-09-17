@@ -11,6 +11,7 @@
  * 
  * Architectural Decisions:
  * - Author: Mike Nimer <mikenimer@google.com>
+ * - Full-Height Viewport Drawer: Uses fixed inset-y-0 right-0 z-50 w-[420px] overlay to span full viewport height over bottom panels, matching TriggerDrawer.
  * - Empty Spec Default: New A2A nodes start with empty JSON spec and endpoint, marked as Required.
  * - Read-only Capabilities: Advertised capabilities are strictly parsed from agent-card.json (Option A).
  * - Dynamic Sub-Agents Tab: Automatically hidden when subAgents.length === 0.
@@ -412,7 +413,7 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
   };
 
   return (
-    <div className="absolute top-0 right-0 bottom-0 z-30 w-96 backdrop-blur-2xl bg-[#161b22]/95 border-l border-[#30363d] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 text-[#c9d1d9]">
+    <div className="fixed inset-y-0 right-0 z-50 w-[420px] bg-[#161b22] border-l border-[#30363d] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 text-[#c9d1d9] font-sans">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3.5 bg-[#161b22] border-b border-[#30363d] shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">

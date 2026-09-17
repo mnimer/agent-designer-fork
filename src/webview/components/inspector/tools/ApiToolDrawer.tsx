@@ -23,7 +23,8 @@ export interface ApiToolDrawerProps {
   tool: ToolDefinition | null;
   isOpen: boolean;
   onClose: () => void;
-  onSaveTool: (updatedTool: ToolDefinition) => void;
+  onSaveTool?: (updatedTool: ToolDefinition) => void;
+  onUpdateTool?: (updatedTool: ToolDefinition) => void;
   onDeleteTool?: (toolId: string) => void;
   selectedAgent?: AgentData | null;
   onAttachToAgent?: (agentId: string, tool: ToolDefinition) => void;
@@ -38,6 +39,7 @@ export const ApiToolDrawer: React.FC<ApiToolDrawerProps> = ({
   isOpen,
   onClose,
   onSaveTool,
+  onUpdateTool,
   onDeleteTool,
   selectedAgent,
   onAttachToAgent,
@@ -45,7 +47,6 @@ export const ApiToolDrawer: React.FC<ApiToolDrawerProps> = ({
   agentName,
 }) => {
   const [formData, setFormData] = useState<ToolDefinition | null>(null);
-  const [savedSuccess, setSavedSuccess] = useState(false);
 
   // New parameter state
   const [newParamKey, setNewParamKey] = useState('');
@@ -71,7 +72,12 @@ export const ApiToolDrawer: React.FC<ApiToolDrawerProps> = ({
   const currentMethod: HttpMethod = (formData.httpMethod as HttpMethod) || 'GET';
 
   const handleUpdate = (patch: Partial<ToolDefinition>) => {
-    setFormData((prev) => (prev ? { ...prev, ...patch } : null));
+    setFormData((prev) => {
+      if (!prev) return null;
+      const next = { ...prev, ...patch };
+      (onUpdateTool || onSaveTool)?.(next);
+      return next;
+    });
   };
 
   const handleAddParam = () => {
@@ -112,13 +118,6 @@ export const ApiToolDrawer: React.FC<ApiToolDrawerProps> = ({
     handleUpdate({ headers: currentHeaders });
   };
 
-  const handleSave = () => {
-    if (!formData) return;
-    onSaveTool(formData);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2000);
-  };
-
   const isAlreadyAttached =
     selectedAgent &&
     (selectedAgent.tools || []).some(
@@ -147,6 +146,8 @@ export const ApiToolDrawer: React.FC<ApiToolDrawerProps> = ({
         return currentMethod === 'PATCH'
           ? 'bg-purple-500/20 text-purple-300 border-purple-500/50'
           : 'bg-[#161b22] text-gray-400 border-[#30363d] hover:border-purple-500/40 hover:text-purple-300';
+      default:
+        return 'bg-gray-500/20 text-gray-400 border-gray-500/40';
     }
   };
 
@@ -174,13 +175,11 @@ export const ApiToolDrawer: React.FC<ApiToolDrawerProps> = ({
       onAttachToAgent={
         selectedAgent && onAttachToAgent ? () => onAttachToAgent(selectedAgent.id, formData) : undefined
       }
-      onSave={handleSave}
       onDelete={
         onDeleteTool && (scope === 'agent' || formData.id.startsWith('tool_custom_') || formData.id.startsWith('tool_api_'))
           ? () => onDeleteTool(formData.id)
           : undefined
       }
-      savedSuccess={savedSuccess}
     >
       {/* 1. Endpoint & HTTP Method Configuration */}
       <div className="space-y-3 bg-[#0d1117] p-4 rounded-lg border border-rose-500/40 shadow-xs">

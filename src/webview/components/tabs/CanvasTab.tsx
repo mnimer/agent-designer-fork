@@ -120,6 +120,7 @@ interface CanvasTabProps {
   setEditingToolScope: (scope: any) => void;
   setIsToolDrawerOpen: (open: boolean) => void;
   handleSaveTool: (tool: ToolDefinition) => Promise<boolean>;
+  handleUpdateTool?: (tool: ToolDefinition) => void;
   handleDeleteTool: (toolId: string) => Promise<boolean>;
   editingToolScope: any;
   config: GenerationConfig;
@@ -189,6 +190,7 @@ export const CanvasTab: React.FC<CanvasTabProps> = ({
   setEditingToolScope,
   setIsToolDrawerOpen,
   handleSaveTool,
+  handleUpdateTool,
   handleDeleteTool,
   editingToolScope,
   config,
@@ -332,6 +334,7 @@ export const CanvasTab: React.FC<CanvasTabProps> = ({
           setEditingToolScope(null);
         }}
         onSaveTool={handleSaveTool}
+        onUpdateTool={handleUpdateTool}
         onDeleteTool={handleDeleteTool}
         scope={editingToolScope?.type || 'global'}
         agentName={

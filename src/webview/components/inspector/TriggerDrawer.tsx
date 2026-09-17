@@ -10,6 +10,7 @@
  * 2. Visual Alignment: Unified orange/amber styling across all trigger types to match canvas nodes and palette cards.
  * 3. Reactive State Updates: Form changes notify parent container via onUpdateTrigger callback on every edit.
  * 4. Root Reconnection: Direct actions to associate the trigger with the primary workflow root agent.
+ * 5. Full-Height Viewport Drawer: Uses fixed inset-y-0 right-0 z-50 w-[420px] overlay to span full viewport height over bottom panels.
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -21,9 +22,7 @@ import {
   Clock, 
   FlaskConical, 
   Bot, 
-  Save, 
   Trash2, 
-  Check, 
   Play, 
   Plus, 
   ListChecks, 
@@ -110,7 +109,6 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
   const activeAgentList = (availableAgents && availableAgents.length > 0) ? availableAgents : (agents || []);
   const bridge = useWebviewBridge();
   const [formData, setFormData] = useState<TriggerData | null>(null);
-  const [savedSuccess, setSavedSuccess] = useState(false);
   const [isCustomTopic, setIsCustomTopic] = useState(false);
   const [customTopicInput, setCustomTopicInput] = useState('');
   const [isCustomServiceAccount, setIsCustomServiceAccount] = useState(false);
@@ -393,16 +391,6 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
     });
   };
 
-  const handleSave = () => {
-    if (!formData) return;
-    onUpdateTrigger(formData);
-    setSavedSuccess(true);
-    setTimeout(() => {
-      setSavedSuccess(false);
-      onClose();
-    }, 500);
-  };
-
   const rootAgent = activeAgentList.find((a) => a.isStartNode) || activeAgentList[0];
 
   if (!isOpen || !formData) return null;
@@ -425,12 +413,24 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
             <p className="text-[11px] text-gray-400">Configure entrypoint invocation rules and payload handlers</p>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="p-1.5 text-gray-400 hover:text-white hover:bg-[#21262d] rounded-lg transition-colors cursor-pointer"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          {onDeleteTrigger && formData?.id && (
+            <button
+              onClick={() => onDeleteTrigger(formData.id)}
+              className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+              title="Delete Trigger"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="p-1.5 text-gray-400 hover:text-white hover:bg-[#21262d] rounded-lg transition-colors cursor-pointer"
+            title="Close Drawer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Body */}
@@ -1258,25 +1258,6 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
             </div>
           </div>
         )}
-      </div>
-
-      {/* Footer */}
-      <div className="px-4 py-3 bg-[#161b22] border-t border-[#30363d] shrink-0 flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={onClose}
-          className="px-3 py-1.5 text-xs rounded-lg bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-gray-300 hover:text-white cursor-pointer"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          className="px-4 py-1.5 text-xs font-bold rounded-lg bg-amber-600 hover:bg-amber-500 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
-        >
-          {savedSuccess ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-          <span>{savedSuccess ? 'Saved!' : 'Save Trigger'}</span>
-        </button>
       </div>
     </div>
   );
