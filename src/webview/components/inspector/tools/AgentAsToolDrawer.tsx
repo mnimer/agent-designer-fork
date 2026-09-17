@@ -17,7 +17,8 @@ export interface AgentAsToolDrawerProps {
   tool: ToolDefinition | null;
   isOpen: boolean;
   onClose: () => void;
-  onSaveTool: (updatedTool: ToolDefinition) => void;
+  onSaveTool?: (updatedTool: ToolDefinition) => void;
+  onUpdateTool?: (updatedTool: ToolDefinition) => void;
   onDeleteTool?: (toolId: string) => void;
   selectedAgent?: AgentData | null;
   onAttachToAgent?: (agentId: string, tool: ToolDefinition) => void;
@@ -30,6 +31,7 @@ export const AgentAsToolDrawer: React.FC<AgentAsToolDrawerProps> = ({
   isOpen,
   onClose,
   onSaveTool,
+  onUpdateTool,
   onDeleteTool,
   selectedAgent,
   onAttachToAgent,
@@ -37,7 +39,6 @@ export const AgentAsToolDrawer: React.FC<AgentAsToolDrawerProps> = ({
   agentName,
 }) => {
   const [formData, setFormData] = useState<ToolDefinition | null>(null);
-  const [savedSuccess, setSavedSuccess] = useState(false);
 
   useEffect(() => {
     if (tool) {
@@ -55,30 +56,27 @@ export const AgentAsToolDrawer: React.FC<AgentAsToolDrawerProps> = ({
   if (!isOpen || !formData) return null;
 
   const handleUpdate = (updates: Partial<ToolDefinition>) => {
-    setFormData((prev) => (prev ? { ...prev, ...updates } : null));
+    setFormData((prev) => {
+      if (!prev) return null;
+      const next = { ...prev, ...updates };
+      (onUpdateTool || onSaveTool)?.(next);
+      return next;
+    });
   };
 
   const handleUpdateAgentAsToolConfig = (updates: Partial<AgentAsToolConfig>) => {
     setFormData((prev) => {
       if (!prev) return null;
-      return {
+      const next: ToolDefinition = {
         ...prev,
         agentAsToolConfig: {
           ...prev.agentAsToolConfig,
           ...updates,
         },
       };
+      (onUpdateTool || onSaveTool)?.(next);
+      return next;
     });
-  };
-
-  const handleSave = () => {
-    if (!formData) return;
-    onSaveTool(formData);
-    setSavedSuccess(true);
-    setTimeout(() => {
-      setSavedSuccess(false);
-      onClose();
-    }, 800);
   };
 
   const isAlreadyAttached = selectedAgent?.tools?.some((t) => t.id === formData.id);
@@ -109,9 +107,7 @@ export const AgentAsToolDrawer: React.FC<AgentAsToolDrawerProps> = ({
           onAttachToAgent(selectedAgent.id || '', formData);
         }
       }}
-      onSave={handleSave}
       onDelete={onDeleteTool ? () => onDeleteTool(formData.id) : undefined}
-      savedSuccess={savedSuccess}
     >
       {/* Sub-Agent as a Tool Form */}
       <div className="space-y-4 bg-[#0d1117] p-4 rounded-lg border border-indigo-500/40 shadow-sm">

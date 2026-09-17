@@ -18,7 +18,8 @@ export interface WebPageReaderToolDrawerProps {
   tool: ToolDefinition | null;
   isOpen: boolean;
   onClose: () => void;
-  onSaveTool: (updatedTool: ToolDefinition) => void;
+  onSaveTool?: (updatedTool: ToolDefinition) => void;
+  onUpdateTool?: (updatedTool: ToolDefinition) => void;
   onDeleteTool?: (toolId: string) => void;
   selectedAgent?: AgentData | null;
   onAttachToAgent?: (agentId: string, tool: ToolDefinition) => void;
@@ -31,6 +32,7 @@ export const WebPageReaderToolDrawer: React.FC<WebPageReaderToolDrawerProps> = (
   isOpen,
   onClose,
   onSaveTool,
+  onUpdateTool,
   onDeleteTool,
   selectedAgent,
   onAttachToAgent,
@@ -38,7 +40,6 @@ export const WebPageReaderToolDrawer: React.FC<WebPageReaderToolDrawerProps> = (
   agentName,
 }) => {
   const [formData, setFormData] = useState<ToolDefinition | null>(null);
-  const [savedSuccess, setSavedSuccess] = useState(false);
 
   useEffect(() => {
     if (tool) {
@@ -49,14 +50,12 @@ export const WebPageReaderToolDrawer: React.FC<WebPageReaderToolDrawerProps> = (
   if (!isOpen || !formData) return null;
 
   const handleUpdate = (patch: Partial<ToolDefinition>) => {
-    setFormData((prev) => (prev ? { ...prev, ...patch } : null));
-  };
-
-  const handleSave = () => {
-    if (!formData) return;
-    onSaveTool(formData);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2000);
+    setFormData((prev) => {
+      if (!prev) return null;
+      const next = { ...prev, ...patch };
+      (onUpdateTool || onSaveTool)?.(next);
+      return next;
+    });
   };
 
   const isAlreadyAttached =
@@ -89,13 +88,11 @@ export const WebPageReaderToolDrawer: React.FC<WebPageReaderToolDrawerProps> = (
       onAttachToAgent={
         selectedAgent && onAttachToAgent ? () => onAttachToAgent(selectedAgent.id, formData) : undefined
       }
-      onSave={handleSave}
       onDelete={
         onDeleteTool && (scope === 'agent' || formData.id.startsWith('tool_custom_'))
           ? () => onDeleteTool(formData.id)
           : undefined
       }
-      savedSuccess={savedSuccess}
     >
       {/* 1. Scraper Settings */}
       <div className="space-y-3 bg-[#0d1117] p-4 rounded-lg border border-sky-500/40 shadow-xs">

@@ -18,7 +18,8 @@ export interface PreloadMemoryToolDrawerProps {
   tool: ToolDefinition | null;
   isOpen: boolean;
   onClose: () => void;
-  onSaveTool: (updatedTool: ToolDefinition) => void;
+  onSaveTool?: (updatedTool: ToolDefinition) => void;
+  onUpdateTool?: (updatedTool: ToolDefinition) => void;
   onDeleteTool?: (toolId: string) => void;
   selectedAgent?: AgentData | null;
   onAttachToAgent?: (agentId: string, tool: ToolDefinition) => void;
@@ -31,6 +32,7 @@ export const PreloadMemoryToolDrawer: React.FC<PreloadMemoryToolDrawerProps> = (
   isOpen,
   onClose,
   onSaveTool,
+  onUpdateTool,
   onDeleteTool,
   selectedAgent,
   onAttachToAgent,
@@ -38,7 +40,6 @@ export const PreloadMemoryToolDrawer: React.FC<PreloadMemoryToolDrawerProps> = (
   agentName,
 }) => {
   const [formData, setFormData] = useState<ToolDefinition | null>(null);
-  const [savedSuccess, setSavedSuccess] = useState(false);
   const [historyLimit, setHistoryLimit] = useState(10);
 
   useEffect(() => {
@@ -57,21 +58,35 @@ export const PreloadMemoryToolDrawer: React.FC<PreloadMemoryToolDrawerProps> = (
   if (!isOpen || !formData) return null;
 
   const handleUpdate = (patch: Partial<ToolDefinition>) => {
-    setFormData((prev) => (prev ? { ...prev, ...patch } : null));
+    setFormData((prev) => {
+      if (!prev) return null;
+      const next: ToolDefinition = {
+        ...prev,
+        ...patch,
+        parameters: {
+          session_id: 'string - Unique conversation session identifier',
+          limit: `number - Maximum history turns to retrieve (default ${historyLimit})`,
+        },
+      };
+      (onUpdateTool || onSaveTool)?.(next);
+      return next;
+    });
   };
 
-  const handleSave = () => {
-    if (!formData) return;
-    const updated: ToolDefinition = {
-      ...formData,
-      parameters: {
-        session_id: 'string - Unique conversation session identifier',
-        limit: `number - Maximum history turns to retrieve (default ${historyLimit})`,
-      },
-    };
-    onSaveTool(updated);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2000);
+  const handleLimitChange = (newLimit: number) => {
+    setHistoryLimit(newLimit);
+    setFormData((prev) => {
+      if (!prev) return null;
+      const next: ToolDefinition = {
+        ...prev,
+        parameters: {
+          session_id: 'string - Unique conversation session identifier',
+          limit: `number - Maximum history turns to retrieve (default ${newLimit})`,
+        },
+      };
+      (onUpdateTool || onSaveTool)?.(next);
+      return next;
+    });
   };
 
   const isAlreadyAttached =
@@ -104,13 +119,11 @@ export const PreloadMemoryToolDrawer: React.FC<PreloadMemoryToolDrawerProps> = (
       onAttachToAgent={
         selectedAgent && onAttachToAgent ? () => onAttachToAgent(selectedAgent.id, formData) : undefined
       }
-      onSave={handleSave}
       onDelete={
         onDeleteTool && (scope === 'agent' || formData.id.startsWith('tool_custom_'))
           ? () => onDeleteTool(formData.id)
           : undefined
       }
-      savedSuccess={savedSuccess}
     >
       {/* 1. Memory Configuration */}
       <div className="space-y-3 bg-[#0d1117] p-4 rounded-lg border border-purple-500/40 shadow-xs">
@@ -139,7 +152,7 @@ export const PreloadMemoryToolDrawer: React.FC<PreloadMemoryToolDrawerProps> = (
             max={50}
             step={1}
             value={historyLimit}
-            onChange={(e) => setHistoryLimit(parseInt(e.target.value, 10))}
+            onChange={(e) => handleLimitChange(parseInt(e.target.value, 10))}
             className="w-full accent-purple-500 cursor-pointer"
           />
           <div className="flex justify-between text-[9px] text-gray-400 font-mono">

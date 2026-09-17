@@ -34,10 +34,8 @@ import {
   Key, 
   Plus, 
   Trash2, 
-  Check, 
   Sliders, 
   FileCode,
-  Save,
   Link,
   Bot,
   Server,
@@ -66,7 +64,8 @@ export interface ToolDrawerProps {
   tool: ToolDefinition | null;
   isOpen: boolean;
   onClose: () => void;
-  onSaveTool: (updatedTool: ToolDefinition) => void;
+  onSaveTool?: (updatedTool: ToolDefinition) => void;
+  onUpdateTool?: (updatedTool: ToolDefinition) => void;
   onDeleteTool?: (toolId: string) => void;
   selectedAgent?: AgentData | null;
   onAttachToAgent?: (agentId: string, tool: ToolDefinition) => void;
@@ -119,6 +118,7 @@ export const ToolDrawer: React.FC<ToolDrawerProps> = ({
   isOpen,
   onClose,
   onSaveTool,
+  onUpdateTool,
   onDeleteTool,
   selectedAgent,
   onAttachToAgent,
@@ -129,7 +129,6 @@ export const ToolDrawer: React.FC<ToolDrawerProps> = ({
   const [newParamKey, setNewParamKey] = useState('');
   const [newParamVal, setNewParamVal] = useState('');
   const [newDomainFilter, setNewDomainFilter] = useState('');
-  const [savedSuccess, setSavedSuccess] = useState(false);
   const [mcpTestStatus, setMcpTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [mcpDiscoveredTools, setMcpDiscoveredTools] = useState<string[]>([]);
   const [mcpLatencyMs, setMcpLatencyMs] = useState<number>(0);
@@ -209,6 +208,7 @@ export const ToolDrawer: React.FC<ToolDrawerProps> = ({
           timeoutSeconds: 30,
         };
       }
+      (onUpdateTool || onSaveTool)?.(next);
       return next;
     });
   };
@@ -368,16 +368,6 @@ export const ToolDrawer: React.FC<ToolDrawerProps> = ({
     }, 600);
   };
 
-  const handleSave = () => {
-    if (!formData) return;
-    onSaveTool(formData);
-    setSavedSuccess(true);
-    setTimeout(() => {
-      setSavedSuccess(false);
-      onClose();
-    }, 800);
-  };
-
   const isAlreadyAttached = selectedAgent?.tools?.some((t) => t.id === formData.id);
   const isVertexSearch = formData.builtinType === 'vertex_ai_search' || formData.id === 'builtin_vertex_ai_search';
   const isGoogleSearch = formData.builtinType === 'google_search' || formData.id === 'builtin_google_search' || formData.id === 'tool_google_search';
@@ -426,12 +416,26 @@ export const ToolDrawer: React.FC<ToolDrawerProps> = ({
             )}
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          {onDeleteTool && formData?.id && (
+            <button
+              type="button"
+              onClick={() => onDeleteTool(formData.id)}
+              className="p-1 rounded-md text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+              title="Delete Tool"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"
+            title="Close Drawer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Body */}
@@ -1112,46 +1116,6 @@ export const ToolDrawer: React.FC<ToolDrawerProps> = ({
         )}
       </div>
 
-      {/* Footer Controls */}
-      <div className="px-4 py-3 bg-[#161b22] border-t border-[#30363d] shrink-0 flex items-center justify-between">
-        {onDeleteTool && (formData.id.startsWith('tool_custom_') || formData.id.startsWith('tool_mcp_')) ? (
-          <button
-            type="button"
-            onClick={() => {
-              onDeleteTool(formData.id);
-              onClose();
-            }}
-            className="px-2.5 py-1.5 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded border border-rose-500/30 transition-colors cursor-pointer flex items-center gap-1"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Delete</span>
-          </button>
-        ) : (
-          <div />
-        )}
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 text-xs rounded-lg bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-gray-300 hover:text-white cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            className={`px-4 py-1.5 text-xs font-bold rounded-lg text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm ${
-              formData.type === 'mcp'
-                ? 'bg-purple-600 hover:bg-purple-500'
-                : 'bg-green-600 hover:bg-green-500'
-            }`}
-          >
-            {savedSuccess ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-            <span>{savedSuccess ? 'Saved!' : scope === 'agent' ? 'Save to Agent' : 'Save Global Tool'}</span>
-          </button>
-        </div>
-      </div>
     </div>
   );
 };

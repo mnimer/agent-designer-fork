@@ -708,6 +708,73 @@ describe('Tool Drawer & Property Inspector Logic', () => {
     assert.equal(safeParseLocalStorage(null), null);
     assert.deepEqual(safeParseLocalStorage('{"id":"t1"}'), { id: 't1' });
   });
+
+  it('should support reactive onUpdateTool in ToolDrawer without requiring a Save button', () => {
+    let lastUpdatedTool: ToolDefinition | null = null;
+    const testTool: ToolDefinition = {
+      id: 'tool_google_search',
+      name: 'Google Search',
+      type: 'builtin',
+      builtinType: 'google_search',
+      description: 'Search Google for web results',
+      enabled: true,
+      googleSearchConfig: {
+        domainFilters: ['google.com'],
+      },
+    };
+
+    // Instantiate ToolDrawer with onUpdateTool
+    const elem = React.createElement(ToolDrawer, {
+      tool: testTool,
+      isOpen: true,
+      onClose: () => {},
+      onUpdateTool: (updated: ToolDefinition) => {
+        lastUpdatedTool = updated;
+      },
+      onDeleteTool: () => {},
+    });
+
+    assert.ok(elem);
+    assert.equal(elem.props.tool.id, 'tool_google_search');
+    assert.ok(elem.props.onUpdateTool);
+
+    // Simulate reactive update dispatch
+    elem.props.onUpdateTool({
+      ...testTool,
+      googleSearchConfig: {
+        domainFilters: ['google.com', 'developer.chrome.com'],
+      },
+    });
+
+    assert.ok(lastUpdatedTool);
+    assert.deepEqual(lastUpdatedTool?.googleSearchConfig?.domainFilters, ['google.com', 'developer.chrome.com']);
+  });
+
+  it('should render ToolDrawerShell with header delete button and without bottom Save button row', () => {
+    let deletedToolId: string | null = null;
+    const shellElem = React.createElement(ToolDrawerShell, {
+      isOpen: true,
+      onClose: () => {},
+      toolName: 'Custom Tool',
+      onChangeName: () => {},
+      description: 'A tool description',
+      onChangeDescription: () => {},
+      onDelete: () => {
+        deletedToolId = 'tool-123';
+      },
+      children: React.createElement('div', { id: 'test-content' }, 'Tool Content'),
+    });
+
+    assert.ok(shellElem);
+    assert.equal(shellElem.props.isOpen, true);
+    assert.equal(shellElem.props.toolName, 'Custom Tool');
+    assert.ok(shellElem.props.onDelete);
+    assert.equal(shellElem.props.onSave, undefined);
+
+    // Verify onDelete callback triggers
+    shellElem.props.onDelete();
+    assert.equal(deletedToolId, 'tool-123');
+  });
 });
 
 

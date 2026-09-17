@@ -18,7 +18,8 @@ export interface GoogleSearchToolDrawerProps {
   tool: ToolDefinition | null;
   isOpen: boolean;
   onClose: () => void;
-  onSaveTool: (updatedTool: ToolDefinition) => void;
+  onSaveTool?: (updatedTool: ToolDefinition) => void;
+  onUpdateTool?: (updatedTool: ToolDefinition) => void;
   onDeleteTool?: (toolId: string) => void;
   selectedAgent?: AgentData | null;
   onAttachToAgent?: (agentId: string, tool: ToolDefinition) => void;
@@ -31,6 +32,7 @@ export const GoogleSearchToolDrawer: React.FC<GoogleSearchToolDrawerProps> = ({
   isOpen,
   onClose,
   onSaveTool,
+  onUpdateTool,
   onDeleteTool,
   selectedAgent,
   onAttachToAgent,
@@ -38,7 +40,6 @@ export const GoogleSearchToolDrawer: React.FC<GoogleSearchToolDrawerProps> = ({
   agentName,
 }) => {
   const [formData, setFormData] = useState<ToolDefinition | null>(null);
-  const [savedSuccess, setSavedSuccess] = useState(false);
 
   useEffect(() => {
     if (tool) {
@@ -55,19 +56,26 @@ export const GoogleSearchToolDrawer: React.FC<GoogleSearchToolDrawerProps> = ({
   if (!isOpen || !formData) return null;
 
   const handleUpdate = (updates: Partial<ToolDefinition>) => {
-    setFormData((prev) => (prev ? { ...prev, ...updates } : null));
+    setFormData((prev) => {
+      if (!prev) return null;
+      const next = { ...prev, ...updates };
+      (onUpdateTool || onSaveTool)?.(next);
+      return next;
+    });
   };
 
   const handleUpdateGoogleSearchConfig = (updates: Partial<GoogleSearchConfig>) => {
     setFormData((prev) => {
       if (!prev) return null;
-      return {
+      const next: ToolDefinition = {
         ...prev,
         googleSearchConfig: {
           ...prev.googleSearchConfig,
           ...updates,
         },
       };
+      (onUpdateTool || onSaveTool)?.(next);
+      return next;
     });
   };
 
@@ -91,16 +99,6 @@ export const GoogleSearchToolDrawer: React.FC<GoogleSearchToolDrawerProps> = ({
     });
   };
 
-  const handleSave = () => {
-    if (!formData) return;
-    onSaveTool(formData);
-    setSavedSuccess(true);
-    setTimeout(() => {
-      setSavedSuccess(false);
-      onClose();
-    }, 800);
-  };
-
   const isAlreadyAttached = selectedAgent?.tools?.some((t) => t.id === formData.id);
 
   return (
@@ -114,9 +112,9 @@ export const GoogleSearchToolDrawer: React.FC<GoogleSearchToolDrawerProps> = ({
       onChangeDescription={(description) => handleUpdate({ description })}
       typeBadge={{
         label: 'Google Search',
-        subLabel: 'Live Web Grounding',
-        color: 'text-sky-400',
-        bg: 'bg-sky-500/20',
+        subLabel: 'Built-in Tool',
+        color: 'text-sky-300',
+        bg: 'bg-sky-500/10',
         border: 'border-sky-500/40',
       }}
       toolIcon={<Globe className="w-4 h-4 text-sky-400" />}
@@ -129,9 +127,7 @@ export const GoogleSearchToolDrawer: React.FC<GoogleSearchToolDrawerProps> = ({
           onAttachToAgent(selectedAgent.id || '', formData);
         }
       }}
-      onSave={handleSave}
       onDelete={onDeleteTool ? () => onDeleteTool(formData.id) : undefined}
-      savedSuccess={savedSuccess}
     >
       {/* Google Search Grounding Settings Form */}
       <div className="space-y-4 bg-[#0d1117] p-4 rounded-lg border border-sky-500/40 shadow-sm">

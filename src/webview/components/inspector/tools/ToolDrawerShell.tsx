@@ -14,7 +14,7 @@
  */
 
 import React from 'react';
-import { X, Check, Trash2, Plus, Sparkles } from 'lucide-react';
+import { X, Check, Trash2, Plus } from 'lucide-react';
 import { AgentData } from '../../../types';
 
 export interface ToolDrawerShellProps {
@@ -38,7 +38,7 @@ export interface ToolDrawerShellProps {
   selectedAgent?: AgentData | null;
   isAlreadyAttached?: boolean;
   onAttachToAgent?: () => void;
-  onSave: () => void;
+  onSave?: () => void;
   onDelete?: () => void;
   savedSuccess?: boolean;
   children: React.ReactNode;
@@ -59,9 +59,7 @@ export const ToolDrawerShell: React.FC<ToolDrawerShellProps> = ({
   selectedAgent,
   isAlreadyAttached,
   onAttachToAgent,
-  onSave,
   onDelete,
-  savedSuccess,
   children,
 }) => {
   if (!isOpen) return null;
@@ -99,13 +97,24 @@ export const ToolDrawerShell: React.FC<ToolDrawerShellProps> = ({
             )}
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"
-          title="Close Drawer"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              className="p-1 rounded-md text-gray-400 hover:text-rose-400 hover:bg-[#30363d] transition-colors cursor-pointer"
+              title={scope === 'agent' ? 'Remove Tool from Agent' : 'Delete Tool from Catalog'}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"
+            title="Close Drawer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* 2. Scrollable Body Section */}
@@ -143,10 +152,9 @@ export const ToolDrawerShell: React.FC<ToolDrawerShellProps> = ({
         {children}
       </div>
 
-      {/* 3. Footer Action Buttons */}
-      <div className="p-4 bg-[#161b22] border-t border-[#30363d] flex flex-col gap-2 shrink-0">
-        {/* Attach to Active Agent button (if global template and agent selected) */}
-        {scope === 'global' && selectedAgent && onAttachToAgent && (
+      {/* 3. Optional Footer: Attach to Active Agent button */}
+      {scope === 'global' && selectedAgent && onAttachToAgent && (
+        <div className="p-4 bg-[#161b22] border-t border-[#30363d] shrink-0">
           <button
             onClick={onAttachToAgent}
             disabled={isAlreadyAttached}
@@ -168,40 +176,8 @@ export const ToolDrawerShell: React.FC<ToolDrawerShellProps> = ({
               </>
             )}
           </button>
-        )}
-
-        <div className="flex items-center gap-2">
-          {onDelete && (
-            <button
-              onClick={onDelete}
-              className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg border border-rose-500/30 transition-colors cursor-pointer"
-              title={scope === 'agent' ? 'Remove Tool from Agent' : 'Delete Tool from Catalog'}
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          )}
-          <button
-            onClick={onSave}
-            className={`flex-1 py-2 px-4 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer ${
-              savedSuccess
-                ? 'bg-emerald-600 text-white'
-                : 'bg-purple-600 hover:bg-purple-500 text-white hover:shadow-purple-500/20'
-            }`}
-          >
-            {savedSuccess ? (
-              <>
-                <Check className="w-3.5 h-3.5" />
-                Saved!
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-3.5 h-3.5" />
-                Save Tool Configuration
-              </>
-            )}
-          </button>
         </div>
-      </div>
+      )}
     </div>
   );
 };

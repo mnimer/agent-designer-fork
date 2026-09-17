@@ -34,7 +34,8 @@ export interface CustomFunctionToolDrawerProps {
   tool: ToolDefinition | null;
   isOpen: boolean;
   onClose: () => void;
-  onSaveTool: (updatedTool: ToolDefinition) => void;
+  onSaveTool?: (updatedTool: ToolDefinition) => void;
+  onUpdateTool?: (updatedTool: ToolDefinition) => void;
   onDeleteTool?: (toolId: string) => void;
   selectedAgent?: AgentData | null;
   onAttachToAgent?: (agentId: string, tool: ToolDefinition) => void;
@@ -53,6 +54,7 @@ export const CustomFunctionToolDrawer: React.FC<CustomFunctionToolDrawerProps> =
   isOpen,
   onClose,
   onSaveTool,
+  onUpdateTool,
   onDeleteTool,
   selectedAgent,
   onAttachToAgent,
@@ -61,7 +63,6 @@ export const CustomFunctionToolDrawer: React.FC<CustomFunctionToolDrawerProps> =
 }) => {
   const bridge = useWebviewBridge();
   const [formData, setFormData] = useState<ToolDefinition | null>(null);
-  const [savedSuccess, setSavedSuccess] = useState(false);
 
   // Parameter state for manual adding
   const [newParamKey, setNewParamKey] = useState('');
@@ -113,7 +114,9 @@ export const CustomFunctionToolDrawer: React.FC<CustomFunctionToolDrawerProps> =
               patch.parameters = first.parameters;
             }
           }
-          return { ...prev, ...patch };
+          const next = { ...prev, ...patch };
+          (onUpdateTool || onSaveTool)?.(next);
+          return next;
         });
       }
     });
@@ -125,10 +128,12 @@ export const CustomFunctionToolDrawer: React.FC<CustomFunctionToolDrawerProps> =
         setDetectedFunctions(funcs);
         setFormData((prev) => {
           if (!prev) return null;
-          return {
+          const next = {
             ...prev,
             availableFunctions: funcs.map((f) => f.name),
           };
+          (onUpdateTool || onSaveTool)?.(next);
+          return next;
         });
       }
     });
@@ -137,12 +142,17 @@ export const CustomFunctionToolDrawer: React.FC<CustomFunctionToolDrawerProps> =
       unsubPicked();
       unsubParsed();
     };
-  }, [bridge]);
+  }, [bridge, onUpdateTool, onSaveTool]);
 
   if (!isOpen || !formData) return null;
 
   const handleUpdate = (patch: Partial<ToolDefinition>) => {
-    setFormData((prev) => (prev ? { ...prev, ...patch } : null));
+    setFormData((prev) => {
+      if (!prev) return null;
+      const next = { ...prev, ...patch };
+      (onUpdateTool || onSaveTool)?.(next);
+      return next;
+    });
   };
 
   const handleModeChange = (mode: 'local_file' | 'ai_generated') => {
@@ -205,13 +215,6 @@ export const CustomFunctionToolDrawer: React.FC<CustomFunctionToolDrawerProps> =
     handleUpdate({ parameters: currentParams });
   };
 
-  const handleSave = () => {
-    if (!formData) return;
-    onSaveTool(formData);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2000);
-  };
-
   const isAlreadyAttached =
     selectedAgent &&
     (selectedAgent.tools || []).some(
@@ -249,13 +252,11 @@ export const CustomFunctionToolDrawer: React.FC<CustomFunctionToolDrawerProps> =
       onAttachToAgent={
         selectedAgent && onAttachToAgent ? () => onAttachToAgent(selectedAgent.id, formData) : undefined
       }
-      onSave={handleSave}
       onDelete={
         onDeleteTool && (formData.id.startsWith('tool_custom_') || formData.id === 'tool_custom_function')
           ? () => onDeleteTool(formData.id)
           : undefined
       }
-      savedSuccess={savedSuccess}
     >
       {/* Implementation Mode Toggle - 8pt grid compliant */}
       <div className="p-2 bg-[#0d1117] rounded-lg border border-[#30363d] space-y-2">

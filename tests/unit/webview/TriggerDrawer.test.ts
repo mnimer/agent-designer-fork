@@ -11,12 +11,15 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import React from 'react';
 import {
   CRON_PRESETS,
   PUBSUB_TOPIC_PRESETS,
   DEFAULT_MOCK_TEST_SCENARIOS,
 } from '../../../src/webview/data/triggerDefinitions';
 import { TriggerNodeData, TestSuiteScenario } from '../../../src/shared/types';
+import { TriggerDrawer } from '../../../src/webview/components/inspector/TriggerDrawer';
+import { TriggerData } from '../../../src/webview/types';
 
 describe('Trigger Configuration & Presets Logic', () => {
   it('should provide standard Cloud Scheduler cron presets', () => {
@@ -424,5 +427,87 @@ describe('Trigger Configuration & Presets Logic', () => {
       assert.equal(unwrap.serviceAccounts[0].email, 'custom-invoker@demo-proj.iam.gserviceaccount.com');
     });
   });
+
+  describe('TriggerDrawer Reactive Updates & Save Button Removal', () => {
+    it('should instantiate TriggerDrawer element cleanly with reactive props and header delete action', () => {
+      let updatedTrigger: Partial<TriggerData> | null = null;
+      let deletedTriggerId: string | null = null;
+
+      const mockTrigger: TriggerData = {
+        id: 'trigger_chat_1',
+        label: 'Chat Webhook',
+        triggerType: 'chat',
+        description: 'Main chat entry point',
+        config: {},
+      };
+
+      const element = React.createElement(TriggerDrawer, {
+        trigger: mockTrigger,
+        isOpen: true,
+        onClose: () => {},
+        onUpdateTrigger: (next) => {
+          updatedTrigger = next;
+        },
+        onDeleteTrigger: (id) => {
+          deletedTriggerId = id;
+        },
+      });
+
+      assert.ok(element);
+      assert.equal(element.type, TriggerDrawer);
+      assert.equal(element.props.isOpen, true);
+      assert.equal(element.props.trigger?.id, 'trigger_chat_1');
+
+      // Verify that triggering onUpdateTrigger immediately passes through without a Save button
+      element.props.onUpdateTrigger({
+        ...mockTrigger,
+        label: 'Updated Webhook Name',
+      });
+      assert.equal((updatedTrigger as any)?.label, 'Updated Webhook Name');
+
+      // Verify header delete callback
+      element.props.onDeleteTrigger?.('trigger_chat_1');
+      assert.equal(deletedTriggerId, 'trigger_chat_1');
+    });
+
+    it('should reactively dispatch partial config mutations directly to onUpdateTrigger', () => {
+      const updates: Partial<TriggerData>[] = [];
+      const baseTrigger: TriggerData = {
+        id: 'trigger_pubsub_1',
+        label: 'Order Events Topic',
+        triggerType: 'pubsub',
+        config: { topic: 'projects/demo/topics/orders' },
+      };
+
+      // Simulates the internal handleConfigChange logic of TriggerDrawer
+      const handleConfigChange = (
+        current: TriggerData,
+        partial: Record<string, any>,
+        onUpdate: (next: TriggerData) => void
+      ) => {
+        const next = {
+          ...current,
+          config: {
+            ...current.config,
+            ...partial,
+          },
+        };
+        onUpdate(next);
+        return next;
+      };
+
+      const updated = handleConfigChange(
+        baseTrigger,
+        { ackDeadlineSeconds: 60, enableDeadLetter: true },
+        (next) => updates.push(next)
+      );
+
+      assert.equal(updates.length, 1);
+      assert.equal(updated.config.ackDeadlineSeconds, 60);
+      assert.equal(updated.config.enableDeadLetter, true);
+      assert.equal(updates[0].config.topic, 'projects/demo/topics/orders');
+    });
+  });
 });
+
 

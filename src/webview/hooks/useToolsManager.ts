@@ -103,6 +103,7 @@ export interface UseToolsManagerResult {
   handleCreateCustomTool: () => void;
   handleCreateMcpTool: () => void;
   handleSaveTool: (savedTool: ToolDefinition) => void;
+  handleUpdateTool: (updatedTool: ToolDefinition) => void;
   handleDeleteTool: (toolId: string) => void;
 }
 
@@ -244,13 +245,20 @@ export function useToolsManager(options: UseToolsManagerOptions): UseToolsManage
   }, [setSelectedAgentId, setSelectedTriggerId, setIsTriggerDrawerOpen]);
 
   /**
-   * Saves tool edits either to an agent-scoped instance or the global designer catalog.
+   * Updates tool properties live onChange, propagating to either an agent-scoped instance
+   * or the global designer catalog without closing the drawer.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
    */
-  const handleSaveTool = useCallback(
-    (savedTool: ToolDefinition) => {
+  const handleUpdateTool = useCallback(
+    (updatedTool: ToolDefinition) => {
+      // 1. Synchronize the active editing tool draft in local hook state
+      setEditingTool(updatedTool);
+
+      // 2. Check scope: agent instance vs. global template catalog
       if (editingToolScope?.type === 'agent' && editingToolScope.agentId) {
         const targetAgentId = editingToolScope.agentId;
-        // Save the modified properties into the JSON under this agent node only
+        // Update the tool JSON inside the targeted agent node
         let updated = false;
         const nextNodes = nodes.map((n) => {
           if (n.id === targetAgentId && (n.type === 'agentNode' || n.type === 'agent')) {
@@ -261,7 +269,7 @@ export function useToolsManager(options: UseToolsManagerOptions): UseToolsManage
               data: {
                 ...n.data,
                 tools: (agentData.tools || []).map((t) =>
-                  t.id === savedTool.id ? JSON.parse(JSON.stringify(savedTool)) : t
+                  t.id === updatedTool.id ? JSON.parse(JSON.stringify(updatedTool)) : t
                 ),
               },
             };
@@ -271,13 +279,10 @@ export function useToolsManager(options: UseToolsManagerOptions): UseToolsManage
 
         if (updated) {
           setNodes(nextNodes);
-          recordSnapshot(nextNodes, edges, {
-            description: `Configure ${savedTool.name} for agent`,
-          });
         }
       } else {
-        // Global save: update the designer state (tools template collection)
-        const deepCopiedTool: ToolDefinition = JSON.parse(JSON.stringify(savedTool));
+        // Global update: update or insert the tool in the designer template catalog
+        const deepCopiedTool: ToolDefinition = JSON.parse(JSON.stringify(updatedTool));
         setTools((prev) => {
           const exists = prev.some((t) => t.id === deepCopiedTool.id);
           if (exists) {
@@ -286,12 +291,18 @@ export function useToolsManager(options: UseToolsManagerOptions): UseToolsManage
           return [deepCopiedTool, ...prev];
         });
       }
-
-      setIsToolDrawerOpen(false);
-      setEditingTool(null);
-      setEditingToolScope(null);
     },
-    [editingToolScope, nodes, edges, setNodes, setTools, recordSnapshot]
+    [editingToolScope, nodes, setNodes, setTools]
+  );
+
+  /**
+   * Alias for handleUpdateTool to preserve backwards compatibility with existing callers.
+   */
+  const handleSaveTool = useCallback(
+    (savedTool: ToolDefinition) => {
+      handleUpdateTool(savedTool);
+    },
+    [handleUpdateTool]
   );
 
   /**
@@ -374,6 +385,7 @@ export function useToolsManager(options: UseToolsManagerOptions): UseToolsManage
     handleCreateCustomTool,
     handleCreateMcpTool,
     handleSaveTool,
+    handleUpdateTool,
     handleDeleteTool,
   };
 }
