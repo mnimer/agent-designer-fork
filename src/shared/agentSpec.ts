@@ -937,6 +937,15 @@ export interface AgentFileTab {
   sampleId?: string;
 }
 
+/**
+ * Definition of a pre-configured sample workflow blueprint (.agent)
+ * displayed in the Samples gallery and instantiated onto the canvas.
+ *
+ * Architectural Decisions:
+ * - Author: Mike Nimer <mikenimer@google.com>
+ * - Added optional `readmeContent` property so sample cards in the palette can
+ *   open an Information dialog displaying the full README description.
+ */
 export interface SampleWorkflowDefinition {
   id: string;
   name: string;
@@ -956,6 +965,7 @@ export interface SampleWorkflowDefinition {
   deploymentConfig?: Partial<DeploymentConfig>;
   testPrompts?: TestPrompt[];
   sourceFilePath?: string;
+  readmeContent?: string;
 }
 
 export type PatternType = 

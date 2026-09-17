@@ -78,6 +78,9 @@ describe('Runner Decomposition - Unit Tests', () => {
       assert.ok(content.length > 100);
       assert.ok(content.includes('HTTPServer'));
       assert.ok(content.includes('root_agent'));
+      assert.ok(content.includes('_async_loop'));
+      assert.ok(content.includes('_run_coroutine'));
+      assert.ok(content.includes('adk_runner_error'));
     });
   });
 

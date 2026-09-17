@@ -108,23 +108,23 @@ describe('Triggers Tab Panel & Theme Logic', () => {
     }
   });
 
-  it('should initialize all trigger category groups as expanded by default', () => {
+  it('should initialize trigger category groups with Tester and Chat expanded and Workflow collapsed by default', () => {
     const initialOpenCategories: Record<string, boolean> = {
       tester: true,
       chat: true,
-      workflow: true,
+      workflow: false,
     };
 
     assert.equal(initialOpenCategories.tester, true, 'Test Suite & Validation group must default to expanded');
     assert.equal(initialOpenCategories.chat, true, 'Conversational Chat group must default to expanded');
-    assert.equal(initialOpenCategories.workflow, true, 'Workflow Triggers group must default to expanded');
+    assert.equal(initialOpenCategories.workflow, false, 'Workflow Triggers group must default to collapsed');
   });
 
   it('should support toggling trigger categories independently', () => {
     let state: Record<string, boolean> = {
       tester: true,
       chat: true,
-      workflow: true,
+      workflow: false,
     };
 
     const toggle = (id: string) => {
@@ -133,6 +133,12 @@ describe('Triggers Tab Panel & Theme Logic', () => {
 
     // Toggle tester closed
     toggle('tester');
+    assert.equal(state.tester, false);
+    assert.equal(state.chat, true);
+    assert.equal(state.workflow, false);
+
+    // Toggle workflow open
+    toggle('workflow');
     assert.equal(state.tester, false);
     assert.equal(state.chat, true);
     assert.equal(state.workflow, true);

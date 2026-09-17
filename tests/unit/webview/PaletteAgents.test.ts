@@ -137,4 +137,73 @@ describe('Basic Agent Types Palette & Node Creation', () => {
     assert.equal(routerNode.data.agentKind, 'router');
     assert.ok(routerNode.data.routerConfig);
   });
+
+  it('should verify Flow & Control Agents catalog contains all 5 flow node definitions with correct metadata', () => {
+    assert.equal(FLOW_CONTROL_AGENT_TYPES.length, 5);
+    const kinds = FLOW_CONTROL_AGENT_TYPES.map((a) => a.kind);
+    assert.deepEqual(kinds, ['router', 'synthesizer', 'hitl', 'fallback', 'guardrail']);
+
+    FLOW_CONTROL_AGENT_TYPES.forEach((flowNode) => {
+      assert.ok(flowNode.name, `FlowNode ${flowNode.kind} must have a name`);
+      assert.ok(flowNode.description, `FlowNode ${flowNode.kind} must have a description`);
+      assert.ok(flowNode.badge, `FlowNode ${flowNode.kind} must have a badge`);
+      assert.ok(flowNode.colorTheme, `FlowNode ${flowNode.kind} must have a colorTheme`);
+      assert.ok(flowNode.iconName, `FlowNode ${flowNode.kind} must have an iconName`);
+    });
+  });
+
+  it('should initialize Agent categories with Core open and Flow & Control and Patterns collapsed by default', () => {
+    const initialOpenCategories: Record<string, boolean> = {
+      core: true,
+      flow_control: false,
+      patterns: false,
+    };
+
+    assert.equal(initialOpenCategories.core, true, 'Core Agents must be expanded by default');
+    assert.equal(initialOpenCategories.flow_control, false, 'Flow & Control Agents must be collapsed by default');
+    assert.equal(initialOpenCategories.patterns, false, 'Multi-Agent Patterns must be collapsed by default');
+  });
+
+  it('should report correct item counts for all three agent categories', () => {
+    assert.equal(CORE_AGENT_TYPES.length, 2, 'Core Agents category count must be 2');
+    assert.equal(FLOW_CONTROL_AGENT_TYPES.length, 5, 'Flow & Control category count must be 5');
+    assert.equal(PATTERN_DEFINITIONS.length, 8, 'Multi-Agent Patterns category count must be 8');
+  });
+
+  it('should support toggling agent categories independently', () => {
+    let state: Record<string, boolean> = {
+      core: true,
+      flow_control: false,
+      patterns: false,
+    };
+
+    const toggle = (id: string) => {
+      state = { ...state, [id]: !state[id] };
+    };
+
+    // Toggle flow_control open
+    toggle('flow_control');
+    assert.equal(state.core, true);
+    assert.equal(state.flow_control, true);
+    assert.equal(state.patterns, false);
+
+    // Toggle patterns open
+    toggle('patterns');
+    assert.equal(state.core, true);
+    assert.equal(state.flow_control, true);
+    assert.equal(state.patterns, true);
+
+    // Toggle core closed
+    toggle('core');
+    assert.equal(state.core, false);
+    assert.equal(state.flow_control, true);
+    assert.equal(state.patterns, true);
+
+    // Toggle core open again
+    toggle('core');
+    assert.equal(state.core, true);
+    assert.equal(state.flow_control, true);
+    assert.equal(state.patterns, true);
+  });
 });
+

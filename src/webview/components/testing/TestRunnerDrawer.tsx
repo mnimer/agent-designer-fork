@@ -76,10 +76,15 @@ export const TestRunnerDrawer: React.FC<TestRunnerDrawerProps> = ({
   const scenarios: TriggerTestScenario[] = useMemo(() => {
     const list: TriggerTestScenario[] = [];
     const triggerNodes = (document.nodes || []).filter((n) => n.type === 'trigger');
+    const seenIds = new Set<string>();
     for (const node of triggerNodes) {
       const data = node.data as TriggerNodeData;
-      if (data?.config?.testScenarios) {
-        list.push(...data.config.testScenarios);
+      if (data?.config?.testScenarios && Array.isArray(data.config.testScenarios)) {
+        for (const s of data.config.testScenarios) {
+          if (!s?.id || seenIds.has(s.id)) continue;
+          seenIds.add(s.id);
+          list.push(s);
+        }
       }
     }
     if (list.length === 0) {

@@ -435,16 +435,38 @@ export class AgentRunnerManager {
     this.cleanupEphemeralFiles();
   }
 
+  /**
+   * Extracts test scenarios from trigger nodes in the workflow document.
+   * Prioritizes dedicated tester trigger nodes over general chat/webhook nodes,
+   * and deduplicates scenarios by ID to prevent duplicate executions.
+   *
+   * @param document The workflow specification
+   * @param scenarioIds Optional list of scenario IDs to filter by
+   * @returns Array of unique TriggerTestScenario items
+   */
   public extractScenarios(document: AgentWorkflowDocument, scenarioIds?: string[]): TriggerTestScenario[] {
     const scenarios: TriggerTestScenario[] = [];
     const triggerNodes = (document.nodes || []).filter(n => n.type === 'trigger' || (n as any).type === 'triggerNode');
     const rootAgent = (document.nodes || []).find(n => n.type === 'agent' || (n as any).type === 'agentNode');
     const fallbackSchema = (rootAgent?.data as any)?.structuredOutput || (rootAgent?.data as any)?.structuredOutputSchema;
 
-    for (const node of triggerNodes) {
+    // Prioritize dedicated tester trigger nodes over general chat/webhook triggers
+    const sortedTriggers = [...triggerNodes].sort((a, b) => {
+      const aIsTester = (a.data as any)?.triggerType === 'tester' || (a.data as any)?.triggerKind === 'tester' || (a.data as any)?.triggerKind === 'test';
+      const bIsTester = (b.data as any)?.triggerType === 'tester' || (b.data as any)?.triggerKind === 'tester' || (b.data as any)?.triggerKind === 'test';
+      if (aIsTester && !bIsTester) return -1;
+      if (!aIsTester && bIsTester) return 1;
+      return 0;
+    });
+
+    const seenIds = new Set<string>();
+
+    for (const node of sortedTriggers) {
       const data = node.data as any;
       if (data?.config?.testScenarios && Array.isArray(data.config.testScenarios) && data.config.testScenarios.length > 0) {
         for (const s of data.config.testScenarios) {
+          if (!s?.id || seenIds.has(s.id)) continue;
+          seenIds.add(s.id);
           scenarios.push({
             id: s.id,
             name: s.name || s.id,
@@ -456,6 +478,8 @@ export class AgentRunnerManager {
         }
       } else if (data?.config?.testPrompts && Array.isArray(data.config.testPrompts) && data.config.testPrompts.length > 0) {
         for (const p of data.config.testPrompts) {
+          if (!p?.id || seenIds.has(p.id)) continue;
+          seenIds.add(p.id);
           scenarios.push({
             id: p.id,
             name: p.name || p.id,
@@ -471,7 +495,10 @@ export class AgentRunnerManager {
     if (scenarios.length === 0) {
       if (scenarioIds && scenarioIds.length > 0) {
         for (const id of scenarioIds) {
-          scenarios.push({ id, name: `Test Scenario ${id}`, inputQuery: 'Provide a concise overview and execute planned actions.', expectedOutput: undefined });
+          if (!seenIds.has(id)) {
+            seenIds.add(id);
+            scenarios.push({ id, name: `Test Scenario ${id}`, inputQuery: 'Provide a concise overview and execute planned actions.', expectedOutput: undefined });
+          }
         }
       } else {
         scenarios.push({ id: 'default-scenario-1', name: 'Default Test Run', inputQuery: 'Provide a concise overview and execute planned actions.', expectedOutput: undefined });

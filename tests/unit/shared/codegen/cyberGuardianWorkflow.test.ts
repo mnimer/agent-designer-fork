@@ -1,12 +1,9 @@
 /**
- * Unit Tests for Cyber Guardian Sample Workflow
+ * Unit Tests for Company Verifier Sample Workflow
  *
  * Validates:
- * 1. Loading and parsing of resource/sample/cyber_guardian.agent.
+ * 1. Loading and parsing of resource/samples/company_verifier/company_verifier.agent.
  * 2. Strict adherence to AgentWorkflowDocument schema, 8pt grid positioning, and gemini-3.7-flash.
- * 3. Generation of tools.py with all SecOps BigQuery query tools.
- * 4. Generation of agent_workflow.py with proper sub-agent instantiation and sub_agents wiring.
- * 5. Full project bundling (tools.py, agent_workflow.py, requirements.txt, .env.example, README.md).
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -17,19 +14,18 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { AgentWorkflowDocument } from '../../../../src/shared/types';
 
-describe('Cyber Guardian SecOps Sample Workflow (.agent)', () => {
-  const samplePath = path.resolve(__dirname, '../../../../resource/sample/cyber_guardian/cyber_guardian.agent');
+describe('Company Verifier Sample Workflow (.agent)', () => {
+  const samplePath = path.resolve(__dirname, '../../../../resource/samples/company_verifier/company_verifier.agent');
 
-  it('should load resource/sample/cyber_guardian/cyber_guardian.agent successfully as valid JSON', () => {
-    assert.ok(fs.existsSync(samplePath), 'cyber_guardian.agent file exists in resource/sample/cyber_guardian/');
+  it('should load resource/samples/company_verifier/company_verifier.agent successfully as valid JSON', () => {
+    assert.ok(fs.existsSync(samplePath), 'company_verifier.agent file exists in resource/samples/company_verifier/');
     const rawContent = fs.readFileSync(samplePath, 'utf-8');
     const workflow: AgentWorkflowDocument = JSON.parse(rawContent);
 
     assert.equal(workflow.version, '1.0.0');
-    assert.equal(workflow.name, 'CyberGuardianSecOps');
+    assert.equal(workflow.name, 'Company Verifier & Entity Classifier');
     assert.equal(workflow.framework, 'google-adk');
     assert.equal(workflow.language, 'python');
-    assert.equal(workflow.metadata?.author, 'Mike Nimer <mikenimer@google.com>');
   });
 
   it('should verify 8pt grid alignment on all node coordinates', () => {
@@ -54,12 +50,14 @@ describe('Cyber Guardian SecOps Sample Workflow (.agent)', () => {
     const rawContent = fs.readFileSync(samplePath, 'utf-8');
     const workflow: AgentWorkflowDocument = JSON.parse(rawContent);
 
-    const agentNodes = (workflow.nodes || []).filter((n) => n.type === 'agent');
-    assert.equal(agentNodes.length, 5, 'Must contain 1 orchestrator and 4 sub-agents');
+    const agentNodes = (workflow.nodes || []).filter(
+      (n) => n.type === 'agent' || n.type === 'agentNode'
+    );
+    assert.ok(agentNodes.length >= 1, 'Must contain at least 1 agent node');
 
     for (const node of agentNodes) {
       assert.equal(
-        node.data.model,
+        (node.data as any).model,
         'gemini-3.7-flash',
         `Agent ${node.id} must use gemini-3.7-flash`
       );

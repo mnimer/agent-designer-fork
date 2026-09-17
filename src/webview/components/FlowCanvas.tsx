@@ -46,16 +46,14 @@ import {
 import { AgentWorkflowDocument } from '../../shared/types';
 import { INITIAL_NODES, INITIAL_EDGES } from '../data/initialGraph';
 import { DEFAULT_MOCK_TEST_PROMPTS } from '../data/triggerDefinitions';
-import {
-  createSampleNodesAndEdges,
-  SAMPLES_CATALOG,
-} from '../data/sampleWorkflows';
+import { createSampleNodesAndEdges } from '../utils/sampleUtils';
 
 // UI Tabs & Panels
 import { CanvasTab } from './tabs/CanvasTab';
 import { CodeGenerationPanel } from './codegen/CodeGenerationPanel';
 import { AddToolModal } from './inspector/AddToolModal';
 import { MissingFeaturesModal } from './insights/MissingFeaturesModal';
+import { SampleInfoModal } from './Canvas/SampleInfoModal';
 import { PanelDivider } from './Canvas/PanelDivider';
 
 // Custom Hooks
@@ -176,6 +174,7 @@ export function FlowCanvas() {
   const [isTriggerDrawerOpen, setIsTriggerDrawerOpen] = useState<boolean>(false);
   const [toolModalAgentId, setToolModalAgentId] = useState<string | null>(null);
   const [isAdvisorOpen, setIsAdvisorOpen] = useState<boolean>(false);
+  const [activeInfoSample, setActiveInfoSample] = useState<SampleWorkflowDefinition | null>(null);
   const [validationWarning, setValidationWarning] = useState<string | null>(null);
 
   useEffect(() => {
@@ -394,6 +393,11 @@ export function FlowCanvas() {
     handleDividerMouseDown,
   } = useResizablePanel();
 
+  const [discoveredSamples, setDiscoveredSamples] = useState<SampleWorkflowDefinition[]>([]);
+  const availableSamples = useMemo(() => {
+    return discoveredSamples;
+  }, [discoveredSamples]);
+
   useExtensionSync({
     bridge,
     nodes,
@@ -410,6 +414,7 @@ export function FlowCanvas() {
     setHasGeneratedCode,
     setIsGenerating,
     recordSnapshot,
+    setDiscoveredSamples,
   });
 
   // Export App instance globally to hook callbacks (e.g. within tabs)
@@ -1188,7 +1193,7 @@ export function FlowCanvas() {
           }
         }
         if (!sample && sampleId) {
-          sample = SAMPLES_CATALOG.find((s) => s.id === sampleId);
+          sample = availableSamples.find((s) => s.id === sampleId);
         }
 
         if (sample && sample.nodes && sample.nodes.length > 0) {
@@ -1750,9 +1755,13 @@ export function FlowCanvas() {
   const testPrompts = useMemo(() => {
     if (!testSuiteNode) return [];
     const cfg = (testSuiteNode.data as TriggerData).config;
-    return cfg?.testPrompts && cfg.testPrompts.length > 0
-      ? cfg.testPrompts
-      : DEFAULT_MOCK_TEST_PROMPTS;
+    if (cfg?.testPrompts && cfg.testPrompts.length > 0) {
+      return cfg.testPrompts;
+    }
+    if ((cfg as any)?.testScenarios && (cfg as any).testScenarios.length > 0) {
+      return (cfg as any).testScenarios;
+    }
+    return DEFAULT_MOCK_TEST_PROMPTS;
   }, [testSuiteNode]);
 
   // Chat Trigger detection & configuration
@@ -1813,6 +1822,7 @@ export function FlowCanvas() {
             nodes={nodes}
             edges={edges}
             enrichedNodes={enrichedNodes}
+            samples={availableSamples}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeDragStop={handleNodeDragStop}
@@ -1839,6 +1849,7 @@ export function FlowCanvas() {
             handleAddTriggerDirect={handleAddTriggerDirect}
             setIsAdvisorOpen={setIsAdvisorOpen}
             handleOpenSampleInNewTab={handleOpenSampleInNewTab}
+            handleOpenSampleInfo={setActiveInfoSample}
             handleAddSpecificTool={handleAddSpecificTool}
             selectedAgentId={selectedAgentId}
             isToolDrawerOpen={isToolDrawerOpen}
@@ -1937,6 +1948,16 @@ export function FlowCanvas() {
       <MissingFeaturesModal
         isOpen={isAdvisorOpen}
         onClose={() => setIsAdvisorOpen(false)}
+      />
+
+      {/* Sample Information Modal Dialog */}
+      <SampleInfoModal
+        sample={activeInfoSample}
+        onClose={() => setActiveInfoSample(null)}
+        onOpenSample={(sample) => {
+          setActiveInfoSample(null);
+          handleOpenSampleInNewTab(sample);
+        }}
       />
     </div>
   );
