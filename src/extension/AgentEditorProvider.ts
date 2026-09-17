@@ -15,6 +15,9 @@
  *    and running subprocess test state when switching between editor tabs.
  * 4. Model Selection & Global Region Mandate: Gemini 3.7-flash is configured exclusively
  *    with Vertex AI global region location.
+ * 5. Sample Discovery & Category Resolution: Recursively scans candidate sample folders and
+ *    determines domain categories from either category subfolders (e.g. resource/samples/retail/<sample>/)
+ *    or .agent metadata.category, normalizing categories to standard title-case domains.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -476,12 +479,10 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
     // Section 1: Candidate search directories
     const candidateDirs: string[] = [];
     if (this.context?.extensionPath) {
-      candidateDirs.push(path.join(this.context.extensionPath, 'resource', 'sample'));
       candidateDirs.push(path.join(this.context.extensionPath, 'resource', 'samples'));
     }
     if (vscode.workspace.workspaceFolders) {
       for (const wf of vscode.workspace.workspaceFolders) {
-        candidateDirs.push(path.join(wf.uri.fsPath, 'resource', 'sample'));
         candidateDirs.push(path.join(wf.uri.fsPath, 'resource', 'samples'));
       }
     }
@@ -507,12 +508,25 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         // Determine unique ID and display metadata
         const parentDirName = path.basename(path.dirname(filePath));
         const baseFileName = path.basename(filePath, '.agent');
-        const sampleId = (parentDirName !== 'sample' && parentDirName !== 'samples')
+        const rawSampleId = (parentDirName !== 'samples')
           ? parentDirName
           : baseFileName;
+        // NOTE: Normalize hyphens to underscores so folder names like travel-concierge match catalog IDs
+        const sampleId = rawSampleId.replace(/-/g, '_');
 
         if (seenIds.has(sampleId)) continue;
         seenIds.add(sampleId);
+
+        // Attempt to read README.md in the sample directory for the Information dialog
+        let readmeContent: string | undefined = parsed.readmeContent;
+        const readmePath = path.join(path.dirname(filePath), 'README.md');
+        if (!readmeContent && fs.existsSync(readmePath)) {
+          try {
+            readmeContent = fs.readFileSync(readmePath, 'utf-8');
+          } catch {
+            // NOTE: Ignore read errors and fall back to sample description
+          }
+        }
 
         // Count tools across all nodes
         let toolsCount = 0;
@@ -520,12 +534,18 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         const testPrompts: any[] = [];
 
         for (const n of parsed.nodes) {
-          if (n.type === 'trigger') {
-            triggerType = n.data?.triggerKind || n.data?.triggerType || triggerType;
-            if (n.data?.config?.testScenarios) {
-              testPrompts.push(...n.data.config.testScenarios);
-            } else if (n.data?.config?.testPrompts) {
-              testPrompts.push(...n.data.config.testPrompts);
+          if (n.type === 'trigger' || n.type === 'triggerNode') {
+            const tKind = n.data?.triggerKind || n.data?.triggerType;
+            if (tKind && tKind !== 'tester' && tKind !== 'test') {
+              triggerType = tKind;
+            }
+            const scenariosToAdd = n.data?.config?.testScenarios || n.data?.config?.testPrompts;
+            if (Array.isArray(scenariosToAdd)) {
+              for (const s of scenariosToAdd) {
+                if (s?.id && !testPrompts.some((tp) => tp.id === s.id)) {
+                  testPrompts.push(s);
+                }
+              }
             }
           }
           if (n.data?.tools && Array.isArray(n.data.tools)) {
@@ -533,19 +553,40 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           }
         }
 
+        // Determine category from directory structure or metadata
+        let subfolderCategory: string | undefined;
+        for (const baseDir of candidateDirs) {
+          if (filePath.startsWith(baseDir)) {
+            const rel = path.relative(baseDir, filePath);
+            const segments = rel.split(path.sep);
+            // e.g. ["retail", "travel-concierge", "travel-concierge.agent"] (segments.length >= 3)
+            if (segments.length >= 3) {
+              const rawCat = segments[0];
+              subfolderCategory = this.formatSampleCategory(rawCat);
+            }
+            break;
+          }
+        }
+
+        const explicitCategory = parsed.metadata?.category;
+        const resolvedCategory = 
+          explicitCategory && explicitCategory !== 'Ready-to-Use Workflows'
+            ? (explicitCategory.toLowerCase().includes('retail') ? 'Retail' : explicitCategory)
+            : (subfolderCategory || 'Retail');
+
         const sampleDef: SampleWorkflowDefinition = {
           id: sampleId,
           name: parsed.name || baseFileName,
           filename: path.basename(filePath),
-          category: parsed.metadata?.category || 'Ready-to-Use Workflows',
+          category: resolvedCategory,
           badge: parsed.metadata?.badge || (parsed.framework === 'langgraph' ? 'LangGraph' : 'Google ADK'),
           description: parsed.description || 'Enterprise agent workflow blueprint.',
           features: parsed.metadata?.features || ['Multi-Agent', 'Grounding', 'Automated Tests'],
           nodesCount: parsed.nodes.length,
           toolsCount: toolsCount,
           triggerType: triggerType,
-          iconName: 'Workflow',
-          color: 'purple',
+          iconName: parsed.metadata?.iconName || 'Workflow',
+          color: parsed.metadata?.color || 'purple',
           nodes: parsed.nodes,
           edges: parsed.edges || [],
           config: {
@@ -559,6 +600,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           deploymentConfig: parsed.deployment,
           testPrompts: testPrompts.length > 0 ? testPrompts : undefined,
           sourceFilePath: filePath,
+          readmeContent: readmeContent,
         };
 
         samples.push(sampleDef);
@@ -593,6 +635,32 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       // Ignore read errors
     }
     return results;
+  }
+
+  /**
+   * Normalizes a directory name or raw category string to standard title-case category.
+   *
+   * @author Mike Nimer <mikenimer@google.com>
+   * @param raw Raw category name or subfolder name
+   * @returns Formatted category display name
+   */
+  public formatSampleCategory(raw: string): string {
+    const normalized = raw.trim().toLowerCase();
+    const knownCategories: Record<string, string> = {
+      retail: 'Retail',
+      sdlc: 'SDLC',
+      finance: 'Finance',
+      research: 'Research',
+      operations: 'Operations',
+      creative: 'Creative',
+      data: 'Data',
+      patterns: 'Patterns',
+      healthcare: 'Healthcare',
+    };
+    if (knownCategories[normalized]) {
+      return knownCategories[normalized];
+    }
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
   }
 
   // --- Static Workflow Template Constructors ---

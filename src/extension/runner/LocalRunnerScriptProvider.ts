@@ -19,6 +19,8 @@ export function getLocalRunnerScriptContent(): string {
   return `import sys
 import os
 import json
+import threading
+import asyncio
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # Disable OpenTelemetry exporter loops during local testing to avoid 400 Bad Request export spam
@@ -63,6 +65,26 @@ except Exception:
     pass
 
 _shared_session_service = None
+
+# Persistent background asyncio event loop so clients/sessions are not invalidated between HTTP requests
+_async_loop = None
+_async_thread = None
+
+def _get_loop():
+    global _async_loop, _async_thread
+    if _async_loop is None or _async_loop.is_closed():
+        _async_loop = asyncio.new_event_loop()
+        def _target(l):
+            asyncio.set_event_loop(l)
+            l.run_forever()
+        _async_thread = threading.Thread(target=_target, args=(_async_loop,), daemon=True)
+        _async_thread.start()
+    return _async_loop
+
+def _run_coroutine(coro, timeout=300):
+    loop = _get_loop()
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    return future.result(timeout=timeout)
 
 agent_instance = None
 
@@ -222,17 +244,18 @@ class TestHandler(BaseHTTPRequestHandler):
 
                 return "".join(texts)
 
+            adk_runner_error = None
+
             # 1. AdkApp async_stream_query / stream_query support
             if hasattr(ag, 'async_stream_query') and callable(getattr(ag, 'async_stream_query')):
                 try:
-                    import asyncio
                     accum = []
                     async def _run_async_stream():
                         async for evt in ag.async_stream_query(message=prompt, user_id="test_user"):
                             txt = _extract_text_from_event(evt)
                             if txt:
                                 accum.append(txt)
-                    asyncio.run(_run_async_stream())
+                    _run_coroutine(_run_async_stream())
                     if accum:
                         res = "".join(accum)
                 except Exception as stream_err:
@@ -255,7 +278,6 @@ class TestHandler(BaseHTTPRequestHandler):
             # 2. ADK Runner execution
             if res is None:
                 try:
-                    import asyncio
                     from google.adk.runners import Runner
                     from google.adk.sessions import InMemorySessionService
                     from google.genai import types
@@ -322,8 +344,9 @@ class TestHandler(BaseHTTPRequestHandler):
                             raise RuntimeError("; ".join(error_messages))
                         return None
 
-                    res = asyncio.run(_run_adk_runner())
+                    res = _run_coroutine(_run_adk_runner())
                 except Exception as runner_err:
+                    adk_runner_error = runner_err
                     sys.stderr.write(f"[ADK Runner Fallback] {runner_err}\\n")
                     sys.stderr.flush()
 
@@ -348,6 +371,8 @@ class TestHandler(BaseHTTPRequestHandler):
                         res = ag(prompt)
                     except Exception as call_err:
                         sys.stderr.write(f"[ag(prompt) fallback ignored] {call_err}\\n")
+                elif adk_runner_error is not None:
+                    raise adk_runner_error
                 else:
                     raise RuntimeError("Agent instance has no query, generate, invoke, or run method")
 

@@ -95,6 +95,7 @@ interface CanvasTabProps {
   handleAddTriggerDirect: (triggerType: any) => void;
   setIsAdvisorOpen: (open: boolean) => void;
   handleOpenSampleInNewTab: (sample: SampleWorkflowDefinition) => void;
+  handleOpenSampleInfo?: (sample: SampleWorkflowDefinition) => void;
   handleAddSpecificTool: (agentId: string, tool: ToolDefinition) => void;
   selectedAgentId: string | null;
   isToolDrawerOpen: boolean;
@@ -130,6 +131,7 @@ interface CanvasTabProps {
   isPanelMaximized: boolean;
   agentNodes: AgentData[];
   onUpdateAgent: (partial: Partial<AgentData>) => void;
+  samples?: SampleWorkflowDefinition[];
 }
 
 export const CanvasTab: React.FC<CanvasTabProps> = ({
@@ -198,6 +200,8 @@ export const CanvasTab: React.FC<CanvasTabProps> = ({
   isPanelMaximized,
   agentNodes,
   onUpdateAgent,
+  samples,
+  handleOpenSampleInfo,
 }) => {
   const reactFlowWrapper = useRef<HTMLDivElement | null>(null);
 
@@ -255,6 +259,7 @@ export const CanvasTab: React.FC<CanvasTabProps> = ({
       {/* Floating Palette on Left */}
       <PaletteCard
         tools={tools}
+        samples={samples}
         selectedAgent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
         onAddAgent={handleAddAgentDirect}
         onAddPattern={handleAddPatternDirect}
@@ -264,6 +269,7 @@ export const CanvasTab: React.FC<CanvasTabProps> = ({
         onCreateCustomTool={handleCreateCustomTool}
         onCreateMcpTool={handleCreateMcpTool}
         onOpenSample={handleOpenSampleInNewTab}
+        onOpenSampleInfo={handleOpenSampleInfo}
         onAddToolToAgent={(tool) => {
           if (selectedAgentId) {
             handleAddSpecificTool(selectedAgentId, tool);

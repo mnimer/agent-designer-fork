@@ -91,6 +91,77 @@ describe('AgentRunnerManager', () => {
     assert.equal(scenarios[0].id, 'scenario-2');
   });
 
+  it('should deduplicate scenarios across multiple trigger nodes (e.g., chat and tester triggers)', () => {
+    const multiTriggerDoc: AgentWorkflowDocument = {
+      schemaVersion: '1.0.0',
+      name: 'Multi-Trigger Workflow',
+      framework: 'adk',
+      language: 'python',
+      nodes: [
+        {
+          id: 'trigger-chat',
+          type: 'trigger',
+          position: { x: 50, y: 50 },
+          data: {
+            label: 'Chat Trigger',
+            triggerType: 'chat',
+            config: {
+              testScenarios: [
+                {
+                  id: 'scenario-shared',
+                  name: 'Injected Chat Scenario',
+                  inputQuery: 'Query from chat node',
+                },
+              ],
+            },
+          },
+        },
+        {
+          id: 'trigger-tester',
+          type: 'trigger',
+          position: { x: 50, y: 200 },
+          data: {
+            label: 'Tester Trigger',
+            triggerType: 'tester',
+            config: {
+              testScenarios: [
+                {
+                  id: 'scenario-shared',
+                  name: 'Original Tester Scenario',
+                  inputQuery: 'Query from tester node',
+                  expectedOutput: 'expected result',
+                },
+                {
+                  id: 'scenario-tester-only',
+                  name: 'Tester Only Scenario',
+                  inputQuery: 'Tester query',
+                },
+              ],
+            },
+          },
+        },
+      ],
+      edges: [],
+      settings: {},
+    };
+
+    const manager = new AgentRunnerManager('/mock/extension');
+    const scenarios = manager.extractScenarios(multiTriggerDoc);
+
+    // Must be exactly 2 scenarios, NOT 3 (scenario-shared must not be duplicated)
+    assert.equal(scenarios.length, 2);
+    assert.equal(scenarios[0].id, 'scenario-shared');
+    // Because trigger-tester is prioritized over trigger-chat, the tester version is kept
+    assert.equal(scenarios[0].inputQuery, 'Query from tester node');
+    assert.equal(scenarios[0].expectedOutput, 'expected result');
+    assert.equal(scenarios[1].id, 'scenario-tester-only');
+
+    // Filtering by scenario-shared should return exactly 1 scenario, not 2
+    const filtered = manager.extractScenarios(multiTriggerDoc, ['scenario-shared']);
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].id, 'scenario-shared');
+  });
+
   it('should generate default fallback scenario when trigger has no scenarios', () => {
     const emptyDoc: AgentWorkflowDocument = {
       schemaVersion: '1.0.0',
@@ -540,6 +611,10 @@ describe('AgentRunnerManager', () => {
     };
 
     const manager = new AgentRunnerManager('/mock/extension', undefined, mockDeployer);
+    manager.getCodeGenEngine().evaluateAssertion = async () => ({
+      passed: true,
+      reason: 'Matched refund criteria',
+    });
     const postedMessages: any[] = [];
     const mockBridge: any = {
       postMessage: async (msg: any) => {

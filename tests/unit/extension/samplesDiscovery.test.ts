@@ -22,7 +22,7 @@ describe('AgentEditorProvider Samples Discovery (TASK-128)', { concurrency: 1 },
     vscode.resetAllMocks();
   });
 
-  it('should discover all physical .agent sample files in resource/sample/', () => {
+  it('should discover all physical .agent sample files in resource/samples/', () => {
     // Project root directory as extensionPath
     const projectRoot = path.resolve(__dirname, '../../..');
     const mockContext: any = {
@@ -33,16 +33,11 @@ describe('AgentEditorProvider Samples Discovery (TASK-128)', { concurrency: 1 },
 
     const samples = provider.discoverResourceSamples();
     assert.ok(Array.isArray(samples), 'discoverResourceSamples must return an array');
-    assert.ok(samples.length >= 7, `Expected at least 7 samples discovered from disk, got ${samples.length}`);
+    assert.strictEqual(samples.length, 2, `Expected exactly 2 samples discovered from disk, got ${samples.length}`);
 
     const ids = samples.map((s) => s.id);
-    assert.ok(ids.includes('cyber_guardian'), 'Expected cyber_guardian in discovered samples');
     assert.ok(ids.includes('company_verifier'), 'Expected company_verifier in discovered samples');
-    assert.ok(ids.includes('procurement_request'), 'Expected procurement_request in discovered samples');
-    assert.ok(ids.includes('customer_support'), 'Expected customer_support in discovered samples');
-    assert.ok(ids.includes('financial_analyst'), 'Expected financial_analyst in discovered samples');
-    assert.ok(ids.includes('code_critic'), 'Expected code_critic in discovered samples');
-    assert.ok(ids.includes('high_volume_document_analyzer'), 'Expected high_volume_document_analyzer in discovered samples');
+    assert.ok(ids.includes('travel_concierge'), 'Expected travel_concierge in discovered samples');
 
     // Verify metadata properties are populated
     for (const sample of samples) {
@@ -64,20 +59,12 @@ describe('AgentEditorProvider Samples Discovery (TASK-128)', { concurrency: 1 },
     const provider = new AgentEditorProvider(mockContext);
 
     const samples = provider.discoverResourceSamples();
-    const cyber = samples.find((s) => s.id === 'cyber_guardian');
-    assert.ok(cyber, 'cyber_guardian sample should be found');
-    assert.ok(cyber.testPrompts && cyber.testPrompts.length > 0, 'cyber_guardian should have testPrompts');
+    const travel = samples.find((s) => s.id === 'travel_concierge');
+    assert.ok(travel, 'travel_concierge sample should be found');
+    assert.ok(travel.testPrompts && travel.testPrompts.length > 0, 'travel_concierge should have testPrompts');
     assert.ok(
-      cyber.testPrompts.some((t) => t.prompt.toLowerCase().includes('powershell') || t.name.toLowerCase().includes('powershell') || t.prompt.toLowerCase().includes('lockbit') || t.name.toLowerCase().includes('lockbit')),
-      'cyber_guardian testPrompts should include EDR or Lockbit test prompt'
-    );
-
-    const docAnalyzer = samples.find((s) => s.id === 'high_volume_document_analyzer');
-    assert.ok(docAnalyzer, 'high_volume_document_analyzer sample should be found');
-    assert.ok(docAnalyzer.testPrompts && docAnalyzer.testPrompts.length > 0, 'high_volume_document_analyzer should have testPrompts');
-    assert.ok(
-      docAnalyzer.testPrompts.some((t) => t.prompt.toLowerCase().includes('12345') || t.name.toLowerCase().includes('12345')),
-      'high_volume_document_analyzer testPrompts should include collection 12345 test'
+      travel.testPrompts.some((t) => t.prompt.toLowerCase().includes('flight') || t.prompt.toLowerCase().includes('americas') || t.name.toLowerCase().includes('americas')),
+      'travel_concierge testPrompts should include flight or Americas test prompt'
     );
   });
 
@@ -117,14 +104,14 @@ describe('AgentEditorProvider Samples Discovery (TASK-128)', { concurrency: 1 },
     assert.ok(messageListener, 'Message listener should be registered');
 
     // Trigger CREATE_FILE_FROM_SAMPLE
-    const targetSaveUri = vscode.Uri.file('/mock/workspace/my_cyber_guardian.agent');
+    const targetSaveUri = vscode.Uri.file('/mock/workspace/my_travel_concierge.agent');
     vscode.window.showSaveDialog = vscode.createSpy(async () => targetSaveUri);
 
     await (messageListener as any)({
       type: 'CREATE_FILE_FROM_SAMPLE',
       payload: {
-        sampleId: 'cyber_guardian',
-        sampleName: 'Cyber Guardian',
+        sampleId: 'travel_concierge',
+        sampleName: 'Travel Concierge',
       },
     });
 
@@ -187,7 +174,7 @@ describe('AgentEditorProvider Samples Discovery (TASK-128)', { concurrency: 1 },
     await (messageListener as any)({
       type: 'CREATE_FILE_FROM_SAMPLE',
       payload: {
-        sampleId: 'cyber_guardian',
+        sampleId: 'travel_concierge',
       },
     });
 

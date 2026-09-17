@@ -128,30 +128,14 @@ const WorkflowEdgeComponent: React.FC<EdgeProps> = ({
   });
 
   const edgePath = backwardPath || defaultPath;
-  const isSubAgent = sourceHandleId === 'subagent';
   const isTriggerEdge =
-    id.includes('tester') ||
-    id.includes('trigger') ||
-    sourceHandleId === 'trigger_out_right' ||
-    sourceHandleId === 'trigger_out_bottom';
+    sourceHandleId === 'trigger_out_right' || sourceHandleId === 'trigger_out_bottom';
 
-  let resolvedStroke = (style?.stroke as string) || (isTriggerEdge ? '#f59e0b' : '#3b82f6');
-  // Auto-migrate any legacy pink strokes or trigger edges to amber-500
-  if (
-    resolvedStroke === '#ec4899' ||
-    resolvedStroke === '#db2777' ||
-    resolvedStroke === '#f472b6' ||
-    resolvedStroke === '#eab308' ||
-    resolvedStroke === 'rgb(236, 72, 153)' ||
-    resolvedStroke?.toLowerCase().includes('pink') ||
-    isTriggerEdge
-  ) {
-    resolvedStroke = '#f59e0b';
-  }
+  const resolvedStroke = (style?.stroke as string) || (isTriggerEdge ? '#f59e0b' : '#3b82f6');
 
   const edgeStyle: React.CSSProperties = {
     strokeWidth: 2,
-    strokeDasharray: isSubAgent || isTriggerEdge ? '5 5' : undefined,
+    strokeDasharray: isTriggerEdge ? '5 5' : undefined,
     ...style,
     stroke: resolvedStroke,
   };

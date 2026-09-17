@@ -383,9 +383,17 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
 
     if (propDocument) {
       // Ensure trigger nodes contain testScenarios mapped from testPrompts
-      const existingTrigger = (propDocument.nodes || []).find(
+      // Prioritize dedicated tester trigger nodes over general chat/webhook nodes
+      const allTriggers = (propDocument.nodes || []).filter(
         (n) => n.type === 'trigger' || (n as any).type === 'triggerNode'
       );
+      const existingTrigger = allTriggers.find(
+        (n) =>
+          (n.data as any)?.triggerType === 'tester' ||
+          (n.data as any)?.triggerKind === 'tester' ||
+          (n.data as any)?.triggerKind === 'test' ||
+          ((n.data as any)?.config?.testScenarios && (n.data as any).config.testScenarios.length > 0)
+      ) || allTriggers[0];
 
       let nodes = propDocument.nodes || [];
       if (existingTrigger) {

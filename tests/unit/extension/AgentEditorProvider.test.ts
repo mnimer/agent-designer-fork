@@ -948,7 +948,7 @@ class NotAFunction:
     assert.strictEqual(parsedFailMsg.payload.success, false);
 
     // 2. Test OPEN_LOCAL_TOOL_FILE
-    const actualToolPath = path.resolve(__dirname, '../../../resource/sample/cyber_guardian/tools/triage_tools.py');
+    const actualToolPath = path.resolve(__dirname, '../../../resource/samples/travel-concierge/tools/memory_toolset.py');
     await (messageCallback as any)({
       type: 'OPEN_LOCAL_TOOL_FILE',
       payload: { filePath: actualToolPath },
@@ -967,8 +967,8 @@ class NotAFunction:
     const pickedSuccessMsg = postedMessages.find((m) => m.type === 'LOCAL_PYTHON_TOOL_PICKED');
     assert.ok(pickedSuccessMsg);
     assert.strictEqual(pickedSuccessMsg.payload.success, true);
-    assert.ok(pickedSuccessMsg.payload.filePath.includes('triage_tools.py'));
-    assert.ok(pickedSuccessMsg.payload.functions.some((f: any) => f.name === 'triage_query_tool'));
+    assert.ok(pickedSuccessMsg.payload.filePath.includes('memory_toolset.py'));
+    assert.ok(pickedSuccessMsg.payload.functions.some((f: any) => f.name === 'memorize'));
   });
 });
 

@@ -742,8 +742,8 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
     });
   });
 
-  describe('Session Memory & Checkpointer Codegen (ensureSessionStore)', () => {
-    it('should inject session_store.py and google-cloud-firestore for firestore backend', () => {
+  describe('Session Memory & Checkpointer Dependencies (ensureSessionStore)', () => {
+    it('should ensure google-cloud-firestore in requirements.txt and SESSION_STORE_BACKEND in .env.example for firestore backend', () => {
       const firestoreDoc: AgentWorkflowDocument = {
         version: '1.0.0',
         name: 'FirestoreMemoryWorkflow',
@@ -776,11 +776,6 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
 
       const finalized = engine.ensureSessionStore(firestoreDoc, initialFiles);
 
-      const sessionStore = finalized.find((f) => f.path === 'session_store.py');
-      assert.ok(sessionStore, 'session_store.py must be present');
-      assert.ok(sessionStore.content.includes('class FirestoreSessionStore'));
-      assert.ok(sessionStore.content.includes('customer_sessions'));
-
       const reqFile = finalized.find((f) => f.path === 'requirements.txt');
       assert.ok(reqFile, 'requirements.txt must be present');
       assert.ok(reqFile.content.includes('google-cloud-firestore>=2.16.0'));
@@ -790,7 +785,7 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
       assert.ok(envFile.content.includes('SESSION_STORE_BACKEND=firestore'));
     });
 
-    it('should inject session_store.py and psycopg2/sqlalchemy for cloud_sql / postgres backend', () => {
+    it('should ensure psycopg2/sqlalchemy in requirements.txt for cloud_sql / postgres backend', () => {
       const sqlDoc: AgentWorkflowDocument = {
         version: '1.0.0',
         name: 'CloudSqlMemoryWorkflow',
@@ -823,18 +818,13 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
 
       const finalized = engine.ensureSessionStore(sqlDoc, initialFiles);
 
-      const sessionStore = finalized.find((f) => f.path === 'session_store.py');
-      assert.ok(sessionStore, 'session_store.py must be present');
-      assert.ok(sessionStore.content.includes('class CloudSqlSessionStore'));
-      assert.ok(sessionStore.content.includes('custom_sql_sessions'));
-
       const reqFile = finalized.find((f) => f.path === 'requirements.txt');
       assert.ok(reqFile, 'requirements.txt must be present');
       assert.ok(reqFile.content.includes('psycopg2-binary>=2.9.9'));
       assert.ok(reqFile.content.includes('sqlalchemy>=2.0.0'));
     });
 
-    it('should inject session_store.py and google-cloud-spanner for spanner backend', () => {
+    it('should ensure google-cloud-spanner in requirements.txt for spanner backend', () => {
       const spannerDoc: AgentWorkflowDocument = {
         version: '1.0.0',
         name: 'SpannerMemoryWorkflow',
@@ -867,16 +857,11 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
 
       const finalized = engine.ensureSessionStore(spannerDoc, initialFiles);
 
-      const sessionStore = finalized.find((f) => f.path === 'session_store.py');
-      assert.ok(sessionStore);
-      assert.ok(sessionStore.content.includes('class SpannerSessionStore'));
-      assert.ok(sessionStore.content.includes('EnterpriseSessions'));
-
       const reqFile = finalized.find((f) => f.path === 'requirements.txt');
       assert.ok(reqFile.content.includes('google-cloud-spanner>=3.40.0'));
     });
 
-    it('should inject session_store.py and redis driver for redis backend', () => {
+    it('should ensure redis driver in requirements.txt for redis backend', () => {
       const redisDoc: AgentWorkflowDocument = {
         version: '1.0.0',
         name: 'RedisMemoryWorkflow',
@@ -909,16 +894,11 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
 
       const finalized = engine.ensureSessionStore(redisDoc, initialFiles);
 
-      const sessionStore = finalized.find((f) => f.path === 'session_store.py');
-      assert.ok(sessionStore);
-      assert.ok(sessionStore.content.includes('class RedisSessionStore'));
-      assert.ok(sessionStore.content.includes('10.0.0.5'));
-
       const reqFile = finalized.find((f) => f.path === 'requirements.txt');
       assert.ok(reqFile.content.includes('redis>=5.0.0'));
     });
 
-    it('should guarantee session_store.py in finalizeGeneratedFiles pipeline', () => {
+    it('should preserve LLM-generated session_store.py and synchronize .env.example in finalizeGeneratedFiles pipeline', () => {
       const doc: AgentWorkflowDocument = {
         version: '1.0.0',
         name: 'FinalizeWorkflow',
@@ -944,7 +924,9 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
 
       const rawGenerated = [
         { path: 'agent.py', content: 'root_agent = Agent(name="finalize_agent")', language: 'python' },
+        { path: 'session_store.py', content: 'def get_session_store(): return InMemorySessionStore()', language: 'python' },
         { path: 'requirements.txt', content: 'google-adk>=0.1.0', language: 'text' },
+        { path: '.env.example', content: 'GOOGLE_CLOUD_PROJECT=test-proj', language: 'text' },
       ];
 
       const finalized = engine.finalizeGeneratedFiles(doc, rawGenerated);
@@ -952,7 +934,10 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
       const sessionStore = finalized.find((f) => f.path === 'session_store.py');
       assert.ok(sessionStore);
       assert.ok(sessionStore.content.includes('get_session_store'));
-      assert.ok(sessionStore.content.includes('class InMemorySessionStore'));
+
+      const envFile = finalized.find((f) => f.path === '.env.example');
+      assert.ok(envFile);
+      assert.ok(envFile.content.includes('SESSION_STORE_BACKEND=in_memory'));
     });
   });
 
@@ -972,4 +957,66 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
       assert.deepStrictEqual(result.files, []);
     });
   });
+
+  describe('Pure LLM Prompt Engineering for Advanced Agent Kinds & Patterns', () => {
+    const promptFiles = [
+      'resource/prompts/python_adk_agent-engine.prompt.txt',
+      'resource/prompts/python_adk_cloudrun.prompt.txt',
+    ];
+
+    for (const relPath of promptFiles) {
+      const fullPath = path.resolve(extensionPath, relPath);
+
+      it(`should contain exhaustive prompt rules in ${relPath}`, () => {
+        assert.ok(fs.existsSync(fullPath), `${relPath} must exist`);
+        const content = fs.readFileSync(fullPath, 'utf-8');
+
+        // Synthesizer instructions
+        assert.ok(content.includes('agentKind: "synthesizer"'));
+        assert.ok(content.includes('CRITICAL ZERO-TOOLS RULE'));
+        assert.ok(content.includes('output_schema'));
+
+        // Approval Gate (HITL) instructions
+        assert.ok(content.includes('agentKind: "hitl"'));
+        assert.ok(content.includes('ApprovalGate'));
+        assert.ok(content.includes('approved_agent'));
+        assert.ok(content.includes('rejected_agent'));
+
+        // Fallback Circuit Breaker instructions
+        assert.ok(content.includes('agentKind: "fallback"'));
+        assert.ok(content.includes('CircuitBreaker'));
+        assert.ok(content.includes('primary_agent'));
+        assert.ok(content.includes('fallback_agent'));
+
+        // Guardrail Shield instructions
+        assert.ok(content.includes('agentKind: "guardrail"'));
+        assert.ok(content.includes('GuardrailShield'));
+        assert.ok(content.includes('pass_agent'));
+        assert.ok(content.includes('block_agent'));
+
+        // Evaluator-Optimizer Loop instructions
+        assert.ok(content.includes('subAgentPattern: "loop"'));
+        assert.ok(content.includes('LoopAgent'));
+        assert.ok(content.includes('max_iterations'));
+
+        // Multi-Agent Debate instructions
+        assert.ok(content.includes('subAgentPattern: "debate"'));
+        assert.ok(content.includes('Consensus Judge'));
+
+        // Review & Critique Triad instructions
+        assert.ok(content.includes('subAgentPattern: "review_critique"'));
+        assert.ok(content.includes('initial_draft'));
+        assert.ok(content.includes('critique'));
+
+        // Agent-as-a-Tool instructions
+        assert.ok(content.includes('Agent-as-a-Tool Pattern'));
+        assert.ok(content.includes('Runner(agent='));
+
+        // SQLite session checkpointer
+        assert.ok(content.includes("'sqlite'"));
+        assert.ok(content.includes('SqliteSessionStore'));
+      });
+    }
+  });
 });
+

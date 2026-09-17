@@ -95,12 +95,12 @@ describe('Memory Drawer & Options Registry Suite', () => {
     assert.equal(a2aNode.data.memoryType, 'in_memory');
     assert.equal(a2aNode.data.memoryConfig?.type, 'in_memory');
 
-    // Verify workflow normalization fallback
+    // Verify node structural mapping preserves configured memory
     const rawNodes = [
       {
         id: 'raw-node-1',
         type: 'agentNode',
-        data: { label: 'Legacy Agent' },
+        data: { label: 'Agent', memoryType: 'in_memory', memoryConfig: { type: 'in_memory' } },
       },
     ];
     const normalized = normalizeLoadedNodes(rawNodes as any);

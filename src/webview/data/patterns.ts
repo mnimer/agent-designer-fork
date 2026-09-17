@@ -1620,7 +1620,7 @@ export function createPatternNodesAndEdges(
       target: rootNode.id,
       targetHandle: 'input_left',
       animated: true,
-      style: { stroke: '#eab308', strokeWidth: 2, strokeDasharray: '5 5' },
+      style: { stroke: '#f59e0b', strokeWidth: 2, strokeDasharray: '5 5' },
     };
 
     combinedNodes = [testerNode, ...result.nodes];

@@ -14,10 +14,12 @@
  * - Decision 3: Spacing and layout follow the strict 8pt grid system.
  * - Decision 4: Categorized tool sections in the Tools catalog are collapsible and default closed.
  * - Decision 5: Basic Agent Types catalog supports Standard Agent (blue), A2A Protocol Agent (cyan), and Router Agent (purple) with drag-and-drop and one-click '+' canvas insertion.
- * - Decision 6: Trigger categories (Test Suite QA, Conversational Chat, and Workflow Triggers) in the Triggers catalog are collapsible and expanded by default.
+ * - Decision 6: Trigger categories in the Triggers catalog are collapsible: Test Suite QA and Conversational Chat default expanded, while Workflow Triggers defaults collapsed.
+ * - Decision 7: Collapsible Sample Categories: Groups sample workflows by domain category (e.g. Retail, SDLC, Finance) into collapsible accordion sections that are collapsed by default.
+ * - Decision 8: Collapsible Agent Categories: Core Agents, Flow & Control Agents, and Multi-Agent Patterns in the Agents catalog are collapsible accordion sections with count badges. Core Agents defaults expanded, while Flow & Control Agents and Multi-Agent Patterns default collapsed.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Bot, 
   Workflow, 
@@ -55,6 +57,7 @@ import {
   FileCode,
   ArrowRight,
   FolderOpen,
+  Folder,
   GitBranch,
   Split,
   Server,
@@ -70,13 +73,14 @@ import {
   LifeBuoy,
   ShieldCheck,
   ExternalLink,
+  Info,
 } from 'lucide-react';
 import { PATTERN_DEFINITIONS, BASIC_AGENT_TYPES, CORE_AGENT_TYPES, FLOW_CONTROL_AGENT_TYPES } from '../../data/patterns';
 import { TRIGGER_CATALOG, TriggerCatalogItem } from '../../data/triggerDefinitions';
-import { SAMPLES_CATALOG } from '../../data/sampleWorkflows';
 import { categorizeTools, isNativeAdkTool } from '../../data/builtinTools';
 import { GOOGLE_CLOUD_MCP_DOMAINS, GOOGLE_CLOUD_MCP_SERVERS, GoogleCloudDomainMeta } from '../../data/googleCloudMcpServers';
 import { PatternType, AgentKind, ToolDefinition, AgentData, TriggerType, SampleWorkflowDefinition, GoogleCloudLaunchStage } from '../../types';
+import { SampleInfoModal } from './SampleInfoModal';
 
 interface PaletteCardProps {
   tools: ToolDefinition[];
@@ -90,6 +94,7 @@ interface PaletteCardProps {
   onCreateMcpTool?: () => void;
   onAddToolToAgent: (tool: ToolDefinition) => void;
   onOpenSample?: (sample: SampleWorkflowDefinition) => void;
+  onOpenSampleInfo?: (sample: SampleWorkflowDefinition) => void;
   samples?: SampleWorkflowDefinition[];
   onLoadSampleIntoCurrentFlow?: (sample: SampleWorkflowDefinition) => void;
 }
@@ -106,12 +111,31 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   onCreateMcpTool,
   onAddToolToAgent,
   onOpenSample,
+  onOpenSampleInfo,
   samples,
   onLoadSampleIntoCurrentFlow,
 }) => {
+  const sampleList = useMemo(() => samples || [], [samples]);
   const [activeTab, setActiveTab] = useState<'agents' | 'tools' | 'triggers' | 'samples'>('agents');
-  const [isFlowControlOpen, setIsFlowControlOpen] = useState(false);
-  const [isPatternsOpen, setIsPatternsOpen] = useState(false);
+  const [activeInfoSample, setActiveInfoSample] = useState<SampleWorkflowDefinition | null>(null);
+  // Collapsible accordion state for Agent categories (Core Agents open, Flow & Control Agents and Patterns closed by default)
+  const [openAgentCategories, setOpenAgentCategories] = useState<Record<string, boolean>>({
+    core: true,
+    flow_control: false,
+    patterns: false,
+  });
+
+  /**
+   * Toggles the collapse/expand state of an agent category.
+   *
+   * @param categoryId ID of the agent category section to toggle ('core' | 'flow_control' | 'patterns')
+   */
+  const toggleAgentCategory = (categoryId: string) => {
+    setOpenAgentCategories((prev) => ({
+      ...prev,
+      [categoryId]: !prev[categoryId],
+    }));
+  };
   const [isOpen, setIsOpen] = useState(true);
   const [toolSearch, setToolSearch] = useState('');
   const [toolCategoryFilter, setToolCategoryFilter] = useState<'all' | 'mcp' | 'api' | 'builtin'>('all');
@@ -182,11 +206,11 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
     }
   };
 
-  // Collapsible accordion state for Trigger categories (all expanded by default)
+  // Collapsible accordion state for Trigger categories (Tester & Chat open, Workflow Triggers collapsed by default)
   const [openTriggerCategories, setOpenTriggerCategories] = useState<Record<string, boolean>>({
     tester: true,
     chat: true,
-    workflow: true,
+    workflow: false,
   });
 
   /**
@@ -198,6 +222,21 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
     setOpenTriggerCategories((prev) => ({
       ...prev,
       [categoryId]: !prev[categoryId],
+    }));
+  };
+
+  // Collapsible accordion state for Sample Workflow categories (collapsed by default)
+  const [openSampleCategories, setOpenSampleCategories] = useState<Record<string, boolean>>({});
+
+  /**
+   * Toggles the collapse/expand state of a sample category.
+   *
+   * @param category Name or ID of the sample category section to toggle
+   */
+  const toggleSampleCategory = (category: string) => {
+    setOpenSampleCategories((prev) => ({
+      ...prev,
+      [category]: !prev[category],
     }));
   };
 
@@ -561,7 +600,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
             Samples
           </span>
           <span className="text-[7.5px] font-mono mt-0.5 px-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-            {SAMPLES_CATALOG.length}
+            {sampleList.length}
           </span>
         </button>
       </div>
@@ -580,7 +619,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                 {activeTab === 'agents' && 'Agents & Patterns'}
                 {activeTab === 'tools' && `Tool Registry (${tools.length})`}
                 {activeTab === 'triggers' && 'Workflow Triggers & QA'}
-                {activeTab === 'samples' && `Workflow Samples (${SAMPLES_CATALOG.length})`}
+                {activeTab === 'samples' && `Workflow Samples (${sampleList.length})`}
               </h3>
             </div>
             <div className="flex items-center gap-1.5">
@@ -596,68 +635,97 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
 
       {/* TAB 1: AGENTS & PATTERNS */}
       {activeTab === 'agents' && (
-        <div className="p-3 space-y-4 overflow-y-auto flex-1">
-          {/* Core Agent Types Section */}
-          <div>
-            <div className="text-[11px] font-semibold text-blue-400 mb-2 uppercase tracking-wide flex items-center justify-between">
-              <span>Core Agents</span>
-              <span className="text-[9px] text-gray-400 font-normal lowercase">drag to canvas</span>
-            </div>
-
-            <div className="space-y-1.5">
-              {CORE_AGENT_TYPES.map((agentType) => {
-                const styles = getAgentCardStyles(agentType.colorTheme);
-                return (
-                  <div
-                    key={agentType.kind}
-                    draggable
-                    onDragStart={(e) => handleDragStartAgent(e, agentType.kind, false, agentType.kind)}
-                    onClick={() => onAddAgent(agentType.kind)}
-                    className={`group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] ${styles.border} cursor-grab active:cursor-grabbing hover:bg-[#30363d] shadow-sm transition-all`}
-                    title={`Drag and drop ${agentType.name} onto canvas`}
-                    data-testid={`palette-agent-${agentType.kind}`}
-                  >
-                    <div className="flex items-start gap-2.5 min-w-0">
-                      <GripVertical className={`w-3.5 h-3.5 text-gray-400 ${styles.hoverGrip} shrink-0 mt-1`} />
-                      <div className={`p-1.5 rounded-md bg-[#0d1117] ${styles.iconBorder} shrink-0 mt-0.5 border shadow-xs`}>
-                        {getAgentTypeIcon(agentType.iconName)}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-xs text-white truncate max-w-[150px]">
-                            {agentType.name}
-                          </span>
-                          <span className={`text-[8px] uppercase font-mono px-1.5 py-0.2 rounded ${styles.badge}`}>
-                            {agentType.badge}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
-                          {agentType.description}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Multi-Agent Flow & Control Nodes Section */}
-          <div className="border-t border-[#30363d] pt-3">
+        <div className="p-3 space-y-2 overflow-y-auto flex-1">
+          {/* 1. Core Agent Types Section */}
+          <div className="space-y-2 bg-[#0d1117]/40 rounded-lg border border-[#30363d]/60 p-2">
             <button
               type="button"
-              onClick={() => setIsFlowControlOpen(!isFlowControlOpen)}
-              className="w-full flex items-center justify-between text-[11px] font-semibold text-indigo-400 mb-2 uppercase tracking-wide cursor-pointer hover:text-indigo-300"
+              onClick={() => toggleAgentCategory('core')}
+              className="w-full flex items-center justify-between text-left hover:text-white transition-colors cursor-pointer group select-none"
+              data-testid="toggle-agent-category-core"
             >
-              <div className="flex items-center gap-1.5">
-                <Workflow className="w-3.5 h-3.5" />
-                <span>Flow & Control Nodes ({FLOW_CONTROL_AGENT_TYPES.length})</span>
+              <div className="flex items-center gap-1.5 min-w-0">
+                {openAgentCategories.core ? (
+                  <ChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                )}
+                <Bot className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                <span className="text-[11px] font-bold text-gray-300 group-hover:text-white tracking-tight">
+                  Core Agents
+                </span>
               </div>
-              {isFlowControlOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              <span className="text-[9px] px-1.5 py-0.5 rounded border font-mono font-bold bg-blue-950/50 text-blue-300/90 border-blue-500/40 shrink-0">
+                {CORE_AGENT_TYPES.length}
+              </span>
             </button>
 
-            {isFlowControlOpen && (
-              <div className="space-y-1.5">
+            {openAgentCategories.core && (
+              <div className="pt-1.5 space-y-1.5 border-t border-[#30363d]/40">
+                {CORE_AGENT_TYPES.map((agentType) => {
+                  const styles = getAgentCardStyles(agentType.colorTheme);
+                  return (
+                    <div
+                      key={agentType.kind}
+                      draggable
+                      onDragStart={(e) => handleDragStartAgent(e, agentType.kind, false, agentType.kind)}
+                      onClick={() => onAddAgent(agentType.kind)}
+                      className={`group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] ${styles.border} cursor-grab active:cursor-grabbing hover:bg-[#30363d] shadow-sm transition-all`}
+                      title={`Drag and drop ${agentType.name} onto canvas`}
+                      data-testid={`palette-agent-${agentType.kind}`}
+                    >
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <GripVertical className={`w-3.5 h-3.5 text-gray-400 ${styles.hoverGrip} shrink-0 mt-1`} />
+                        <div className={`p-1.5 rounded-md bg-[#0d1117] ${styles.iconBorder} shrink-0 mt-0.5 border shadow-xs`}>
+                          {getAgentTypeIcon(agentType.iconName)}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-xs text-white truncate max-w-[150px]">
+                              {agentType.name}
+                            </span>
+                            <span className={`text-[8px] uppercase font-mono px-1.5 py-0.2 rounded ${styles.badge}`}>
+                              {agentType.badge}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                            {agentType.description}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* 2. Flow & Control Agents Section */}
+          <div className="space-y-2 bg-[#0d1117]/40 rounded-lg border border-[#30363d]/60 p-2">
+            <button
+              type="button"
+              onClick={() => toggleAgentCategory('flow_control')}
+              className="w-full flex items-center justify-between text-left hover:text-white transition-colors cursor-pointer group select-none"
+              data-testid="toggle-agent-category-flow-control"
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                {openAgentCategories.flow_control ? (
+                  <ChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                )}
+                <Layers className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span className="text-[11px] font-bold text-gray-300 group-hover:text-white tracking-tight">
+                  Flow & Control Agents
+                </span>
+              </div>
+              <span className="text-[9px] px-1.5 py-0.5 rounded border font-mono font-bold bg-indigo-950/50 text-indigo-300/90 border-indigo-500/40 shrink-0">
+                {FLOW_CONTROL_AGENT_TYPES.length}
+              </span>
+            </button>
+
+            {openAgentCategories.flow_control && (
+              <div className="pt-1.5 space-y-1.5 border-t border-[#30363d]/40">
                 {FLOW_CONTROL_AGENT_TYPES.map((agentType) => {
                   const styles = getAgentCardStyles(agentType.colorTheme);
                   return (
@@ -696,22 +764,32 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
             )}
           </div>
 
-          {/* Multi-Agent Patterns Section */}
-          <div className="border-t border-[#30363d] pt-3">
+          {/* 3. Multi-Agent Patterns Section */}
+          <div className="space-y-2 bg-[#0d1117]/40 rounded-lg border border-[#30363d]/60 p-2">
             <button
               type="button"
-              onClick={() => setIsPatternsOpen(!isPatternsOpen)}
-              className="w-full flex items-center justify-between text-[11px] font-semibold text-purple-400 mb-2 uppercase tracking-wide cursor-pointer hover:text-purple-300"
+              onClick={() => toggleAgentCategory('patterns')}
+              className="w-full flex items-center justify-between text-left hover:text-white transition-colors cursor-pointer group select-none"
+              data-testid="toggle-agent-category-patterns"
             >
-              <div className="flex items-center gap-1.5">
-                <Cpu className="w-3.5 h-3.5" />
-                <span>Multi-Agent Patterns ({PATTERN_DEFINITIONS.length})</span>
+              <div className="flex items-center gap-1.5 min-w-0">
+                {openAgentCategories.patterns ? (
+                  <ChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                )}
+                <Cpu className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span className="text-[11px] font-bold text-gray-300 group-hover:text-white tracking-tight">
+                  Multi-Agent Patterns
+                </span>
               </div>
-              {isPatternsOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              <span className="text-[9px] px-1.5 py-0.5 rounded border font-mono font-bold bg-purple-950/50 text-purple-300/90 border-purple-500/40 shrink-0">
+                {PATTERN_DEFINITIONS.length}
+              </span>
             </button>
 
-            {isPatternsOpen && (
-              <div className="space-y-1.5">
+            {openAgentCategories.patterns && (
+              <div className="pt-1.5 space-y-1.5 border-t border-[#30363d]/40">
                 {PATTERN_DEFINITIONS.map((pattern) => (
                   <div
                     key={pattern.id}
@@ -1237,69 +1315,144 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
 
       {/* TAB 4: SAMPLES & TEMPLATES */}
       {activeTab === 'samples' && (() => {
-        const sampleList = samples && samples.length > 0 ? samples : SAMPLES_CATALOG;
+        const sampleList = samples || [];
+
+        // Section 1: Group samples by domain category
+        const sampleGroups: Record<string, SampleWorkflowDefinition[]> = {};
+        for (const sample of sampleList) {
+          const cat = sample.category?.trim() || 'General';
+          if (!sampleGroups[cat]) {
+            sampleGroups[cat] = [];
+          }
+          sampleGroups[cat].push(sample);
+        }
+
+        const categoryNames = Object.keys(sampleGroups).sort((a, b) => a.localeCompare(b));
+
         return (
           <div className="p-3 space-y-3 overflow-y-auto flex-1">
             <div className="text-[11px] font-semibold text-purple-400 uppercase tracking-wide flex items-center justify-between">
               <span>Ready-to-Use Workflows ({sampleList.length})</span>
             </div>
 
-            <div className="space-y-2">
-              {sampleList.map((sample) => (
-                <div
-                  key={sample.id}
-                  draggable={true}
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('application/reactflow/type', 'sample');
-                    e.dataTransfer.setData('application/reactflow/sample', JSON.stringify(sample));
-                    e.dataTransfer.setData('application/reactflow/sampleId', sample.id);
-                    e.dataTransfer.setData('text/plain', JSON.stringify(sample));
-                    e.dataTransfer.effectAllowed = 'all';
-                  }}
-                  className="group relative flex flex-col p-2.5 bg-[#21262d] border border-purple-500/30 rounded-lg hover:bg-[#30363d] hover:border-purple-400 shadow-sm transition-all shadow-purple-950/20 cursor-grab active:cursor-grabbing"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-start gap-1.5 min-w-0 flex-1">
-                      <GripVertical className="w-3.5 h-3.5 text-gray-500 group-hover:text-purple-400 shrink-0 mt-0.5 opacity-60 group-hover:opacity-100 transition-opacity" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-semibold text-xs text-white truncate max-w-[150px]">
-                            {sample.name}
-                          </span>
-                          <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                            {sample.badge}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-gray-400 mt-1 line-clamp-2 leading-relaxed">
-                          {sample.description}
-                        </p>
-                        <div className="flex items-center gap-2 mt-2 text-[9px] text-gray-400 font-mono">
-                          <span>{sample.nodesCount} nodes</span>
-                          <span>•</span>
-                          <span>{sample.toolsCount} tools</span>
-                          <span>•</span>
-                          <span className="text-purple-300">{sample.category}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1 shrink-0 mt-0.5">
+            {sampleList.length === 0 ? (
+              <div className="p-4 text-center text-xs text-gray-500 border border-dashed border-[#30363d] rounded-lg">
+                No sample workflows available.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {categoryNames.map((category) => {
+                  const items = sampleGroups[category];
+                  const isExpanded = openSampleCategories[category] ?? false;
+
+                  return (
+                    <div
+                      key={category}
+                      className="space-y-2 bg-[#0d1117]/40 rounded-lg border border-[#30363d]/60 p-2"
+                    >
+                      {/* Collapsible Category Header - Collapsed by default */}
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenSample?.(sample);
-                        }}
-                        title={`Save "${sample.name}" as a new .agent file and open in a new tab`}
-                        className="px-2 py-1 rounded bg-[#161b22] hover:bg-[#21262d] border border-purple-500/40 text-purple-300 hover:text-white transition-colors cursor-pointer text-[10px] font-medium flex items-center justify-center gap-1"
+                        onClick={() => toggleSampleCategory(category)}
+                        className="w-full flex items-center justify-between text-left hover:text-white transition-colors cursor-pointer group select-none"
+                        data-testid={`toggle-sample-category-${category.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
                       >
-                        <ExternalLink className="w-3 h-3" />
-                        <span>New File</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {isExpanded ? (
+                            <ChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                          ) : (
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-200 transition-transform shrink-0" />
+                          )}
+                          <Folder className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                          <span className="text-[11px] font-bold text-gray-300 group-hover:text-white tracking-tight truncate">
+                            {category}
+                          </span>
+                        </div>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded border font-mono font-bold bg-purple-950/50 text-purple-300/90 border-purple-500/40 shrink-0">
+                          {items.length}
+                        </span>
                       </button>
+
+                      {/* Expanded Section Items */}
+                      {isExpanded && (
+                        <div className="pt-1.5 space-y-2 border-t border-[#30363d]/40">
+                          {items.map((sample) => (
+                            <div
+                              key={sample.id}
+                              draggable={true}
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData('application/reactflow/type', 'sample');
+                                e.dataTransfer.setData('application/reactflow/sample', JSON.stringify(sample));
+                                e.dataTransfer.setData('application/reactflow/sampleId', sample.id);
+                                e.dataTransfer.setData('text/plain', JSON.stringify(sample));
+                                e.dataTransfer.effectAllowed = 'all';
+                              }}
+                              className="group relative flex flex-col p-2.5 bg-[#21262d] border border-purple-500/30 rounded-lg hover:bg-[#30363d] hover:border-purple-400 shadow-sm transition-all shadow-purple-950/20 cursor-grab active:cursor-grabbing"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                                  <GripVertical className="w-3.5 h-3.5 text-gray-500 group-hover:text-purple-400 shrink-0 mt-0.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-semibold text-xs text-white truncate max-w-[150px]">
+                                        {sample.name}
+                                      </span>
+                                      <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                        {sample.badge}
+                                      </span>
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 mt-1 line-clamp-2 leading-relaxed">
+                                      {sample.description}
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-2 text-[9px] text-gray-400 font-mono">
+                                      <span>{sample.nodesCount} nodes</span>
+                                      <span>•</span>
+                                      <span>{sample.toolsCount} tools</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col gap-1 shrink-0 mt-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (onOpenSampleInfo) {
+                                        onOpenSampleInfo(sample);
+                                      } else {
+                                        setActiveInfoSample(sample);
+                                      }
+                                    }}
+                                    title={`View "${sample.name}" description & README documentation`}
+                                    aria-label={`View ${sample.name} information`}
+                                    data-testid={`sample-info-btn-${sample.id}`}
+                                    className="px-2 py-1 rounded bg-[#161b22] hover:bg-[#21262d] border border-purple-500/40 text-purple-300 hover:text-white transition-colors cursor-pointer text-[10px] font-medium flex items-center justify-center gap-1"
+                                  >
+                                    <Info className="w-3 h-3" />
+                                    <span>Info</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onOpenSample?.(sample);
+                                    }}
+                                    title={`Save "${sample.name}" as a new .agent file and open in a new tab`}
+                                    className="px-2 py-1 rounded bg-[#161b22] hover:bg-[#21262d] border border-purple-500/40 text-purple-300 hover:text-white transition-colors cursor-pointer text-[10px] font-medium flex items-center justify-center gap-1"
+                                  >
+                                    <ExternalLink className="w-3 h-3" />
+                                    <span>New File</span>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         );
       })()}
@@ -1317,6 +1470,15 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
         </span>
       </div>
     </div>
+  )}
+
+  {/* Sample Information Modal Dialog (fallback when not mounted at root) */}
+  {!onOpenSampleInfo && (
+    <SampleInfoModal
+      sample={activeInfoSample}
+      onClose={() => setActiveInfoSample(null)}
+      onOpenSample={onOpenSample}
+    />
   )}
 </div>
   );

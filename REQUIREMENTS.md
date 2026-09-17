@@ -363,7 +363,11 @@ The builder includes 8 pre-configured architectural pattern presets that can be 
 
 ## 7. Sample Workflows & Blueprints
 
-Pre-built enterprise blueprints available in the Samples palette:
+Pre-built enterprise blueprints available in the Samples palette (`PaletteCard.tsx` -> `Samples` tab):
+- **Sample Card Actions**:
+  - **Drag-and-Drop**: Dragging a sample card onto the canvas instantiates its entire multi-agent topology with unique ID remapping (`createSampleNodesAndEdges`).
+  - **Information Dialog (`Info` Icon Button)**: Clicking the `Info` button on any sample card opens `SampleInfoModal`, rendering the sample's `README.md` architecture overview, feature highlights, node/tool counts, and test scenario counts.
+  - **New File (`New File` Button)**: Saves the blueprint as a new `.agent` file in the workspace and opens it in a dedicated editor tab.
 
 ### 7.1 Company Verifier & Entity Classifier (`company_verifier.agent`)
 - **Category**: Enterprise Integration & Identity
@@ -373,6 +377,19 @@ Pre-built enterprise blueprints available in the Samples palette:
   - `Google Search Grounding`: Fallback verification for business registry ambiguity.
 - **Output Schema**: Strict JSON containing verification status (`VERIFIED`, `UNVERIFIED`, `SUSPICIOUS`), confidence score (`0.0 - 1.0`), operating status, and standardized industry taxonomy (`restaurant`, `machine shop`, `retail`, `healthcare`, `logistics`, `technology`).
 - **Test Prompts**: Test cases for verifying precision CNC machine shops vs artisan restaurants.
+
+### 7.2 Travel Concierge Cohort (`travel-concierge.agent`)
+- **Category**: Customer Experience & Retail
+- **Topology**:
+  - `Traveler Conversational Chat` (`chat` trigger) & `Travel Concierge Test Suite` (`tester` trigger with 13 cases) ➔ `Travel Concierge (Root Coordinator)` (`gemini-3.7-flash`)
+  - Connected to 6 specialized sub-agents: `Inspiration Agent`, `Planning Agent`, `Booking & Payment Agent`, `Pre-Trip Preparation Agent`, `In-Trip Concierge & Monitor`, and `Post-Trip Feedback Agent`.
+- **Integrated Tools**:
+  - `memory_toolset.py`: `memorize`, `memorize_list`, `forget`
+  - `places_toolset.py`: `search_places`, `get_places_toolset` (Google Maps Grounding Lite MCP)
+  - `planning_toolset.py`: `place_recommendation`, `poi_suggestions`, `flight_search`, `flight_seat_selection`, `hotel_search`, `hotel_room_selection`, `create_itinerary`, `what_to_pack`
+  - `booking_toolset.py`: `create_reservation`, `payment_choice`, `process_payment` (Apple Pay decline / Google Pay & Credit Card approval rules)
+  - `intrip_toolset.py`: `flight_status_check`, `event_booking_check`, `weather_impact_check`, `transit_coordination`
+- **Test Suite Node**: Attached directly to the Root Agent with 13 automated evaluation test scenarios covering Americas/Peru inspiration, Tokyo Shibuya boutique hotel planning, payment gateway simulation, pre-trip advisories, and Seattle Space Needle in-trip monitoring.
 
 ---
 
