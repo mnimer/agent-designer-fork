@@ -114,6 +114,18 @@
 | [**TASK-198**](#task-198) | v1.0.3 | Memory / Cloud SQL | Google Cloud SQL (PostgreSQL/MySQL) Checkpointer & Pre-Deployment Validation | **Complete** | TASK-115 |
 | [**TASK-199**](#task-199) | v1.0.3 | Memory / Spanner | Google Cloud Spanner Enterprise Checkpointer & Resource Validation | **Complete** | TASK-115 |
 | [**TASK-200**](#task-200) | v1.0.3 | Memory / Redis | Cloud Memorystore (Redis/Valkey) Checkpointer & Session TTL Expiration | **Complete** | TASK-115 |
+| [**TASK-201**](#task-201) | v1.2.0 | Quality / Integration | Animal Expert Multi-Agent System (Parallel Fan-Out + Search Grounding) | **Complete** | TASK-106, TASK-113 |
+| [**TASK-202**](#task-202) | v1.2.0 | Quality / Integration | CyberGuardian SecOps Multi-Agent System (Coordinator + Eventarc Trigger) | **Complete** | TASK-106, TASK-121 |
+| [**TASK-203**](#task-203) | v1.2.0 | Quality / Integration | Financial Fraud & Services Router (Intent Classifier + State Expressions + SQLite) | **Not Started** | TASK-117, TASK-196, TASK-197 |
+| [**TASK-204**](#task-204) | v1.2.0 | Quality / Integration | Market Research Synthesizer Reducer (Parallel Fan-Out + Multi-Tool + Firestore) | **Not Started** | TASK-113, TASK-114, TASK-187 |
+| [**TASK-205**](#task-205) | v1.2.0 | Quality / Integration | Commercial Loan HITL Approval Gate (Human-in-the-Loop + Cloud SQL PostgreSQL) | **Not Started** | TASK-188, TASK-198 |
+| [**TASK-206**](#task-206) | v1.2.0 | Quality / Integration | Resilient Weather & Outage Fallback (Circuit Breaker + Memorystore Redis + Cron) | **Not Started** | TASK-189, TASK-200 |
+| [**TASK-207**](#task-207) | v1.2.0 | Quality / Integration | Healthcare Diagnostic Guardrail Shield (Bi-directional PII Gate + Cloud Spanner) | **Not Started** | TASK-190, TASK-199 |
+| [**TASK-208**](#task-208) | v1.2.0 | Quality / Integration | Procurement B2B A2A Protocol Agent (JSON-RPC 2.0 + Google Cloud IAM OIDC) | **Not Started** | TASK-116, TASK-121 |
+| [**TASK-209**](#task-209) | v1.2.0 | Quality / Integration | Autonomous Code Optimizer Loop (Evaluator-Optimizer + Thinking Budget + Sandbox) | **Not Started** | TASK-192A, TASK-192B |
+| [**TASK-210**](#task-210) | v1.2.0 | Quality / Integration | Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus) | **Not Started** | TASK-193A, TASK-193B |
+| [**TASK-211**](#task-211) | v1.2.0 | Quality / Integration | Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL) | **Not Started** | TASK-195A, TASK-195B, TASK-198 |
+| [**TASK-212**](#task-212) | v1.2.0 | Quality / Integration | Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner) | **Not Started** | TASK-129, TASK-130, TASK-199 |
 
 ---
 
@@ -3950,5 +3962,714 @@ Each task specifies reverse-engineering the sample Python code into a production
   - 100% unit test coverage.
 
 
+---
 
+<a id="task-201"></a>
+
+### [TASK-201] Integration Test: Animal Expert Multi-Agent System (Parallel Fan-Out + Search Grounding)
+* **Release**: `v1.2.0`
+* **Status**: Complete
+* **Target Package/Files**:
+  - `tests/integration/animal-agent.test.ts`
+  - `tests/integration/animal_agent.agent`
+  - `tests/integration/codegen-runner.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+* **Context**:
+  Validates end-to-end code generation, multi-agent coordination, and automated code evaluation for the canonical Parallel Fan-Out pattern using Google Search Grounding across both Vertex AI Agent Engine and Google Cloud Run deployment targets.
+* **Workflow Topology & Configuration Details**:
+  - **Topology**: Parallel Fan-Out (`subAgentPattern: 'parallel'`)
+    ```
+    [Chat Trigger / Test Suite Trigger]
+                    │
+                    ▼
+          [Animal Expert Root]
+             ┌──────┴──────┐
+             ▼             ▼
+       [Cat Agent]   [Fish Agent]
+       (Web Search)  (Web Search)
+    ```
+  - **Root Agent**:
+    - ID: `agent_mtrrm4jm_nfvu` (`animal_expert`)
+    - Role: Specialized AI Assistant / Dispatcher
+    - Model: `gemini-3.7-flash` (Vertex AI `global` region)
+    - Temperature: `0.7`, Max Iterations: `10`
+    - System Prompt: `"Pick the right subagent to answer the question."`
+    - Subagents: `Cat Agent` (`agent_mtrrmsff_5zd6`, `delegationType: 'parallel'`) and `Fish Agent` (`agent_mtrrn5d7_cfxc`, `delegationType: 'parallel'`)
+    - Subagent Pattern: `parallel`
+    - Memory: `none` / Stateless
+  - **Leaf Sub-Agent 1 (Cat Agent)**:
+    - ID: `agent_mtrrmsff_5zd6` (`cat_agent`)
+    - System Prompt: `"Search the web to answers Cat Questions."`
+    - Tools: `GoogleSearchTool(bypass_multi_tools_limit=True)`
+  - **Leaf Sub-Agent 2 (Fish Agent)**:
+    - ID: `agent_mtrrn5d7_cfxc` (`fish_agent`)
+    - System Prompt: `"Search the web to answers Fish Questions."`
+    - Tools: `GoogleSearchTool(bypass_multi_tools_limit=True)`
+  - **Triggers**:
+    - `Chat Trigger`: Streaming enabled, session memory `in_memory`.
+    - `Test Suite Trigger`: Scenarios for Siamese cat diet and Betta fish care with `contains` assertions.
+* **Sub-Agent Prompt**:
+  ```
+  Validate animal-agent.test.ts against Vertex AI Agent Engine and Google Cloud Run targets.
+  1. Interpolate tests/integration/animal_agent.agent into both prompt templates.
+  2. Execute runCodegenAndEvaluate() verifying Deterministic Gate and Multi-Agent Evaluator.
+  3. Ensure scorecards achieve overall >= 80, architecture >= 75, security >= 80 with zero hard vetos.
+  ```
+* **Verification**:
+  - `npm run test:integration` passes for `animal-agent.test.ts` across both deployment targets.
+
+---
+
+<a id="task-202"></a>
+
+### [TASK-202] Integration Test: CyberGuardian SecOps Multi-Agent System (Hierarchical Coordinator + Eventarc Trigger)
+* **Release**: `v1.2.0`
+* **Status**: Complete
+* **Target Package/Files**:
+  - `tests/integration/cyber-guardian-agent.test.ts`
+  - `tests/integration/cyber_guardian.agent`
+  - `tests/integration/codegen-runner.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+* **Context**:
+  Validates complex enterprise SecOps orchestration using a Hierarchical Coordinator with 4 specialized subagents, custom REST tool APIs, and Google Cloud Eventarc event ingestion for real-time security threat remediation.
+* **Workflow Topology & Configuration Details**:
+  - **Topology**: Hierarchical Coordinator (`subAgentPattern: 'coordinator'`)
+    ```
+    [Eventarc Trigger: FindingNotification (securitycenter.googleapis.com)]
+                                  │
+                                  ▼
+                        [SecOps Coordinator]
+             ┌─────────────┬──────┴──────┬─────────────┐
+             ▼             ▼             ▼             ▼
+       [Triage]       [Forensics]   [ThreatIntel]  [Remediation]
+    ```
+  - **Root Coordinator**:
+    - ID: `agent_secops_coordinator`
+    - Role: Enterprise Security Operations Lead
+    - Model: `gemini-3.7-flash`
+    - System Prompt: Triages security findings, delegates deep dive investigation to forensics and threat intelligence, and formulates automated containment playbooks.
+    - Subagents: `TriageSpecialist`, `ForensicsAnalyst`, `ThreatIntelSpecialist`, `RemediationSpecialist`
+    - Subagent Pattern: `coordinator`
+  - **Specialist Subagents**:
+    - `TriageSpecialist`: Severity scoring and initial IOC extraction.
+    - `ForensicsAnalyst`: Endpoint artifact inspection and timeline reconstruction via REST tools.
+    - `ThreatIntelSpecialist`: Threat feed queries with MITRE ATT&CK mapping.
+    - `RemediationSpecialist`: Containment playbook generation with firewall & IAM revocation scripts.
+  - **Triggers**:
+    - `Eventarc Trigger`: Provider `securitycenter.googleapis.com`, eventType `google.cloud.securitycenter.finding.v1.FindingNotification`, serviceAccount `secops-runner@project.iam.gserviceaccount.com`.
+* **Sub-Agent Prompt**:
+  ```
+  Validate cyber-guardian-agent.test.ts against Vertex AI Agent Engine and Google Cloud Run.
+  1. Run codegen runner on tests/integration/cyber_guardian.agent.
+  2. Verify Eventarc handler routes, async REST client calls in tools.py, and multi-agent coordination.
+  3. Ensure zero security hard vetos (no unescaped inputs or raw shell interpolations).
+  ```
+* **Verification**:
+  - `npm run test:integration` passes for `cyber-guardian-agent.test.ts` across both deployment targets.
+
+---
+
+<a id="task-203"></a>
+
+### [TASK-203] Integration Test: Financial Fraud & Services Router (Intent Classifier + State Expressions + SQLite)
+* **Release**: `v1.2.0`
+* **Status**: Not Started
+* **Target Package/Files**:
+  - `tests/integration/financial-router.test.ts`
+  - `tests/integration/financial_router.agent`
+  - `tests/integration/codegen-runner.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+* **Context**:
+  Validates the Conditional Router Agent (`agentKind === 'router'`) in both `intent_classifier` and `boolean_expression` evaluation modes. Tests dynamic multi-branch routing to 3 distinct downstream candidate agents plus a fallback branch, with strongly typed input schemas and local ephemeral SQLite session checkpointing.
+* **Workflow Topology & Configuration Details**:
+  - **Topology**: Dynamic Conditional Branching Router
+    ```
+    [Chat Trigger / Test Suite Trigger]
+                    │
+                    ▼
+       [Financial Services Router] ──(inputSchema: transaction details)
+          │             │            │
+          ├─────────────┼────────────┼────────────────┐
+          ▼             ▼            ▼                ▼
+     [Branch 1]     [Branch 2]   [Branch 3]       [Default Fallback]
+     (Fraud Team)   (Wealth Adv) (Dispute Rep)   (General Inquiry)
+    ```
+  - **Router Agent Node**:
+    - ID: `router_financial_dispatch`
+    - Label: `Financial Services Router`
+    - Agent Kind: `router`
+    - Evaluation Mode: `boolean_expression` (with fallback to `intent_classifier`)
+    - Input Schema:
+      - `transaction_amount`: `number` (required)
+      - `transaction_type`: `string`, enum: `['wire', 'card', 'crypto', 'ach']`
+      - `risk_score`: `number` (0-100)
+      - `is_international`: `boolean`
+    - Branches:
+      - Branch 1: `Fraud Investigation` (Condition: `input.risk_score >= 75 or (input.is_international and input.transaction_amount > 10000)`, target: `agent_fraud_investigator`)
+      - Branch 2: `Wealth Advisory` (Condition: `input.transaction_amount >= 100000 and input.risk_score < 40`, target: `agent_wealth_advisor`)
+      - Branch 3: `Card Dispute Services` (Condition: `input.transaction_type == 'card' and input.risk_score >= 40`, target: `agent_dispute_specialist`)
+      - Default Branch: `General Customer Care` (Target: `agent_general_support`, `isDefaultFallback: true`)
+    - Routing Strategy: `first_match`
+  - **Downstream Candidate Agents**:
+    - `Fraud Investigator` (`agent_fraud_investigator`): Freezes accounts and issues security challenges.
+    - `Wealth Advisor` (`agent_wealth_advisor`): Personalized portfolio guidance and tax-loss harvesting advice.
+    - `Dispute Specialist` (`agent_dispute_specialist`): Chargeback filing and provisional credit workflows.
+    - `General Support` (`agent_general_support`): Account balance, branch locations, and routine inquiries.
+  - **Memory Configuration**:
+    - `memoryType: 'sqlite'`, `sqlitePath: './sessions.db'`, ephemeral DB lifecycle.
+  - **Triggers**:
+    - `Chat Trigger`: With preloaded financial service greeting.
+    - `Test Suite Trigger`: 4 test cases testing each routing branch condition and fallback path.
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Financial Services Router integration test:
+  1. Create tests/integration/financial_router.agent defining the router node, branches, input schema, 4 candidate agents, SQLite memory, and test scenarios.
+  2. Create tests/integration/financial-router.test.ts invoking runCodegenAndEvaluate() for both 'agent_engine' and 'cloudrun'.
+  3. Verify Python ADK code generates Router / conditional branch evaluations in main.py and agent_workflow.py.
+  4. Ensure Multi-Agent Evaluation achieves overallScore >= 80, architectureScore >= 75, securityScore >= 80.
+  ```
+* **Verification**:
+  - Generated code evaluates conditions correctly without Python syntax errors.
+  - Test runner executes all 4 branch scenarios and asserts proper branch target execution.
+
+---
+
+<a id="task-204"></a>
+
+### [TASK-204] Integration Test: Market Research Synthesizer Reducer (Parallel Fan-Out + Multi-Tool + Firestore)
+* **Release**: `v1.2.0`
+* **Status**: Not Started
+* **Target Package/Files**:
+  - `tests/integration/market-research-synthesizer.test.ts`
+  - `tests/integration/market_research_synthesizer.agent`
+  - `tests/integration/codegen-runner.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+* **Context**:
+  Validates the Synthesizer Agent (`agentKind === 'synthesizer'`) in a Parallel Fan-Out topology. Verifies that multiple parallel worker agents with diverse tools (Google Search Grounding, Code Sandbox, REST API) write their findings to session state keys, and a toolless downstream Synthesizer agent consumes those keys, reduces them (`reductionStrategy: 'merge_json'`), and emits a strictly validated Pydantic Structured Output schema backed by Cloud Firestore.
+* **Workflow Topology & Configuration Details**:
+  - **Topology**: Parallel Fan-Out with Terminal Synthesizer Reducer
+    ```
+    [Test Suite QA Trigger]
+               │
+               ▼
+    [Market Research Lead] ──(Fan-Out: ParallelAgent)
+         ┌─────┼─────┐
+         ▼     ▼     ▼
+      [Worker1] [Worker2] [Worker3]
+      (Search)  (Sandbox) (REST API)
+         └─────┼─────┘
+               │ (state keys: competitor_data, sentiment_data, financial_data)
+               ▼
+     [Executive Synthesizer] ──(NO tools, StructuredOutputSchema Pydantic)
+    ```
+  - **Orchestrator Node**:
+    - ID: `agent_research_lead`, `subAgentPattern: 'parallel'`
+  - **Parallel Leaf Workers**:
+    - `Competitor Analyst` (`agent_competitor`): Attached `GoogleSearchTool(bypass_multi_tools_limit=True)`. Writes to state key `competitor_data`.
+    - `Sentiment Modeler` (`agent_sentiment`): Attached Python Code Execution sandbox (`code_execution`). Performs statistical sentiment scoring and writes to state key `sentiment_data`.
+    - `Financial Data Analyst` (`agent_financial`): Attached Custom REST API Tool querying corporate filings. Writes to state key `financial_data`.
+  - **Synthesizer Agent Node**:
+    - ID: `agent_synthesizer`, `agentKind: 'synthesizer'`
+    - Tools: **Strictly Empty** (`tools: []`) to obey Vertex AI Gemini controlled generation constraint.
+    - Input State Keys: `['competitor_data', 'sentiment_data', 'financial_data']`
+    - Reduction Strategy: `merge_json`
+    - Structured Output Schema:
+      - Class Name: `ExecutiveMarketBrief`
+      - Format: `pydantic`
+      - Fields:
+        - `market_outlook`: `string`, description: `"Bullish, Bearish, or Neutral overview"` (required)
+        - `key_competitors`: `array` of `string` (required)
+        - `aggregate_sentiment_score`: `number` (-1.0 to 1.0) (required)
+        - `revenue_risk_factors`: `array` of `string` (required)
+        - `strategic_recommendations`: `array` of `string` (required)
+  - **Memory Configuration**:
+    - `memoryType: 'firestore'`, `collectionName: 'market_research_sessions'`, `databaseId: '(default)'`, `projectId: 'gcp-project-test'`
+  - **Triggers**:
+    - `Test Suite Trigger`: With assertion type `json_schema` validating conformant Pydantic response payloads.
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Market Research Synthesizer integration test:
+  1. Create tests/integration/market_research_synthesizer.agent with Parallel Fan-Out, 3 tool-equipped subagents, 1 toolless Synthesizer agent with Pydantic schema, and Firestore memory.
+  2. Implement tests/integration/market-research-synthesizer.test.ts testing Agent Engine and Cloud Run targets.
+  3. Validate that generated Python ADK initializes ParallelAgent for workers, stores outputs to state keys, and feeds Synthesizer with response_schema=ExecutiveMarketBrief.
+  4. Ensure Multi-Agent Evaluation passes with zero hard vetos.
+  ```
+* **Verification**:
+  - Deterministic gate verifies Synthesizer has no attached tools and correctly imports `BaseModel`.
+  - Multi-agent evaluation passes with score >= 80 on both deployment targets.
+
+---
+
+<a id="task-205"></a>
+
+### [TASK-205] Integration Test: Commercial Loan HITL Approval Gate (Human-in-the-Loop + Cloud SQL PostgreSQL)
+* **Release**: `v1.2.0`
+* **Status**: Not Started
+* **Target Package/Files**:
+  - `tests/integration/loan-approval-hitl.test.ts`
+  - `tests/integration/loan_approval_hitl.agent`
+  - `tests/integration/codegen-runner.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+* **Context**:
+  Validates Human-in-the-Loop (`agentKind === 'hitl'`) approval gate orchestration with Google Cloud SQL PostgreSQL production checkpointer. Tests pause-and-resume workflows, approver role gating, timeout policies, conditional branch routing (`approvedAgentId` vs `rejectedAgentId`), and `request_input` builtin tool integration.
+* **Workflow Topology & Configuration Details**:
+  - **Topology**: Sequential Underwriting with Interrupted Approval Gate
+    ```
+    [Pub/Sub Trigger: loan-applications]
+                    │
+                    ▼
+        [Automated Underwriter]
+                    │
+                    ▼
+          [HITL Approval Gate] ──(request_input / pause checkpoint)
+             ┌──────┴──────┐
+      (Approved)        (Rejected)
+             ▼             ▼
+       [Disbursement]   [Notice Agent]
+    ```
+  - **Step 1: Automated Underwriter Agent**:
+    - ID: `agent_underwriter`, Model: `gemini-3.7-flash`, Temperature: `0.2`
+    - Evaluates debt-to-income, credit history, and collateral. Calculates `risk_tier` and `approved_credit_limit`.
+  - **Step 2: HITL Approval Gate Node**:
+    - ID: `hitl_loan_officer`, `agentKind: 'hitl'`
+    - Approval Condition: `state.loan_amount > 100000 or state.risk_tier == 'ELEVATED'`
+    - Timeout Hours: `48`, `autoRejectOnTimeout: true`
+    - Approver Roles: `['senior_credit_officer', 'risk_compliance_director']`
+    - Request Prompt: `"Commercial loan application of ${loan_amount} for {business_name} requires manual underwriter sign-off."`
+    - Approved Branch Target: `agent_disbursement`
+    - Rejected Branch Target: `agent_rejection_notice`
+    - Tools: `request_input` builtin tool for interactive human feedback
+  - **Step 3: Branch Destinations**:
+    - `Disbursement Agent` (`agent_disbursement`): Generates ACH wire instructions and loan covenant contracts.
+    - `Rejection Notice Agent` (`agent_rejection_notice`): Formulates Adverse Action notice complying with regulatory disclosure rules.
+  - **Memory Configuration**:
+    - `memoryType: 'cloud_sql'`, `instanceConnectionName: 'project:region:loan-pg-instance'`, `databaseName: 'loan_db'`, `databaseUrlSecret: 'LOAN_DB_SECRET'`, `tableName: 'commercial_loan_sessions'`.
+  - **Triggers**:
+    - `PubSub Trigger`: Topic `loan-applications`, subscription `loan-sub`, message format `json`.
+    - `Test Suite Trigger`: QA scenarios for small loan auto-approval vs large loan HITL escalation.
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Commercial Loan HITL Approval Gate integration test:
+  1. Create tests/integration/loan_approval_hitl.agent modeling Underwriter -> HITL Gate -> Dual branches with Cloud SQL checkpointer.
+  2. Implement tests/integration/loan-approval-hitl.test.ts running codegen and multi-agent evaluation.
+  3. Verify Python ADK code generates session pause/resume logic, request_input bindings, and CloudSqlSessionStore with auto-DDL.
+  4. Ensure security review passes with safe SQL credentials and parameterization.
+  ```
+* **Verification**:
+  - Evaluation verifies HITL gate pause logic, dual branch dispatch, and auto-DDL execution in `session_store.py`.
+
+---
+
+<a id="task-206"></a>
+
+### [TASK-206] Integration Test: Resilient Weather & Outage Fallback (Circuit Breaker + Memorystore Redis + Cron)
+* **Release**: `v1.2.0`
+* **Status**: Not Started
+* **Target Package/Files**:
+  - `tests/integration/resilient-weather-fallback.test.ts`
+  - `tests/integration/resilient_weather_fallback.agent`
+  - `tests/integration/codegen-runner.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+* **Context**:
+  Validates Fallback & Circuit Breaker Agent (`agentKind === 'fallback'`) resilience under upstream service failures and quota exhaustion. Verifies automatic retry with exponential backoff, failover to a cached secondary agent, static degradation responses, and Cloud Memorystore Redis session TTL management.
+* **Workflow Topology & Configuration Details**:
+  - **Topology**: Resilient Proxy Circuit Breaker
+    ```
+    [Scheduled Cron Trigger: 0 */6 * * *]
+                    │
+                    ▼
+       [Circuit Breaker Fallback Agent]
+             ┌──────┴──────┐
+         (Primary)     (Failover / Quota Exhaustion)
+             ▼             ▼
+       [Live Weather]  [Cached Radar Archive]
+       (REST API)      (Vertex AI Search)
+    ```
+  - **Fallback Circuit Breaker Node**:
+    - ID: `fallback_weather_shield`, `agentKind: 'fallback'`
+    - Primary Target: `agent_live_weather`
+    - Fallback Target: `agent_radar_archive`
+    - Max Retries: `3`, Retry Delay Seconds: `2`
+    - Caught Error Codes: `['RESOURCE_EXHAUSTED', '503', 'DEADLINE_EXCEEDED', 'QUOTA_EXCEEDED', 'UNAVAILABLE']`
+    - Fallback Strategy: `switch_agent` (switches to `agent_radar_archive`; if archive also fails, returns static degradation response)
+    - Static Fallback Message: `"Live radar services currently offline. Advisory generated using historic cached observation models."`
+  - **Target Agents**:
+    - `Live Weather Agent` (`agent_live_weather`): Real-time satellite telemetry via Custom REST API Tool (`https://api.weather-service.internal/v1`).
+    - `Cached Radar Archive Agent` (`agent_radar_archive`): Enterprise Vertex AI Search grounded retrieval over historical climatology datastores.
+  - **Memory Configuration**:
+    - `memoryType: 'redis'`, `redisHost: '10.0.0.45'`, `redisPort: 6379`, `ttlSeconds: 86400`, `authSecretName: 'REDIS_AUTH_SECRET'`.
+  - **Triggers**:
+    - `Scheduled Trigger`: `cronExpression: "0 */6 * * *"`, `timeZone: "America/Chicago"`.
+    - `Chat Trigger`: Streaming enabled with session memory.
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Resilient Weather & Outage Fallback integration test:
+  1. Create tests/integration/resilient_weather_fallback.agent with Fallback Circuit Breaker, primary REST agent, secondary Vertex Search agent, Redis memory, and Cron trigger.
+  2. Implement tests/integration/resilient-weather-fallback.test.ts executing runCodegenAndEvaluate().
+  3. Verify Python code generates try/except blocks catching configured error codes, exponential backoff, and fallback routing in agent_workflow.py.
+  4. Ensure RedisSessionStore with EXPIRE command is generated in session_store.py.
+  ```
+* **Verification**:
+  - Code generation produces robust error boundaries without crash-on-exception anti-patterns.
+  - Passes multi-agent evaluation on both Agent Engine and Cloud Run targets.
+
+---
+
+<a id="task-207"></a>
+
+### [TASK-207] Integration Test: Healthcare Diagnostic Guardrail Shield (Bi-directional PII Gate + Cloud Spanner)
+* **Release**: `v1.2.0`
+* **Status**: Not Started
+* **Target Package/Files**:
+  - `tests/integration/healthcare-guardrail.test.ts`
+  - `tests/integration/healthcare_guardrail.agent`
+  - `tests/integration/codegen-runner.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+* **Context**:
+  Validates Guardrail & Filter Shield Agent (`agentKind === 'guardrail'`) enforcing bi-directional HIPAA compliance and security screening. Verifies ingress/egress sanitization of PII (SSN, Medical Record Numbers), prompt injection prevention, violation routing, Google Cloud Remote MCP Server integration (BigQuery MCP), and Google Cloud Spanner session persistence.
+* **Workflow Topology & Configuration Details**:
+  - **Topology**: Ingress / Egress Dual-Stage Security Boundary
+    ```
+    [Chat Trigger (Patient Inquiries)]
+                    │
+                    ▼
+         [Ingress Guardrail Shield] ──(Detects PII / Prompt Injections)
+             ┌──────┴──────┐
+          (Clean)       (Violation)
+             ▼             ▼
+       [Diagnostic]    [Security Audit Alert]
+       (BigQuery MCP)
+             │
+             ▼
+        [Egress Guardrail Shield] ──(Sanitizes patient identifiers before return)
+    ```
+  - **Ingress Guardrail Node**:
+    - ID: `guardrail_ingress_shield`, `agentKind: 'guardrail'`
+    - Direction: `ingress`
+    - Safety Policies: `['pii', 'prompt_injection', 'secrets', 'toxicity']`
+    - Regex Patterns:
+      - SSN: `r"\b\d{3}-\d{2}-\d{4}\b"`
+      - Medical Record Number (MRN): `r"\bMRN-[A-Z]{2}\d{6}\b"`
+      - DEA Number: `r"\b[A-Z]{2}\d{7}\b"`
+    - Blocked Keywords: `['bypass system instructions', 'ignore previous prompt', 'dump memory', 'sudo exec']`
+    - Action on Violation: `block` (routes to `agent_security_audit` with `customViolationMessage: "Security violation: Input contained unauthorized clinical identifiers or unsafe prompt injection instructions."`)
+    - Pass Target: `agent_clinical_diagnostic`
+  - **Core Clinical Agent Node**:
+    - ID: `agent_clinical_diagnostic`, Model: `gemini-3.7-flash`, Temperature: `0.1`
+    - Tools: Google Cloud Remote MCP Server (`BigQuery MCP`) querying anonymized ICD-10 medical protocols.
+  - **Egress Guardrail Node**:
+    - ID: `guardrail_egress_shield`, `agentKind: 'guardrail'`
+    - Direction: `egress`
+    - Action on Violation: `redact` (replaces any leaked PII with `[REDACTED_PATIENT_IDENTIFIER]`).
+  - **Memory Configuration**:
+    - `memoryType: 'spanner'`, `instanceId: 'healthcare-spanner-inst'`, `databaseId: 'clinical_sessions_db'`, `tableName: 'PatientSessions'`.
+  - **Triggers**:
+    - `Chat Trigger`: Streaming medical advice disclaimer.
+    - `Test Suite Trigger`: QA scenarios testing PII redaction, prompt injection blocking, and clean diagnostic queries.
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Healthcare Diagnostic Guardrail Shield integration test:
+  1. Create tests/integration/healthcare_guardrail.agent with Ingress/Egress Guardrail nodes, Clinical Assistant with BigQuery MCP, and Cloud Spanner memory.
+  2. Implement tests/integration/healthcare-guardrail.test.ts with runCodegenAndEvaluate().
+  3. Validate Python ADK code generates regex pre/post-execution hooks, MCP client connectors, and SpannerSessionStore with DDL auto-verification.
+  4. Ensure Security Evaluator awards >= 85 score.
+  ```
+* **Verification**:
+  - Evaluators confirm safe sanitization without regex catastrophic backtracking (ReDoS) and proper MCP OAuth token propagation.
+
+---
+
+<a id="task-208"></a>
+
+### [TASK-208] Integration Test: Procurement B2B A2A Protocol Agent (JSON-RPC 2.0 + Google Cloud IAM OIDC)
+* **Release**: `v1.2.0`
+* **Status**: Not Started
+* **Target Package/Files**:
+  - `tests/integration/procurement-a2a.test.ts`
+  - `tests/integration/procurement_a2a.agent`
+  - `tests/integration/codegen-runner.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+* **Context**:
+  Validates Agent-to-Agent (A2A) Protocol Node (`agentKind === 'a2a'`) establishing inter-service communication across autonomous organizations. Validates remote agent card fetching (`/.well-known/agent-card.json`), JSON-RPC 2.0 task invocation, Google Cloud IAM OIDC service-to-service authentication token generation, and Cloud Pub/Sub order ingestion.
+* **Workflow Topology & Configuration Details**:
+  - **Topology**: Hybrid Local-Remote Agent Delegation
+    ```
+    [Pub/Sub Trigger: b2b-procurement-orders]
+                    │
+                    ▼
+       [Procurement Orchestrator]
+             ┌──────┴──────┐
+             ▼             ▼
+      [Vendor A2A Node]  [Inventory Agent]
+     (Remote JSON-RPC)     (Local ADK)
+             │
+             ▼
+     [Confirmation Dispatcher]
+    ```
+  - **A2A Protocol Node**:
+    - ID: `a2a_vendor_catalog`, `agentKind: 'a2a'`
+    - Endpoint URL: `https://catalog-service.vendor-corp.internal/a2a/v1`
+    - Protocol Version: `1.0.0-a2a`
+    - Agent Card URL: `https://catalog-service.vendor-corp.internal/.well-known/agent-card.json`
+    - Auth Type: `google_iam` (`targetAudience: "https://catalog-service.vendor-corp.internal"`)
+    - Timeout Seconds: `45`, Max Retries: `3`
+    - Capabilities: `['search_sku', 'check_bulk_availability', 'request_formal_quote', 'place_purchase_order']`
+    - Delegation Prompt: `"Query vendor catalog for wholesale hardware pricing and request formal pricing quotes for SKUs exceeding threshold."`
+  - **Local Subagents**:
+    - `Inventory Agent` (`agent_inventory`): Checks warehouse stock and reorder thresholds.
+    - `Confirmation Dispatcher` (`agent_confirmation`): Formulates vendor PO documents and updates ERP status.
+  - **Memory Configuration**:
+    - `memoryType: 'firestore'`, `collectionName: 'procurement_sessions'`, `databaseId: '(default)'`.
+  - **Triggers**:
+    - `PubSub Trigger`: Topic `b2b-procurement-orders`, subscription `procurement-worker-sub`, message format `json`.
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Procurement B2B A2A Protocol Agent integration test:
+  1. Create tests/integration/procurement_a2a.agent with A2A node, IAM OIDC auth, and PubSub trigger.
+  2. Implement tests/integration/procurement-a2a.test.ts for Agent Engine and Cloud Run targets.
+  3. Validate tools.py generates compliant A2A JSON-RPC client exchanging Google Auth ID tokens.
+  4. Ensure Multi-Agent Evaluation verifies protocol compliance and security token handling.
+  ```
+* **Verification**:
+  - Generated code imports `google.auth.transport.requests` and `google.oauth2.id_token` to securely exchange OIDC bearer tokens.
+
+---
+
+<a id="task-209"></a>
+
+### [TASK-209] Integration Test: Autonomous Code Optimizer Loop (Evaluator-Optimizer + Thinking Budget + Sandbox)
+* **Release**: `v1.2.0`
+* **Status**: Not Started
+* **Target Package/Files**:
+  - `tests/integration/code-optimizer-loop.test.ts`
+  - `tests/integration/code_optimizer_loop.agent`
+  - `tests/integration/codegen-runner.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+* **Context**:
+  Validates the Evaluator-Optimizer (Loop) cognitive pattern (`subAgentPattern: 'loop'`). Tests a 2-node cyclic refinement loop where a Generator agent utilizes Gemini 3.7 Flash with an explicit reasoning budget (`thinkingBudget: 2048`), and an Evaluator agent runs code in an execution sandbox to verify correctness and performance before passing or looping back.
+* **Workflow Topology & Configuration Details**:
+  - **Topology**: Cyclic Evaluator-Optimizer Loop
+    ```
+    [Test Suite Trigger: Algorithmic Prompts]
+                    │
+                    ▼
+        ┌───> [Algorithm Generator] ──(gemini-3.7-flash, thinkingBudget: 2048)
+        │           │
+     (Loop)         ▼ (candidate_code, iteration_count)
+        │     [Benchmark Evaluator] ──(code_execution sandbox tool)
+        └─── (critique & feedback)
+                    │
+                    ▼ (Pass: benchmark >= threshold or max_iterations == 4)
+             [Final Solution]
+    ```
+  - **Generator Node**:
+    - ID: `agent_code_generator`
+    - Model: `gemini-3.7-flash`
+    - Thinking Budget: `2048` tokens for deep algorithmic reasoning
+    - System Prompt: Writes clean, vectorized, optimal Python code to solve computational problems. Reads previous iteration critiques from state and repairs bugs.
+  - **Evaluator Node**:
+    - ID: `agent_code_evaluator`, `isEvaluator: true`
+    - Tools: Python Code Execution Sandbox (`code_execution`)
+    - System Prompt: Executes candidate code against stress test matrices, benchmarks memory and CPU latency, and emits structured review (`passed: bool`, `feedback: str`, `complexity_grade: str`).
+  - **Loop Control Parameters**:
+    - Pattern: `loop` (`subAgentPattern: 'loop'`)
+    - `maxIterations: 4`
+    - Loop State Keys: `['candidate_code', 'evaluation_feedback', 'iteration_index', 'is_solution_accepted']`
+  - **Memory Configuration**:
+    - `memoryType: 'sqlite'`, ephemeral local checkpointer.
+  - **Triggers**:
+    - `Test Suite Trigger`: LeetCode-style algorithmic challenges (e.g. LRU Cache, Concurrency barrier).
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Autonomous Code Optimizer Loop integration test:
+  1. Create tests/integration/code_optimizer_loop.agent with 2-node cyclic loop, thinkingBudget=2048, and code_execution tool.
+  2. Implement tests/integration/code-optimizer-loop.test.ts testing Agent Engine and Cloud Run.
+  3. Validate Python ADK code generates LoopAgent or while-loop iteration with max_iterations guardrail.
+  4. Ensure Multi-Agent Evaluation confirms cyclic edge termination guarantees.
+  ```
+* **Verification**:
+  - Evaluators verify that loop constructs cannot spin indefinitely and respect `max_iterations = 4`.
+
+---
+
+<a id="task-210"></a>
+
+### [TASK-210] Integration Test: Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus)
+* **Release**: `v1.2.0`
+* **Status**: Not Started
+* **Target Package/Files**:
+  - `tests/integration/policy-debate.test.ts`
+  - `tests/integration/policy_debate.agent`
+  - `tests/integration/codegen-runner.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+* **Context**:
+  Validates Multi-Agent Debate pattern (`subAgentPattern: 'debate'`) with opposing perspectives, search grounding, turn orchestration, and an impartial Lead Arbiter evaluating consensus thresholds.
+* **Workflow Topology & Configuration Details**:
+  - **Topology**: 4-Node Multi-Agent Debate & Consensus Synthesis
+    ```
+    [Chat Trigger / Test Suite Trigger]
+                    │
+                    ▼
+        [Debate Moderator & Arbiter]
+             ┌──────┴──────┐
+             ▼             ▼
+       [Pro Advocate] [Con Advocate]
+       (Web Search)   (Web Search)
+             └──────┬──────┘
+                    ▼
+     (Rounds 1..3 until consensus >= 0.85)
+                    ▼
+         [Consensus Resolution]
+    ```
+  - **Moderator & Arbiter Node**:
+    - ID: `agent_debate_arbiter`, `isDebateNode: true`
+    - Debate Config:
+      - `maxRounds: 3`
+      - `consensusThreshold: 0.85`
+      - `debateStyle: 'structured_rebuttal'`
+      - `tieBreakerStrategy: 'moderator_vote'`
+      - `requireEvidenceCitations: true`
+  - **Debater Nodes**:
+    - `Pro Advocate` (`agent_pro_advocate`): Formulates arguments in favor of proposed policy with empirical research. Attached `GoogleSearchTool(bypass_multi_tools_limit=True)`.
+    - `Con Advocate` (`agent_con_advocate`): Formulates risk, cost, and counter-evidence arguments. Attached `GoogleSearchTool(bypass_multi_tools_limit=True)`.
+  - **Memory Configuration**:
+    - `memoryType: 'in_memory'`, `sessionMemory: 'in_memory'`.
+  - **Triggers**:
+    - `Chat Trigger`: With interactive prompt: `"Debate the economic impacts of universal basic income vs job guarantee programs."`
+    - `Test Suite Trigger`: QA scenarios checking citation requirements and balanced synthesis.
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Strategic Policy Multi-Agent Debate integration test:
+  1. Create tests/integration/policy_debate.agent modeling 4-node debate topology with Search Grounding tools.
+  2. Implement tests/integration/policy-debate.test.ts running codegen and multi-agent evaluation.
+  3. Validate Python ADK code generates turn-taking rebuttal orchestration and consensus convergence check.
+  4. Ensure both debaters configure bypass_multi_tools_limit=True on GoogleSearchTool.
+  ```
+* **Verification**:
+  - Generated code orchestrates multi-turn arguments and terminates at consensus threshold or `maxRounds`.
+
+---
+
+<a id="task-211"></a>
+
+### [TASK-211] Integration Test: Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL)
+* **Release**: `v1.2.0`
+* **Status**: Not Started
+* **Target Package/Files**:
+  - `tests/integration/legal-contract-triad.test.ts`
+  - `tests/integration/legal_contract_triad.agent`
+  - `tests/integration/codegen-runner.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+* **Context**:
+  Validates the Review & Critique Triad pattern (`subAgentPattern: 'review_critique'`) across a 3-agent sequential state pipeline (Author -> Adversarial Critic -> Polish Editor) with Vertex AI Enterprise Search for regulatory retrieval, Cloud SQL PostgreSQL persistence, and final Pydantic Structured Output.
+* **Workflow Topology & Configuration Details**:
+  - **Topology**: Sequential Triad Pipeline with State Passing
+    ```
+    [Chat Trigger / Test Suite Trigger]
+                    │
+                    ▼
+         [Contract Drafting Author] ──(Vertex AI Search: Legal Knowledge Base)
+                    │ (output_key: "initial_draft")
+                    ▼
+          [Adversarial Critic] ──(Rubric: GDPR, indemnification, liability caps)
+                    │ (output_key: "critique_rubric")
+                    ▼
+         [Final Polish Editor] ──(NO tools, StructuredOutput: ContractClauseSchema)
+    ```
+  - **Node 1: Contract Drafting Author**:
+    - ID: `agent_legal_author`, Model: `gemini-3.7-flash`
+    - Tools: `VertexAiSearchTool` connected to enterprise legal precedent repository (`dataStoreId: "legal-corpus-ds"`).
+    - Writes draft clause into state key `initial_draft`.
+  - **Node 2: Adversarial Compliance Critic**:
+    - ID: `agent_legal_critic`
+    - System Prompt: Rigorously examines draft against compliance standards, identifies liability loopholes, ambiguous definitions, and jurisdictional conflicts.
+    - Writes detailed evaluation into state key `critique_rubric`.
+  - **Node 3: Final Polish Editor**:
+    - ID: `agent_legal_editor`
+    - Tools: **None** (to support controlled output schema).
+    - Structured Output Schema:
+      - Class: `FinalizedContractClause`
+      - Fields: `clause_title` (string), `clause_text` (string), `risk_rating` (string: Low/Medium/High), `addressed_critiques` (array of string), `governing_jurisdiction` (string).
+  - **Memory Configuration**:
+    - `memoryType: 'cloud_sql'`, `instanceConnectionName: 'corp-legal:us-central1:legal-db'`, `databaseName: 'contracts_db'`, `databaseUrlSecret: 'LEGAL_DB_SECRET'`.
+  - **Triggers**:
+    - `Chat Trigger` + `Test Suite Trigger` with `json_schema` assertion.
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Legal Contract Compliance Triad integration test:
+  1. Create tests/integration/legal_contract_triad.agent with Triad pattern, Vertex AI Search, Cloud SQL memory, and Pydantic schema.
+  2. Implement tests/integration/legal-contract-triad.test.ts invoking runCodegenAndEvaluate().
+  3. Validate Python ADK code generates SequentialAgent passing initial_draft and critique_rubric through state keys.
+  4. Ensure Multi-Agent Evaluation passes with zero hard vetos.
+  ```
+* **Verification**:
+  - Evaluators verify sequential state passing and valid Pydantic model compilation.
+
+---
+
+<a id="task-212"></a>
+
+### [TASK-212] Integration Test: Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner)
+* **Release**: `v1.2.0`
+* **Status**: Not Started
+* **Target Package/Files**:
+  - `tests/integration/enterprise-data-platform.test.ts`
+  - `tests/integration/enterprise_data_platform.agent`
+  - `tests/integration/codegen-runner.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+* **Context**:
+  Validates the Agent-as-a-Tool architecture (`builtinType: 'agent_as_tool'`) and Google Cloud Remote MCP Server integration. An Executive Data Analyst agent leverages a specialized Natural Language to SQL sub-agent wrapped as a callable tool function, connected to BigQuery Remote MCP and Cloud Spanner enterprise checkpointer.
+* **Workflow Topology & Configuration Details**:
+  - **Topology**: Hierarchical Agent-as-a-Tool with Remote MCP
+    ```
+    [Eventarc Trigger / Chat Trigger]
+                    │
+                    ▼
+       [Executive Data Analyst] ──(thinkingBudget: 4096)
+             │
+             ├──[Tool 1: BigQuery Remote MCP] (Direct schema discovery)
+             │
+             └──[Tool 2: NL2SQL Subagent as Tool] (agent_as_tool wrapper)
+                      │
+                      ▼
+               [NL2SQL Expert Agent] (Specialized SQL code generator)
+    ```
+  - **Root Agent Node**:
+    - ID: `agent_executive_analyst`
+    - Model: `gemini-3.7-flash`
+    - Thinking Budget: `4096` tokens for complex enterprise analytics
+    - Tools:
+      - Tool 1: Google Cloud Remote MCP Server (`BigQuery MCP`, domain: `databases_storage`, launchStage: `GA`, defaultScopes: `['https://www.googleapis.com/auth/bigquery']`).
+      - Tool 2: `AdkBuiltinToolType: 'agent_as_tool'`, `subAgentId: 'agent_nl2sql_expert'`, `subAgentName: 'generate_sql_query'`, `subAgentDescription: 'Translates natural language questions into performant BigQuery SQL and explains query plan'`.
+  - **Tool-Wrapped Subagent Node**:
+    - ID: `agent_nl2sql_expert`
+    - Role: BigQuery SQL Architecture Specialist
+    - System Prompt: Generates production-grade BigQuery SQL adhering to partitioning, clustering, and cost optimization rules.
+  - **Memory Configuration**:
+    - `memoryType: 'spanner'`, `instanceId: 'data-platform-spanner'`, `databaseId: 'analytics_sessions'`, `tableName: 'ExecutiveAnalyticsSessions'`.
+  - **Triggers**:
+    - `Eventarc Trigger`: Cloud Storage dataset upload events.
+    - `Chat Trigger`: Executive natural language analytics questions.
+* **Sub-Agent Prompt**:
+  ```
+  Implement the Enterprise Data Platform Agent-as-a-Tool integration test:
+  1. Create tests/integration/enterprise_data_platform.agent with Agent-as-a-Tool node, BigQuery Remote MCP tool, thinkingBudget=4096, and Cloud Spanner memory.
+  2. Implement tests/integration/enterprise-data-platform.test.ts with runCodegenAndEvaluate().
+  3. Validate Python ADK code generates tool function wrapper around the sub-agent and MCP client configuration.
+  4. Ensure Multi-Agent Evaluation passes with overallScore >= 80 on Agent Engine and Cloud Run.
+  ```
+* **Verification**:
+  - Evaluation verifies correct subagent tool declaration and safe MCP credential delegation.
 
