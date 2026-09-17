@@ -8,6 +8,7 @@
  * 3. Short description field.
  * 4. Slotted children for specialized tool configuration forms.
  * 5. Footer with Save, Delete, and Attach to Agent actions.
+ * 6. Full-Height Viewport Drawer: Uses fixed inset-y-0 right-0 z-50 w-[420px] overlay to span full viewport height over bottom panels, matching TriggerDrawer.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -66,7 +67,7 @@ export const ToolDrawerShell: React.FC<ToolDrawerShellProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="absolute top-0 right-0 bottom-0 z-40 w-96 backdrop-blur-2xl bg-[#161b22]/95 border-l border-[#30363d] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 text-[#c9d1d9]">
+    <div className="fixed inset-y-0 right-0 z-50 w-[420px] bg-[#161b22] border-l border-[#30363d] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 text-[#c9d1d9] font-sans">
       {/* 1. Header Section */}
       <div className="flex items-center justify-between p-4 bg-[#161b22] border-b border-[#30363d] shrink-0">
         <div className="flex items-center gap-3 min-w-0">

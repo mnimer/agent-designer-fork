@@ -10,6 +10,7 @@
  * 2. Visual Alignment: Unified orange/amber styling across all trigger types to match canvas nodes and palette cards.
  * 3. Reactive State Updates: Form changes notify parent container via onUpdateTrigger callback on every edit.
  * 4. Root Reconnection: Direct actions to associate the trigger with the primary workflow root agent.
+ * 5. Full-Height Viewport Drawer: Uses fixed inset-y-0 right-0 z-50 w-[420px] overlay to span full viewport height over bottom panels.
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
