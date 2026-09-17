@@ -1,0 +1,241 @@
+{
+  "version": "1.0.0",
+  "name": "animal_agent",
+  "description": "Agent Workflow Document",
+  "framework": "google-adk",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "agent_mtrrm4jm_nfvu",
+      "type": "agentNode",
+      "position": {
+        "x": 256,
+        "y": 336
+      },
+      "data": {
+        "id": "agent_mtrrm4jm_nfvu",
+        "label": "Animal Expert",
+        "role": "Specialized AI Assistant",
+        "model": "gemini-3.7-flash",
+        "systemPrompt": "Pick the right subagent to answer the question. ",
+        "temperature": 0.7,
+        "maxIterations": 10,
+        "agentKind": "standard",
+        "tools": [],
+        "subAgents": [
+          {
+            "agentId": "agent_mtrrmsff_5zd6",
+            "name": "Cat Agent",
+            "role": "Specialized AI Assistant",
+            "delegationType": "parallel"
+          },
+          {
+            "agentId": "agent_mtrrn5d7_cfxc",
+            "name": "Fish Agent",
+            "role": "Specialized AI Assistant",
+            "delegationType": "parallel"
+          }
+        ],
+        "subAgentPattern": "parallel",
+        "memoryType": "none",
+        "memoryConfig": {
+          "type": "none"
+        },
+        "outputFormat": "text",
+        "colorTheme": "blue",
+        "isStartNode": true,
+        "description": "",
+        "name": "animal_expert"
+      }
+    },
+    {
+      "id": "trigger_chat_mtrrma1t_7gt9",
+      "type": "triggerNode",
+      "position": {
+        "x": 288,
+        "y": 48
+      },
+      "data": {
+        "id": "trigger_chat_mtrrma1t_7gt9",
+        "label": "Chat Trigger",
+        "triggerType": "chat",
+        "description": "Conversational end-user interface with streaming responses and session history.",
+        "config": {
+          "initialMessage": "Hello! I am your AI agent assistant. How can I help you today?",
+          "streaming": true,
+          "sessionMemory": "in_memory"
+        },
+        "targetRootAgentId": "agent_mtrrm4jm_nfvu"
+      }
+    },
+    {
+      "id": "agent_mtrrmsff_5zd6",
+      "type": "agentNode",
+      "position": {
+        "x": 48,
+        "y": 920
+      },
+      "data": {
+        "id": "agent_mtrrmsff_5zd6",
+        "label": "Cat Agent",
+        "role": "Specialized AI Assistant",
+        "model": "gemini-3.7-flash",
+        "systemPrompt": "Search the web to answers Cat Questions.",
+        "temperature": 0.7,
+        "maxIterations": 10,
+        "agentKind": "standard",
+        "tools": [
+          {
+            "id": "tool_google_search",
+            "name": "Google Search Grounding",
+            "type": "search",
+            "description": "Grounding search engine tool for real-time web retrieval and source verification.",
+            "codePrompt": "Query the Google Search Grounding tool with the given search terms. Return structured search snippets, source titles, and citation URLs for grounding model responses.",
+            "parameters": {
+              "query": "string - The search terms or question to look up online"
+            },
+            "enabled": true
+          }
+        ],
+        "subAgents": [],
+        "subAgentPattern": "parallel",
+        "memoryType": "none",
+        "memoryConfig": {
+          "type": "none"
+        },
+        "outputFormat": "text",
+        "colorTheme": "blue",
+        "description": "",
+        "isStartNode": false,
+        "name": "cat_agent"
+      }
+    },
+    {
+      "id": "agent_mtrrn5d7_cfxc",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 920
+      },
+      "data": {
+        "id": "agent_mtrrn5d7_cfxc",
+        "label": "Fish Agent",
+        "role": "Specialized AI Assistant",
+        "model": "gemini-3.7-flash",
+        "systemPrompt": "Search the web to answer Fish/Aquarium questions. ",
+        "temperature": 0.7,
+        "maxIterations": 10,
+        "agentKind": "standard",
+        "tools": [
+          {
+            "id": "tool_google_search",
+            "name": "Google Search Grounding",
+            "type": "search",
+            "description": "Grounding search engine tool for real-time web retrieval and source verification.",
+            "codePrompt": "Query the Google Search Grounding tool with the given search terms. Return structured search snippets, source titles, and citation URLs for grounding model responses.",
+            "parameters": {
+              "query": "string - The search terms or question to look up online"
+            },
+            "enabled": true
+          }
+        ],
+        "subAgents": [],
+        "subAgentPattern": "parallel",
+        "memoryType": "none",
+        "memoryConfig": {
+          "type": "none"
+        },
+        "outputFormat": "text",
+        "colorTheme": "blue",
+        "description": "",
+        "isStartNode": false,
+        "name": "fish_agent"
+      }
+    },
+    {
+      "id": "trigger_tester_mu3cv4jw_06dv",
+      "type": "triggerNode",
+      "position": {
+        "x": -193,
+        "y": 323
+      },
+      "data": {
+        "id": "trigger_tester_mu3cv4jw_06dv",
+        "label": "Test Suite",
+        "triggerType": "tester",
+        "description": "Synthetic unit tester and automated test suite runner for validation & regressions.",
+        "config": {
+          "testPayload": "{\n  \"query\": \"Execute quarterly compliance check on sample documents\",\n  \"test_mode\": true\n}",
+          "expectedOutput": "{\n  \"status\": \"completed\"\n}",
+          "testPrompts": [
+            {
+              "id": "test_prompt_1",
+              "name": "Test Case #1",
+              "prompt": "Let's play a game. ",
+              "expectedOutput": "returns an initial prompt asking which game we want to play. ",
+              "assertionType": "llm_eval"
+            }
+          ],
+          "runOnCI": true,
+          "testScenarios": [
+            {
+              "id": "test_prompt_1",
+              "name": "Test Case #1",
+              "prompt": "Let's play a game. ",
+              "expectedOutput": "returns an initial prompt asking which game we want to play. ",
+              "assertionType": "llm_eval"
+            }
+          ]
+        },
+        "targetRootAgentId": "agent_mtrrm4jm_nfvu"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_agent_mtrrm4jm_nfvu_agent_mtrrmsff_5zd6_1788817299568",
+      "source": "agent_mtrrm4jm_nfvu",
+      "target": "agent_mtrrmsff_5zd6",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_agent_mtrrm4jm_nfvu_agent_mtrrn5d7_cfxc_1788817316280",
+      "source": "agent_mtrrm4jm_nfvu",
+      "target": "agent_mtrrn5d7_cfxc",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_trigger_trigger_chat_mtrrma1t_7gt9_agent_mtrrm4jm_nfvu",
+      "source": "trigger_chat_mtrrma1t_7gt9",
+      "target": "agent_mtrrm4jm_nfvu",
+      "sourceHandle": "trigger_out_bottom",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_trigger_trigger_tester_mu3cv4jw_06dv_agent_mtrrm4jm_nfvu",
+      "source": "trigger_tester_mu3cv4jw_06dv",
+      "target": "agent_mtrrm4jm_nfvu",
+      "sourceHandle": "trigger_out_right",
+      "targetHandle": "input_left",
+      "animated": true
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-09-16T00:21:56.432Z"
+  },
+  "deployment": {
+    "target": "agent_engine",
+    "deploymentTarget": "agent_engine",
+    "outputFolder": "./animal_agent/",
+    "framework": "google-adk",
+    "language": "python",
+    "includeTests": true,
+    "includeDocker": false,
+    "useStreaming": true
+  }
+}

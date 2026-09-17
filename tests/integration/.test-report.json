@@ -1,0 +1,547 @@
+{
+  "lastUpdated": "2026-09-16T01:15:54.123Z",
+  "runs": {
+    "animal_agent_engine": {
+      "testName": "Animal Expert Multi-Agent System (Agent Engine)",
+      "pipelineName": "animal_agent",
+      "target": "agent_engine",
+      "timestamp": "2026-09-16T01:10:42.356Z",
+      "durationMs": 57178,
+      "evaluation": {
+        "isGood": true,
+        "scorecard": {
+          "architectureScore": 100,
+          "specificationScore": 100,
+          "securityScore": 95,
+          "packagingScore": 100,
+          "maintainabilityScore": 100,
+          "overallScore": 99
+        },
+        "hardVetoTriggered": false,
+        "hardVetoReasons": [],
+        "allFindings": [
+          {
+            "id": "SEC-001",
+            "category": "SECURITY",
+            "severity": "MINOR",
+            "file": "Dockerfile",
+            "description": "Base container image tag 'python:3.11-slim' is not pinned to an immutable digest (SHA256).",
+            "rationale": "Using mutable tags like python:3.11-slim could introduce upstream supply chain drift or breaking changes between builds. Pinning to a specific image digest (e.g., python:3.11-slim@sha256:...) ensures deterministic and tamper-evident container builds."
+          }
+        ],
+        "specialistResults": {
+          "AgentArchitectureAgent": {
+            "agentName": "AgentArchitectureAgent",
+            "passed": true,
+            "summary": "The generated Google ADK application strictly complies with all architectural, SDK, and Vertex AI runtime requirements. Topology correctly implements parallel worker delegation synthesized by a sequential root agent, agent names strictly adhere to valid identifier constraints, Vertex AI global region configuration is set, GoogleSearchTool properly specifies bypass_multi_tools_limit=True with state output keys, and App is correctly instantiated without illegal parameters.",
+            "findings": []
+          },
+          "AgentSpecificationAgent": {
+            "agentName": "AgentSpecificationAgent",
+            "passed": true,
+            "summary": "The generated Google ADK code perfectly conforms to the animal_agent specification. All three agent nodes (animal_expert, cat_agent, and fish_agent) are accurately modeled with matching instructions, models, and tools. The parallel sub-agent topology, Google Search grounding tools, test scenarios from the tester trigger, and Vertex AI Agent Engine deployment configuration (Terraform, Dockerfile, Cloud Build) are fully and correctly implemented.",
+            "findings": []
+          },
+          "SecurityAndHardeningAgent": {
+            "agentName": "SecurityAndHardeningAgent",
+            "passed": true,
+            "summary": "The security audit passed successfully. No credentials, tokens, or plaintext secrets were found in the source code or configurations. Authentication relies on Google Application Default Credentials and IAM. The Dockerfile enforces non-root execution with a dedicated non-privileged user (UID 8888) and proper file permission handling. Sensitive local artifacts (.env, tfstate, credentials) are excluded in both .dockerignore and .gcloudignore. CI/CD scripts properly quote shell variables to prevent command injection.",
+            "findings": [
+              {
+                "id": "SEC-001",
+                "category": "SECURITY",
+                "severity": "MINOR",
+                "file": "Dockerfile",
+                "description": "Base container image tag 'python:3.11-slim' is not pinned to an immutable digest (SHA256).",
+                "rationale": "Using mutable tags like python:3.11-slim could introduce upstream supply chain drift or breaking changes between builds. Pinning to a specific image digest (e.g., python:3.11-slim@sha256:...) ensures deterministic and tamper-evident container builds."
+              }
+            ]
+          },
+          "PackagingAndDeployabilityAgent": {
+            "agentName": "PackagingAndDeployabilityAgent",
+            "passed": true,
+            "summary": "All packaging, dependency specifications, Docker containerization, test suite components, and deployment configurations (Terraform and Cloud Build) meet readiness and best-practice standards.",
+            "findings": []
+          }
+        },
+        "promptRemediationDirectives": [
+          {
+            "targetPromptFile": "resource/prompts/python_adk_agent-engine.prompt.txt",
+            "targetSection": "Container Hardening & Dockerfile Specifications",
+            "recommendedRuleText": "When generating Dockerfiles, recommend pinning base images to specific immutable tags or SHA256 digests (e.g., python:3.11-slim@sha256:...) to prevent supply-chain drift and ensure build reproducibility.",
+            "rationale": "Addresses minor security finding SEC-001 regarding container base image tag immutability."
+          }
+        ],
+        "explanation": "The generated Google ADK application meets all functional, architectural, security, and packaging requirements. The workflow topology correctly implements parallel worker sub-agents under a coordinating root agent, accurately configures Google Search Grounding with bypass_multi_tools_limit=True, complies with naming and model contracts, adheres to IAM/ADC security standards, and includes complete deployment and test assets."
+      },
+      "generatedFiles": [
+        {
+          "filename": "agent.py",
+          "sizeBytes": 3472
+        },
+        {
+          "filename": "requirements.txt",
+          "sizeBytes": 210
+        },
+        {
+          "filename": "Dockerfile",
+          "sizeBytes": 541
+        },
+        {
+          "filename": ".dockerignore",
+          "sizeBytes": 104
+        },
+        {
+          "filename": "main.tf",
+          "sizeBytes": 3207
+        },
+        {
+          "filename": "cloudbuild-buildonly.yaml",
+          "sizeBytes": 940
+        },
+        {
+          "filename": "cloudbuild.yaml",
+          "sizeBytes": 1694
+        },
+        {
+          "filename": ".env.example",
+          "sizeBytes": 170
+        },
+        {
+          "filename": "test_agent.py",
+          "sizeBytes": 2531
+        },
+        {
+          "filename": ".gitignore",
+          "sizeBytes": 113
+        },
+        {
+          "filename": ".gcloudignore",
+          "sizeBytes": 124
+        },
+        {
+          "filename": "README.md",
+          "sizeBytes": 2011
+        }
+      ]
+    },
+    "animal_agent_cloudrun": {
+      "testName": "Animal Expert Multi-Agent System (Cloud Run)",
+      "pipelineName": "animal_agent",
+      "target": "cloudrun",
+      "timestamp": "2026-09-16T01:12:01.780Z",
+      "durationMs": 79421,
+      "evaluation": {
+        "isGood": true,
+        "scorecard": {
+          "architectureScore": 100,
+          "specificationScore": 100,
+          "securityScore": 100,
+          "packagingScore": 100,
+          "maintainabilityScore": 100,
+          "overallScore": 100
+        },
+        "hardVetoTriggered": false,
+        "hardVetoReasons": [],
+        "allFindings": [],
+        "specialistResults": {
+          "AgentArchitectureAgent": {
+            "agentName": "AgentArchitectureAgent",
+            "passed": true,
+            "summary": "The generated multi-agent system fully complies with Google ADK SDK standards, topology specifications, and Vertex AI runtime requirements. Agent identifiers are strictly snake_case, root coordination and delegation are properly configured, and the global location is consistently applied across container and infrastructure definitions.",
+            "findings": []
+          },
+          "AgentSpecificationAgent": {
+            "agentName": "AgentSpecificationAgent",
+            "passed": true,
+            "summary": "All 3 agent nodes (Animal Expert, Cat Agent, Fish Agent), tools (Google Search Grounding), subagent hierarchies, prompts, tester scenarios, and deployment artifacts have been faithfully and completely implemented in the generated code according to the specification.",
+            "findings": []
+          },
+          "SecurityAndHardeningAgent": {
+            "agentName": "SecurityAndHardeningAgent",
+            "passed": true,
+            "summary": "The generated multi-agent application and infrastructure code adhere strictly to security best practices and container hardening guidelines. No hardcoded credentials, command injection vectors, or root privilege execution patterns were detected.",
+            "findings": []
+          },
+          "PackagingAndDeployabilityAgent": {
+            "agentName": "PackagingAndDeployabilityAgent",
+            "passed": true,
+            "summary": "All packaging, dependency specifications, unit tests, Dockerfile configuration, Cloud Build pipeline, and Terraform deployment definitions are fully specified, valid, and production-ready.",
+            "findings": []
+          }
+        },
+        "promptRemediationDirectives": [],
+        "explanation": "The generated Google ADK multi-agent repository flawlessly satisfies all architectural, specification, security, and packaging requirements. The multi-agent topology correctly sets up the root coordinator (animal_expert) with its delegated sub-agents (cat_agent, fish_agent) and tools (Google Search Grounding). Code syntax, security hardening, container specifications, and test manifests are valid and production-ready with no critical defects."
+      },
+      "generatedFiles": [
+        {
+          "filename": "agent.py",
+          "sizeBytes": 1767
+        },
+        {
+          "filename": "server.py",
+          "sizeBytes": 6619
+        },
+        {
+          "filename": "main.py",
+          "sizeBytes": 1800
+        },
+        {
+          "filename": "test_agent.py",
+          "sizeBytes": 3606
+        },
+        {
+          "filename": "eval_dataset.jsonl",
+          "sizeBytes": 554
+        },
+        {
+          "filename": "evaluate.py",
+          "sizeBytes": 1092
+        },
+        {
+          "filename": "requirements.txt",
+          "sizeBytes": 213
+        },
+        {
+          "filename": "Dockerfile",
+          "sizeBytes": 576
+        },
+        {
+          "filename": ".dockerignore",
+          "sizeBytes": 125
+        },
+        {
+          "filename": "cloudbuild.yaml",
+          "sizeBytes": 1317
+        },
+        {
+          "filename": "main.tf",
+          "sizeBytes": 2297
+        },
+        {
+          "filename": "variables.tf",
+          "sizeBytes": 1007
+        },
+        {
+          "filename": "outputs.tf",
+          "sizeBytes": 543
+        },
+        {
+          "filename": "terraform.tfvars",
+          "sizeBytes": 253
+        },
+        {
+          "filename": "pyproject.toml",
+          "sizeBytes": 591
+        },
+        {
+          "filename": ".gitignore",
+          "sizeBytes": 151
+        },
+        {
+          "filename": ".gcloudignore",
+          "sizeBytes": 94
+        },
+        {
+          "filename": "README.md",
+          "sizeBytes": 1013
+        }
+      ]
+    },
+    "cyber_guardian_agent_engine": {
+      "testName": "CyberGuardian SecOps Multi-Agent System (Agent Engine)",
+      "pipelineName": "CyberGuardianSecOps",
+      "target": "agent_engine",
+      "timestamp": "2026-09-16T01:13:37.940Z",
+      "durationMs": 92303,
+      "evaluation": {
+        "isGood": true,
+        "scorecard": {
+          "architectureScore": 100,
+          "specificationScore": 100,
+          "securityScore": 100,
+          "packagingScore": 100,
+          "maintainabilityScore": 100,
+          "overallScore": 100
+        },
+        "hardVetoTriggered": false,
+        "hardVetoReasons": [],
+        "allFindings": [],
+        "specialistResults": {
+          "AgentArchitectureAgent": {
+            "agentName": "AgentArchitectureAgent",
+            "passed": true,
+            "summary": "The CyberGuardianSecOps agent implementation fully adheres to Google ADK framework standards, Vertex AI Reasoning Engine runtime specifications, and multi-agent architectural invariants. All agent identifiers use valid Python snake_case naming, models are pinned to 'gemini-3.7-flash' with global region configuration, and the coordinator multi-agent topology is cleanly defined with proper root_agent and App exports.",
+            "findings": []
+          },
+          "AgentSpecificationAgent": {
+            "agentName": "AgentSpecificationAgent",
+            "passed": true,
+            "summary": "All 5 agent nodes, tool implementations, structured schemas, Eventarc trigger configuration, deployment infrastructure (Terraform for Vertex AI Reasoning Engine), and all test scenarios defined in the specification are fully and faithfully implemented without omissions.",
+            "findings": []
+          },
+          "SecurityAndHardeningAgent": {
+            "agentName": "SecurityAndHardeningAgent",
+            "passed": true,
+            "summary": "The codebase adheres to container hardening and security best practices. Authentication is handled safely via Google Cloud Application Default Credentials (ADC) and Vertex AI without hardcoded secrets. The Dockerfile creates and executes under a dedicated non-root user (UID 8888), deployment scripts properly quote shell substitutions, .dockerignore/.gcloudignore appropriately exclude sensitive development artifacts, and tools execute safely without unsafe eval/exec constructs.",
+            "findings": []
+          },
+          "PackagingAndDeployabilityAgent": {
+            "agentName": "PackagingAndDeployabilityAgent",
+            "passed": true,
+            "summary": "Packaging and deployment specifications are complete, valid, and production-ready. All required dependencies (google-adk, google-genai, pydantic, pytest-asyncio) are specified in requirements.txt. Test suite test_agent.py properly exercises the ADK Runner asynchronously with InMemorySessionService across key incident scenarios. Dockerfile, Cloud Build pipelines, and Terraform configurations align with Vertex AI Reasoning Engine and Eventarc deployment standards.",
+            "findings": []
+          }
+        },
+        "promptRemediationDirectives": [],
+        "explanation": "The generated code satisfies all requirements across architecture, specification conformance, security hardening, and packaging deployability. All 5 agent nodes, tool implementations, structured schemas, Eventarc triggers, Terraform/Cloud Build manifests, and test scenarios are correctly implemented with zero defects."
+      },
+      "generatedFiles": [
+        {
+          "filename": "agent.py",
+          "sizeBytes": 8807
+        },
+        {
+          "filename": "pydantic_models.py",
+          "sizeBytes": 2411
+        },
+        {
+          "filename": "tools/incident_tools.py",
+          "sizeBytes": 1350
+        },
+        {
+          "filename": "tools/triage_tools.py",
+          "sizeBytes": 1661
+        },
+        {
+          "filename": "tools/threat_intel_tools.py",
+          "sizeBytes": 3104
+        },
+        {
+          "filename": "tools/investigation_tools.py",
+          "sizeBytes": 1930
+        },
+        {
+          "filename": "tools/response_tools.py",
+          "sizeBytes": 2834
+        },
+        {
+          "filename": "requirements.txt",
+          "sizeBytes": 158
+        },
+        {
+          "filename": "Dockerfile",
+          "sizeBytes": 775
+        },
+        {
+          "filename": ".dockerignore",
+          "sizeBytes": 124
+        },
+        {
+          "filename": "main.tf",
+          "sizeBytes": 5205
+        },
+        {
+          "filename": "cloudbuild-buildonly.yaml",
+          "sizeBytes": 949
+        },
+        {
+          "filename": "cloudbuild.yaml",
+          "sizeBytes": 1703
+        },
+        {
+          "filename": "test_agent.py",
+          "sizeBytes": 4286
+        },
+        {
+          "filename": ".env.example",
+          "sizeBytes": 176
+        },
+        {
+          "filename": ".gitignore",
+          "sizeBytes": 180
+        },
+        {
+          "filename": ".gcloudignore",
+          "sizeBytes": 98
+        },
+        {
+          "filename": "README.md",
+          "sizeBytes": 2066
+        }
+      ]
+    },
+    "cyber_guardian_cloudrun": {
+      "testName": "CyberGuardian SecOps Multi-Agent System (Cloud Run)",
+      "pipelineName": "CyberGuardianSecOps",
+      "target": "cloudrun",
+      "timestamp": "2026-09-16T01:15:54.123Z",
+      "durationMs": 136179,
+      "evaluation": {
+        "isGood": true,
+        "scorecard": {
+          "architectureScore": 95,
+          "specificationScore": 100,
+          "securityScore": 100,
+          "packagingScore": 100,
+          "maintainabilityScore": 100,
+          "overallScore": 98
+        },
+        "hardVetoTriggered": false,
+        "hardVetoReasons": [],
+        "allFindings": [
+          {
+            "id": "FINDING-EVAL-LOCATION-001",
+            "category": "IDIOMATIC_ADK",
+            "severity": "MINOR",
+            "file": "evaluate.py",
+            "description": "Hardcoded 'us-central1' passed to vertexai.init instead of utilizing the defined global location variable.",
+            "rationale": "evaluate.py defines LOCATION = os.environ.get('GOOGLE_CLOUD_LOCATION', 'global') but passes location='us-central1' to vertexai.init. Using the dynamic LOCATION variable ensures consistency across multi-region evaluation runs."
+          }
+        ],
+        "specialistResults": {
+          "AgentArchitectureAgent": {
+            "agentName": "AgentArchitectureAgent",
+            "passed": true,
+            "summary": "The CyberGuardianSecOps agent implementation fully adheres to Google ADK multi-agent standards and architectural invariants. Root coordinator and specialized sub-agents are properly composed with valid Python identifier names, correct Gemini 3.7 Flash model definitions, robust tool bindings, and idiomatic Runner/Session integration.",
+            "findings": [
+              {
+                "id": "FINDING-EVAL-LOCATION-001",
+                "category": "IDIOMATIC_ADK",
+                "severity": "MINOR",
+                "file": "evaluate.py",
+                "description": "Hardcoded 'us-central1' passed to vertexai.init instead of utilizing the defined global location variable.",
+                "rationale": "evaluate.py defines LOCATION = os.environ.get('GOOGLE_CLOUD_LOCATION', 'global') but passes location='us-central1' to vertexai.init. Using the dynamic LOCATION variable ensures consistency across multi-region evaluation runs."
+              }
+            ]
+          },
+          "AgentSpecificationAgent": {
+            "agentName": "AgentSpecificationAgent",
+            "passed": true,
+            "summary": "All 5 agent nodes, coordinator pattern routing, tools, structured output models, Eventarc trigger configuration, and test scenarios defined in the CyberGuardianSecOps specification are faithfully implemented in Google ADK.",
+            "findings": []
+          },
+          "SecurityAndHardeningAgent": {
+            "agentName": "SecurityAndHardeningAgent",
+            "passed": true,
+            "summary": "Security and container hardening evaluation passed with no critical or major vulnerabilities found. The application relies on Google Cloud Application Default Credentials (ADC) and Vertex AI environment variables without hardcoded secrets. The Dockerfile creates and executes under a non-privileged user (UID 8888), and sensitive files/directories are properly excluded in both .dockerignore and .gcloudignore. Agent tools avoid unsafe shell execution or dynamic code evaluation.",
+            "findings": []
+          },
+          "PackagingAndDeployabilityAgent": {
+            "agentName": "PackagingAndDeployabilityAgent",
+            "passed": true,
+            "summary": "Packaging and deployment audit passed successfully. All necessary dependencies ('google-adk', 'google-genai', 'fastapi', 'uvicorn', 'pydantic', 'pytest', 'pytest-asyncio') are declared with valid version constraints. Test suite 'test_agent.py' properly exercises asynchronous agent invocation using Google ADK Runners and session services. Dockerfile, Cloud Build, and Terraform configurations are well-structured, secure, and production-ready.",
+            "findings": []
+          }
+        },
+        "promptRemediationDirectives": [
+          {
+            "targetPromptFile": "resource/prompts/python_adk_agent-engine.prompt.txt",
+            "targetSection": "Evaluation & Testing Specifications",
+            "recommendedRuleText": "In evaluate.py, ensure vertexai.init(location=LOCATION) strictly uses the dynamically resolved environment variable LOCATION (defaulting to GOOGLE_CLOUD_LOCATION or 'global') rather than hardcoded regional strings.",
+            "rationale": "Prevents subtle multi-region evaluation discrepancies when deploying evaluation scripts across non-default Google Cloud regions."
+          }
+        ],
+        "explanation": "The generated CyberGuardianSecOps agent repository successfully passed all pre-flight checks and specialist sub-agent evaluations with an overall score of 98/100. Architectural topology, coordinator orchestration, structured output schemas, security hardening, Dockerfile container safety, and packaging configuration fully comply with Google ADK standards."
+      },
+      "generatedFiles": [
+        {
+          "filename": "agent.py",
+          "sizeBytes": 8149
+        },
+        {
+          "filename": "pydantic_models.py",
+          "sizeBytes": 2291
+        },
+        {
+          "filename": "tools/incident_tools.py",
+          "sizeBytes": 1350
+        },
+        {
+          "filename": "tools/triage_tools.py",
+          "sizeBytes": 1760
+        },
+        {
+          "filename": "tools/threat_intel_tools.py",
+          "sizeBytes": 3728
+        },
+        {
+          "filename": "tools/investigation_tools.py",
+          "sizeBytes": 4026
+        },
+        {
+          "filename": "tools/response_tools.py",
+          "sizeBytes": 3830
+        },
+        {
+          "filename": "server.py",
+          "sizeBytes": 3285
+        },
+        {
+          "filename": "main.py",
+          "sizeBytes": 1921
+        },
+        {
+          "filename": "test_agent.py",
+          "sizeBytes": 4083
+        },
+        {
+          "filename": "eval_dataset.jsonl",
+          "sizeBytes": 1239
+        },
+        {
+          "filename": "evaluate.py",
+          "sizeBytes": 1317
+        },
+        {
+          "filename": "requirements.txt",
+          "sizeBytes": 227
+        },
+        {
+          "filename": "Dockerfile",
+          "sizeBytes": 439
+        },
+        {
+          "filename": ".dockerignore",
+          "sizeBytes": 137
+        },
+        {
+          "filename": "cloudbuild.yaml",
+          "sizeBytes": 1387
+        },
+        {
+          "filename": "main.tf",
+          "sizeBytes": 3606
+        },
+        {
+          "filename": "variables.tf",
+          "sizeBytes": 1128
+        },
+        {
+          "filename": "outputs.tf",
+          "sizeBytes": 562
+        },
+        {
+          "filename": "terraform.tfvars",
+          "sizeBytes": 257
+        },
+        {
+          "filename": "pyproject.toml",
+          "sizeBytes": 733
+        },
+        {
+          "filename": ".gitignore",
+          "sizeBytes": 180
+        },
+        {
+          "filename": ".gcloudignore",
+          "sizeBytes": 81
+        },
+        {
+          "filename": "README.md",
+          "sizeBytes": 2610
+        }
+      ]
+    }
+  }
+}

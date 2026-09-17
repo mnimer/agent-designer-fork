@@ -18,6 +18,10 @@ import { AgentData, ToolDefinition } from '../../types';
 import { StandardAgentDrawer } from './StandardAgentDrawer';
 import { A2AAgentDrawer } from './A2AAgentDrawer';
 import { RouterAgentDrawer } from './RouterAgentDrawer';
+import { SynthesizerDrawer } from './SynthesizerDrawer';
+import { ApprovalDrawer } from './ApprovalDrawer';
+import { FallbackDrawer } from './FallbackDrawer';
+import { GuardrailDrawer } from './GuardrailDrawer';
 
 interface AgentDrawerProps {
   agent: AgentData | null;
@@ -66,6 +70,66 @@ export const AgentDrawer: React.FC<AgentDrawerProps> = ({
   if (agent.agentKind === 'router') {
     return (
       <RouterAgentDrawer
+        agent={agent}
+        allAgents={allAgents}
+        onClose={onClose}
+        onUpdateAgent={onUpdateAgent}
+        onOpenAddTool={onOpenAddTool}
+        onRemoveTool={onRemoveTool}
+        onEditTool={onEditTool}
+        onSelectAgent={onSelectAgent}
+      />
+    );
+  }
+
+  if (agent.agentKind === 'synthesizer') {
+    return (
+      <SynthesizerDrawer
+        agent={agent}
+        allAgents={allAgents}
+        onClose={onClose}
+        onUpdateAgent={onUpdateAgent}
+        onOpenAddTool={onOpenAddTool}
+        onRemoveTool={onRemoveTool}
+        onEditTool={onEditTool}
+        onSelectAgent={onSelectAgent}
+      />
+    );
+  }
+
+  if (agent.agentKind === 'hitl') {
+    return (
+      <ApprovalDrawer
+        agent={agent}
+        allAgents={allAgents}
+        onClose={onClose}
+        onUpdateAgent={onUpdateAgent}
+        onOpenAddTool={onOpenAddTool}
+        onRemoveTool={onRemoveTool}
+        onEditTool={onEditTool}
+        onSelectAgent={onSelectAgent}
+      />
+    );
+  }
+
+  if (agent.agentKind === 'fallback') {
+    return (
+      <FallbackDrawer
+        agent={agent}
+        allAgents={allAgents}
+        onClose={onClose}
+        onUpdateAgent={onUpdateAgent}
+        onOpenAddTool={onOpenAddTool}
+        onRemoveTool={onRemoveTool}
+        onEditTool={onEditTool}
+        onSelectAgent={onSelectAgent}
+      />
+    );
+  }
+
+  if (agent.agentKind === 'guardrail') {
+    return (
+      <GuardrailDrawer
         agent={agent}
         allAgents={allAgents}
         onClose={onClose}

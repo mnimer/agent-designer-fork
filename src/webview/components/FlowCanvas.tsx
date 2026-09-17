@@ -46,16 +46,14 @@ import {
 import { AgentWorkflowDocument } from '../../shared/types';
 import { INITIAL_NODES, INITIAL_EDGES } from '../data/initialGraph';
 import { DEFAULT_MOCK_TEST_PROMPTS } from '../data/triggerDefinitions';
-import {
-  createSampleNodesAndEdges,
-  SAMPLES_CATALOG,
-} from '../data/sampleWorkflows';
+import { createSampleNodesAndEdges } from '../utils/sampleUtils';
 
 // UI Tabs & Panels
 import { CanvasTab } from './tabs/CanvasTab';
 import { CodeGenerationPanel } from './codegen/CodeGenerationPanel';
 import { AddToolModal } from './inspector/AddToolModal';
 import { MissingFeaturesModal } from './insights/MissingFeaturesModal';
+import { SampleInfoModal } from './Canvas/SampleInfoModal';
 import { PanelDivider } from './Canvas/PanelDivider';
 
 // Custom Hooks
@@ -176,6 +174,7 @@ export function FlowCanvas() {
   const [isTriggerDrawerOpen, setIsTriggerDrawerOpen] = useState<boolean>(false);
   const [toolModalAgentId, setToolModalAgentId] = useState<string | null>(null);
   const [isAdvisorOpen, setIsAdvisorOpen] = useState<boolean>(false);
+  const [activeInfoSample, setActiveInfoSample] = useState<SampleWorkflowDefinition | null>(null);
   const [validationWarning, setValidationWarning] = useState<string | null>(null);
 
   useEffect(() => {
@@ -394,6 +393,11 @@ export function FlowCanvas() {
     handleDividerMouseDown,
   } = useResizablePanel();
 
+  const [discoveredSamples, setDiscoveredSamples] = useState<SampleWorkflowDefinition[]>([]);
+  const availableSamples = useMemo(() => {
+    return discoveredSamples;
+  }, [discoveredSamples]);
+
   useExtensionSync({
     bridge,
     nodes,
@@ -410,6 +414,7 @@ export function FlowCanvas() {
     setHasGeneratedCode,
     setIsGenerating,
     recordSnapshot,
+    setDiscoveredSamples,
   });
 
   // Export App instance globally to hook callbacks (e.g. within tabs)
@@ -434,19 +439,20 @@ export function FlowCanvas() {
 
   const handleDeleteAgent = useCallback(
     (id: string) => {
-      const nextNodes = nodes.filter((n) => n.id !== id);
-      const nextEdges = edges.filter((e) => e.source !== id && e.target !== id);
-      const cleanedNodes = syncAgentSubAgents(nextNodes, nextEdges);
-
-      setNodes(cleanedNodes);
-      setEdges(nextEdges);
-      recordSnapshot(cleanedNodes, nextEdges, { description: 'Delete agent' });
+      setEdges((currentEdges) => {
+        const nextEdges = currentEdges.filter((e) => e.source !== id && e.target !== id);
+        setNodes((currentNodes) => {
+          const nextNodes = currentNodes.filter((n) => n.id !== id);
+          return syncAgentSubAgents(nextNodes, nextEdges);
+        });
+        return nextEdges;
+      });
 
       if (selectedAgentId === id) {
         setSelectedAgentId(null);
       }
     },
-    [nodes, edges, selectedAgentId, setNodes, setEdges, recordSnapshot]
+    [selectedAgentId, setNodes, setEdges]
   );
 
   const handleEditTrigger = useCallback((id: string) => {
@@ -458,32 +464,42 @@ export function FlowCanvas() {
 
   const handleDeleteTrigger = useCallback(
     (id: string) => {
-      const nextNodes = nodes.filter((n) => n.id !== id);
-      const nextEdges = edges.filter((e) => e.source !== id && e.target !== id);
-
-      setNodes(nextNodes);
-      setEdges(nextEdges);
-      recordSnapshot(nextNodes, nextEdges, { description: 'Delete trigger' });
+      setEdges((currentEdges) => currentEdges.filter((e) => e.source !== id && e.target !== id));
+      setNodes((currentNodes) => currentNodes.filter((n) => n.id !== id));
 
       if (selectedTriggerId === id) {
         setSelectedTriggerId(null);
         setIsTriggerDrawerOpen(false);
       }
     },
-    [nodes, edges, selectedTriggerId, setNodes, setEdges, recordSnapshot]
+    [selectedTriggerId, setNodes, setEdges]
   );
 
   const handleNodesDelete = useCallback(
     (nodesToDelete: Node[]) => {
-      nodesToDelete.forEach((n) => {
-        if (isTriggerNode(n)) {
-          handleDeleteTrigger(n.id);
-        } else {
-          handleDeleteAgent(n.id);
-        }
+      const idsToDelete = new Set(nodesToDelete.map((n) => n.id));
+      if (idsToDelete.size === 0) return;
+
+      setEdges((currentEdges) => {
+        const nextEdges = currentEdges.filter(
+          (e) => !idsToDelete.has(e.source) && !idsToDelete.has(e.target)
+        );
+        setNodes((currentNodes) => {
+          const nextNodes = currentNodes.filter((n) => !idsToDelete.has(n.id));
+          return syncAgentSubAgents(nextNodes, nextEdges);
+        });
+        return nextEdges;
       });
+
+      if (selectedAgentId && idsToDelete.has(selectedAgentId)) {
+        setSelectedAgentId(null);
+      }
+      if (selectedTriggerId && idsToDelete.has(selectedTriggerId)) {
+        setSelectedTriggerId(null);
+        setIsTriggerDrawerOpen(false);
+      }
     },
-    [handleDeleteTrigger, handleDeleteAgent]
+    [selectedAgentId, selectedTriggerId, setNodes, setEdges]
   );
 
   useCanvasKeyboardShortcuts({
@@ -494,6 +510,7 @@ export function FlowCanvas() {
     nodes,
     onDeleteAgent: handleDeleteAgent,
     onDeleteTrigger: handleDeleteTrigger,
+    onDeleteNodes: handleNodesDelete,
   });
 
   const handleOpenAddTool = useCallback((agentId: string) => {
@@ -705,8 +722,21 @@ export function FlowCanvas() {
           connection.sourceHandle &&
           connection.sourceHandle !== 'output' &&
           connection.sourceHandle !== 'subagent' &&
-          !connection.sourceHandle.startsWith('branch_')
+          !connection.sourceHandle.startsWith('branch_') &&
+          connection.sourceHandle !== 'approved' &&
+          connection.sourceHandle !== 'rejected' &&
+          connection.sourceHandle !== 'primary' &&
+          connection.sourceHandle !== 'fallback' &&
+          connection.sourceHandle !== 'pass' &&
+          connection.sourceHandle !== 'block'
         ) {
+          const branches = (sourceNode.data as AgentData)?.routerConfig?.branches || [];
+          const matchesBranch = branches.some((b) => b.id === connection.sourceHandle);
+          if (!matchesBranch) {
+            return false;
+          }
+        }
+        if (connection.targetHandle && connection.targetHandle !== 'input') {
           return false;
         }
       }
@@ -762,13 +792,12 @@ export function FlowCanvas() {
       const newTriggerEdges = triggerNodes.map((tn) => {
         const trigType = (tn.data as TriggerData)?.triggerType || (tn.data as any)?.triggerKind;
         const isTester = trigType === 'tester' || trigType === 'test';
-        const isChat = trigType === 'chat';
         return {
           id: `e_trigger_${tn.id}_${rootAgentId}`,
           source: tn.id,
-          sourceHandle: isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom',
+          sourceHandle: isTester ? 'trigger_out_right' : 'trigger_out_bottom',
           target: rootAgentId,
-          targetHandle: isTester || isChat ? 'input_left' : 'input',
+          targetHandle: isTester ? 'input_left' : 'input',
           animated: true,
           style: {
             stroke: '#f59e0b',
@@ -856,14 +885,13 @@ export function FlowCanvas() {
 
         const trigType = (sourceNode?.data as TriggerData)?.triggerType || (sourceNode?.data as any)?.triggerKind;
         const isTester = trigType === 'tester' || trigType === 'test';
-        const isChat = trigType === 'chat';
         const newTriggerEdge: Edge = {
           ...connection,
           id: `e_trigger_${connection.source}_${connection.target}`,
           source: connection.source!,
-          sourceHandle: connection.sourceHandle || (isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom'),
+          sourceHandle: connection.sourceHandle || (isTester ? 'trigger_out_right' : 'trigger_out_bottom'),
           target: connection.target,
-          targetHandle: connection.targetHandle || (isTester || isChat ? 'input_left' : 'input'),
+          targetHandle: connection.targetHandle || (isTester ? 'input_left' : 'input'),
           animated: true,
           style: {
             stroke: '#f59e0b',
@@ -941,9 +969,127 @@ export function FlowCanvas() {
             }
             return n;
           });
-          setNodes(nextNodes);
         }
+        nextNodes = syncAgentSubAgents(nextNodes, nextEdges);
+        setNodes(nextNodes);
         recordSnapshot(nextNodes, nextEdges, { description: 'Connect router branch' });
+        return;
+      }
+
+      if (sourceAgentData?.agentKind === 'hitl' && connection.source && connection.target) {
+        const sourceHandle = connection.sourceHandle === 'rejected' ? 'rejected' : 'approved';
+        const isApproved = sourceHandle === 'approved';
+        const newEdge: Edge = {
+          ...connection,
+          sourceHandle,
+          id: `e_hitl_${connection.source}_${sourceHandle}_${connection.target}`,
+          animated: true,
+          style: { stroke: isApproved ? '#10b981' : '#f43f5e', strokeWidth: 2 },
+          targetHandle: connection.targetHandle || 'input',
+        } as Edge;
+
+        const nextEdges = [
+          ...currentEdges.filter((e) => !(e.source === connection.source && (e.sourceHandle === sourceHandle || (!e.sourceHandle && isApproved)))),
+          newEdge,
+        ];
+        setEdges(nextEdges);
+
+        let nextNodes = currentNodes.map((n) => {
+          if (n.id === connection.source) {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                hitlConfig: {
+                  ...sourceAgentData?.hitlConfig,
+                  ...(isApproved ? { approvedTargetAgentId: connection.target } : { rejectedTargetAgentId: connection.target }),
+                },
+              },
+            };
+          }
+          return n;
+        });
+        nextNodes = syncAgentSubAgents(nextNodes, nextEdges);
+        setNodes(nextNodes);
+        recordSnapshot(nextNodes, nextEdges, { description: `Connect approval ${isApproved ? 'approved' : 'rejected'} path` });
+        return;
+      }
+
+      if (sourceAgentData?.agentKind === 'fallback' && connection.source && connection.target) {
+        const sourceHandle = connection.sourceHandle === 'fallback' ? 'fallback' : 'primary';
+        const isPrimary = sourceHandle === 'primary';
+        const newEdge: Edge = {
+          ...connection,
+          sourceHandle,
+          id: `e_fallback_${connection.source}_${sourceHandle}_${connection.target}`,
+          animated: true,
+          style: { stroke: isPrimary ? '#3b82f6' : '#f43f5e', strokeWidth: 2 },
+          targetHandle: connection.targetHandle || 'input',
+        } as Edge;
+
+        const nextEdges = [
+          ...currentEdges.filter((e) => !(e.source === connection.source && (e.sourceHandle === sourceHandle || (!e.sourceHandle && isPrimary)))),
+          newEdge,
+        ];
+        setEdges(nextEdges);
+
+        let nextNodes = currentNodes.map((n) => {
+          if (n.id === connection.source) {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                fallbackConfig: {
+                  ...sourceAgentData?.fallbackConfig,
+                  ...(isPrimary ? { primaryTargetAgentId: connection.target } : { fallbackTargetAgentId: connection.target }),
+                },
+              },
+            };
+          }
+          return n;
+        });
+        nextNodes = syncAgentSubAgents(nextNodes, nextEdges);
+        setNodes(nextNodes);
+        recordSnapshot(nextNodes, nextEdges, { description: `Connect fallback ${isPrimary ? 'primary' : 'recovery'} path` });
+        return;
+      }
+
+      if (sourceAgentData?.agentKind === 'guardrail' && connection.source && connection.target) {
+        const sourceHandle = connection.sourceHandle === 'block' ? 'block' : 'pass';
+        const isPass = sourceHandle === 'pass';
+        const newEdge: Edge = {
+          ...connection,
+          sourceHandle,
+          id: `e_guardrail_${connection.source}_${sourceHandle}_${connection.target}`,
+          animated: true,
+          style: { stroke: isPass ? '#14b8a6' : '#f43f5e', strokeWidth: 2 },
+          targetHandle: connection.targetHandle || 'input',
+        } as Edge;
+
+        const nextEdges = [
+          ...currentEdges.filter((e) => !(e.source === connection.source && (e.sourceHandle === sourceHandle || (!e.sourceHandle && isPass)))),
+          newEdge,
+        ];
+        setEdges(nextEdges);
+
+        let nextNodes = currentNodes.map((n) => {
+          if (n.id === connection.source) {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                guardrailConfig: {
+                  ...sourceAgentData?.guardrailConfig,
+                  ...(isPass ? { passTargetAgentId: connection.target } : { blockTargetAgentId: connection.target }),
+                },
+              },
+            };
+          }
+          return n;
+        });
+        nextNodes = syncAgentSubAgents(nextNodes, nextEdges);
+        setNodes(nextNodes);
+        recordSnapshot(nextNodes, nextEdges, { description: `Connect guardrail ${isPass ? 'pass' : 'block'} path` });
         return;
       }
 
@@ -1047,7 +1193,7 @@ export function FlowCanvas() {
           }
         }
         if (!sample && sampleId) {
-          sample = SAMPLES_CATALOG.find((s) => s.id === sampleId);
+          sample = availableSamples.find((s) => s.id === sampleId);
         }
 
         if (sample && sample.nodes && sample.nodes.length > 0) {
@@ -1092,13 +1238,12 @@ export function FlowCanvas() {
         if (rootAgent) {
           const effectiveTriggerType = triggerType || 'chat';
           const isTester = effectiveTriggerType === 'tester';
-          const isChat = effectiveTriggerType === 'chat';
           const triggerEdge: Edge = {
             id: `e_trigger_${newTriggerNode.id}_${rootAgent.id}`,
             source: newTriggerNode.id,
-            sourceHandle: isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom',
+            sourceHandle: isTester ? 'trigger_out_right' : 'trigger_out_bottom',
             target: rootAgent.id,
-            targetHandle: isTester || isChat ? 'input_left' : 'input',
+            targetHandle: isTester ? 'input_left' : 'input',
             animated: true,
             style: {
               stroke: '#f59e0b',
@@ -1134,10 +1279,58 @@ export function FlowCanvas() {
         setEdges(nextEdges);
         recordSnapshot(nextNodes, nextEdges, { description: `Add pattern ${type}` });
       } else {
+        const hasAnyAgent = nodes.some((n) => n.type === 'agentNode');
         const hasStartNode = nodes.some((n) => n.type === 'agentNode' && (n.data as AgentData).isStartNode);
-        const effectiveKind: AgentKind = (agentKindData === 'a2a' || agentKindData === 'router' || agentKindData === 'standard')
-          ? agentKindData
-          : (type === 'a2a' || type === 'router' ? (type as AgentKind) : 'standard');
+        const hasTester = nodes.some((n) => n.type === 'triggerNode' && (n.data as TriggerData).triggerType === 'tester');
+        const effectiveKind: AgentKind = agentKindData 
+          ? agentKindData 
+          : (['a2a', 'router', 'synthesizer', 'hitl', 'fallback', 'guardrail'].includes(type) ? (type as AgentKind) : 'standard');
+
+        // If this is the first agent on the canvas, automatically create Root Agent AND connect a Test Suite node to its left handle
+        if (!hasAnyAgent && !hasTester) {
+          const agentX = position.x < 380 ? 420 : position.x;
+          const agentY = position.y < 80 ? 140 : position.y;
+          const testerX = Math.max(40, agentX - 360);
+          const testerY = agentY + 20;
+
+          const rootAgent = createSingleAgentNode(
+            agentX,
+            agentY,
+            'Root Agent',
+            'Root coordinator and task orchestrator',
+            effectiveKind,
+            {
+              model: settings.defaultModel,
+              temperature: settings.defaultTemperature,
+              memoryType: settings.defaultMemoryType,
+              subAgentPattern: settings.defaultSubAgentPattern,
+            }
+          );
+          rootAgent.data.isStartNode = true;
+          rootAgent.data.subAgents = [];
+
+          const testerTrigger = createSingleTriggerNode(testerX, testerY, 'tester', rootAgent.id);
+          const testerEdge: Edge = {
+            id: `e_trigger_${testerTrigger.id}_${rootAgent.id}`,
+            source: testerTrigger.id,
+            sourceHandle: 'trigger_out_right',
+            target: rootAgent.id,
+            targetHandle: 'input_left',
+            animated: true,
+            style: {
+              stroke: '#f59e0b',
+              strokeWidth: 2,
+              strokeDasharray: '5 5',
+            },
+          };
+
+          const nextNodes = [...nodes, testerTrigger, rootAgent];
+          const nextEdges = [...edges, testerEdge];
+          setNodes(nextNodes);
+          setEdges(nextEdges);
+          recordSnapshot(nextNodes, nextEdges, { description: `Add root ${effectiveKind || 'agent'} with test suite` });
+          return;
+        }
         const newNode = createSingleAgentNode(
           position.x,
           position.y,
@@ -1163,7 +1356,7 @@ export function FlowCanvas() {
   );
 
   const handleAddRootWithTestSuite = useCallback(() => {
-    const starterAgent = createSingleAgentNode(420, 140, 'Primary Agent', 'Root coordinator and task orchestrator', 'standard', {
+    const starterAgent = createSingleAgentNode(420, 140, 'Root Agent', 'Root coordinator and task orchestrator', 'standard', {
       model: settings.defaultModel,
       temperature: settings.defaultTemperature,
       memoryType: settings.defaultMemoryType,
@@ -1201,7 +1394,50 @@ export function FlowCanvas() {
   }, [nodes, edges, settings, setNodes, setEdges, recordSnapshot, fitView]);
 
   const handleAddAgentDirect = useCallback((kind: AgentKind = 'standard') => {
+    const hasAnyAgent = nodes.some((n) => n.type === 'agentNode');
     const hasStartNode = nodes.some((n) => n.type === 'agentNode' && (n.data as AgentData).isStartNode);
+    const hasTester = nodes.some((n) => n.type === 'triggerNode' && (n.data as TriggerData).triggerType === 'tester');
+
+    if (!hasAnyAgent && !hasTester) {
+      const rootAgent = createSingleAgentNode(
+        420,
+        140,
+        'Root Agent',
+        'Root coordinator and task orchestrator',
+        kind,
+        {
+          model: settings.defaultModel,
+          temperature: settings.defaultTemperature,
+          memoryType: settings.defaultMemoryType,
+          subAgentPattern: settings.defaultSubAgentPattern,
+        }
+      );
+      rootAgent.data.isStartNode = true;
+      rootAgent.data.subAgents = [];
+
+      const testerTrigger = createSingleTriggerNode(60, 160, 'tester', rootAgent.id);
+      const testerEdge: Edge = {
+        id: `e_trigger_${testerTrigger.id}_${rootAgent.id}`,
+        source: testerTrigger.id,
+        sourceHandle: 'trigger_out_right',
+        target: rootAgent.id,
+        targetHandle: 'input_left',
+        animated: true,
+        style: {
+          stroke: '#f59e0b',
+          strokeWidth: 2,
+          strokeDasharray: '5 5',
+        },
+      };
+
+      const nextNodes = [...nodes, testerTrigger, rootAgent];
+      const nextEdges = [...edges, testerEdge];
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      recordSnapshot(nextNodes, nextEdges, { description: `Add root ${kind || 'agent'} with test suite` });
+      return;
+    }
+
     const newNode = createSingleAgentNode(
       150 + Math.random() * 200,
       150 + Math.random() * 150,
@@ -1220,8 +1456,8 @@ export function FlowCanvas() {
     }
     const nextNodes = [...nodes, newNode];
     setNodes(nextNodes);
-    recordSnapshot(nextNodes, edges, { description: `Add agent` });
-  }, [nodes, edges, setNodes, settings, recordSnapshot]);
+    recordSnapshot(nextNodes, edges, { description: `Add ${kind || 'agent'}` });
+  }, [nodes, edges, setNodes, setEdges, settings, recordSnapshot]);
 
   const handleAddPatternDirect = useCallback(
     (patternType: PatternType) => {
@@ -1250,12 +1486,11 @@ export function FlowCanvas() {
         nodes.find((n) => n.type === 'agentNode');
 
       const isTester = triggerType === 'tester';
-      const isChat = triggerType === 'chat';
       const posX = rootAgent
-        ? (isTester || isChat ? rootAgent.position.x - 380 : rootAgent.position.x + 10)
+        ? (isTester ? rootAgent.position.x - 380 : rootAgent.position.x + 10)
         : 80;
       const posY = rootAgent
-        ? (isTester ? rootAgent.position.y : isChat ? rootAgent.position.y - 120 : Math.max(20, rootAgent.position.y - 280))
+        ? (isTester ? rootAgent.position.y : Math.max(20, rootAgent.position.y - 280))
         : 40;
 
       const newTriggerNode = createSingleTriggerNode(posX, posY, triggerType, rootAgent?.id);
@@ -1266,9 +1501,9 @@ export function FlowCanvas() {
         const triggerEdge: Edge = {
           id: `e_trigger_${newTriggerNode.id}_${rootAgent.id}`,
           source: newTriggerNode.id,
-          sourceHandle: isTester || isChat ? 'trigger_out_right' : 'trigger_out_bottom',
+          sourceHandle: isTester ? 'trigger_out_right' : 'trigger_out_bottom',
           target: rootAgent.id,
-          targetHandle: isTester || isChat ? 'input_left' : 'input',
+          targetHandle: isTester ? 'input_left' : 'input',
           animated: true,
           style: {
             stroke: '#f59e0b',
@@ -1388,6 +1623,15 @@ export function FlowCanvas() {
     setGeneratedFiles([]);
     setHasGeneratedCode(false);
     setIsGenerating(true);
+
+    // NOTE: Auto-save the .agent document before initiating code generation
+    bridge.postMessage({
+      type: 'SAVE_DOCUMENT',
+      payload: {
+        document: currentWorkflowDocument,
+        docVersion: (currentWorkflowDocument as any).version || 1,
+      },
+    });
 
     bridge.postMessage({
       type: 'GENERATE_CODE',
@@ -1511,9 +1755,13 @@ export function FlowCanvas() {
   const testPrompts = useMemo(() => {
     if (!testSuiteNode) return [];
     const cfg = (testSuiteNode.data as TriggerData).config;
-    return cfg?.testPrompts && cfg.testPrompts.length > 0
-      ? cfg.testPrompts
-      : DEFAULT_MOCK_TEST_PROMPTS;
+    if (cfg?.testPrompts && cfg.testPrompts.length > 0) {
+      return cfg.testPrompts;
+    }
+    if ((cfg as any)?.testScenarios && (cfg as any).testScenarios.length > 0) {
+      return (cfg as any).testScenarios;
+    }
+    return DEFAULT_MOCK_TEST_PROMPTS;
   }, [testSuiteNode]);
 
   // Chat Trigger detection & configuration
@@ -1574,6 +1822,7 @@ export function FlowCanvas() {
             nodes={nodes}
             edges={edges}
             enrichedNodes={enrichedNodes}
+            samples={availableSamples}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeDragStop={handleNodeDragStop}
@@ -1600,6 +1849,7 @@ export function FlowCanvas() {
             handleAddTriggerDirect={handleAddTriggerDirect}
             setIsAdvisorOpen={setIsAdvisorOpen}
             handleOpenSampleInNewTab={handleOpenSampleInNewTab}
+            handleOpenSampleInfo={setActiveInfoSample}
             handleAddSpecificTool={handleAddSpecificTool}
             selectedAgentId={selectedAgentId}
             isToolDrawerOpen={isToolDrawerOpen}
@@ -1698,6 +1948,16 @@ export function FlowCanvas() {
       <MissingFeaturesModal
         isOpen={isAdvisorOpen}
         onClose={() => setIsAdvisorOpen(false)}
+      />
+
+      {/* Sample Information Modal Dialog */}
+      <SampleInfoModal
+        sample={activeInfoSample}
+        onClose={() => setActiveInfoSample(null)}
+        onOpenSample={(sample) => {
+          setActiveInfoSample(null);
+          handleOpenSampleInNewTab(sample);
+        }}
       />
     </div>
   );

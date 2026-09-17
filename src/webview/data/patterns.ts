@@ -83,7 +83,83 @@ export const PATTERN_DEFINITIONS: PatternDefinition[] = [
   },
 ];
 
-let idCounter = 10;
+export interface BasicAgentTypeDefinition {
+  kind: AgentKind;
+  name: string;
+  badge: string;
+  colorTheme: 'blue' | 'cyan' | 'purple' | 'emerald' | 'amber' | 'rose' | 'teal';
+  description: string;
+  iconName: 'Bot' | 'Globe2' | 'Split' | 'Layers' | 'ShieldAlert' | 'LifeBuoy' | 'ShieldCheck';
+}
+
+export const CORE_AGENT_TYPES: BasicAgentTypeDefinition[] = [
+  {
+    kind: 'standard',
+    name: 'Agent',
+    badge: 'Standard',
+    colorTheme: 'blue',
+    description: 'LLM agent with tools & system instructions',
+    iconName: 'Bot',
+  },
+  {
+    kind: 'a2a',
+    name: 'A2A Agent',
+    badge: 'Protocol',
+    colorTheme: 'cyan',
+    description: 'Decentralized JSON-RPC A2A agent endpoint',
+    iconName: 'Globe2',
+  },
+];
+
+export const FLOW_CONTROL_AGENT_TYPES: BasicAgentTypeDefinition[] = [
+  {
+    kind: 'router',
+    name: 'Router',
+    badge: 'Branching',
+    colorTheme: 'purple',
+    description: 'Conditional branching & if/else routing',
+    iconName: 'Split',
+  },
+  {
+    kind: 'synthesizer',
+    name: 'Synthesizer',
+    badge: 'Reducer',
+    colorTheme: 'emerald',
+    description: 'Aggregates state & formats structured JSON',
+    iconName: 'Layers',
+  },
+  {
+    kind: 'hitl',
+    name: 'Approval Gate',
+    badge: 'HITL',
+    colorTheme: 'amber',
+    description: 'Human review & gatekeeper pause',
+    iconName: 'ShieldAlert',
+  },
+  {
+    kind: 'fallback',
+    name: 'Fallback',
+    badge: 'Resilience',
+    colorTheme: 'rose',
+    description: 'Circuit breaker & quota fallback',
+    iconName: 'LifeBuoy',
+  },
+  {
+    kind: 'guardrail',
+    name: 'Guardrail',
+    badge: 'Shield',
+    colorTheme: 'teal',
+    description: 'Pre/post-flight safety & PII scrubbing',
+    iconName: 'ShieldCheck',
+  },
+];
+
+export const BASIC_AGENT_TYPES: BasicAgentTypeDefinition[] = [
+  ...CORE_AGENT_TYPES,
+  ...FLOW_CONTROL_AGENT_TYPES,
+];
+
+let idCounter = 0;
 export const getNextId = (prefix = 'agent') => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 4)}`;
 
 export function createSingleAgentNode(
@@ -94,9 +170,197 @@ export function createSingleAgentNode(
   agentKind: AgentKind = 'standard',
   defaults?: Partial<AgentData>
 ): Node<AgentData> {
-  const id = getNextId(agentKind === 'a2a' ? 'a2a_agent' : agentKind === 'router' ? 'router_node' : 'agent');
-  const agentLabel = customLabel || (agentKind === 'router' ? `Router (if/else) ${++idCounter}` : agentKind === 'a2a' ? `A2A Agent ${++idCounter}` : `Agent ${++idCounter}`);
+  const prefix = agentKind === 'a2a' 
+    ? 'a2a_agent' 
+    : agentKind === 'router' 
+    ? 'router_node' 
+    : agentKind === 'synthesizer'
+    ? 'synthesizer_agent'
+    : agentKind === 'hitl'
+    ? 'hitl_agent'
+    : agentKind === 'fallback'
+    ? 'fallback_agent'
+    : agentKind === 'guardrail'
+    ? 'guardrail_agent'
+    : 'agent';
+  const id = getNextId(prefix);
+  const agentLabel = customLabel || (
+    agentKind === 'router' 
+      ? `Router (if/else) ${++idCounter}` 
+      : agentKind === 'a2a' 
+      ? `A2A Agent ${++idCounter}` 
+      : agentKind === 'synthesizer'
+      ? `Synthesizer ${++idCounter}`
+      : agentKind === 'hitl'
+      ? `Approval Gate ${++idCounter}`
+      : agentKind === 'fallback'
+      ? `Fallback ${++idCounter}`
+      : agentKind === 'guardrail'
+      ? `Guardrail ${++idCounter}`
+      : `Agent ${++idCounter}`
+  );
   const agentName = sanitizeAgentIdentifier(defaults?.identifier || defaults?.name || agentLabel || id);
+
+  if (agentKind === 'synthesizer') {
+    return {
+      id,
+      type: 'agentNode',
+      position: { x, y },
+      data: {
+        id,
+        label: agentLabel,
+        name: agentName,
+        identifier: agentName,
+        role: customRole || defaults?.role || 'Aggregates and synthesizes upstream state into structured output',
+        model: defaults?.model || 'gemini-3.8-flash',
+        systemPrompt: defaults?.systemPrompt || 'You are a synthesis agent. You aggregate upstream analysis, research, and data from state variables into a coherent, structured response adhering strictly to the output schema.',
+        temperature: defaults?.temperature !== undefined ? defaults.temperature : 0.2,
+        maxIterations: 5,
+        agentKind: 'synthesizer',
+        synthesizerConfig: defaults?.synthesizerConfig || {
+          inputStateKeys: ['research_summary', 'extracted_data'],
+          reductionStrategy: 'summarize',
+          outputSchemaName: 'SynthesizedOutput',
+        },
+        structuredOutput: defaults?.structuredOutput || {
+          enabled: true,
+          formatType: 'json_schema',
+          name: 'SynthesizedOutput',
+          fields: [
+            {
+              id: 'f1',
+              name: 'summary',
+              type: 'string',
+              required: true,
+              description: 'Comprehensive synthesized summary',
+            },
+          ],
+        },
+        tools: [],
+        subAgents: [],
+        subAgentPattern: defaults?.subAgentPattern || 'parallel',
+        memoryType: defaults?.memoryType || 'none',
+        memoryConfig: defaults?.memoryConfig || {
+          type: defaults?.memoryType || 'none',
+        },
+        outputFormat: 'structured',
+        colorTheme: 'green',
+        ...defaults,
+      },
+    };
+  }
+
+  if (agentKind === 'hitl') {
+    return {
+      id,
+      type: 'agentNode',
+      position: { x, y },
+      data: {
+        id,
+        label: agentLabel,
+        name: agentName,
+        identifier: agentName,
+        role: customRole || defaults?.role || 'Human-in-the-loop approval gatekeeper and authorization checkpoint',
+        model: defaults?.model || 'gemini-3.8-flash',
+        systemPrompt: defaults?.systemPrompt || 'Pause workflow execution and solicit explicit human authorization before continuing.',
+        temperature: defaults?.temperature !== undefined ? defaults.temperature : 0.0,
+        maxIterations: 3,
+        agentKind: 'hitl',
+        hitlConfig: defaults?.hitlConfig || {
+          approvalCondition: "state.requires_review == True",
+          timeoutHours: 24,
+          autoRejectOnTimeout: true,
+          notificationPayload: 'Human approval required before continuing workflow',
+          requestPrompt: 'Please review and approve the proposed action.',
+        },
+        tools: [],
+        subAgents: [],
+        subAgentPattern: defaults?.subAgentPattern || 'sequential',
+        memoryType: defaults?.memoryType || 'none',
+        memoryConfig: defaults?.memoryConfig || {
+          type: defaults?.memoryType || 'none',
+        },
+        outputFormat: 'text',
+        colorTheme: 'amber',
+        ...defaults,
+      },
+    };
+  }
+
+  if (agentKind === 'fallback') {
+    return {
+      id,
+      type: 'agentNode',
+      position: { x, y },
+      data: {
+        id,
+        label: agentLabel,
+        name: agentName,
+        identifier: agentName,
+        role: customRole || defaults?.role || 'Circuit breaker and graceful degradation fallback handler',
+        model: defaults?.model || 'gemini-3.8-flash',
+        systemPrompt: defaults?.systemPrompt || 'Catch runtime exceptions, rate limit quotas (429), and remote service outages to gracefully reroute execution.',
+        temperature: defaults?.temperature !== undefined ? defaults.temperature : 0.1,
+        maxIterations: 5,
+        agentKind: 'fallback',
+        fallbackConfig: defaults?.fallbackConfig || {
+          maxRetries: 3,
+          retryDelaySeconds: 2,
+          caughtErrorCodes: ['429', '503', 'RESOURCE_EXHAUSTED', 'TIMEOUT'],
+          fallbackStrategy: 'switch_agent',
+          staticFallbackMessage: 'Primary agent unavailable. Workflow gracefully routed to fallback safety handler.',
+        },
+        tools: [],
+        subAgents: [],
+        subAgentPattern: defaults?.subAgentPattern || 'sequential',
+        memoryType: defaults?.memoryType || 'none',
+        memoryConfig: defaults?.memoryConfig || {
+          type: defaults?.memoryType || 'none',
+        },
+        outputFormat: 'text',
+        colorTheme: 'rose',
+        ...defaults,
+      },
+    };
+  }
+
+  if (agentKind === 'guardrail') {
+    return {
+      id,
+      type: 'agentNode',
+      position: { x, y },
+      data: {
+        id,
+        label: agentLabel,
+        name: agentName,
+        identifier: agentName,
+        role: customRole || defaults?.role || 'Pre/post-flight security shield, PII sanitizer, and content filter',
+        model: defaults?.model || 'gemini-3.8-flash',
+        systemPrompt: defaults?.systemPrompt || 'Inspect input prompts and agent responses against safety policies, redacting sensitive PII and blocking toxic content.',
+        temperature: defaults?.temperature !== undefined ? defaults.temperature : 0.0,
+        maxIterations: 3,
+        agentKind: 'guardrail',
+        guardrailConfig: defaults?.guardrailConfig || {
+          direction: 'ingress',
+          safetyPolicies: ['pii', 'prompt_injection', 'toxicity', 'secrets'],
+          regexPatterns: [],
+          blockedKeywords: [],
+          actionOnViolation: 'block',
+          customViolationMessage: 'Content blocked: Security policy guardrail violation detected.',
+        },
+        tools: [],
+        subAgents: [],
+        subAgentPattern: defaults?.subAgentPattern || 'sequential',
+        memoryType: defaults?.memoryType || 'none',
+        memoryConfig: defaults?.memoryConfig || {
+          type: defaults?.memoryType || 'none',
+        },
+        outputFormat: 'text',
+        colorTheme: 'teal',
+        ...defaults,
+      },
+    };
+  }
 
   if (agentKind === 'router') {
     return {
@@ -109,7 +373,7 @@ export function createSingleAgentNode(
         name: agentName,
         identifier: agentName,
         role: customRole || 'Conditional router evaluating workflow branching logic (if/else)',
-        model: defaults?.model || 'gemini-3.8-flash',
+        model: defaults?.model || 'gemini-3.7-flash',
         systemPrompt: 'You evaluate the execution context and state variables to route execution flow to the appropriate downstream agent branch.',
         temperature: defaults?.temperature !== undefined ? defaults.temperature : 0.1,
         maxIterations: 5,
@@ -139,9 +403,11 @@ export function createSingleAgentNode(
         tools: [],
         subAgents: [],
         subAgentPattern: defaults?.subAgentPattern || 'router',
-        memoryType: defaults?.memoryType || 'none',
+        memoryType: defaults?.memoryType || 'in_memory',
         memoryConfig: defaults?.memoryConfig || {
-          type: defaults?.memoryType || 'none',
+          type: defaults?.memoryType || 'in_memory',
+          windowTurns: 10,
+          maxTokens: 4096,
         },
         outputFormat: 'text',
         colorTheme: 'purple',
@@ -161,7 +427,7 @@ export function createSingleAgentNode(
         name: agentName,
         identifier: agentName,
         role: customRole || defaults?.role || '',
-        model: defaults?.model || 'gemini-3.8-flash',
+        model: defaults?.model || 'gemini-3.7-flash',
         systemPrompt: defaults?.systemPrompt || '',
         temperature: defaults?.temperature !== undefined ? defaults.temperature : 0.2,
         maxIterations: 10,
@@ -180,9 +446,11 @@ export function createSingleAgentNode(
         tools: defaults?.tools || [],
         subAgents: [],
         subAgentPattern: defaults?.subAgentPattern || 'parallel',
-        memoryType: defaults?.memoryType || 'none',
+        memoryType: defaults?.memoryType || 'in_memory',
         memoryConfig: defaults?.memoryConfig || {
-          type: defaults?.memoryType || 'none',
+          type: defaults?.memoryType || 'in_memory',
+          windowTurns: 10,
+          maxTokens: 4096,
         },
         outputFormat: 'json_schema',
         colorTheme: 'cyan',
@@ -201,7 +469,7 @@ export function createSingleAgentNode(
       name: agentName,
       identifier: agentName,
       role: customRole || 'Specialized AI Assistant',
-      model: defaults?.model || 'gemini-3.8-flash',
+      model: defaults?.model || 'gemini-3.7-flash',
       systemPrompt: defaults?.systemPrompt || '',
       temperature: defaults?.temperature !== undefined ? defaults.temperature : 0.7,
       maxIterations: 10,
@@ -209,9 +477,11 @@ export function createSingleAgentNode(
       tools: defaults?.tools || [],
       subAgents: defaults?.subAgents || [],
       subAgentPattern: defaults?.subAgentPattern || 'parallel',
-      memoryType: defaults?.memoryType || 'none',
+      memoryType: defaults?.memoryType || 'in_memory',
       memoryConfig: defaults?.memoryConfig || {
-        type: defaults?.memoryType || 'none',
+        type: defaults?.memoryType || 'in_memory',
+        windowTurns: 10,
+        maxTokens: 4096,
       },
       outputFormat: 'text',
       colorTheme: 'blue',
@@ -244,7 +514,7 @@ export function createSingleTriggerNode(
   };
 }
 
-function generateRawPattern(
+export function generateRawPattern(
   type: PatternType,
   startX: number,
   startY: number
@@ -269,14 +539,17 @@ function generateRawPattern(
         id: id1,
         label: 'Research Planner',
         role: 'Breaks complex goals into step-by-step tasks and execution plans.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Decompose user requirements into structured execution phases with clear success criteria.',
         temperature: 0.3,
         tools: [AVAILABLE_TOOLS[0]], // Google Search
         subAgents: [],
         subAgentPattern: 'sequential',
+        memoryType: 'in_memory',
         memoryConfig: {
-          type: 'none',
+          type: 'in_memory',
+          windowTurns: 10,
+          maxTokens: 4096,
         },
         colorTheme: 'blue',
         isStartNode: true,
@@ -291,7 +564,7 @@ function generateRawPattern(
         id: id2,
         label: 'Code Executor',
         role: 'Implements tasks, executes code, and fetches required data sources.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Write clean code, run validation tools, and produce tangible deliverables.',
         temperature: 0.2,
         tools: [AVAILABLE_TOOLS[1], AVAILABLE_TOOLS[4]], // Code interpreter + REST API
@@ -309,7 +582,7 @@ function generateRawPattern(
         id: id3,
         label: 'Quality Reviewer',
         role: 'Audits deliverables against safety, accuracy, and format constraints.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Review the output from previous stages for correctness, edge cases, and clarity.',
         temperature: 0.1,
         tools: [AVAILABLE_TOOLS[3]], // Knowledge RAG
@@ -370,7 +643,7 @@ function generateRawPattern(
         id: rootId,
         label: 'Lead Orchestrator',
         role: 'Dispatches parallel sub-tasks and synthesizes concurrent findings.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Coordinate multiple domain agents concurrently and aggregate their structured outputs.',
         temperature: 0.4,
         tools: [],
@@ -394,7 +667,7 @@ function generateRawPattern(
         id: sub1Id,
         label: 'Market Analyst',
         role: 'Processes financial indices, user statistics, and industry benchmarks.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Analyze economic trends and competitive positioning.',
         temperature: 0.5,
         tools: [AVAILABLE_TOOLS[2]], // SQL
@@ -411,7 +684,7 @@ function generateRawPattern(
         id: sub2Id,
         label: 'Tech Researcher',
         role: 'Investigates APIs, architecture patterns, and benchmarks.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Perform technical web search and code documentation retrieval.',
         temperature: 0.3,
         tools: [AVAILABLE_TOOLS[0], AVAILABLE_TOOLS[1]], // Search + Code
@@ -428,7 +701,7 @@ function generateRawPattern(
         id: sub3Id,
         label: 'Risk Assessor',
         role: 'Verifies safety, legal compliance, and operational vulnerability.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Score risk levels and propose mitigation strategies.',
         temperature: 0.2,
         tools: [AVAILABLE_TOOLS[3]], // Knowledge RAG
@@ -489,7 +762,7 @@ function generateRawPattern(
         id: routerId,
         label: 'Intent Router',
         role: 'Classifies user intent and dynamically routes the task to the best specialized agent.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Analyze incoming prompt complexity. Categorize as CODE, RESEARCH, or CREATIVE and route payload.',
         temperature: 0.1,
         agentKind: 'router',
@@ -543,7 +816,7 @@ function generateRawPattern(
         id: codeId,
         label: 'Code Specialist',
         role: 'Writes verified code solutions and executes unit tests.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Implement clean software solutions with thorough test cases.',
         temperature: 0.2,
         tools: [AVAILABLE_TOOLS[1]],
@@ -560,7 +833,7 @@ function generateRawPattern(
         id: searchId,
         label: 'Research Specialist',
         role: 'Performs live web synthesis and vector RAG retrieval.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Ground all statements with recent facts and reputable citations.',
         temperature: 0.3,
         tools: [AVAILABLE_TOOLS[0], AVAILABLE_TOOLS[3]],
@@ -577,7 +850,7 @@ function generateRawPattern(
         id: creativeId,
         label: 'Creative Copywriter',
         role: 'Produces engaging prose, marketing copy, and design docs.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Craft persuasive and clear copy adhering to brand guidelines.',
         temperature: 0.8,
         tools: [],
@@ -632,7 +905,7 @@ function generateRawPattern(
         id: genId,
         label: 'Draft Generator',
         role: 'Produces drafts and iterates based on evaluator critique and test scores.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Generate high quality draft solutions. Incorporate feedback loops until quality score > 90%.',
         temperature: 0.7,
         tools: [AVAILABLE_TOOLS[1]], // Code interpreter
@@ -653,7 +926,7 @@ function generateRawPattern(
         id: evalId,
         label: 'Critic Evaluator',
         role: 'Tests draft output against criteria, provides critique, or approves convergence.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Evaluate the generated solution. Return either "APPROVED" with final score or actionable revision points.',
         temperature: 0.1,
         tools: [AVAILABLE_TOOLS[0], AVAILABLE_TOOLS[5]], // Search + Custom function
@@ -704,7 +977,7 @@ function generateRawPattern(
         id: modId,
         label: 'Debate Moderator',
         role: 'Frames the core thesis, establishes debate rules, and commissions affirmative and skeptical briefs.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'You frame the core debate question, define the evaluation rubric, and commission structured arguments from affirmative and skeptical perspectives.',
         temperature: 0.3,
         tools: [AVAILABLE_TOOLS[0]], // Web search
@@ -737,7 +1010,7 @@ function generateRawPattern(
         id: propId,
         label: 'Affirmative Proponent',
         role: 'Builds an evidence-backed case in favor of the proposal, highlighting upside, viability, and benefits.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Construct the strongest affirmative argument for the thesis. Support claims with verified data and strategic benefits.',
         temperature: 0.7,
         tools: [AVAILABLE_TOOLS[0], AVAILABLE_TOOLS[4]], // Web search + REST API
@@ -754,7 +1027,7 @@ function generateRawPattern(
         id: oppId,
         label: 'Skeptical Opponent',
         role: 'Conducts adversarial red-teaming, highlights risks, logical fallacies, edge-case failure modes, and boundaries.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Stress-test the affirmative case. Identify vulnerabilities, cost overruns, negative externalities, and unstated assumptions.',
         temperature: 0.6,
         tools: [AVAILABLE_TOOLS[3], AVAILABLE_TOOLS[0]], // Knowledge RAG + Web search
@@ -771,7 +1044,7 @@ function generateRawPattern(
         id: judgeId,
         label: 'Consensus Judge',
         role: 'Arbitrates debate arguments, scores evidence strength, and drafts an objective consensus verdict.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Evaluate both arguments objectively. Reconcile valid points, discard unfounded claims, and generate a synthesized consensus decision with clear trade-offs.',
         temperature: 0.2,
         tools: [AVAILABLE_TOOLS[1]], // Code interpreter
@@ -859,7 +1132,7 @@ function generateRawPattern(
         id: authId,
         label: 'Content Author',
         role: 'Generates comprehensive initial proposals, architecture specs, and implementations.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Draft clear, thorough, and structured deliverables addressing all prompt requirements.',
         temperature: 0.7,
         tools: [AVAILABLE_TOOLS[0]],
@@ -881,7 +1154,7 @@ function generateRawPattern(
         id: criticId,
         label: 'Adversarial Critic',
         role: 'Conducts adversarial reviews, detects logic flaws, and outlines concrete objections.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Stress-test all claims, identify weaknesses, security gaps, and unstated assumptions.',
         temperature: 0.2,
         tools: [AVAILABLE_TOOLS[3]],
@@ -898,7 +1171,7 @@ function generateRawPattern(
         id: editorId,
         label: 'Synthesis Editor',
         role: 'Synthesizes original draft with critical feedback into a publication-ready artifact.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Harmonize the initial content with critical reviews to produce a definitive version.',
         temperature: 0.3,
         tools: [AVAILABLE_TOOLS[1]],
@@ -944,7 +1217,7 @@ function generateRawPattern(
         id: genId,
         label: 'Iterative Creator',
         role: 'Produces candidate iterations and improves version N+1 using evaluation deltas.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Generate structured solution candidates. Address all regression tests identified by Evaluator.',
         temperature: 0.6,
         tools: [AVAILABLE_TOOLS[1]],
@@ -965,7 +1238,7 @@ function generateRawPattern(
         id: evalId,
         label: 'Benchmark Evaluator',
         role: 'Calculates precision, recall, and adherence metrics; signals stop when threshold exceeded.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Score input on 0-100 scale. If score >= 95, return FINAL_PASSED, else return step-wise fixes.',
         temperature: 0.1,
         tools: [AVAILABLE_TOOLS[0], AVAILABLE_TOOLS[5]],
@@ -1014,7 +1287,7 @@ function generateRawPattern(
         id: coordId,
         label: 'Central Coordinator',
         role: 'Maintains blackboard state, manages transaction safety, and delegates domain tasks.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'You are the central supervisor. Manage lock contention, orchestrate sub-agents, and merge results.',
         temperature: 0.3,
         tools: [],
@@ -1038,7 +1311,7 @@ function generateRawPattern(
         id: d1Id,
         label: 'Database Agent',
         role: 'Executes optimized SQL and vector queries against databases.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Read/write database records safely and efficiently.',
         temperature: 0.1,
         tools: [AVAILABLE_TOOLS[2]],
@@ -1055,7 +1328,7 @@ function generateRawPattern(
         id: d2Id,
         label: 'Integration Agent',
         role: 'Authenticates and proxies requests across third-party web services.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Invoke RESTful APIs with correct headers and payload schemas.',
         temperature: 0.2,
         tools: [AVAILABLE_TOOLS[4]],
@@ -1072,7 +1345,7 @@ function generateRawPattern(
         id: d3Id,
         label: 'Document Agent',
         role: 'Assembles markdown summaries, changelogs, and user manuals.',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.7-flash',
         systemPrompt: 'Generate polished technical documentation.',
         temperature: 0.4,
         tools: [AVAILABLE_TOOLS[3]],
@@ -1131,7 +1404,7 @@ function generateRawPattern(
       id: masterId,
       label: 'Chief System Architect',
       role: 'Decomposes high-level requirements into domain lead work-streams.',
-      model: 'gemini-3.8-flash',
+      model: 'gemini-3.7-flash',
       systemPrompt: 'Produce system architecture specs and distribute subsystem boundaries to domain leads.',
       temperature: 0.2,
       tools: [AVAILABLE_TOOLS[0]],
@@ -1154,7 +1427,7 @@ function generateRawPattern(
       id: lead1Id,
       label: 'Frontend Lead',
       role: 'Supervises UI components, design fidelity, and client interactions.',
-      model: 'gemini-3.8-flash',
+      model: 'gemini-3.7-flash',
       systemPrompt: 'Coordinate frontend implementation tasks across component and state engineers.',
       temperature: 0.3,
       tools: [],
@@ -1175,7 +1448,7 @@ function generateRawPattern(
       id: lead2Id,
       label: 'Backend Lead',
       role: 'Supervises REST endpoints, business logic, and database schemas.',
-      model: 'gemini-3.8-flash',
+      model: 'gemini-3.7-flash',
       systemPrompt: 'Coordinate backend services, database migrations, and external API gateways.',
       temperature: 0.2,
       tools: [],
@@ -1196,7 +1469,7 @@ function generateRawPattern(
       id: w1Id,
       label: 'UI Components Agent',
       role: 'Builds responsive components with Tailwind CSS and React.',
-      model: 'gemini-3.8-flash',
+      model: 'gemini-3.7-flash',
       systemPrompt: 'Implement accessible, polished UI components.',
       temperature: 0.4,
       tools: [AVAILABLE_TOOLS[1]],
@@ -1213,7 +1486,7 @@ function generateRawPattern(
       id: w2Id,
       label: 'Client State Agent',
       role: 'Implements event streams and local synchronization.',
-      model: 'gemini-3.8-flash',
+      model: 'gemini-3.7-flash',
       systemPrompt: 'Manage client state containers and async caches.',
       temperature: 0.3,
       tools: [AVAILABLE_TOOLS[1]],
@@ -1230,7 +1503,7 @@ function generateRawPattern(
       id: w3Id,
       label: 'API Services Agent',
       role: 'Implements API routes and authentication middleware.',
-      model: 'gemini-3.8-flash',
+      model: 'gemini-3.7-flash',
       systemPrompt: 'Construct high throughput API controllers and input validation schemas.',
       temperature: 0.2,
       tools: [AVAILABLE_TOOLS[4]],
@@ -1247,7 +1520,7 @@ function generateRawPattern(
       id: w4Id,
       label: 'Database Model Agent',
       role: 'Designs database tables, migrations, and index optimization.',
-      model: 'gemini-3.8-flash',
+      model: 'gemini-3.7-flash',
       systemPrompt: 'Author relational schemas, ORM models, and query indexes.',
       temperature: 0.1,
       tools: [AVAILABLE_TOOLS[2]],
@@ -1347,7 +1620,7 @@ export function createPatternNodesAndEdges(
       target: rootNode.id,
       targetHandle: 'input_left',
       animated: true,
-      style: { stroke: '#eab308', strokeWidth: 2, strokeDasharray: '5 5' },
+      style: { stroke: '#f59e0b', strokeWidth: 2, strokeDasharray: '5 5' },
     };
 
     combinedNodes = [testerNode, ...result.nodes];

@@ -27,8 +27,7 @@ import * as http from 'http';
 import * as https from 'https';
 import { ToolDefinition, McpAuthProviderType, McpOAuthConfig, McpSecretConfig } from '../shared/types';
 
-const execAsync = promisify(exec);
-const execFileAsync = promisify(execFile);
+import { execFileAsync } from './asyncUtils';
 
 export interface McpDiscoveryParams {
   transport: 'stdio' | 'sse' | 'http';
@@ -115,8 +114,6 @@ export class McpSubprocessManager {
   public async resolveGoogleCredentials(
     oauthConfig?: McpOAuthConfig
   ): Promise<{ token: string; projectId?: string }> {
-    const { execFileAsync } = require('./asyncUtils');
-
     // 1. Resolve project ID
     let projectId = oauthConfig?.projectId?.trim() || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
     if (!projectId) {

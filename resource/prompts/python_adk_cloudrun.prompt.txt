@@ -11,17 +11,27 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
 ### CRITICAL MANDATE: COMPLETE REPOSITORY GENERATION (ALL FILES REQUIRED, STARTING WITH agent.py)
 - `agent.py` IS THE CORE WORKFLOW FILE AND MUST ALWAYS BE GENERATED AS THE FIRST FILE IN THE RETURNED JSON ARRAY. It defines `root_agent`, all sub-agents, tools, callbacks, and orchestration logic. Every other file (main.py, test_agent.py, server.py) directly imports `root_agent` from `agent.py`.
 - You MUST generate the COMPLETE repository and emit EVERY required file in the output JSON array.
-- Emitting only a partial project or omitting core files like `agent.py` is strictly forbidden and breaks testing and deployment.
-- Every response MUST include the full project manifest: `agent.py` (with `root_agent`), FastAPI server (`server.py`), packaging, CLI runner, test suite, evaluation dataset and script, dependencies, Dockerfile, CI/CD pipeline, Terraform infrastructure, and documentation.
+- Emitting only a partial project or omitting core files like `agent.py` or `session_store.py` is strictly forbidden and breaks testing and deployment.
+- Every response MUST include the full project manifest: `agent.py` (with `root_agent`), `session_store.py`, FastAPI server (`server.py`), packaging, CLI runner, test suite, evaluation dataset and script, dependencies (`requirements.txt`), Dockerfile, CI/CD pipeline, Terraform infrastructure, and documentation.
 
-### WORKFLOW SPECIFICATION:
-```json
-{{WORKFLOW_JSON}}
-```
-
----
-
-### REQUIREMENTS & ARCHITECTURE:
+### SESSION MEMORY & PRODUCTION CHECKPOINTERS:
+- Inspect `{{WORKFLOW_JSON}}` for session memory configuration (`memoryConfig` on nodes or workflow metadata).
+- **Supported Memory Backends**:
+  * `'in_memory'`: In-Memory Turn Buffer (`InMemorySessionStore`)
+  * `'sqlite'`: Local Embedded SQLite Checkpointer (`SqliteSessionStore` using standard library `sqlite3` with thread safety)
+  * `'firestore'`: Google Cloud Firestore / Firebase Checkpointer (`FirestoreSessionStore` using `google-cloud-firestore`)
+  * `'postgres'` | `'cloud_sql'`: Google Cloud SQL (PostgreSQL / MySQL) Checkpointer (`CloudSqlSessionStore` using `psycopg2-binary` and `sqlalchemy`)
+  * `'spanner'`: Google Cloud Spanner Enterprise Checkpointer (`SpannerSessionStore` using `google-cloud-spanner`)
+  * `'redis'`: Cloud Memorystore (Redis / Valkey) Checkpointer (`RedisSessionStore` using `redis` client)
+  * `'none'`: Stateless (`StatelessSessionStore`)
+- You MUST generate `session_store.py` providing `BaseSessionStore`, `StatelessSessionStore`, `InMemorySessionStore`, `SqliteSessionStore`, `FirestoreSessionStore`, `CloudSqlSessionStore`, `SpannerSessionStore`, `RedisSessionStore`, and a factory function `get_session_store(backend: Optional[str] = None) -> BaseSessionStore`.
+- In `server.py` and `agent.py`, import `from session_store import get_session_store` and use `session_store = get_session_store()` to persist session history and state between FastAPI request turns.
+- In `requirements.txt`, include the corresponding driver packages:
+  * For Firestore: `google-cloud-firestore>=2.16.0`
+  * For Cloud SQL / Postgres: `psycopg2-binary>=2.9.9`, `sqlalchemy>=2.0.0`
+  * For Spanner: `google-cloud-spanner>=3.40.0`
+  * For Redis: `redis>=5.0.0`
+- In `.env.example`, include `SESSION_STORE_BACKEND=<configured_type>` along with any relevant connection parameters.
 
 1. **Google Agent Development Kit (ADK) Architecture & Primitives**:
    - MANDATORY: Build agents exclusively using the Google Agent Development Kit (`google-adk>=2.0.0`). Do NOT hand-roll custom orchestration loops or direct `genai.Client()` call harnesses.
@@ -66,6 +76,20 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
              * Always use the parent node's top-level `subAgentPattern` as the single source of truth. Any per-item `delegationType` inside child objects in `subAgents: [...]` is secondary and MUST NOT override the parent's `subAgentPattern`.
           4. **Recursive Composition Across N-Layers (2, 3, 4, 5+ Tiers Deep)**:
              * When a child agent itself has its own connected `subAgents: [...]`, that child is an intermediate parent. Its OWN `subAgentPattern` dictates how its grandchildren are orchestrated. Construct the hierarchy bottom-up: leaf agents first, intermediate orchestrators next, and root orchestrator as `root_agent`.
+          5. **React Flow (`.agent`) Diagram Graph & Handle Interpretation**:
+             * **Trigger-to-Root Connections (`input_left`)**: Only the Root Coordinator agent (`isStartNode: true`) connects from triggers. All trigger nodes (`chat`, `tester`, `webhook`, `eventarc`, `cron`) connect from `sourceHandle: "trigger_out_right"` to the Root Agent's `targetHandle: "input_left"`. Triggers represent inbound invocation stimuli and test evaluation suites, not sub-agents.
+             * **Agent-to-SubAgent Delegation (`output` -> `input`)**: Standard delegation flows from parent `sourceHandle: "output"` to child `targetHandle: "input"`. These edges wire the target agent into the parent agent's `sub_agents=[...]` list.
+             * **Control-Flow Source Handles**:
+               - Router (`agentKind: "router"`): `sourceHandle` matches branch ID (`branch_if_1`, `branch_else`). Routes to branch target agents conditionally.
+               - Approval Gate / HITL (`agentKind: "hitl"`): `sourceHandle` must be `"approved"` or `"rejected"`.
+               - Guardrail Shield (`agentKind: "guardrail"`): `sourceHandle` must be `"pass"` or `"block"`.
+               - Fallback / Circuit Breaker (`agentKind: "fallback"`): `sourceHandle` must be `"primary"` or `"fallback"`.
+             * **Semantic Edge Strokes in `.agent`**:
+               - Standard Agent / Sub-Agent Delegation: Blue (`#3b82f6`)
+               - Inbound Triggers: Amber (`#f59e0b`), dashed (`strokeDasharray: "5 5"`)
+               - Router Conditional Branches: Purple (`#a855f7`)
+               - HITL Approved / Guardrail Pass: Green / Teal (`#10b981` / `#14b8a6`)
+               - HITL Rejected / Guardrail Block / Fallback Recovery: Red / Rose (`#f43f5e`)
         - Single Agent or Multi-Agent Coordinator:
           * For single agent workflows, define `root_agent = Agent(name=..., model=..., instruction=..., tools=[...])`.
           * For hierarchical delegation, instantiate child `Agent(...)` instances first, then wire them into the parent's `sub_agents=[...]`.
@@ -105,52 +129,58 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
          * Manage user and session lifecycle using ADK's session service, ensuring the session is created if `get_session(...)` returns `None`.
          * If `stream: true`: Stream tokens incrementally using Server-Sent Events (`text/event-stream`), emitting chunks in the standard OpenAI `chat.completion.chunk` delta schema, terminating with `data: [DONE]`.
          * If `stream: false`: Accumulate the full agent response asynchronously and return the standard OpenAI `chat.completion` JSON schema, including unique completion ID, created timestamp, assistant message content, and token usage estimation.
-     * **Conditional Webhook Route (`POST /webhook` or configured `webhookPath`)**:
-       - GENERATE WHEN: The workflow includes a trigger node with `triggerType == "webhook"` (or `triggerKind == "webhook"`).
-       - Validate security headers (e.g. `X-Webhook-Secret` or `Authorization: Bearer <token>`) against environment variables when authentication is configured.
-       - Parse incoming payload body and dispatch to `root_agent` via the ADK runner.
-     * **Server Entrypoint**:
-       - When executed directly (`if __name__ == "__main__":`), run `uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))`.
-   - `main.py`: Interactive CLI runner for local terminal testing. Implement as an `asyncio` command-line loop that prompts for console input and uses ADK's `Runner` to dispatch `root_agent` prompts and stream event tokens to stdout.
-   - `test_agent.py`: Comprehensive `pytest` test suite covering all test scenarios defined in trigger nodes with assertions against `root_agent`.
-   - `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios for Vertex AI Agent Evaluation. Format as JSON Lines (JSONL), where each line is a self-contained record defining the test `prompt`, expected reference ground truth (`reference`), and `expected_tool_calls` list derived from trigger node test scenarios.
-   - `evaluate.py`: Vertex AI Agent Evaluation script utilizing `vertexai.evaluation.EvalTask` for quality, groundedness, and safety evaluation.
-   - `requirements.txt`: Version-pinned production and test dependencies:
-     * Core ADK & Model Frameworks: `google-adk>=2.0.0`, `google-genai>=1.0.0`, `google-cloud-aiplatform[evaluation]>=1.60.0`.
-     * Web Service & Serialization: `fastapi>=0.110.0`, `uvicorn[standard]>=0.28.0`, `pydantic>=2.0.0`.
-     * Test & Environment Tooling: `pytest>=8.0.0`, `pytest-asyncio>=0.23.0`, `python-dotenv>=1.0.0`.
-     * Conditional Packages: Include `google-adk[a2a]>=2.0.0` and `a2a-sdk[http-server]>=0.3.4` if A2A agent nodes exist; include tool-specific packages (e.g. `google-cloud-secret-manager>=2.16.0`, `httpx>=0.27.0`) when enabled.
-   - `Dockerfile`: Production container definition for Google Cloud Run:
-     * Base Image: Use an official slim Python runtime (e.g., `python:3.11-slim`).
-     * Environment Settings: Configure `PYTHONUNBUFFERED=1`, `GOOGLE_GENAI_USE_VERTEXAI=true`, and `GOOGLE_CLOUD_LOCATION=global`, and establish an application working directory (e.g., `/app`).
-     * Dependency Layer Caching: Copy `requirements.txt` and execute `pip install --no-cache-dir -r requirements.txt` prior to copying application source code to maximize Docker build layer caching.
-     * Container Execution: Expose port `8080` and configure the entrypoint to serve the FastAPI app using Uvicorn (`python -m uvicorn server:app --host 0.0.0.0 --port 8080`).
-   - `main.tf`: Complete, production-grade Terraform configuration deploying to Google Cloud Run and connecting to an existing project:
-      * **Terraform Specification & Provider**:
-        - Configure `terraform` block requiring `google` provider (`~> 5.0`) and Terraform version `>= 1.5.0`.
-        - Configure `provider "google"` referencing `var.project_id` and `var.region`.
-      * **Artifact Registry Repository**:
-        - Provision `google_artifact_registry_repository` for storing agent container images (`format = "DOCKER"`).
-      * **Identity & Least Privilege IAM Bindings**:
-        - Provision dedicated `google_service_account` for Cloud Run (e.g. `"${var.service_name}-sa"`).
-        - Grant `roles/aiplatform.user` project IAM member to the service account for Vertex AI Gemini model invocation.
-        - When public unauthenticated access is enabled, grant `roles/run.invoker` on the Cloud Run service to `allUsers`.
-        - When Secret Manager secrets are provisioned, grant `roles/secretmanager.secretAccessor` on the secrets to the service account.
-      * **Cloud Run V2 Service (`google_cloud_run_v2_service`)**:
-        - Configure `template.service_account` to the dedicated service account email.
-        - Deploy container with `image = var.image_uri != "" ? var.image_uri : "${var.region}-docker.pkg.dev/${var.project_id}/${var.artifact_repo_name}/${var.service_name}:latest"`.
-        - Set runtime environment variables:
-          `GOOGLE_GENAI_USE_VERTEXAI = "true"`,
-          `GOOGLE_CLOUD_PROJECT = var.project_id`,
-          `GOOGLE_CLOUD_LOCATION = "global"` (per Vertex AI requirements for Gemini 3.7 Flash).
-        - Configure compute limits (`cpu = var.cpu`, `memory = var.memory`, `cpu_idle = true`).
-        - Configure scaling limits (`min_instance_count = var.min_instances`, `max_instance_count = var.max_instances`).
-        - Set traffic allocation to 100% on latest revision (`TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST`).
-        - Set `lifecycle { ignore_changes = [client, client_version, template[0].containers[0].image] }` to allow fast CI/CD container updates via Cloud Build / `gcloud run deploy` without Terraform state drift.
-      * **Conditional Triggers & Integrations**:
-        - **Eventarc Trigger** (when `triggerType` / `triggerKind == "eventarc"`): Enable `eventarc.googleapis.com`, provision dedicated invoker service account with `roles/run.invoker` on Cloud Run and `roles/eventarc.eventReceiver` on the project, and create `google_eventarc_trigger` matching the configured event routing to the Cloud Run service path.
-        - **Cloud Scheduler (Cron Trigger)** (when `triggerType` / `triggerKind == "scheduled"` or `"cron"`): Enable `cloudscheduler.googleapis.com`, provision scheduler invoker service account with `roles/run.invoker` on Cloud Run, and create `google_cloud_scheduler_job` with the configured cron schedule, timezone, and HTTP target pointing to the Cloud Run service URL with OIDC authentication.
-        - **Webhook Trigger** (when `triggerType` / `triggerKind == "webhook"`): When authentication is configured (`authType != "none"`), provision `google_secret_manager_secret` and secret version for the token/signature secret, grant `roles/secretmanager.secretAccessor` to the service account, and inject the secret into the Cloud Run container environment.
+      * **Conditional Pub/Sub Ingestion Route (`POST /pubsub` or `/apps/{app}/trigger/pubsub`)**:
+        - GENERATE WHEN: The workflow includes a trigger node with `triggerType == "pubsub"` (or `triggerKind == "pubsub"`).
+        - Parse the Google Cloud Pub/Sub push message format: extract `message.data` (decoding from base64), decode JSON or plain text body, extract attributes, and dispatch prompt to `root_agent` via the ADK runner.
+        - Return HTTP 200 OK (`{"status": "acknowledged"}`) upon successful agent execution so Pub/Sub does not redeliver the message.
+      * **Conditional Webhook Route (`POST /webhook` or configured `webhookPath`)**:
+        - GENERATE WHEN: The workflow includes a trigger node with `triggerType == "webhook"` (or `triggerKind == "webhook"`).
+        - Validate security headers (e.g. `X-Webhook-Secret` or `Authorization: Bearer <token>`) against environment variables when authentication is configured.
+        - Parse incoming payload body and dispatch to `root_agent` via the ADK runner.
+      * **Server Entrypoint**:
+        - When executed directly (`if __name__ == "__main__":`), run `uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))`.
+    - `main.py`: Interactive CLI runner for local terminal testing. Implement as an `asyncio` command-line loop that prompts for console input and uses ADK's `Runner` to dispatch `root_agent` prompts and stream event tokens to stdout.
+    - `test_agent.py`: Comprehensive `pytest` test suite covering all test scenarios defined in trigger nodes with assertions against `root_agent`.
+    - `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios for Vertex AI Agent Evaluation. Format as JSON Lines (JSONL), where each line is a self-contained record defining the test `prompt`, expected reference ground truth (`reference`), and `expected_tool_calls` list derived from trigger node test scenarios.
+    - `evaluate.py`: Vertex AI Agent Evaluation script utilizing `vertexai.evaluation.EvalTask` for quality, groundedness, and safety evaluation.
+    - `requirements.txt`: Version-pinned production and test dependencies:
+      * Core ADK & Model Frameworks: `google-adk>=2.0.0`, `google-genai>=1.0.0`, `google-cloud-aiplatform[evaluation]>=1.60.0`.
+      * Web Service & Serialization: `fastapi>=0.110.0`, `uvicorn[standard]>=0.28.0`, `pydantic>=2.0.0`.
+      * Test & Environment Tooling: `pytest>=8.0.0`, `pytest-asyncio>=0.23.0`, `python-dotenv>=1.0.0`.
+      * Conditional Packages: Include `google-adk[a2a]>=2.0.0` and `a2a-sdk[http-server]>=0.3.4` if A2A agent nodes exist; include tool-specific packages (e.g. `google-cloud-secret-manager>=2.16.0`, `httpx>=0.27.0`) when enabled.
+    - `Dockerfile`: Production container definition for Google Cloud Run:
+      * Base Image: Use an official slim Python runtime (e.g., `python:3.11-slim`).
+      * Environment Settings: Configure `PYTHONUNBUFFERED=1`, `GOOGLE_GENAI_USE_VERTEXAI=true`, and `GOOGLE_CLOUD_LOCATION=global`, and establish an application working directory (e.g., `/app`).
+      * Dependency Layer Caching: Copy `requirements.txt` and execute `pip install --no-cache-dir -r requirements.txt` prior to copying application source code to maximize Docker build layer caching.
+      * Container Execution: Expose port `8080` and configure the entrypoint to serve the FastAPI app using Uvicorn (`python -m uvicorn server:app --host 0.0.0.0 --port 8080`).
+      * Ensure a .dockerignore file is provided to prevent copying sensitive local files (.env, .git) into build layers.
+    - `main.tf`: Complete, production-grade Terraform configuration deploying to Google Cloud Run and connecting to an existing project:
+       * **Terraform Specification & Provider**:
+         - Configure `terraform` block requiring `google` provider (`~> 5.0`) and Terraform version `>= 1.5.0`.
+         - Configure `provider "google"` referencing `var.project_id` and `var.region`.
+       * **Artifact Registry Repository**:
+         - Provision `google_artifact_registry_repository` for storing agent container images (`format = "DOCKER"`).
+       * **Identity & Least Privilege IAM Bindings**:
+         - Provision dedicated `google_service_account` for Cloud Run (e.g. `"${var.service_name}-sa"`).
+         - Grant `roles/aiplatform.user` project IAM member to the service account for Vertex AI Gemini model invocation.
+         - When public unauthenticated access is enabled, grant `roles/run.invoker` on the Cloud Run service to `allUsers`.
+         - When Secret Manager secrets are provisioned, grant `roles/secretmanager.secretAccessor` on the secrets to the service account.
+       * **Cloud Run V2 Service (`google_cloud_run_v2_service`)**:
+         - Configure `template.service_account` to the dedicated service account email.
+         - Deploy container with `image = var.image_uri != "" ? var.image_uri : "${var.region}-docker.pkg.dev/${var.project_id}/${var.artifact_repo_name}/${var.service_name}:latest"`.
+         - Set runtime environment variables:
+           `GOOGLE_GENAI_USE_VERTEXAI = "true"`,
+           `GOOGLE_CLOUD_PROJECT = var.project_id`,
+           `GOOGLE_CLOUD_LOCATION = "global"` (per Vertex AI requirements for Gemini 3.7 Flash).
+         - Configure compute limits (`cpu = var.cpu`, `memory = var.memory`, `cpu_idle = true`).
+         - Configure scaling limits (`min_instance_count = var.min_instances`, `max_instance_count = var.max_instances`).
+         - Set traffic allocation to 100% on latest revision (`TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST`).
+         - Set `lifecycle { ignore_changes = [client, client_version, template[0].containers[0].image] }` to allow fast CI/CD container updates via Cloud Build / `gcloud run deploy` without Terraform state drift.
+       * **Conditional Triggers & Integrations**:
+         - **Pub/Sub Trigger** (when `triggerType` / `triggerKind == "pubsub"`): Enable `pubsub.googleapis.com`, provision dedicated invoker service account with `roles/run.invoker` on Cloud Run, and create `google_pubsub_subscription` with `push_config` pointing to the Cloud Run service `/pubsub` (or `/apps/{app}/trigger/pubsub`) endpoint with `oidc_token { service_account_email = google_service_account.pubsub_invoker.email }`.
+         - **Eventarc Trigger** (when `triggerType` / `triggerKind == "eventarc"`): Enable `eventarc.googleapis.com`, provision dedicated invoker service account with `roles/run.invoker` on Cloud Run and `roles/eventarc.eventReceiver` on the project, and create `google_eventarc_trigger` matching the configured event routing to the Cloud Run service path.
+         - **Cloud Scheduler (Cron Trigger)** (when `triggerType` / `triggerKind == "scheduled"` or `"cron"`): Enable `cloudscheduler.googleapis.com`, provision scheduler invoker service account with `roles/run.invoker` on Cloud Run, and create `google_cloud_scheduler_job` with the configured cron schedule, timezone, and HTTP target pointing to the Cloud Run service URL with OIDC authentication.
+         - **Webhook Trigger** (when `triggerType` / `triggerKind == "webhook"`): When authentication is configured (`authType != "none"`), provision `google_secret_manager_secret` and secret version for the token/signature secret, grant `roles/secretmanager.secretAccessor` to the service account, and inject the secret into the Cloud Run container environment.
     - `variables.tf`: Complete Terraform input variable definitions:
       * `project_id`: (string, description = "Google Cloud Project ID")
       * `region`: (string, default = "us-central1", description = "Google Cloud Region")
@@ -179,37 +209,25 @@ You MUST output EVERY single one of the following files in the returned JSON arr
 1. `agent.py`: Complete Google ADK root_agent, sub-agents, and state flow.
 2. `server.py`: Production FastAPI server mounting ADK endpoints and health checks.
 3. `main.py`: Local CLI test runner using ADK Runner.
-4. `test_agent.py`: Pytest test suite validating all test scenarios against root_agent.
+4. `test_agent.py`: Pytest test suite validating all test scenarios against root_agent. When the workflow specification contains trigger nodes of type `tester` (or `triggerType == 'tester'`), inspect `config.testScenarios`, `config.testPrompts`, and `config.expectedOutput`. For EVERY defined test scenario (e.g. 'Test Case #1' with prompt 'Let\'s play a game.'), generate a dedicated pytest test function in `test_agent.py` that executes the scenario prompt against `root_agent` and asserts the expected output criteria.
 5. `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios.
 6. `evaluate.py`: Vertex AI Agent Evaluation script using vertexai.evaluation.EvalTask.
 7. `requirements.txt`: Complete pinned dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
-8. `Dockerfile`: Production Python 3.11 container definition.
-9. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building container, and deploying.
-10. `main.tf`: Complete Terraform configuration deploying google_cloud_run_v2_service, Artifact Registry, Service Account, IAM roles, and triggers.
-11. `variables.tf`: Input variable definitions for Terraform.
-12. `outputs.tf`: Output values (service_url, service_id, artifact_repo_id, service_account_email).
-13. `terraform.tfvars`: Default variable values for local initialization.
-14. `pyproject.toml`: Modern packaging metadata and dependencies.
-15. `.gitignore`: Git ignore patterns for Python, venv, and cache.
-16. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
-17. `README.md`: Architecture overview, local execution, and deployment instructions.
+8. `Dockerfile`: Clean production container definition using python:3.11-slim. Always enforce non-root execution by creating a dedicated non-privileged user (`RUN useradd -u 8888 -m appuser && chown -R appuser:appuser /app` and `USER 8888`).
+9. `.dockerignore`: Docker ignore patterns excluding `.git`, `.venv`, `__pycache__`, `*.pyc`, `.env*`, `dist`, and build artifacts.
+10. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building container, and deploying.
+11. `main.tf`: Complete Terraform configuration deploying google_cloud_run_v2_service, Artifact Registry, Service Account, IAM roles, and triggers.
+12. `variables.tf`: Input variable definitions for Terraform.
+13. `outputs.tf`: Output values (service_url, service_id, artifact_repo_id, service_account_email).
+14. `terraform.tfvars`: Default variable values for local initialization.
+15. `pyproject.toml`: Modern packaging metadata and dependencies.
+16. `.gitignore`: Git ignore patterns for Python, venv, and cache.
+17. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
+18. `README.md`: Architecture overview, local execution, and deployment instructions.
 18. Auxiliary files as needed:
     - `pydantic_models.py` (when structured output schemas or Pydantic models are used)
     - `tools/*.py` (when custom tools are defined)
 
----
-
-### OUTPUT FORMAT:
-Respond ONLY with a valid JSON array of file objects conforming to this exact schema (no markdown formatting, no backticks surrounding the JSON, only raw parseable JSON).
-DO NOT STOP or truncate after generating one or two files. Generate ALL files in the manifest above:
-
-[
-  {
-    "path": "<file name>",
-    "description": "<description>",
-    "content": "<file source code>"
-  }
-]
 
 ---
 
@@ -560,6 +578,236 @@ When a workflow node has `agentKind: "router"`, compile it into a custom `BaseAg
              yield event
      ```
    - Always route to the designated fallback branch (`isDefault: true`) if no explicit conditions match.
+
+### Synthesizer Agents (`agentKind: "synthesizer"`)
+
+When a workflow node has `agentKind: "synthesizer"` (or is configured with `synthesizerConfig` / `structuredOutput`):
+1. **Role & Architectural Principle**:
+   - Synthesizers aggregate outputs from preceding upstream agents stored in session state (`ctx.session.state`).
+   - **CRITICAL ZERO-TOOLS RULE**: In Vertex AI Gemini, `tools` CANNOT be combined with controlled generation (`output_schema`) on the same agent. Therefore, Synthesizer agents MUST ALWAYS have `tools=[]` (or omit the tools argument). Upstream worker/research agents use tools and write intermediate findings to session state (`output_key="..."`); the synthesizer agent reads from state and produces the final structured schema.
+2. **Pydantic v2 Schema Generation**:
+   - Define a Pydantic v2 `BaseModel` class at top-level before agent instantiation:
+     ```python
+     from pydantic import BaseModel, Field
+     from typing import List, Optional
+
+     class <SynthesizerName>Output(BaseModel):
+         summary: str = Field(..., description="Executive summary of aggregated findings")
+         key_points: List[str] = Field(default_factory=list, description="Key takeaways")
+         confidence_score: Optional[float] = Field(default=None, description="Confidence metric")
+     ```
+3. **Agent Instantiation**:
+   - Instantiate directly via `Agent`:
+     ```python
+     synthesizer_agent = Agent(
+         name="<synthesizer_identifier>",
+         model="gemini-3.7-flash",
+         instruction="Consolidate and synthesize upstream state outputs into the structured output schema.",
+         output_schema=<SynthesizerName>Output,
+         tools=[]
+     )
+     ```
+   - Wire as the final agent in a `SequentialAgent` pipeline following parallel or sequential worker agents.
+
+### Human-in-the-Loop (HITL) Approval Gate Agents (`agentKind: "hitl"`)
+
+When a node has `agentKind: "hitl"` (Approval Gate):
+1. **Role & Architectural Principle**:
+   - Implements a human checkpoint evaluating approval state before high-stakes operations (e.g. transfers, destructive changes, publishing).
+2. **Implementation as `BaseAgent` Subclass**:
+   ```python
+   class <GateName>ApprovalGate(BaseAgent):
+       """HITL approval gate evaluating human approval before dispatching downstream agents."""
+       def __init__(
+           self,
+           name: str,
+           approved_agent: Optional[Any] = None,
+           rejected_agent: Optional[Any] = None,
+           approval_condition: Optional[str] = None,
+           tools: Optional[List[Any]] = None,
+       ):
+           super().__init__(name=name)
+           self.approved_agent = approved_agent
+           self.rejected_agent = rejected_agent
+           self.approval_condition = approval_condition
+           self.tools = tools or []
+
+       async def _run_async_impl(
+           self, ctx: InvocationContext
+       ) -> AsyncGenerator[Event, None]:
+           state = ctx.session.state
+           is_approved = state.get("approved") is True or state.get("hitl_status") == "approved"
+
+           if not is_approved and self.approval_condition:
+               try:
+                   is_approved = bool(eval(self.approval_condition, {}, {"state": state}))
+               except Exception:
+                   is_approved = False
+
+           target = self.approved_agent if is_approved else self.rejected_agent
+           if target is not None:
+               async for event in target.run_async(ctx):
+                   yield event
+           else:
+               verdict_str = "APPROVED" if is_approved else "REJECTED"
+               yield Event(
+                   source=self.name,
+                   content=f"HITL Gate '{self.name}' resolved with {verdict_str}, proceeding with workflow."
+               )
+   ```
+3. **Instantiation**:
+   - Instantiate with `approved_agent` and `rejected_agent` targeting candidate agents.
+
+### Fallback & Circuit Breaker Agents (`agentKind: "fallback"`)
+
+When a node has `agentKind: "fallback"`:
+1. **Role & Resilience Strategy**:
+   - Wraps a primary agent execution with automated error interception. If the primary agent throws an exception (e.g. rate limits, timeout, API failures), execution automatically switches to a fallback agent without failing the workflow.
+2. **Implementation as `BaseAgent` Subclass**:
+   ```python
+   class <Name>CircuitBreaker(BaseAgent):
+       """Circuit breaker and resilience fallback wrapper."""
+       def __init__(
+           self,
+           name: str,
+           primary_agent: Optional[Any] = None,
+           fallback_agent: Optional[Any] = None,
+           max_retries: int = 3,
+           tools: Optional[List[Any]] = None,
+       ):
+           super().__init__(name=name)
+           self.primary_agent = primary_agent
+           self.fallback_agent = fallback_agent
+           self.max_retries = max_retries
+           self.tools = tools or []
+
+       async def _run_async_impl(
+           self, ctx: InvocationContext
+       ) -> AsyncGenerator[Event, None]:
+           try:
+               if self.primary_agent is not None:
+                   async for event in self.primary_agent.run_async(ctx):
+                       yield event
+               else:
+                   raise RuntimeError("No primary agent configured for circuit breaker.")
+           except Exception as exc:
+               logger.warning(f"Circuit Breaker '{self.name}' caught primary failure: {exc}. Switching to fallback agent.")
+               if self.fallback_agent is not None:
+                   async for event in self.fallback_agent.run_async(ctx):
+                       yield event
+               else:
+                   yield Event(
+                       source=self.name,
+                       content=f"Primary agent failed ({exc}) and no fallback agent was configured."
+                   )
+   ```
+
+### Guardrail & Security Shield Agents (`agentKind: "guardrail"`)
+
+When a node has `agentKind: "guardrail"`:
+1. **Role & Safety Gating**:
+   - Inspects user input or agent intermediate outputs against security policies (prompt injection, PII leak, toxic content, forbidden topics) before routing to the protected core agent or a blocker agent.
+2. **Implementation as `BaseAgent` Subclass**:
+   ```python
+   class <Name>GuardrailShield(BaseAgent):
+       """Security policy filter and input/output guardrail."""
+       def __init__(
+           self,
+           name: str,
+           pass_agent: Optional[Any] = None,
+           block_agent: Optional[Any] = None,
+           policy_rules: Optional[List[str]] = None,
+           tools: Optional[List[Any]] = None,
+       ):
+           super().__init__(name=name)
+           self.pass_agent = pass_agent
+           self.block_agent = block_agent
+           self.policy_rules = policy_rules or []
+           self.tools = tools or []
+
+       async def _run_async_impl(
+           self, ctx: InvocationContext
+       ) -> AsyncGenerator[Event, None]:
+           passed = True
+           # If security check fails: passed = False
+           target = self.pass_agent if passed else self.block_agent
+           if target is not None:
+               async for event in target.run_async(ctx):
+                   yield event
+           elif not passed:
+               yield Event(
+                   source=self.name,
+                   content="Request blocked by security guardrail policy."
+               )
+   ```
+
+### Evaluator-Optimizer Loop Pattern (`subAgentPattern: "loop"`)
+
+When an agent orchestrates sub-agents with `subAgentPattern: "loop"`:
+1. **Topology**:
+   - Uses `LoopAgent(name="...", sub_agents=[generator_agent, evaluator_agent], max_iterations=N)` from `google.adk.agents`.
+   - The generator agent creates or refines a draft and writes to state (`output_key="draft"`).
+   - The evaluator agent audits the draft against acceptance criteria:
+     * If criteria pass, yields `Event(author=self.name, actions=EventActions(escalate=True))` to break the loop early.
+     * If criteria fail, writes critique feedback to `output_key="evaluation"` / `output_key="critique"` so the generator can refine on the next iteration.
+
+### Multi-Agent Debate & Consensus Pattern (`subAgentPattern: "debate"`, `debateConfig`)
+
+When a workflow implements a debate topology:
+1. **Topology**:
+   - Employs a structured debate pattern:
+     * **Proponent & Opponent Agents**: Present contrasting perspectives or adversarial arguments on the topic.
+     * **Consensus Judge Agent**: Synthesizes the debate, evaluates argument validity, and produces a final balanced verdict.
+2. **Implementation in ADK**:
+   - Orchestrate with `SequentialAgent`:
+     ```python
+     debate_stage = ParallelAgent(
+         name="debate_perspectives",
+         sub_agents=[proponent_agent, opponent_agent]
+     )
+     consensus_judge = Agent(
+         name="consensus_judge",
+         model="gemini-3.7-flash",
+         instruction="Review arguments from proponent and opponent in session state, score their reasoning, and issue a balanced consensus verdict.",
+         output_schema=ConsensusVerdict,
+         tools=[]
+     )
+     debate_workflow = SequentialAgent(
+         name="debate_system",
+         sub_agents=[debate_stage, consensus_judge]
+     )
+     ```
+
+### Review & Critique Triad Pattern (`subAgentPattern: "review_critique"`)
+
+When a workflow implements a review & critique triad:
+1. **Topology**:
+   - Three-stage sequential pipeline (`SequentialAgent(sub_agents=[drafter_agent, critic_agent, reviser_agent])`):
+     1. **Drafter**: Generates baseline content and writes to `output_key="initial_draft"`.
+     2. **Critic**: Analyzes the draft for errors and improvements, writing to `output_key="critique"`.
+     3. **Reviser / Synthesizer**: Ingests both `{initial_draft}` and `{critique}` from session state and produces the final polished deliverable: `output_key="final_output"`.
+
+### Agent-as-a-Tool Pattern (`builtin_agent_as_tool` / `agent_as_tool`)
+
+When an agent exposes another agent as a callable function tool:
+1. **ADK Implementation**:
+   - Wrap the sub-agent execution in a Python function tool:
+     ```python
+     def researcher_agent_tool(query: str) -> str:
+         """Delegates research tasks to the specialized research sub-agent."""
+         runner = Runner(agent=specialized_researcher)
+         result = runner.run(query)
+         return str(result)
+     ```
+   - Pass the tool function into the calling agent:
+     ```python
+     coordinator_agent = Agent(
+         name="coordinator_agent",
+         model="gemini-3.7-flash",
+         instruction="Decompose user requests and delegate specialized research tasks using researcher_agent_tool.",
+         tools=[researcher_agent_tool]
+     )
+     ```
 
 ---
 

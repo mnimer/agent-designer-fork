@@ -24,7 +24,7 @@ export type FrameworkTarget = 'google-adk' | 'langgraph' | 'google_adk';
 export type LanguageType = 'python' | 'typescript';
 export type LanguageTarget = 'python' | 'typescript';
 
-export type AgentKind = 'standard' | 'a2a' | 'router';
+export type AgentKind = 'standard' | 'a2a' | 'router' | 'synthesizer' | 'hitl' | 'fallback' | 'guardrail';
 
 export type DelegationPattern = 
   | 'sequential' 
@@ -393,17 +393,35 @@ export interface ToolBinding {
 
 export type AgentMemoryType = 
   | 'none'
+  | 'in_memory'
   | 'langgraph_in_memory'
-  | 'postgres'
-  | 'redis'
   | 'firestore'
+  | 'postgres'
+  | 'cloud_sql'
+  | 'spanner'
+  | 'redis'
   | 'sqlite'
   | 'window_buffer'
   | 'summary_buffer'
   | 'vector_rag'
   | 'entity_fact';
 
-export type MemoryType = 'none' | 'buffer' | 'firestore' | 'redis' | 'postgres' | 'sqlite' | 'vector_rag' | 'langgraph_in_memory' | string;
+export type MemoryType = 
+  | 'none' 
+  | 'in_memory'
+  | 'buffer' 
+  | 'firestore' 
+  | 'redis' 
+  | 'postgres' 
+  | 'cloud_sql'
+  | 'spanner'
+  | 'sqlite' 
+  | 'window_buffer'
+  | 'summary_buffer'
+  | 'vector_rag' 
+  | 'entity_fact'
+  | 'langgraph_in_memory' 
+  | string;
 
 export interface AgentMemoryConfig {
   type: AgentMemoryType | MemoryType;
@@ -418,6 +436,16 @@ export interface AgentMemoryConfig {
   tableName?: string;
   ttlSeconds?: number;
   collectionName?: string;
+  databaseId?: string;
+  projectId?: string;
+  instanceConnectionName?: string;
+  databaseName?: string;
+  databaseUrlSecret?: string;
+  instanceId?: string;
+  // Cloud Memorystore (Redis / Valkey) parameters
+  redisHost?: string;
+  redisPort?: number;
+  authSecretName?: string;
   sqlitePath?: string;
   // Vector / Semantic RAG settings
   vectorProvider?: 'pgvector' | 'chroma' | 'pinecone' | 'qdrant' | 'weaviate';
@@ -427,6 +455,7 @@ export interface AgentMemoryConfig {
   // Entity / Knowledge Fact settings
   userIdKey?: string;
   extractUserFacts?: boolean;
+  [key: string]: any;
 }
 
 // ============================================================================
@@ -525,6 +554,63 @@ export interface A2AConfig {
 
 export type A2AAgentConfig = A2AConfig;
 
+export interface NormalizedA2AConfig {
+  endpoint: string;
+  protocolVersion: string;
+  agentCardUrl: string;
+  authType: 'bearer' | 'apiKey' | 'api_key' | 'oauth2' | 'iam' | 'google_iam';
+  authSecretKey?: string;
+  headerName: string;
+  timeoutSeconds: number;
+  maxRetries: number;
+  customHeaders: Record<string, string>;
+  capabilities: string[];
+  skills?: any[];
+  iconUrl?: string;
+  preferredTransport?: string;
+  delegationPrompt?: string;
+}
+
+/**
+ * Normalizes varied visual designer A2A config shapes into a uniform internal representation.
+ *
+ * @param config Raw A2A config from canvas or inspector
+ * @returns Standardized NormalizedA2AConfig
+ */
+export function normalizeA2AConfig(config?: Partial<A2AAgentConfig> & Record<string, any>): NormalizedA2AConfig {
+  const endpoint = config?.endpoint || config?.endpointUrl || config?.url || 'https://api.agent-network.internal/a2a/v1';
+  const protocolVersion = config?.protocolVersion || config?.version || '1.0.0-a2a';
+  const agentCardUrl = config?.agentCardUrl || '/.well-known/agent-card.json';
+  const authType = (config?.authType as any) || (endpoint.includes('googleapis.com') ? 'google_iam' : 'bearer');
+  const authSecretKey = config?.authTokenSecret || config?.authSecretKey || 'A2A_AGENT_AUTH_TOKEN';
+  const headerName = config?.headerName || 'X-API-Key';
+  const timeoutSeconds = config?.timeoutSeconds ?? 30;
+  const maxRetries = config?.maxRetries ?? 3;
+  const customHeaders = config?.customHeaders || {};
+  const capabilities = Array.isArray(config?.capabilities) ? config.capabilities : [];
+  const skills = Array.isArray(config?.skills) ? config.skills : [];
+  const iconUrl = config?.iconUrl;
+  const preferredTransport = config?.preferredTransport || 'INTERNAL_HTTP+JSON';
+  const delegationPrompt = config?.delegationPrompt;
+
+  return {
+    endpoint,
+    protocolVersion,
+    agentCardUrl,
+    authType,
+    authSecretKey,
+    headerName,
+    timeoutSeconds,
+    maxRetries,
+    customHeaders,
+    capabilities,
+    skills,
+    iconUrl,
+    preferredTransport,
+    delegationPrompt,
+  };
+}
+
 // ============================================================================
 // 9. Structured Output Schema Settings
 // ============================================================================
@@ -579,6 +665,49 @@ export interface DebateConfig {
 // 11. Orchestration Configurations
 // ============================================================================
 
+export interface SynthesizerConfig {
+  inputStateKeys?: string[];
+  reductionStrategy?: 'concatenate' | 'merge_json' | 'summarize';
+  outputSchemaName?: string;
+}
+
+export interface HitlConfig {
+  approvalCondition?: string;
+  timeoutHours?: number;
+  autoRejectOnTimeout?: boolean;
+  notificationPayload?: string;
+  approverRoles?: string[];
+  requestPrompt?: string;
+  approvedAgentId?: string;
+  rejectedAgentId?: string;
+}
+
+export interface FallbackConfig {
+  maxRetries?: number;
+  retryDelaySeconds?: number;
+  caughtErrorCodes?: string[];
+  fallbackStrategy?: 'switch_agent' | 'return_static' | 'retry_with_backoff';
+  primaryTargetAgentId?: string;
+  fallbackTargetAgentId?: string;
+  staticFallbackMessage?: string;
+}
+
+export interface GuardrailConfig {
+  direction?: 'ingress' | 'egress' | 'both';
+  safetyPolicies?: ('pii' | 'prompt_injection' | 'toxicity' | 'hallucination' | 'secrets')[];
+  regexPatterns?: string[];
+  blockedKeywords?: string[];
+  actionOnViolation?: 'block' | 'redact' | 'warn';
+  customViolationMessage?: string;
+  passTargetAgentId?: string;
+  blockTargetAgentId?: string;
+}
+
+/**
+ * SubAgentRef - Reference to a child delegated agent
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
 export interface SubAgentRef {
   agentId: string;
   name: string;
@@ -617,6 +746,10 @@ export interface AgentNodeData {
   a2aConfig?: A2AConfig;
   routerConfig?: RouterConfig;
   debateConfig?: DebateConfig;
+  synthesizerConfig?: SynthesizerConfig;
+  hitlConfig?: HitlConfig;
+  fallbackConfig?: FallbackConfig;
+  guardrailConfig?: GuardrailConfig;
   structuredOutput?: StructuredOutputSchema;
   structuredOutputSchema?: StructuredOutputSchema; // Compatibility alias
   standardConfig?: any; // Compatibility alias
@@ -804,6 +937,15 @@ export interface AgentFileTab {
   sampleId?: string;
 }
 
+/**
+ * Definition of a pre-configured sample workflow blueprint (.agent)
+ * displayed in the Samples gallery and instantiated onto the canvas.
+ *
+ * Architectural Decisions:
+ * - Author: Mike Nimer <mikenimer@google.com>
+ * - Added optional `readmeContent` property so sample cards in the palette can
+ *   open an Information dialog displaying the full README description.
+ */
 export interface SampleWorkflowDefinition {
   id: string;
   name: string;
@@ -823,6 +965,7 @@ export interface SampleWorkflowDefinition {
   deploymentConfig?: Partial<DeploymentConfig>;
   testPrompts?: TestPrompt[];
   sourceFilePath?: string;
+  readmeContent?: string;
 }
 
 export type PatternType = 

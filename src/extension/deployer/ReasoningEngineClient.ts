@@ -16,6 +16,7 @@ import { GcloudDetector } from './GcloudDetector';
 import { ArtifactStager } from './ArtifactStager';
 import { AgentEngineTestOptions, AgentEngineTestResult } from './DeployTypes';
 import { WebviewBridge } from '../WebviewBridge';
+import { execFileAsync } from '../asyncUtils';
 
 export class ReasoningEngineClient {
   constructor(
@@ -69,7 +70,6 @@ except Exception as e:
 
       await fsPromises.writeFile(tempScriptPath, scriptContent, 'utf8');
 
-      const { execFileAsync } = require('../asyncUtils');
       const { stdout } = await execFileAsync(pythonCmd, [tempScriptPath, projectId, region, displayName], {
         timeoutMs: 8000,
       });

@@ -57,7 +57,10 @@ import {
   CornerDownRight,
   Scale,
   Braces,
-  AlertCircle
+  AlertCircle,
+  ShieldAlert,
+  LifeBuoy,
+  ShieldCheck
 } from 'lucide-react';
 import { 
   AgentData, 
@@ -145,7 +148,15 @@ const getToolIcon = (type: ToolDefinition['type']) => {
   }
 };
 
-const getThemeStyles = (colorTheme?: string, isA2A?: boolean, isRouter?: boolean) => {
+const getThemeStyles = (
+  colorTheme?: string, 
+  isA2A?: boolean, 
+  isRouter?: boolean,
+  isSynthesizer?: boolean,
+  isHITL?: boolean,
+  isFallback?: boolean,
+  isGuardrail?: boolean
+) => {
   // NOTE: A2A nodes use the cyan palette with Globe2 iconography per TASK-116
   if (isA2A) {
     return {
@@ -168,7 +179,59 @@ const getThemeStyles = (colorTheme?: string, isA2A?: boolean, isRouter?: boolean
     };
   }
 
+  // NOTE: Synthesizer nodes use the emerald palette with Layers iconography per TASK-187
+  if (isSynthesizer) {
+    return {
+      border: 'border-emerald-500/50 hover:border-emerald-400 shadow-emerald-950/30',
+      header: 'bg-[#161b22] text-emerald-300 border-[#30363d]',
+      badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+      accent: 'text-emerald-400',
+      dot: 'bg-emerald-500',
+    };
+  }
+
+  // NOTE: HITL approval nodes use the amber palette with ShieldAlert iconography per TASK-188
+  if (isHITL) {
+    return {
+      border: 'border-amber-500/50 hover:border-amber-400 shadow-amber-950/30',
+      header: 'bg-[#161b22] text-amber-300 border-[#30363d]',
+      badge: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+      accent: 'text-amber-400',
+      dot: 'bg-amber-500',
+    };
+  }
+
+  // NOTE: Fallback circuit breaker nodes use the rose palette with LifeBuoy iconography per TASK-189
+  if (isFallback) {
+    return {
+      border: 'border-rose-500/50 hover:border-rose-400 shadow-rose-950/30',
+      header: 'bg-[#161b22] text-rose-300 border-[#30363d]',
+      badge: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+      accent: 'text-rose-400',
+      dot: 'bg-rose-500',
+    };
+  }
+
+  // NOTE: Guardrail shield nodes use the teal palette with ShieldCheck iconography per TASK-190
+  if (isGuardrail) {
+    return {
+      border: 'border-teal-500/50 hover:border-teal-400 shadow-teal-950/30',
+      header: 'bg-[#161b22] text-teal-300 border-[#30363d]',
+      badge: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
+      accent: 'text-teal-400',
+      dot: 'bg-teal-500',
+    };
+  }
+
   switch (colorTheme) {
+    case 'teal':
+      return {
+        border: 'border-teal-500/50 hover:border-teal-400 shadow-teal-950/30',
+        header: 'bg-[#161b22] text-teal-300 border-[#30363d]',
+        badge: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
+        accent: 'text-teal-400',
+        dot: 'bg-teal-500',
+      };
     case 'purple':
       return {
         border: 'border-purple-500/50 hover:border-purple-400 shadow-purple-950/30',
@@ -260,7 +323,12 @@ const PATTERN_OPTIONS = ADK_DELEGATION_PATTERNS;
 export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: AgentData }) => {
   const isA2A = data.agentKind === 'a2a';
   const isRouter = data.agentKind === 'router';
-  const theme = getThemeStyles(data?.colorTheme, isA2A, isRouter);
+  const isSynthesizer = data.agentKind === 'synthesizer';
+  const isHITL = data.agentKind === 'hitl';
+  const isFallback = data.agentKind === 'fallback';
+  const isGuardrail = data.agentKind === 'guardrail';
+
+  const theme = getThemeStyles(data?.colorTheme, isA2A, isRouter, isSynthesizer, isHITL, isFallback, isGuardrail);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [isToolDragOver, setIsToolDragOver] = useState(false);
@@ -387,7 +455,19 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
       <div className={`flex items-center justify-between px-3.5 py-2.5 rounded-t-xl border-b ${theme.header}`}>
         <div className="flex items-center gap-2 min-w-0">
           <div className={`p-1.5 rounded-md bg-[#0d1117] border shrink-0 ${
-            isRouter ? 'border-purple-500/40' : isA2A ? 'border-cyan-500/40' : 'border-[#30363d]'
+            isRouter 
+              ? 'border-purple-500/40' 
+              : isA2A 
+              ? 'border-cyan-500/40' 
+              : isSynthesizer 
+              ? 'border-emerald-500/40' 
+              : isHITL 
+              ? 'border-amber-500/40' 
+              : isFallback 
+              ? 'border-rose-500/40' 
+              : isGuardrail 
+              ? 'border-teal-500/40' 
+              : 'border-[#30363d]'
           }`}>
             {isRouter ? (
               <GitBranch className="w-4 h-4 text-purple-400" />
@@ -397,6 +477,14 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
               ) : (
                 <Globe2 className="w-4 h-4 text-cyan-400" />
               )
+            ) : isSynthesizer ? (
+              <Layers className="w-4 h-4 text-emerald-400" />
+            ) : isHITL ? (
+              <ShieldAlert className="w-4 h-4 text-amber-400" />
+            ) : isFallback ? (
+              <LifeBuoy className="w-4 h-4 text-rose-400" />
+            ) : isGuardrail ? (
+              <ShieldCheck className="w-4 h-4 text-teal-400" />
             ) : (
               <Bot className={`w-4 h-4 ${theme.accent}`} />
             )}
@@ -430,7 +518,27 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
               ) : isA2A ? (
                 <>
                   <Cpu className="w-2.5 h-2.5 shrink-0 text-cyan-400" />
-                  <span className="truncate">{data.model || 'gemini-3.8-flash'} • A2A Client</span>
+                  <span className="truncate">{data.model || 'gemini-3.7-flash'} • A2A Client</span>
+                </>
+              ) : isSynthesizer ? (
+                <>
+                  <Layers className="w-2.5 h-2.5 shrink-0 text-emerald-400" />
+                  <span className="truncate">{data.model || 'gemini-3.7-flash'} • Schema Reducer</span>
+                </>
+              ) : isHITL ? (
+                <>
+                  <ShieldAlert className="w-2.5 h-2.5 shrink-0 text-amber-400" />
+                  <span className="truncate">{data.model || 'gemini-3.7-flash'} • Gatekeeper ({data.hitlConfig?.timeoutHours || 24}h)</span>
+                </>
+              ) : isFallback ? (
+                <>
+                  <LifeBuoy className="w-2.5 h-2.5 shrink-0 text-rose-400" />
+                  <span className="truncate">{data.model || 'gemini-3.7-flash'} • Circuit Breaker ({data.fallbackConfig?.maxRetries || 3}x)</span>
+                </>
+              ) : isGuardrail ? (
+                <>
+                  <ShieldCheck className="w-2.5 h-2.5 shrink-0 text-teal-400" />
+                  <span className="truncate">{data.model || 'gemini-3.7-flash'} • Shield ({data.guardrailConfig?.direction || 'ingress'})</span>
                 </>
               ) : (
                 <>
@@ -522,39 +630,48 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                 {(data.routerConfig?.branches || [
                   { id: 'branch_if_1', label: 'If: Condition Met', conditionExpression: "state.status == 'passed'" },
                   { id: 'branch_else_2', label: 'Else: Fallback', conditionExpression: "default", isDefault: true }
-                ]).map((branch, idx) => (
-                  <div
-                    key={branch.id || idx}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      data.onEdit?.(id);
-                    }}
-                    className={`flex items-center justify-between p-1.5 rounded bg-[#0d1117] border cursor-pointer transition-colors ${
-                      branch.targetAgentId 
-                        ? 'border-purple-500/60 bg-purple-950/20 hover:border-purple-400' 
-                        : 'border-[#30363d] hover:border-purple-500/40'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-purple-500/20 text-purple-300 font-bold">
-                        #{idx + 1}
-                      </span>
-                      <span className="text-[10px] font-bold text-gray-200 truncate max-w-[110px]">
-                        {branch.label}
-                      </span>
-                      {(branch.isDefault || branch.isDefaultFallback) && (
-                        <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                          Else
+                ]).map((branch, idx) => {
+                  const targetSub = data.subAgents?.find((s) => s.agentId === branch.targetAgentId);
+                  return (
+                    <div
+                      key={branch.id || idx}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        data.onEdit?.(id);
+                      }}
+                      className={`flex items-center justify-between p-1.5 rounded bg-[#0d1117] border cursor-pointer transition-colors ${
+                        branch.targetAgentId 
+                          ? 'border-purple-500/60 bg-purple-950/20 hover:border-purple-400' 
+                          : 'border-[#30363d] hover:border-purple-500/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-purple-500/20 text-purple-300 font-bold">
+                          #{idx + 1}
                         </span>
-                      )}
+                        <span className="text-[10px] font-bold text-gray-200 truncate max-w-[110px]">
+                          {branch.label}
+                        </span>
+                        {(branch.isDefault || branch.isDefaultFallback) && (
+                          <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            Else
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {branch.targetAgentId ? (
+                          <span className="text-[9px] font-mono text-purple-200 bg-purple-900/40 px-1.5 py-0.2 rounded border border-purple-500/40 truncate max-w-[100px]">
+                            → {targetSub?.name || 'Agent'}
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-mono text-purple-300 truncate max-w-[90px] bg-[#161b22] px-1 py-0.2 rounded border border-[#30363d]">
+                            {branch.conditionExpression || branch.condition || (branch.isDefault ? 'default' : 'unassigned')}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-[9px] font-mono text-purple-300 truncate max-w-[90px] bg-[#161b22] px-1 py-0.2 rounded border border-[#30363d]">
-                        {branch.conditionExpression || branch.condition || (branch.isDefault ? 'default' : 'unassigned')}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Connector count hint */}
@@ -564,6 +681,317 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                   <span>{data.routerConfig?.branches?.length || 2} bottom connectors</span>
                 </span>
                 <span className="text-gray-400">1 handle per branch</span>
+              </div>
+            </div>
+          </div>
+        ) : isHITL ? (
+          /* Human-in-the-Loop (Approval Gate) Visual Body */
+          <div className="space-y-2.5">
+            {/* Review Policy Card */}
+            <div className="bg-[#0d1117] p-2.5 rounded-lg border border-amber-500/30">
+              <div className="text-[10px] uppercase font-bold tracking-wider text-amber-400 mb-0.5 flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <ShieldAlert className="w-2.5 h-2.5 text-amber-400" />
+                  <span>Review Policy</span>
+                </span>
+                <span className="text-[9px] text-amber-300 font-mono px-1 py-0.2 rounded bg-amber-500/20">
+                  {data.hitlConfig?.approvalType === 'multi_approver'
+                    ? `Multi-Sig (${data.hitlConfig?.minApprovers || 2})`
+                    : 'Single Approver'}
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-300 line-clamp-2 leading-relaxed">
+                {data.systemPrompt || data.role || 'Requires explicit human authorization to continue.'}
+              </p>
+            </div>
+
+            {/* Outbound Decision Paths */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1 text-[10px] font-bold tracking-wider text-gray-400 uppercase">
+                  <GitBranch className="w-3 h-3 text-amber-400" />
+                  <span>Outbound Decision Paths (2)</span>
+                </div>
+                {data.onEdit && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      data.onEdit?.(id);
+                    }}
+                    className="flex items-center gap-0.5 text-[10px] text-amber-400 hover:text-amber-300 hover:underline cursor-pointer font-medium"
+                  >
+                    Configure →
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5">
+                {/* Approved Path Card */}
+                {(() => {
+                  const approvedSub = data.subAgents?.find((s) => s.agentId === data.hitlConfig?.approvedTargetAgentId);
+                  return (
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        data.onEdit?.(id);
+                      }}
+                      className={`p-2 rounded bg-[#0d1117] border cursor-pointer transition-colors ${
+                        data.hitlConfig?.approvedTargetAgentId
+                          ? 'border-emerald-500/60 bg-emerald-950/20 hover:border-emerald-400'
+                          : 'border-[#30363d] hover:border-emerald-500/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-300 uppercase tracking-wider mb-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                        <span>Approved</span>
+                      </div>
+                      <div className="text-[10px] font-mono text-gray-200 truncate">
+                        {approvedSub ? `→ ${approvedSub.name}` : <span className="text-gray-500 italic">Drag to connect</span>}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Rejected Path Card */}
+                {(() => {
+                  const rejectedSub = data.subAgents?.find((s) => s.agentId === data.hitlConfig?.rejectedTargetAgentId);
+                  return (
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        data.onEdit?.(id);
+                      }}
+                      className={`p-2 rounded bg-[#0d1117] border cursor-pointer transition-colors ${
+                        data.hitlConfig?.rejectedTargetAgentId
+                          ? 'border-rose-500/60 bg-rose-950/20 hover:border-rose-400'
+                          : 'border-[#30363d] hover:border-rose-500/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1 text-[9px] font-bold text-rose-300 uppercase tracking-wider mb-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                        <span>Rejected</span>
+                      </div>
+                      <div className="text-[10px] font-mono text-gray-200 truncate">
+                        {rejectedSub ? `→ ${rejectedSub.name}` : <span className="text-gray-500 italic">Drag to connect</span>}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Connector hint */}
+              <div className="pt-1 text-[9px] text-amber-400/80 font-mono flex items-center justify-between border-t border-amber-500/20">
+                <span className="flex items-center gap-1">
+                  <CornerDownRight className="w-2.5 h-2.5 text-amber-400" />
+                  <span>2 bottom connectors</span>
+                </span>
+                <span className="text-gray-400">Left: Approved • Right: Rejected</span>
+              </div>
+            </div>
+          </div>
+        ) : isFallback ? (
+          /* Fallback Circuit Breaker Visual Body */
+          <div className="space-y-2.5">
+            {/* Resilience Policy Card */}
+            <div className="bg-[#0d1117] p-2.5 rounded-lg border border-rose-500/30">
+              <div className="text-[10px] uppercase font-bold tracking-wider text-rose-400 mb-0.5 flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <LifeBuoy className="w-2.5 h-2.5 text-rose-400" />
+                  <span>Circuit Breaker</span>
+                </span>
+                <span className="text-[9px] text-rose-300 font-mono px-1 py-0.2 rounded bg-rose-500/20">
+                  {data.fallbackConfig?.failureThreshold || 3} max fails
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-300 line-clamp-2 leading-relaxed">
+                {data.systemPrompt || data.role || 'Routes to secondary fallback upon execution error or timeout.'}
+              </p>
+            </div>
+
+            {/* Outbound Paths */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1 text-[10px] font-bold tracking-wider text-gray-400 uppercase">
+                  <GitBranch className="w-3 h-3 text-rose-400" />
+                  <span>Execution Paths (2)</span>
+                </div>
+                {data.onEdit && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      data.onEdit?.(id);
+                    }}
+                    className="flex items-center gap-0.5 text-[10px] text-rose-400 hover:text-rose-300 hover:underline cursor-pointer font-medium"
+                  >
+                    Configure →
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5">
+                {/* Primary Path Card */}
+                {(() => {
+                  const primarySub = data.subAgents?.find((s) => s.agentId === data.fallbackConfig?.primaryTargetAgentId);
+                  return (
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        data.onEdit?.(id);
+                      }}
+                      className={`p-2 rounded bg-[#0d1117] border cursor-pointer transition-colors ${
+                        data.fallbackConfig?.primaryTargetAgentId
+                          ? 'border-blue-500/60 bg-blue-950/20 hover:border-blue-400'
+                          : 'border-[#30363d] hover:border-blue-500/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1 text-[9px] font-bold text-blue-300 uppercase tracking-wider mb-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                        <span>Primary Path</span>
+                      </div>
+                      <div className="text-[10px] font-mono text-gray-200 truncate">
+                        {primarySub ? `→ ${primarySub.name}` : <span className="text-gray-500 italic">Drag to connect</span>}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Fallback Path Card */}
+                {(() => {
+                  const fallbackSub = data.subAgents?.find((s) => s.agentId === data.fallbackConfig?.fallbackTargetAgentId);
+                  return (
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        data.onEdit?.(id);
+                      }}
+                      className={`p-2 rounded bg-[#0d1117] border cursor-pointer transition-colors ${
+                        data.fallbackConfig?.fallbackTargetAgentId
+                          ? 'border-rose-500/60 bg-rose-950/20 hover:border-rose-400'
+                          : 'border-[#30363d] hover:border-rose-500/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1 text-[9px] font-bold text-rose-300 uppercase tracking-wider mb-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                        <span>Fallback / Catch</span>
+                      </div>
+                      <div className="text-[10px] font-mono text-gray-200 truncate">
+                        {fallbackSub ? `→ ${fallbackSub.name}` : <span className="text-gray-500 italic">Drag to connect</span>}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Connector hint */}
+              <div className="pt-1 text-[9px] text-rose-400/80 font-mono flex items-center justify-between border-t border-rose-500/20">
+                <span className="flex items-center gap-1">
+                  <CornerDownRight className="w-2.5 h-2.5 text-rose-400" />
+                  <span>2 bottom connectors</span>
+                </span>
+                <span className="text-gray-400">Left: Primary • Right: Fallback</span>
+              </div>
+            </div>
+          </div>
+        ) : isGuardrail ? (
+          /* Guardrail Shield Visual Body */
+          <div className="space-y-2.5">
+            {/* Policy Moderation Card */}
+            <div className="bg-[#0d1117] p-2.5 rounded-lg border border-teal-500/30">
+              <div className="text-[10px] uppercase font-bold tracking-wider text-teal-400 mb-0.5 flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <ShieldCheck className="w-2.5 h-2.5 text-teal-400" />
+                  <span>Safety Policy</span>
+                </span>
+                <span className="text-[9px] text-teal-300 font-mono px-1 py-0.2 rounded bg-teal-500/20">
+                  {data.guardrailConfig?.strictness ? `${data.guardrailConfig.strictness} strictness` : 'Standard'}
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-300 line-clamp-2 leading-relaxed">
+                {data.systemPrompt || data.role || 'Evaluates content against safety policies and compliance checks.'}
+              </p>
+            </div>
+
+            {/* Outbound Paths */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1 text-[10px] font-bold tracking-wider text-gray-400 uppercase">
+                  <GitBranch className="w-3 h-3 text-teal-400" />
+                  <span>Safety Paths (2)</span>
+                </div>
+                {data.onEdit && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      data.onEdit?.(id);
+                    }}
+                    className="flex items-center gap-0.5 text-[10px] text-teal-400 hover:text-teal-300 hover:underline cursor-pointer font-medium"
+                  >
+                    Configure →
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5">
+                {/* Pass Path Card */}
+                {(() => {
+                  const passSub = data.subAgents?.find((s) => s.agentId === data.guardrailConfig?.passTargetAgentId);
+                  return (
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        data.onEdit?.(id);
+                      }}
+                      className={`p-2 rounded bg-[#0d1117] border cursor-pointer transition-colors ${
+                        data.guardrailConfig?.passTargetAgentId
+                          ? 'border-teal-500/60 bg-teal-950/20 hover:border-teal-400'
+                          : 'border-[#30363d] hover:border-teal-500/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1 text-[9px] font-bold text-teal-300 uppercase tracking-wider mb-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-teal-400"></span>
+                        <span>Pass / Safe</span>
+                      </div>
+                      <div className="text-[10px] font-mono text-gray-200 truncate">
+                        {passSub ? `→ ${passSub.name}` : <span className="text-gray-500 italic">Drag to connect</span>}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Block Path Card */}
+                {(() => {
+                  const blockSub = data.subAgents?.find((s) => s.agentId === data.guardrailConfig?.blockTargetAgentId);
+                  return (
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        data.onEdit?.(id);
+                      }}
+                      className={`p-2 rounded bg-[#0d1117] border cursor-pointer transition-colors ${
+                        data.guardrailConfig?.blockTargetAgentId
+                          ? 'border-rose-500/60 bg-rose-950/20 hover:border-rose-400'
+                          : 'border-[#30363d] hover:border-rose-500/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1 text-[9px] font-bold text-rose-300 uppercase tracking-wider mb-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                        <span>Block / Flagged</span>
+                      </div>
+                      <div className="text-[10px] font-mono text-gray-200 truncate">
+                        {blockSub ? `→ ${blockSub.name}` : <span className="text-gray-500 italic">Drag to connect</span>}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Connector hint */}
+              <div className="pt-1 text-[9px] text-teal-400/80 font-mono flex items-center justify-between border-t border-teal-500/20">
+                <span className="flex items-center gap-1">
+                  <CornerDownRight className="w-2.5 h-2.5 text-teal-400" />
+                  <span>2 bottom connectors</span>
+                </span>
+                <span className="text-gray-400">Left: Pass • Right: Block</span>
               </div>
             </div>
           </div>
@@ -668,7 +1096,7 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
               </div>
             )}
 
-            {/* Structured Output Schema Preview Card */}
+            {/* Structured Output Schema Preview (if enabled) */}
             {data.structuredOutput?.enabled && (
               <div 
                 onClick={(e) => {
@@ -812,25 +1240,29 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                     <Users className="w-3 h-3 text-purple-400" />
                     <span>Sub-Agents ({subAgents.length})</span>
                   </div>
-
-                  {/* Pattern Dropdown above the list */}
-                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                    <select
-                      value={currentPattern}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        data.onUpdateSubAgentPattern?.(id, e.target.value as DelegationPattern);
-                      }}
-                      className="text-[10px] bg-[#0d1117] text-purple-300 border border-purple-500/30 rounded px-1.5 py-0.5 focus:outline-none focus:border-purple-400 font-medium cursor-pointer hover:border-purple-500/60"
-                      title="Select delegation pattern for sub-agents"
-                    >
-                      {PATTERN_OPTIONS.map((opt) => (
-                        <option key={opt.id} value={opt.id} className="bg-[#161b22] text-gray-200">
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  
+                  {/* Pattern dropdown directly in header */}
+                  {data.onPatternChange && (
+                    <div className="relative group/pat shrink-0">
+                      <select
+                        value={currentPattern}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          data.onPatternChange?.(id, e.target.value as DelegationPattern);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-[9px] bg-[#0d1117] text-purple-300 hover:text-purple-200 border border-purple-500/30 hover:border-purple-500/60 rounded px-1.5 py-0.5 pr-4 appearance-none cursor-pointer focus:outline-hidden font-mono"
+                        title="Change multi-agent coordination pattern"
+                      >
+                        {PATTERN_OPTIONS.map((opt) => (
+                          <option key={opt.id} value={opt.id} className="bg-[#161b22] text-gray-200 text-xs">
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-2.5 h-2.5 text-purple-400 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  )}
                 </div>
 
                 {/* When Loop pattern is selected, show Max Iterations number input (default 3) */}
@@ -856,50 +1288,62 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                   </div>
                 )}
 
-                {/* Drag & Drop Orderable Sub-Agents List without individual pattern badges */}
-                <div className="space-y-1">
-                  {subAgents.map((sub, idx) => (
+                {/* Sub-Agent List Items */}
+                <div className="space-y-1 max-h-[140px] overflow-y-auto pr-0.5">
+                  {subAgents.map((sub, index) => (
                     <div
-                      key={sub.agentId || idx}
+                      key={sub.agentId || index}
                       draggable
-                      onDragStart={(e) => handleDragStartSub(e, idx)}
-                      onDragOver={(e) => handleDragOverSub(e, idx)}
-                      onDrop={(e) => handleDropSub(e, idx)}
+                      onDragStart={(e) => handleDragStartSub(e, index)}
+                      onDragOver={(e) => handleDragOverSub(e, index)}
+                      onDrop={(e) => handleDropSub(e, index)}
                       onDragEnd={handleDragEndSub}
-                      className={`group/sub flex items-center justify-between px-2 py-1 rounded bg-[#0d1117] border transition-colors ${
-                        dragOverIdx === idx
-                          ? 'border-purple-400 bg-purple-950/30'
-                          : draggedIdx === idx
-                          ? 'opacity-40 border-dashed border-gray-500'
-                          : 'border-[#30363d] hover:border-purple-500/40'
-                      } text-[10px] cursor-grab active:cursor-grabbing`}
+                      className={`flex items-center justify-between p-1 rounded bg-[#0d1117] border border-[#30363d] group/item text-[10px] transition-all cursor-grab active:cursor-grabbing ${
+                        dragOverIdx === index ? 'border-purple-500 bg-purple-950/30' : ''
+                      } ${draggedIdx === index ? 'opacity-40' : ''}`}
                     >
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <GripVertical className="w-3 h-3 text-gray-500 group-hover/sub:text-purple-400 shrink-0" />
-                        <span className="text-gray-500 font-mono text-[9px]">#{idx + 1}</span>
-                        <span className="text-gray-200 font-medium truncate max-w-[140px]">
-                          {sub.name}
-                        </span>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <GripVertical className="w-2.5 h-2.5 text-gray-400 group-hover/item:text-gray-200 shrink-0" />
+                        <span className="text-[9px] text-gray-400 font-mono shrink-0">#{index + 1}</span>
+                        <div className="truncate min-w-0">
+                          <span className="font-bold text-gray-200 truncate">{sub.name}</span>
+                          {sub.role && (
+                            <span className="text-gray-400 text-[9px] ml-1 truncate">({sub.role})</span>
+                          )}
+                        </div>
                       </div>
 
-                      {/* Ordering arrows for quick click access */}
-                      <div className="flex items-center gap-0.5 opacity-60 group-hover/sub:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-0.5 shrink-0 ml-1">
+                        {/* Quick Up/Down Sort buttons */}
                         <button
-                          onClick={(e) => handleMoveSub(e, idx, idx - 1)}
-                          disabled={idx === 0}
-                          title="Move up in execution order"
-                          className="p-0.5 rounded hover:bg-[#21262d] text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer disabled:cursor-default"
+                          disabled={index === 0}
+                          onClick={(e) => handleMoveSub(e, index, index - 1)}
+                          className="p-0.5 hover:text-purple-300 disabled:opacity-20 disabled:hover:text-gray-400 text-gray-400"
+                          title="Move up"
                         >
                           <ChevronUp className="w-2.5 h-2.5" />
                         </button>
                         <button
-                          onClick={(e) => handleMoveSub(e, idx, idx + 1)}
-                          disabled={idx === subAgents.length - 1}
-                          title="Move down in execution order"
-                          className="p-0.5 rounded hover:bg-[#21262d] text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer disabled:cursor-default"
+                          disabled={index === subAgents.length - 1}
+                          onClick={(e) => handleMoveSub(e, index, index + 1)}
+                          className="p-0.5 hover:text-purple-300 disabled:opacity-20 disabled:hover:text-gray-400 text-gray-400"
+                          title="Move down"
                         >
                           <ChevronDown className="w-2.5 h-2.5" />
                         </button>
+                        {/* Disconnect button */}
+                        {data.onRemoveSubAgent && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              data.onRemoveSubAgent?.(id, sub.agentId);
+                            }}
+                            className="hover:text-rose-400 text-gray-400 ml-0.5"
+                            title="Disconnect sub-agent"
+                          >
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -911,7 +1355,7 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
         )}
       </div>
 
-      {/* Handles: Dynamic multiple bottom connector circles for router, standard for others */}
+      {/* Handles: Dynamic multiple bottom connector circles for router, hitl, fallback, guardrail */}
       {isRouter ? (
         (data.routerConfig?.branches || [
           { id: 'branch_if_1', label: 'If: Condition Met', conditionExpression: "state.status == 'passed'" },
@@ -929,7 +1373,7 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                 position={Position.Bottom}
                 id={handleId}
                 style={{ left: `${leftPercent}%` }}
-                className={`!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-all cursor-crosshair z-20 hover:scale-125 ${
+                className={`!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-all cursor-crosshair z-30 hover:scale-125 ${
                   isConnected
                     ? '!bg-purple-500 ring-2 ring-purple-400/80 shadow-md shadow-purple-500/50'
                     : '!bg-[#21262d] !border-purple-400 hover:!bg-purple-500'
@@ -941,6 +1385,105 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
             </React.Fragment>
           );
         })
+      ) : isHITL ? (
+        <>
+          {/* Approved Path Handle (Left: 25%) */}
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="approved"
+            style={{ left: '25%' }}
+            className={`!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-all cursor-crosshair z-30 hover:scale-125 ${
+              data.hitlConfig?.approvedTargetAgentId
+                ? '!bg-emerald-500 ring-2 ring-emerald-400/80 shadow-md shadow-emerald-500/50'
+                : '!bg-[#21262d] !border-emerald-400 hover:!bg-emerald-500'
+            }`}
+            title={`Approved Path (Human Authorized)${
+              data.hitlConfig?.approvedTargetAgentId ? ' (Connected)' : ' → Drag to connect agent'
+            }`}
+          />
+          {/* Rejected Path Handle (Right: 75%) */}
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="rejected"
+            style={{ left: '75%' }}
+            className={`!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-all cursor-crosshair z-30 hover:scale-125 ${
+              data.hitlConfig?.rejectedTargetAgentId
+                ? '!bg-rose-500 ring-2 ring-rose-400/80 shadow-md shadow-rose-500/50'
+                : '!bg-[#21262d] !border-rose-400 hover:!bg-rose-500'
+            }`}
+            title={`Rejected Path (Human Denied / Timeout)${
+              data.hitlConfig?.rejectedTargetAgentId ? ' (Connected)' : ' → Drag to connect agent'
+            }`}
+          />
+        </>
+      ) : isFallback ? (
+        <>
+          {/* Primary Path Handle (Left: 25%) */}
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="primary"
+            style={{ left: '25%' }}
+            className={`!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-all cursor-crosshair z-30 hover:scale-125 ${
+              data.fallbackConfig?.primaryTargetAgentId
+                ? '!bg-blue-500 ring-2 ring-blue-400/80 shadow-md shadow-blue-500/50'
+                : '!bg-[#21262d] !border-blue-400 hover:!bg-blue-500'
+            }`}
+            title={`Primary Execution Path${
+              data.fallbackConfig?.primaryTargetAgentId ? ' (Connected)' : ' → Drag to connect agent'
+            }`}
+          />
+          {/* Fallback Path Handle (Right: 75%) */}
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="fallback"
+            style={{ left: '75%' }}
+            className={`!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-all cursor-crosshair z-30 hover:scale-125 ${
+              data.fallbackConfig?.fallbackTargetAgentId
+                ? '!bg-rose-500 ring-2 ring-rose-400/80 shadow-md shadow-rose-500/50'
+                : '!bg-[#21262d] !border-rose-400 hover:!bg-rose-500'
+            }`}
+            title={`Fallback / Error Recovery Path${
+              data.fallbackConfig?.fallbackTargetAgentId ? ' (Connected)' : ' → Drag to connect agent'
+            }`}
+          />
+        </>
+      ) : isGuardrail ? (
+        <>
+          {/* Pass Path Handle (Left: 25%) */}
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="pass"
+            style={{ left: '25%' }}
+            className={`!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-all cursor-crosshair z-30 hover:scale-125 ${
+              data.guardrailConfig?.passTargetAgentId
+                ? '!bg-teal-500 ring-2 ring-teal-400/80 shadow-md shadow-teal-500/50'
+                : '!bg-[#21262d] !border-teal-400 hover:!bg-teal-500'
+            }`}
+            title={`Pass Path (Policy Compliant)${
+              data.guardrailConfig?.passTargetAgentId ? ' (Connected)' : ' → Drag to connect agent'
+            }`}
+          />
+          {/* Block Path Handle (Right: 75%) */}
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="block"
+            style={{ left: '75%' }}
+            className={`!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] transition-all cursor-crosshair z-30 hover:scale-125 ${
+              data.guardrailConfig?.blockTargetAgentId
+                ? '!bg-rose-500 ring-2 ring-rose-400/80 shadow-md shadow-rose-500/50'
+                : '!bg-[#21262d] !border-rose-400 hover:!bg-rose-500'
+            }`}
+            title={`Block Path (Policy Violation Detected)${
+              data.guardrailConfig?.blockTargetAgentId ? ' (Connected)' : ' → Drag to connect agent'
+            }`}
+          />
+        </>
       ) : (
         <>
           {/* Main Flow Output Handle (Bottom Center) */}
@@ -949,7 +1492,7 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
             position={Position.Bottom}
             id="output"
             style={{ left: '50%' }}
-            className="!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] !bg-blue-500 hover:scale-125 transition-transform z-20 cursor-crosshair"
+            className="!w-3.5 !h-3.5 !-bottom-1.5 border-2 border-[#0d1117] !bg-blue-500 hover:scale-125 transition-transform z-30 cursor-crosshair"
             title="Agent Output"
           />
           {/* Fallback Subagent Handle (Stacked transparently for backward compatibility) */}
@@ -965,7 +1508,6 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
       )}
     </div>
   );
-}, areEqual);
+});
 
 AgentNode.displayName = 'AgentNode';
-

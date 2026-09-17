@@ -15,12 +15,12 @@ This document provides essential context for AI models interacting with the `age
 - Come up with an upfront plan first and write an isolated failing test in context, then iterate until we get true verification passes
 
 
-## Model Selection & Rules
-- **CRITICAL RULE**: Never revert to or map model names to `gemini-2.5` (`gemini-2.5-flash`, `gemini-2.5-pro`) or Gemini 1.x/2.x. They are deprecated.
-- **Valid Models**: Use `gemini-3.7-flash` (Recommended)
-- **Region Configuration for Vertex AI**: `gemini-3.7-flash` on Vertex AI MUST use the `global` region (`location="global"` or `os.environ["GOOGLE_CLOUD_LOCATION"] = "global"`). Regional endpoints like `us-central1` do not host the `gemini-3.7-flash` publisher model and will return 404 NOT_FOUND. Always configure `global` location for model execution.
-- **Search Tools & Multi-Tool Delegation**: When an agent uses search grounding (`GoogleSearchTool` or `VertexAiSearchTool`) alongside sub-agents or function tools, you MUST configure `bypass_multi_tools_limit=True` (e.g. `from google.adk.tools.google_search_tool import GoogleSearchTool; GoogleSearchTool(bypass_multi_tools_limit=True)`).
-- **Search Tools & Controlled Generation**: Vertex AI Gemini does not support combining tools (`google_search`) with controlled generation (`output_schema`) on the same agent. All Agents should write to state keys instead; only downstream synthesizer agents without tools use `output_schema`.
+## Code Generation Architecture & Anti-Pattern Rules
+- **Pure Prompt-Driven Code Generation**: All target code, test suites, infrastructure (Terraform), and deployment configs are generated 100% by LLM calls to Gemini (`GeminiCodeGenEngine`) using the prompt templates located in `resource/prompts/*.txt`.
+- **Zero Procedural Post-Processing**: All code must be generated directly by our LLM call to Gemini. It must NEVER be written, rewritten, standardized, or modified afterwards through procedural transformation scripts or AST parsers.
+- **NO Normalization or Standardization Scripts**: Under NO circumstances should normalization, standardization, migration, or "just-in-case" guardrail scripts be created or maintained in `workflowSync.ts`, canvas components, or extension loaders to modify or fix code or `.agent` files. Procedural scripts that try to fix LLM outputs are an anti-pattern that grows out of control.
+- **Fix Prompts and Blueprints Directly**: If generated code or workflow definitions need corrections (such as edge styles, handle bindings, imports, model defaults, or framework patterns), ALWAYS update the code generation prompt templates under `resource/prompts/*.txt` or the sample definitions directly. Do NOT write loader hacks or normalization scripts in the codebase.
+
 
 ## Coding Conventions & Style Guide
 - **Author Tag**: Add `Mike Nimer <mikenimer@google.com>` as the Author to every class modified.

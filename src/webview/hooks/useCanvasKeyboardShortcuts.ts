@@ -24,6 +24,7 @@ export interface UseCanvasKeyboardShortcutsOptions {
   nodes: Node<any>[];
   onDeleteAgent: (id: string) => void;
   onDeleteTrigger: (id: string) => void;
+  onDeleteNodes?: (nodes: Node<any>[]) => void;
 }
 
 /**
@@ -38,6 +39,7 @@ export function useCanvasKeyboardShortcuts(options: UseCanvasKeyboardShortcutsOp
     nodes,
     onDeleteAgent,
     onDeleteTrigger,
+    onDeleteNodes,
   } = options;
 
   // Global Undo / Redo keyboard listeners
@@ -100,13 +102,17 @@ export function useCanvasKeyboardShortcuts(options: UseCanvasKeyboardShortcutsOp
           const selectedNodes = nodes.filter((n) => n.selected);
           if (selectedNodes.length > 0) {
             e.preventDefault();
-            selectedNodes.forEach((node) => {
-              if (node.type === 'triggerNode') {
-                onDeleteTrigger(node.id);
-              } else {
-                onDeleteAgent(node.id);
-              }
-            });
+            if (onDeleteNodes) {
+              onDeleteNodes(selectedNodes);
+            } else {
+              selectedNodes.forEach((node) => {
+                if (node.type === 'triggerNode') {
+                  onDeleteTrigger(node.id);
+                } else {
+                  onDeleteAgent(node.id);
+                }
+              });
+            }
           }
         }
       }
@@ -114,5 +120,5 @@ export function useCanvasKeyboardShortcuts(options: UseCanvasKeyboardShortcutsOp
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedAgentId, selectedTriggerId, nodes, onDeleteAgent, onDeleteTrigger]);
+  }, [selectedAgentId, selectedTriggerId, nodes, onDeleteAgent, onDeleteTrigger, onDeleteNodes]);
 }
