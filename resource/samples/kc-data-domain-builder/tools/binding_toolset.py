@@ -13,6 +13,8 @@ Architectural Decisions:
   before attempting mutation, failing fast rather than encountering cryptic API errors.
 """
 
+import sys
+import time
 import logging
 from typing import Any, Dict, List, Optional
 import requests
@@ -41,45 +43,136 @@ def get_credentials() -> google.auth.credentials.Credentials:
     return creds
 
 
-def handle_response(response: requests.Response) -> Dict[str, Any]:
+def wait_for_lro(
+    op_data: Dict[str, Any],
+    creds: google.auth.credentials.Credentials,
+    timeout_seconds: int = 120,
+    poll_interval: float = 2.0,
+) -> Dict[str, Any]:
+    """
+    Polls a Google Cloud Dataplex Long Running Operation (LRO) until completion.
+
+    Args:
+        op_data: Initial operation metadata from the REST response.
+        creds: Refreshed google.auth credentials.
+        timeout_seconds: Maximum time to wait for completion.
+        poll_interval: Seconds between polling requests.
+
+    Returns:
+        Dictionary with status 'ok' and completed operation or resource data.
+
+    Raises:
+        RuntimeError: If the LRO completes with an error or fails.
+        TimeoutError: If the operation does not complete within timeout.
+    """
+    # Section 1: Check if already completed
+    if op_data.get("done") is True:
+        if "error" in op_data:
+            err = op_data["error"]
+            err_code = err.get("code", "UNKNOWN")
+            err_msg = err.get("message", "Operation failed")
+            raise RuntimeError(f"Dataplex Binding Operation Error ({err_code}): {err_msg}")
+        return {"status": "ok", "data": op_data.get("response", op_data)}
+
+    op_name = op_data.get("name")
+    if not op_name:
+        return {"status": "ok", "data": op_data}
+
+    # Section 2: Poll operation endpoint
+    start_time = time.time()
+    url = f"{DATAPLEX_API_BASE}/{op_name}"
+
+    while time.time() - start_time < timeout_seconds:
+        if not creds.valid:
+            creds.refresh(Request())
+        headers = {"Authorization": f"Bearer {creds.token}"}
+        resp = requests.get(url, headers=headers, timeout=TIMEOUT_SECONDS)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Failed to poll LRO {op_name} ({resp.status_code}): {resp.text}")
+
+        status_json = resp.json()
+        if status_json.get("done") is True:
+            if "error" in status_json:
+                err = status_json["error"]
+                err_code = err.get("code", "UNKNOWN")
+                err_msg = err.get("message", "Operation failed")
+                raise RuntimeError(f"Dataplex Binding Operation Error ({err_code}): {err_msg}")
+            return {"status": "ok", "data": status_json.get("response", status_json)}
+
+        time.sleep(poll_interval)
+
+    raise TimeoutError(f"Dataplex Binding Operation {op_name} timed out after {timeout_seconds}s")
+
+
+def handle_response(
+    response: requests.Response,
+    creds: Optional[google.auth.credentials.Credentials] = None,
+    wait_lro: bool = True,
+) -> Dict[str, Any]:
     """
     Handles HTTP responses uniformly across Dataplex REST endpoints.
+    Awaits Long Running Operations (LRO) when applicable.
+    Raises RuntimeError on HTTP errors so ADK and Gemini are immediately aware of failures.
 
     Args:
         response: The requests Response object.
+        creds: Optional credentials to poll LROs.
+        wait_lro: Whether to await completion of Long Running Operations.
 
     Returns:
-        A dictionary with 'status' and either 'data' or error 'message'.
+        A dictionary with 'status' and 'data' or success message.
+
+    Raises:
+        RuntimeError: When HTTP status code >= 400 or when LRO fails.
     """
     # Section 1: Uniformly parse HTTP responses
     try:
         response.raise_for_status()
         if response.status_code == 204:
             return {"status": "ok", "message": "Binding removed successfully"}
-        return {"status": "ok", "data": response.json()}
+        data = response.json() if response.text else {}
+
+        # Section 2: Detect and await Long Running Operation if requested
+        if wait_lro and isinstance(data, dict) and "name" in data and ("done" in data or "metadata" in data):
+            if creds is None:
+                creds = get_credentials()
+            return wait_for_lro(data, creds)
+
+        return {"status": "ok", "data": data}
     except requests.exceptions.HTTPError as err:
-        logger.error("HTTP Error %s: %s", response.status_code, response.text)
+        err_msg = ""
         try:
             err_json = response.json()
-            message = err_json.get("error", {}).get("message", str(err))
+            err_msg = err_json.get("error", {}).get("message", response.text)
         except Exception:
-            message = response.text or str(err)
-        return {"status": "error", "message": message, "code": response.status_code}
+            err_msg = response.text or str(err)
+
+        sys.stderr.write(f"\n[DATAPLEX BINDING ERROR {response.status_code}] {err_msg}\n")
+        sys.stderr.flush()
+        logger.error("HTTP Error %s: %s", response.status_code, err_msg)
+        raise RuntimeError(f"Dataplex Binding API Error ({response.status_code}): {err_msg}")
     except Exception as err:
+        if isinstance(err, (RuntimeError, TimeoutError)):
+            raise
+        sys.stderr.write(f"\n[DATAPLEX BINDING UNEXPECTED ERROR] {err}\n")
+        sys.stderr.flush()
         logger.error("Unexpected error: %s", str(err))
-        return {"status": "error", "message": str(err)}
+        raise RuntimeError(f"Dataplex Binding Unexpected Error: {err}")
 
 
 def validate_param(param_name: str, value: Any, prompt: str) -> Optional[Dict[str, Any]]:
     """Validates that a required tool argument is non-empty and not a placeholder."""
+    if value is None:
+        return {
+            "status": "error",
+            "message": f"Missing required parameter '{param_name}'. Please ask the user: {prompt}",
+        }
+    val_str = str(value).strip().lower()
     if (
-        value is None
-        or not str(value).strip()
-        or str(value).strip().lower() in (
-            "none", "null",
-            f"<{param_name.lower()}>", f"<{param_name.upper()}>",
-            f"{{{param_name.lower()}}}", f"{{{param_name.upper()}}}"
-        )
+        not val_str
+        or val_str in ("none", "null", "undefined")
+        or (val_str.startswith("{") and val_str.endswith("}"))
+        or (val_str.startswith("<") and val_str.endswith(">"))
     ):
         return {
             "status": "error",
@@ -127,11 +220,11 @@ def bind_resource(
     if err:
         return err
 
-    # Section 1: Format binding URL
+    # Section 1: Format binding URL with camelCase dataDomainBindingId query param
     creds = get_credentials()
     url = (
         f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{location}"
-        f"/dataDomains/{domain_id}/bindings?data_domain_binding_id={binding_id}"
+        f"/dataDomains/{domain_id}/bindings?dataDomainBindingId={binding_id}"
     )
     headers = {
         "Authorization": f"Bearer {creds.token}",
@@ -139,9 +232,9 @@ def bind_resource(
     }
     payload = {"resource": resource}
 
-    # Section 2: Execute binding POST call
+    # Section 2: Execute binding POST call and await LRO completion
     response = requests.post(url, headers=headers, json=payload, timeout=TIMEOUT_SECONDS)
-    return handle_response(response)
+    return handle_response(response, creds=creds, wait_lro=True)
 
 
 def list_bindings(
@@ -215,7 +308,7 @@ def unbind_resource(
     if err:
         return err
 
-    # Section 1: Issue DELETE request on binding resource
+    # Section 1: Issue DELETE request on binding resource and await LRO completion
     creds = get_credentials()
     url = (
         f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{location}"
@@ -224,7 +317,7 @@ def unbind_resource(
     headers = {"Authorization": f"Bearer {creds.token}"}
 
     response = requests.delete(url, headers=headers, timeout=TIMEOUT_SECONDS)
-    return handle_response(response)
+    return handle_response(response, creds=creds, wait_lro=True)
 
 
 def verify_binding_availability(
@@ -261,10 +354,7 @@ def verify_binding_availability(
     headers = {"Authorization": f"Bearer {creds.token}"}
 
     domains_resp = requests.get(domains_url, headers=headers, timeout=TIMEOUT_SECONDS)
-    d_res = handle_response(domains_resp)
-    if d_res.get("status") != "ok":
-        return d_res
-
+    d_res = handle_response(domains_resp, wait_lro=False)
     domains = d_res.get("data", {}).get("dataDomains", [])
 
     # Section 2: Inspect bindings across each domain
@@ -274,7 +364,10 @@ def verify_binding_availability(
 
         b_url = f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{location}/dataDomains/{d_id}/bindings"
         b_resp = requests.get(b_url, headers=headers, timeout=TIMEOUT_SECONDS)
-        b_data = handle_response(b_resp)
+        try:
+            b_data = handle_response(b_resp, wait_lro=False)
+        except RuntimeError:
+            continue
 
         if b_data.get("status") == "ok":
             bindings = b_data.get("data", {}).get("dataDomainBindings", [])

@@ -12,6 +12,8 @@ Architectural Decisions:
 - Follows Dataplex v1 REST API standards (https://dataplex.googleapis.com/v1).
 """
 
+import sys
+import time
 import logging
 from typing import Any, Dict, List, Optional
 import requests
@@ -42,47 +44,137 @@ def get_credentials() -> google.auth.credentials.Credentials:
     return creds
 
 
-def handle_response(response: requests.Response) -> Dict[str, Any]:
+def wait_for_lro(
+    op_data: Dict[str, Any],
+    creds: google.auth.credentials.Credentials,
+    timeout_seconds: int = 120,
+    poll_interval: float = 2.0,
+) -> Dict[str, Any]:
+    """
+    Polls a Google Cloud Dataplex Long Running Operation (LRO) until completion.
+
+    Args:
+        op_data: Initial operation metadata from the REST response.
+        creds: Refreshed google.auth credentials.
+        timeout_seconds: Maximum time to wait for completion.
+        poll_interval: Seconds between polling requests.
+
+    Returns:
+        Dictionary with status 'ok' and completed operation or resource data.
+
+    Raises:
+        RuntimeError: If the LRO completes with an error or fails.
+        TimeoutError: If the operation does not complete within timeout.
+    """
+    # Section 1: Check if already completed
+    if op_data.get("done") is True:
+        if "error" in op_data:
+            err = op_data["error"]
+            err_code = err.get("code", "UNKNOWN")
+            err_msg = err.get("message", "Operation failed")
+            raise RuntimeError(f"Dataplex Operation Error ({err_code}): {err_msg}")
+        return {"status": "ok", "data": op_data.get("response", op_data)}
+
+    op_name = op_data.get("name")
+    if not op_name:
+        return {"status": "ok", "data": op_data}
+
+    # Section 2: Poll operation endpoint
+    start_time = time.time()
+    url = f"{DATAPLEX_API_BASE}/{op_name}"
+
+    while time.time() - start_time < timeout_seconds:
+        if not creds.valid:
+            creds.refresh(Request())
+        headers = {"Authorization": f"Bearer {creds.token}"}
+        resp = requests.get(url, headers=headers, timeout=TIMEOUT_SECONDS)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Failed to poll LRO {op_name} ({resp.status_code}): {resp.text}")
+
+        status_json = resp.json()
+        if status_json.get("done") is True:
+            if "error" in status_json:
+                err = status_json["error"]
+                err_code = err.get("code", "UNKNOWN")
+                err_msg = err.get("message", "Operation failed")
+                raise RuntimeError(f"Dataplex Operation Error ({err_code}): {err_msg}")
+            return {"status": "ok", "data": status_json.get("response", status_json)}
+
+        time.sleep(poll_interval)
+
+    raise TimeoutError(f"Dataplex Operation {op_name} timed out after {timeout_seconds}s")
+
+
+def handle_response(
+    response: requests.Response,
+    creds: Optional[google.auth.credentials.Credentials] = None,
+    wait_lro: bool = True,
+) -> Dict[str, Any]:
     """
     Handles HTTP responses uniformly across Dataplex REST endpoints.
+    Awaits Long Running Operations (LRO) when applicable.
+    Raises RuntimeError on HTTP errors so ADK and Gemini are immediately aware of failures.
 
     Args:
         response: The requests Response object.
+        creds: Optional credentials to poll LROs.
+        wait_lro: Whether to await completion of Long Running Operations.
 
     Returns:
-        A dictionary with 'status' and either 'data' or error 'message'.
+        A dictionary with 'status' and 'data' or success message.
+
+    Raises:
+        RuntimeError: When HTTP status code >= 400 or when LRO fails.
     """
     # Section 1: Attempt standard HTTP response parsing
     try:
         response.raise_for_status()
         if response.status_code == 204:
             return {"status": "ok", "message": "Resource deleted successfully"}
-        return {"status": "ok", "data": response.json()}
+        data = response.json() if response.text else {}
+
+        # Section 2: Detect and await Long Running Operation if requested
+        if wait_lro and isinstance(data, dict) and "name" in data and ("done" in data or "metadata" in data):
+            if creds is None:
+                creds = get_credentials()
+            return wait_for_lro(data, creds)
+
+        return {"status": "ok", "data": data}
     except requests.exceptions.HTTPError as err:
-        # Section 2: Gracefully extract Dataplex backend error details
-        logger.error("HTTP Error %s: %s", response.status_code, response.text)
+        # Section 3: Extract Dataplex backend error details and raise to stop agent
+        err_msg = ""
         try:
             err_json = response.json()
-            message = err_json.get("error", {}).get("message", str(err))
+            err_msg = err_json.get("error", {}).get("message", response.text)
         except Exception:
-            message = response.text or str(err)
-        return {"status": "error", "message": message, "code": response.status_code}
+            err_msg = response.text or str(err)
+
+        sys.stderr.write(f"\n[DATAPLEX API ERROR {response.status_code}] {err_msg}\n")
+        sys.stderr.flush()
+        logger.error("HTTP Error %s: %s", response.status_code, err_msg)
+        raise RuntimeError(f"Dataplex API Error ({response.status_code}): {err_msg}")
     except Exception as err:
-        # Section 3: Catch unexpected serialization or connection errors
+        if isinstance(err, (RuntimeError, TimeoutError)):
+            raise
+        sys.stderr.write(f"\n[DATAPLEX UNEXPECTED ERROR] {err}\n")
+        sys.stderr.flush()
         logger.error("Unexpected error: %s", str(err))
-        return {"status": "error", "message": str(err)}
+        raise RuntimeError(f"Dataplex Unexpected Error: {err}")
 
 
 def validate_param(param_name: str, value: Any, prompt: str) -> Optional[Dict[str, Any]]:
     """Validates that a required tool argument is non-empty and not a placeholder."""
+    if value is None:
+        return {
+            "status": "error",
+            "message": f"Missing required parameter '{param_name}'. Please ask the user: {prompt}",
+        }
+    val_str = str(value).strip().lower()
     if (
-        value is None
-        or not str(value).strip()
-        or str(value).strip().lower() in (
-            "none", "null",
-            f"<{param_name.lower()}>", f"<{param_name.upper()}>",
-            f"{{{param_name.lower()}}}", f"{{{param_name.upper()}}}"
-        )
+        not val_str
+        or val_str in ("none", "null", "undefined")
+        or (val_str.startswith("{") and val_str.endswith("}"))
+        or (val_str.startswith("<") and val_str.endswith(">"))
     ):
         return {
             "status": "error",
@@ -160,34 +252,31 @@ def create_domain(
     creds = get_credentials()
     url = (
         f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{location}"
-        f"/dataDomains?data_domain_id={domain_id}"
+        f"/dataDomains?dataDomainId={domain_id}"
     )
     headers = {
         "Authorization": f"Bearer {creds.token}",
         "Content-Type": "application/json",
     }
 
-    # Section 2: Build domain payload with plain-text description
+    # Section 2: Build domain payload with plain-text description and required contacts
     payload: Dict[str, Any] = {
-        "display_name": display_name,
+        "displayName": display_name,
         "description": description,
-    }
-
-    # Section 3: Attach contact identity if specified
-    if contact_name or contact_email:
-        payload["contacts"] = {
+        "contacts": {
             "identities": [
                 {
-                    "contact_name": contact_name or "Domain Owner",
-                    "contact_role": contact_role or "owner",
-                    "contact_id": contact_email or "",
+                    "contactName": contact_name or "Data Domain Owner",
+                    "contactRole": contact_role or "owner",
+                    "contactId": contact_email or "owner@example.com",
                 }
             ]
-        }
+        },
+    }
 
-    # Section 4: Dispatch creation call
+    # Section 3: Dispatch creation call and await LRO completion
     response = requests.post(url, headers=headers, json=payload, timeout=TIMEOUT_SECONDS)
-    return handle_response(response)
+    return handle_response(response, creds=creds, wait_lro=True)
 
 
 def create_subdomain(
@@ -236,7 +325,7 @@ def create_subdomain(
     creds = get_credentials()
     url = (
         f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{location}"
-        f"/dataDomains?data_domain_id={domain_id}"
+        f"/dataDomains?dataDomainId={domain_id}"
     )
     headers = {
         "Authorization": f"Bearer {creds.token}",
@@ -251,26 +340,25 @@ def create_subdomain(
     else:
         parent_path = parent_domain_id
 
-    # Section 3: Build subdomain payload
+    # Section 3: Build subdomain payload with required contacts and parent reference
     payload: Dict[str, Any] = {
-        "display_name": display_name,
+        "displayName": display_name,
         "description": description,
-        "parent_data_domain": parent_path,
-    }
-    if contact_name or contact_email:
-        payload["contacts"] = {
+        "parentDataDomain": parent_path,
+        "contacts": {
             "identities": [
                 {
-                    "contact_name": contact_name or "Subdomain Owner",
-                    "contact_role": contact_role or "owner",
-                    "contact_id": contact_email or "",
+                    "contactName": contact_name or "Data Subdomain Owner",
+                    "contactRole": contact_role or "owner",
+                    "contactId": contact_email or "owner@example.com",
                 }
             ]
-        }
+        },
+    }
 
-    # Section 4: Dispatch subdomain creation request
+    # Section 4: Dispatch subdomain creation request and await LRO completion
     response = requests.post(url, headers=headers, json=payload, timeout=TIMEOUT_SECONDS)
-    return handle_response(response)
+    return handle_response(response, creds=creds, wait_lro=True)
 
 
 def get_domain(project_id: str, location: str, domain_id: str) -> Dict[str, Any]:
@@ -394,7 +482,7 @@ def update_domain(
 
     if display_name is not None:
         update_mask.append("displayName")
-        payload["display_name"] = display_name
+        payload["displayName"] = display_name
     if description is not None:
         update_mask.append("description")
         payload["description"] = description
@@ -412,7 +500,7 @@ def update_domain(
         "Content-Type": "application/json",
     }
     response = requests.patch(url, headers=headers, json=payload, timeout=TIMEOUT_SECONDS)
-    return handle_response(response)
+    return handle_response(response, creds=creds, wait_lro=True)
 
 
 def delete_domain(project_id: str, location: str, domain_id: str) -> Dict[str, Any]:
@@ -450,9 +538,9 @@ def delete_domain(project_id: str, location: str, domain_id: str) -> Dict[str, A
     )
     headers = {"Authorization": f"Bearer {creds.token}"}
 
-    # Section 2: Execute DELETE call
+    # Section 2: Execute DELETE call and await LRO completion
     response = requests.delete(url, headers=headers, timeout=TIMEOUT_SECONDS)
-    return handle_response(response)
+    return handle_response(response, creds=creds, wait_lro=True)
 
 
 def get_domain_principal(
@@ -495,10 +583,7 @@ def get_domain_principal(
     policy_member = data.get("policyMember") or data.get("policy_member")
 
     if not policy_member:
-        return {
-            "status": "error",
-            "message": f"Domain '{domain_id}' does not contain an active 'policyMember' principal.",
-        }
+        raise RuntimeError(f"Domain '{domain_id}' does not contain an active 'policyMember' principal.")
 
     # Section 3: Handle both string format and nested dict format
     if isinstance(policy_member, dict):

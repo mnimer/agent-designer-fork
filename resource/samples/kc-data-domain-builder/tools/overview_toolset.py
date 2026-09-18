@@ -15,6 +15,7 @@ Architectural Decisions:
   the exact entry resource path.
 """
 
+import sys
 import logging
 from typing import Any, Dict, Optional
 import requests
@@ -45,16 +46,21 @@ def handle_response(response: requests.Response) -> Dict[str, Any]:
             return {"status": "ok", "message": "Overview aspect updated successfully"}
         return {"status": "ok", "data": response.json()}
     except requests.exceptions.HTTPError as err:
-        logger.error("HTTP Error %s: %s", response.status_code, response.text)
+        err_msg = ""
         try:
             err_json = response.json()
-            message = err_json.get("error", {}).get("message", str(err))
+            err_msg = err_json.get("error", {}).get("message", response.text)
         except Exception:
-            message = response.text or str(err)
-        return {"status": "error", "message": message, "code": response.status_code}
+            err_msg = response.text or str(err)
+        sys.stderr.write(f"\n[DATAPLEX OVERVIEW ERROR {response.status_code}] {err_msg}\n")
+        sys.stderr.flush()
+        logger.error("HTTP Error %s: %s", response.status_code, err_msg)
+        raise RuntimeError(f"Dataplex Overview API Error ({response.status_code}): {err_msg}")
     except Exception as err:
+        sys.stderr.write(f"\n[DATAPLEX OVERVIEW UNEXPECTED ERROR] {err}\n")
+        sys.stderr.flush()
         logger.error("Unexpected error: %s", str(err))
-        return {"status": "error", "message": str(err)}
+        raise RuntimeError(f"Dataplex Overview Unexpected Error: {err}")
 
 
 def _resolve_project_number_and_entry_name(
@@ -89,14 +95,17 @@ def _resolve_project_number_and_entry_name(
 
 def validate_param(param_name: str, value: Any, prompt: str) -> Optional[Dict[str, Any]]:
     """Validates that a required tool argument is non-empty and not a placeholder."""
+    if value is None:
+        return {
+            "status": "error",
+            "message": f"Missing required parameter '{param_name}'. Please ask the user: {prompt}",
+        }
+    val_str = str(value).strip().lower()
     if (
-        value is None
-        or not str(value).strip()
-        or str(value).strip().lower() in (
-            "none", "null",
-            f"<{param_name.lower()}>", f"<{param_name.upper()}>",
-            f"{{{param_name.lower()}}}", f"{{{param_name.upper()}}}"
-        )
+        not val_str
+        or val_str in ("none", "null", "undefined")
+        or (val_str.startswith("{") and val_str.endswith("}"))
+        or (val_str.startswith("<") and val_str.endswith(">"))
     ):
         return {
             "status": "error",

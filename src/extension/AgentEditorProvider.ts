@@ -449,7 +449,20 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       }
 
       for (const relSource of uniqueSources) {
-        const sourcePath = path.isAbsolute(relSource) ? relSource : path.resolve(baseDir, relSource);
+        let sourcePath = path.isAbsolute(relSource) ? relSource : path.resolve(baseDir, relSource);
+        if (!fs.existsSync(sourcePath)) {
+          // Fall back to searching discovered sample directories if relative to document not found
+          const samples = this.discoverResourceSamples();
+          for (const s of samples) {
+            if (s.sourceFilePath) {
+              const candidate = path.resolve(path.dirname(s.sourceFilePath), relSource);
+              if (fs.existsSync(candidate)) {
+                sourcePath = candidate;
+                break;
+              }
+            }
+          }
+        }
         if (fs.existsSync(sourcePath)) {
           const destPath = path.join(targetToolsDir, path.basename(sourcePath));
           if (path.resolve(sourcePath) !== path.resolve(destPath)) {

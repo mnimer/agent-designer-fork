@@ -14,6 +14,7 @@ Architectural Decisions:
   unbind all resources -> delete all child subdomains -> delete parent domain.
 """
 
+import sys
 import logging
 from typing import Any, Dict, List, Optional
 import requests
@@ -46,16 +47,21 @@ def handle_response(response: requests.Response) -> Dict[str, Any]:
             return {"status": "ok", "message": "Operation completed successfully"}
         return {"status": "ok", "data": response.json()}
     except requests.exceptions.HTTPError as err:
-        logger.error("HTTP Error %s: %s", response.status_code, response.text)
+        err_msg = ""
         try:
             err_json = response.json()
-            message = err_json.get("error", {}).get("message", str(err))
+            err_msg = err_json.get("error", {}).get("message", response.text)
         except Exception:
-            message = response.text or str(err)
-        return {"status": "error", "message": message, "code": response.status_code}
+            err_msg = response.text or str(err)
+        sys.stderr.write(f"\n[DATAPLEX GOVERNANCE ERROR {response.status_code}] {err_msg}\n")
+        sys.stderr.flush()
+        logger.error("HTTP Error %s: %s", response.status_code, err_msg)
+        raise RuntimeError(f"Dataplex Governance API Error ({response.status_code}): {err_msg}")
     except Exception as err:
+        sys.stderr.write(f"\n[DATAPLEX GOVERNANCE UNEXPECTED ERROR] {err}\n")
+        sys.stderr.flush()
         logger.error("Unexpected error: %s", str(err))
-        return {"status": "error", "message": str(err)}
+        raise RuntimeError(f"Dataplex Governance Unexpected Error: {err}")
 
 
 # ==============================================================================
@@ -64,14 +70,17 @@ def handle_response(response: requests.Response) -> Dict[str, Any]:
 
 def validate_param(param_name: str, value: Any, prompt: str) -> Optional[Dict[str, Any]]:
     """Validates that a required tool argument is non-empty and not a placeholder."""
+    if value is None:
+        return {
+            "status": "error",
+            "message": f"Missing required parameter '{param_name}'. Please ask the user: {prompt}",
+        }
+    val_str = str(value).strip().lower()
     if (
-        value is None
-        or not str(value).strip()
-        or str(value).strip().lower() in (
-            "none", "null",
-            f"<{param_name.lower()}>", f"<{param_name.upper()}>",
-            f"{{{param_name.lower()}}}", f"{{{param_name.upper()}}}"
-        )
+        not val_str
+        or val_str in ("none", "null", "undefined")
+        or (val_str.startswith("{") and val_str.endswith("}"))
+        or (val_str.startswith("<") and val_str.endswith(">"))
     ):
         return {
             "status": "error",
@@ -340,15 +349,11 @@ def cascading_teardown_domain(
         for b in bindings:
             binding_name = b.get("name", "")
             b_id = binding_name.split("/")[-1] if "/" in binding_name else binding_name
-            unbind_resp = unbind_resource(project_id, location, domain_id, b_id)
-            if unbind_resp.get("status") == "ok":
+            try:
+                unbind_resource(project_id, location, domain_id, b_id)
                 summary["unbound_resources"].append(b_id)
-            else:
-                return {
-                    "status": "error",
-                    "message": f"Failed to unbind '{b_id}' on domain '{domain_id}': {unbind_resp.get('message')}",
-                    "partial_summary": summary,
-                }
+            except RuntimeError as err:
+                raise RuntimeError(f"Failed to unbind '{b_id}' on domain '{domain_id}': {err}")
 
     # Section 2: Discover and recursively tear down any child subdomains
     sub_resp = list_subdomains(project_id, location, domain_id)
@@ -358,23 +363,13 @@ def cascading_teardown_domain(
             sub_name = sub.get("name", "")
             sub_id = sub_name.split("/")[-1] if "/" in sub_name else sub_name
             child_teardown = cascading_teardown_domain(project_id, location, sub_id)
-            if child_teardown.get("status") != "ok":
-                return {
-                    "status": "error",
-                    "message": f"Failed to tear down child subdomain '{sub_id}': {child_teardown.get('message')}",
-                    "partial_summary": summary,
-                }
             summary["deleted_subdomains"].append(child_teardown)
 
     # Section 3: Delete the now-empty domain
-    del_resp = delete_domain(project_id, location, domain_id)
-    if del_resp.get("status") == "ok":
+    try:
+        delete_domain(project_id, location, domain_id)
         summary["deleted"] = True
         return {"status": "ok", "message": f"Successfully tore down domain '{domain_id}' and all dependencies.", "data": summary}
-
-    return {
-        "status": "error",
-        "message": f"Failed to delete empty domain '{domain_id}': {del_resp.get('message')}",
-        "partial_summary": summary,
-    }
+    except RuntimeError as err:
+        raise RuntimeError(f"Failed to delete domain '{domain_id}': {err}")
 

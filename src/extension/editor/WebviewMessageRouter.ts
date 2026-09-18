@@ -1420,6 +1420,15 @@ export class WebviewMessageRouter {
         const contentToWrite = JSON.stringify(sampleDoc, null, 2);
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(contentToWrite, 'utf-8'));
 
+        // Section 3b: Copy sample tools folder if present alongside the blueprint
+        if (found?.sourceFilePath) {
+          const sampleToolsDir = path.join(path.dirname(found.sourceFilePath), 'tools');
+          const targetToolsDir = path.join(path.dirname(targetUri.fsPath), 'tools');
+          if (fs.existsSync(sampleToolsDir) && !fs.existsSync(targetToolsDir)) {
+            fs.cpSync(sampleToolsDir, targetToolsDir, { recursive: true });
+          }
+        }
+
         // 4. Open the new file in VS Code in a new editor tab using our custom editor
         await vscode.commands.executeCommand('vscode.openWith', targetUri, 'agentFlow.editor');
       } catch (err: any) {

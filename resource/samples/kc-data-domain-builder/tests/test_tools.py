@@ -101,8 +101,8 @@ class TestDataplexToolset(BaseToolTestCase):
         )
         self.assertEqual(res["status"], "ok")
         call_json = mock_post.call_args[1]["json"]
-        self.assertEqual(call_json["display_name"], "Orders Domain")
-        self.assertEqual(call_json["contacts"]["identities"][0]["contact_id"], "alice@example.com")
+        self.assertEqual(call_json["displayName"], "Orders Domain")
+        self.assertEqual(call_json["contacts"]["identities"][0]["contactId"], "alice@example.com")
 
     @patch("requests.post")
     def test_create_subdomain_nested(self, mock_post):
@@ -122,7 +122,7 @@ class TestDataplexToolset(BaseToolTestCase):
         )
         self.assertEqual(res["status"], "ok")
         call_json = mock_post.call_args[1]["json"]
-        self.assertTrue(call_json["parent_data_domain"].endswith("/dataDomains/orders"))
+        self.assertTrue(call_json["parentDataDomain"].endswith("/dataDomains/orders"))
 
     @patch("requests.get")
     def test_list_subdomains_filtered(self, mock_get):
@@ -175,9 +175,9 @@ class TestDataplexToolset(BaseToolTestCase):
         mock_409.json.return_value = {"error": {"message": "Domain contains bindings"}}
         mock_delete.return_value = mock_409
 
-        res_err = delete_domain("p", "l", "dom1")
-        self.assertEqual(res_err["status"], "error")
-        self.assertIn("contains bindings", res_err["message"])
+        with self.assertRaises(RuntimeError) as ctx:
+            delete_domain("p", "l", "dom1")
+        self.assertIn("contains bindings", str(ctx.exception))
 
     @patch("requests.get")
     def test_get_domain_principal(self, mock_get):
@@ -198,8 +198,9 @@ class TestDataplexToolset(BaseToolTestCase):
 
         # Missing principal failure
         mock_resp.json.return_value = {}
-        res_missing = get_domain_principal("p", "us-central1", "dom1")
-        self.assertEqual(res_missing["status"], "error")
+        with self.assertRaises(RuntimeError) as ctx:
+            get_domain_principal("p", "us-central1", "dom1")
+        self.assertIn("does not contain an active 'policyMember'", str(ctx.exception))
 
 
 class TestBigQueryToolset(BaseToolTestCase):
@@ -438,6 +439,95 @@ class TestGovernanceToolset(BaseToolTestCase):
         self.assertTrue(res["data"]["deleted"])
         self.assertEqual(len(res["data"]["unbound_resources"]), 1)
         self.assertEqual(len(res["data"]["deleted_subdomains"]), 1)
+
+
+class TestErrorHandlingAndLRO(BaseToolTestCase):
+    """Tests verifying strict RuntimeError raising and LRO polling across toolsets."""
+
+    @patch("tools.dataplex_toolset.time.sleep")
+    @patch("requests.get")
+    def test_wait_for_lro_success(self, mock_get, mock_sleep):
+        """Validates LRO polls until done: true."""
+        from tools.dataplex_toolset import wait_for_lro
+        op_initial = {"name": "projects/p/locations/l/operations/op1", "done": False}
+
+        mock_poll_resp = MagicMock()
+        mock_poll_resp.status_code = 200
+        mock_poll_resp.json.return_value = {
+            "name": "projects/p/locations/l/operations/op1",
+            "done": True,
+            "response": {"name": "projects/p/locations/l/dataDomains/dom1"},
+        }
+        mock_get.return_value = mock_poll_resp
+
+        res = wait_for_lro(op_initial, self.mock_creds, timeout_seconds=10, poll_interval=0.01)
+        self.assertEqual(res.get("status"), "ok")
+        self.assertIn("name", res.get("data", {}))
+
+    @patch("tools.dataplex_toolset.time.sleep")
+    @patch("requests.get")
+    def test_wait_for_lro_failure_raises(self, mock_get, mock_sleep):
+        """Validates LRO raises RuntimeError if operation finishes with an error."""
+        from tools.dataplex_toolset import wait_for_lro
+        op_initial = {"name": "projects/p/locations/l/operations/op1", "done": False}
+
+        mock_poll_resp = MagicMock()
+        mock_poll_resp.status_code = 200
+        mock_poll_resp.json.return_value = {
+            "name": "projects/p/locations/l/operations/op1",
+            "done": True,
+            "error": {"code": 7, "message": "Permission denied on KMS key"},
+        }
+        mock_get.return_value = mock_poll_resp
+
+        with self.assertRaises(RuntimeError) as ctx:
+            wait_for_lro(op_initial, self.mock_creds, timeout_seconds=10, poll_interval=0.01)
+        self.assertIn("Permission denied", str(ctx.exception))
+
+    @patch("requests.post")
+    def test_bind_resource_http_error_raises(self, mock_post):
+        """Validates bind_resource raises RuntimeError when API returns HTTP 400."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 400
+        mock_resp.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_resp)
+        mock_resp.json.return_value = {"error": {"message": "Invalid resource URI format"}}
+        mock_post.return_value = mock_resp
+
+        with self.assertRaises(RuntimeError) as ctx:
+            bind_resource("p", "l", "dom1", "b1", "//invalid/uri")
+        self.assertIn("Invalid resource URI format", str(ctx.exception))
+
+    @patch("requests.get")
+    def test_bigquery_http_error_raises(self, mock_get):
+        """Validates list_datasets raises RuntimeError on BigQuery HTTP 403."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 403
+        mock_resp.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_resp)
+        mock_resp.json.return_value = {"error": {"message": "Access Denied: Dataset project:ds"}}
+        mock_get.return_value = mock_resp
+
+        with self.assertRaises(RuntimeError) as ctx:
+            list_datasets("p")
+        self.assertIn("Access Denied", str(ctx.exception))
+
+    @patch("requests.get")
+    @patch("requests.patch")
+    def test_overview_http_error_raises(self, mock_patch, mock_get):
+        """Validates set_overview raises RuntimeError when catalog PATCH fails."""
+        mock_dom = MagicMock()
+        mock_dom.status_code = 200
+        mock_dom.json.return_value = {"policyMember": {"iamPolicyNamePrincipal": "principal://..."}}
+        mock_get.return_value = mock_dom
+
+        mock_patch_resp = MagicMock()
+        mock_patch_resp.status_code = 404
+        mock_patch_resp.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_patch_resp)
+        mock_patch_resp.json.return_value = {"error": {"message": "Entry not found in catalog"}}
+        mock_patch.return_value = mock_patch_resp
+
+        with self.assertRaises(RuntimeError) as ctx:
+            set_overview("p", "us-central1", "dom1", "# Test")
+        self.assertIn("Entry not found", str(ctx.exception))
 
 
 class TestParameterValidation(BaseToolTestCase):
