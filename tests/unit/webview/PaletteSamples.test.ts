@@ -142,7 +142,7 @@ describe('PaletteCard Sample Categories & Collapsible Accordions', () => {
     const provider = new AgentEditorProvider(mockContext);
     const discovered = provider.discoverResourceSamples();
 
-    assert.equal(discovered.length, 2, 'Must discover exactly 2 samples from resource/samples/');
+    assert.equal(discovered.length, 3, 'Must discover 3 samples from resource/samples/');
 
     const retailSamples = discovered.filter((s) => s.category === 'Retail');
     assert.equal(
@@ -153,5 +153,9 @@ describe('PaletteCard Sample Categories & Collapsible Accordions', () => {
 
     const ids = retailSamples.map((s) => s.id).sort();
     assert.deepEqual(ids, ['company_verifier', 'travel_concierge']);
+
+    const govSamples = discovered.filter((s) => s.category === 'Data Governance');
+    assert.equal(govSamples.length, 1, 'Expected 1 sample under Data Governance');
+    assert.equal(govSamples[0].id, 'kc_data_domain_builder');
   });
 });
