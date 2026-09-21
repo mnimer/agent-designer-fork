@@ -113,7 +113,7 @@ export function useFileTabs(
         outputFolder: initialOutputFolder,
         deploymentTarget: (initialDoc?.deployment?.target || initialDoc?.deployment?.deploymentTarget || (initialDoc?.metadata as any)?.deploymentTarget || 'agent_engine') as any,
         includeTests: typeof initialDoc?.deployment?.includeTests === 'boolean' ? initialDoc.deployment.includeTests : true,
-        includeDocker: typeof initialDoc?.deployment?.includeDocker === 'boolean' ? initialDoc.deployment.includeDocker : false,
+        includeDocker: typeof initialDoc?.deployment?.includeDocker === 'boolean' ? initialDoc.deployment.includeDocker : true,
         useStreaming: typeof initialDoc?.deployment?.useStreaming === 'boolean' ? initialDoc.deployment.useStreaming : (useStreamingByDefault ?? true),
       },
     },
@@ -247,7 +247,7 @@ export function useFileTabs(
       language: (defaultLanguage as any) || 'python',
       outputFolder: `./agent_${num}/`,
       includeTests: true,
-      includeDocker: false,
+      includeDocker: true,
       useStreaming: useStreamingByDefault ?? true,
     };
 
@@ -333,7 +333,7 @@ export function useFileTabs(
               language: 'python',
               outputFolder: './workflow/',
               includeTests: true,
-              includeDocker: false,
+              includeDocker: true,
               useStreaming: true,
             },
           };

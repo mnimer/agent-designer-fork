@@ -5,19 +5,20 @@
  *
  * Purpose:
  * Coordinates the full end-to-end evaluation lifecycle for AI Agent codebases:
- * 1. Runs the Deterministic Pre-Flight Gate (syntax compilation + regex secret scan).
- * 2. Concurrently invokes the 4 specialized sub-agents with rate-limit pacing and exponential backoff:
- *    - AgentArchitectureAgent
- *    - AgentSpecificationAgent
- *    - SecurityAndHardeningAgent
- *    - PackagingAndDeployabilityAgent
- * 3. Dispatches results to the Lead Arbiter Agent for scoring, hard veto enforcement,
- *    and automated Prompt Remediation Directive generation for generator prompt templates.
+ * 1. Runs the Deterministic Pre-Flight Gate (syntax compilation + AST + secret scan).
+ * 2. Concurrently invokes 4 specialized sub-agents with rate-limit pacing and exponential backoff:
+ *    - AgentArchitectureAgent (gemini-3.8-flash)
+ *    - AgentSpecificationAgent (gemini-3.8-flash, 100% RTM checklist)
+ *    - SecurityAndHardeningAgent (gemini-3.8-flash-cyber with Fairwind fallback)
+ *    - PackagingAndDeployabilityAgent (gemini-3.8-flash)
+ * 3. Dispatches results to the Lead Arbiter Agent for ground-truth verification against code,
+ *    false-positive dismissal, verified scorecard synthesis, and automated Prompt Remediation
+ *    Directives for generator prompt templates.
  *
  * Architectural decisions:
- * - Uses batched execution with retry logic for 429 RESOURCE_EXHAUSTED / rate-limits to ensure
- *   stable evaluation against cloud LLM endpoints.
- * - Formats rich markdown scorecards and explicit prompt remediation guidance in test output.
+ * - Solves Sub-Agent Catch Corruption: Infrastructure/transport errors rethrow cleanly
+ *   instead of fabricating fake code quality findings that unfairly dock scorecard points.
+ * - Passes full workflowJson and line-numbered files to all evaluator sub-agents.
  */
 
 import { GoogleGenAI } from '@google/genai';
@@ -75,35 +76,14 @@ export async function runMultiAgentEvaluation(
     if (!deterministic.secretScanPassed) {
         console.warn(`   [DeterministicGate] ⚠️ Secret scan failed with ${deterministic.secretFindings.length} issues`);
     }
+    if (deterministic.astCheckPassed === false) {
+        console.warn(`   [DeterministicGate] ⚠️ AST inspection detected issues:`, deterministic.astFindings);
+    }
 
     console.log(`   [MultiAgentEvaluator] 2. Spawning Specialist Sub-Agents (Batch 1: Architecture & Specification)...`);
     const [agentArch, agentSpec] = await Promise.all([
-        withRetry(() => evaluateAgentArchitecture(ai, workflowJson, files), 'AgentArchitectureAgent').catch((err): SpecialistAgentResult => ({
-            agentName: 'AgentArchitectureAgent',
-            passed: false,
-            summary: `Error invoking AgentArchitectureAgent: ${err.message}`,
-            findings: [{
-                id: 'ERR-ARCH-SUBAGENT',
-                category: 'ARCHITECTURE',
-                severity: 'MAJOR',
-                file: 'system',
-                description: `AgentArchitectureAgent invocation failed: ${err.message}`,
-                rationale: 'Subagent runtime error'
-            }]
-        })),
-        withRetry(() => evaluateAgentSpecification(ai, workflowJson, files), 'AgentSpecificationAgent').catch((err): SpecialistAgentResult => ({
-            agentName: 'AgentSpecificationAgent',
-            passed: false,
-            summary: `Error invoking AgentSpecificationAgent: ${err.message}`,
-            findings: [{
-                id: 'ERR-SPEC-SUBAGENT',
-                category: 'SPECIFICATION',
-                severity: 'MAJOR',
-                file: 'system',
-                description: `AgentSpecificationAgent invocation failed: ${err.message}`,
-                rationale: 'Subagent runtime error'
-            }]
-        }))
+        withRetry(() => evaluateAgentArchitecture(ai, workflowJson, files), 'AgentArchitectureAgent'),
+        withRetry(() => evaluateAgentSpecification(ai, workflowJson, files), 'AgentSpecificationAgent')
     ]);
 
     // Brief cooldown between evaluation batches to avoid rate limit throttling
@@ -111,32 +91,8 @@ export async function runMultiAgentEvaluation(
 
     console.log(`   [MultiAgentEvaluator] 3. Spawning Specialist Sub-Agents (Batch 2: Security & Packaging)...`);
     const [security, packaging] = await Promise.all([
-        withRetry(() => evaluateSecurityAndHardening(ai, files), 'SecurityAndHardeningAgent').catch((err): SpecialistAgentResult => ({
-            agentName: 'SecurityAndHardeningAgent',
-            passed: false,
-            summary: `Error invoking SecurityAndHardeningAgent: ${err.message}`,
-            findings: [{
-                id: 'ERR-SEC-SUBAGENT',
-                category: 'SECURITY',
-                severity: 'MAJOR',
-                file: 'system',
-                description: `SecurityAndHardeningAgent invocation failed: ${err.message}`,
-                rationale: 'Subagent runtime error'
-            }]
-        })),
-        withRetry(() => evaluatePackagingAndDeployability(ai, files), 'PackagingAndDeployabilityAgent').catch((err): SpecialistAgentResult => ({
-            agentName: 'PackagingAndDeployabilityAgent',
-            passed: false,
-            summary: `Error invoking PackagingAndDeployabilityAgent: ${err.message}`,
-            findings: [{
-                id: 'ERR-PKG-SUBAGENT',
-                category: 'PACKAGING',
-                severity: 'MAJOR',
-                file: 'system',
-                description: `PackagingAndDeployabilityAgent invocation failed: ${err.message}`,
-                rationale: 'Subagent runtime error'
-            }]
-        }))
+        withRetry(() => evaluateSecurityAndHardening(ai, workflowJson, files), 'SecurityAndHardeningAgent'),
+        withRetry(() => evaluatePackagingAndDeployability(ai, workflowJson, files), 'PackagingAndDeployabilityAgent')
     ]);
 
     const specialistResults: Record<string, SpecialistAgentResult> = {
@@ -148,7 +104,7 @@ export async function runMultiAgentEvaluation(
 
     console.log(`   [MultiAgentEvaluator] 4. Running Lead Arbiter & Synthesizer Agent...`);
     const result = await withRetry(
-        () => synthesizeEvaluation(ai, workflowJson, deterministic, specialistResults, codeGenPrompt),
+        () => synthesizeEvaluation(ai, workflowJson, deterministic, specialistResults, codeGenPrompt, files),
         'LeadArbiterAgent'
     );
 
@@ -186,11 +142,24 @@ export function formatEvaluationReport(result: MultiAgentEvaluationResult, frame
     lines.push(`\n📝 Executive Explanation:`);
     lines.push(`   ${result.explanation}`);
 
-    if (result.allFindings.length > 0) {
-        lines.push(`\n🔍 Findings (${result.allFindings.length}):`);
-        result.allFindings.forEach((f, idx) => {
+    if (result.dismissedFindingIds && result.dismissedFindingIds.length > 0) {
+        lines.push(`\n🛡️ Dismissed False-Positive Findings (${result.dismissedFindingIds.length}):`);
+        result.dismissedFindingIds.forEach(id => {
+            const reason = result.dismissalReasons?.[id] || 'Verified as false positive against actual source code';
+            lines.push(`   - [${id}]: ${reason}`);
+        });
+    }
+
+    const activeFindings = result.confirmedFindings || result.allFindings;
+    if (activeFindings.length > 0) {
+        lines.push(`\n🔍 Confirmed Findings (${activeFindings.length}):`);
+        activeFindings.forEach((f, idx) => {
             const icon = f.severity === 'CRITICAL' ? '🔴' : f.severity === 'MAJOR' ? '🟠' : '🟡';
-            lines.push(`   ${idx + 1}. [${f.category}] ${icon} ${f.severity}: ${f.description} (${f.file})`);
+            const lineInfo = f.lineNumber ? ` line ${f.lineNumber}` : '';
+            lines.push(`   ${idx + 1}. [${f.category}] ${icon} ${f.severity}: ${f.description} (${f.file}${lineInfo})`);
+            if (f.evidence && f.evidence !== 'OMITTED') {
+                lines.push(`      Evidence: ${f.evidence.substring(0, 100)}...`);
+            }
             lines.push(`      Rationale: ${f.rationale}`);
         });
     }

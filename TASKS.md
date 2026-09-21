@@ -126,6 +126,8 @@
 | [**TASK-210**](#task-210) | v1.2.0 | Quality / Integration | Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus) | **Not Started** | TASK-193A, TASK-193B |
 | [**TASK-211**](#task-211) | v1.2.0 | Quality / Integration | Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL) | **Not Started** | TASK-195A, TASK-195B, TASK-198 |
 | [**TASK-212**](#task-212) | v1.2.0 | Quality / Integration | Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner) | **Not Started** | TASK-129, TASK-130, TASK-199 |
+| [**TASK-213**](#task-213) | v1.2.0 | Quality / Evaluators | Multi-Agent Evaluator Optimization & Hardening (Gemini 3.8 Flash Cyber, RTM, False-Positive Veto Fix, AST Checks) | **Complete** | TASK-201, TASK-202 |
+| [**TASK-214**](#task-214) | v1.2.0 | Samples / SDLC | Autonomous Multi-Agent Code Reviewer Blueprint (resource/samples/code_reviewer/) | **Complete** | TASK-128, TASK-213 |
 
 ---
 
@@ -4672,4 +4674,77 @@ Each task specifies reverse-engineering the sample Python code into a production
   ```
 * **Verification**:
   - Evaluation verifies correct subagent tool declaration and safe MCP credential delegation.
+
+---
+
+<a id="task-213"></a>
+
+### [TASK-213] Multi-Agent Evaluator Optimization & Hardening
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Target Package/Files**:
+  - `tests/integration/evaluators/types.ts`
+  - `tests/integration/evaluators/security-evaluator.ts`
+  - `tests/integration/evaluators/agent-architecture-evaluator.ts`
+  - `tests/integration/evaluators/agent-spec-evaluator.ts`
+  - `tests/integration/evaluators/packaging-evaluator.ts`
+  - `tests/integration/evaluators/arbiter-evaluator.ts`
+  - `tests/integration/evaluators/deterministic-gate.ts`
+  - `tests/integration/evaluators/multi-agent-evaluator.ts`
+  - `tests/integration/codegen-runner.ts`
+  - `tests/unit/evaluators/deterministic-gate.test.ts`
+  - `tests/unit/evaluators/agent-spec-evaluator.test.ts`
+  - `tests/unit/evaluators/arbiter-and-orchestrator.test.ts`
+  - `tests/unit/evaluators/specialists.test.ts`
+* **Context**:
+  Harden the Multi-Agent Integration Test Evaluation Harness before authoring remaining integration tests (TASK-203 through TASK-212) and prepare it for cross-project reuse:
+  1. Upgrade Security Evaluator to `gemini-3.8-flash-cyber` with Fairwind fallback and Agentic CWE rubric.
+  2. Upgrade general evaluators to `gemini-3.8-flash`.
+  3. Fix `codegen-runner.ts` deploymentTarget synchronization bug so Cloud Run target tests do not receive stale `agent_engine` workflow JSON.
+  4. Fix `multi-agent-evaluator.ts` catch-block scorecard corruption on API/transport errors.
+  5. Expand `agent-spec-evaluator.ts` to extract 100% of `.agent` JSON fields into a Requirement Traceability Matrix (RTM).
+  6. Fix `arbiter-evaluator.ts` prompt truncation (remove 3,000 char cut) and resolve the false-positive hard veto trap by recalculating scorecards using confirmed findings only.
+  7. Deepen `deterministic-gate.ts` with Python AST inspection, import vs requirements.txt verification, and secret regex colon syntax.
+  8. Deliver 100% unit test coverage for the evaluator harness in `tests/unit/evaluators/` (52 unit tests across 4 test suites, 81 total test files, 846 total unit tests passing).
+* **Verification**:
+  - All 52 unit tests in `tests/unit/evaluators/` pass with 100% code coverage.
+  - All 81 unit test files and 846 tests across the repository pass without regressions.
+  - Existing integration test runners (`animal-agent.test.ts`, `cyber-guardian-agent.test.ts`) are fully compatible with the hardened evaluator harness.
+
+---
+
+<a id="task-214"></a>
+
+### [TASK-214] Autonomous Multi-Agent Code Reviewer Blueprint
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Target Package/Files**:
+  - `resource/samples/code_reviewer/code_reviewer.agent`
+  - `resource/samples/code_reviewer/README.md`
+  - `resource/samples/code_reviewer/tools/__init__.py`
+  - `resource/samples/code_reviewer/tools/code_inspection_tools.py`
+  - `resource/samples/code_reviewer/tests/test_code_reviewer.py`
+  - `tests/unit/shared/codegen/codeReviewerWorkflow.test.ts`
+* **Context**:
+  Create an enterprise-ready, generic blueprint sample from the multi-agent code evaluation architecture that customers can deploy for their own automated code reviews:
+  1. Root Coordinator agent (`agent_code_review_coordinator`) delegating to 3 specialized sub-agents:
+     - Architecture & Code Quality Reviewer (`agent_architecture_reviewer`)
+     - Security & Vulnerability Reviewer (`agent_security_reviewer`, standard `gemini-3.7-flash` model, removing cyber model references)
+     - Testing & Packaging Reviewer (`agent_packaging_reviewer`)
+  2. Dual entry points supporting both Git pull request diff patches and local repository directory inspection.
+  3. Interactive review brief delivered directly in chat rather than writing reports to disk.
+  4. Attached Test Suite node (`trigger_code_review_tester`) containing 6 realistic evaluation scenarios:
+     - SQL Injection vulnerability in user query endpoint
+     - Plaintext secret leak in payment client
+     - Undeclared third-party dependency in service
+     - Monolithic god-class violating single responsibility
+     - SSRF flaw with unvalidated URL and missing timeout
+     - Clean production pull request with tests and parameterized queries
+  5. Strict 8pt grid alignment on all node coordinates (`x % 8 == 0`, `y % 8 == 0`).
+  6. Python tools (`code_inspection_tools.py`) for diff parsing and file tree inspection with passing unit tests.
+* **Verification**:
+  - `python3 -m unittest discover -s resource/samples/code_reviewer/tests -v` passes 100%.
+  - `tests/unit/shared/codegen/codeReviewerWorkflow.test.ts` passes 100%.
+  - `AgentEditorProvider.discoverResourceSamples()` discovers all 3 samples (`code_reviewer`, `company_verifier`, `travel_concierge`).
+  - Full test suite passes: 82/82 files, 853/853 unit tests passing.
 

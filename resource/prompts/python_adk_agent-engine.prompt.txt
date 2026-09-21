@@ -53,9 +53,11 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
    - **ADK AGENT CLASS CONTRACTS & PARAMETER CONSTRAINTS**:
      * **`Agent(...)` (Leaf Execution Agent)**:
        - **Purpose**: Executes LLM prompts and tools.
-       - **Valid Kwargs**: `name`, `model`, `instruction`, `description`, `tools`, `sub_agents`, `output_key`, `output_schema`, `before_agent_callback`, `after_agent_callback`.
+       - **Valid Kwargs**: `name`, `model`, `instruction`, `description`, `tools`, `sub_agents`, `output_key`, `output_schema`, `generate_content_config`, `before_agent_callback`, `after_agent_callback`.
+       - **Hyperparameter Configuration**: When workflow agent nodes specify `temperature`, `maxOutputTokens`, or sampling parameters, DO NOT pass `temperature` directly to `Agent(...)` (it causes a Pydantic `extra_forbidden` ValidationError). Instead, configure `generate_content_config=genai_types.GenerateContentConfig(temperature=..., max_output_tokens=...)` (importing `from google.genai import types as genai_types`) on the `Agent(...)` definition.
+       - **Iteration Limits**: For agent loops, reasoning steps, or iteration limits, use reasonable defaults between 1 and 3 iterations (never high values like 10, to prevent runaway agent loops).
+       - **Structured Output Schema (`output_schema`)**: When an agent node in the workflow specification specifies `structuredOutputSchema` (with `enabled: true`), you MUST wire the generated Pydantic model directly to that agent via `output_schema=<ModelName>` in `agent.py`. Do NOT merely import the model class; it must be passed into `Agent(output_schema=..., output_key=...)` so the model-level structured schema is enforced during execution.
        - **State Writing**: `output_key="<state_key>"` stores the agent's output text/schema into session state so downstream agents can reference it.
-       - **Forbidden Kwargs**: `temperature` is not accepted directly on `Agent` in Google ADK.
      * **`RemoteA2aAgent(...)` (A2A Protocol Gateway Agent)**:
        - **Purpose**: Proxies execution over HTTP to an external Agent-to-Agent (A2A) agent defined by an agent card.
        - **Valid Kwargs**: `name`, `description`, `agent_card`, `httpx_client`, `sub_agents`, `before_agent_callback`, `after_agent_callback`.
@@ -368,6 +370,8 @@ You MUST output EVERY single one of the following files in the returned JSON arr
 7. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building the container image, pushing to Artifact Registry, and updating the Reasoning Engine container.
 8. `.env.example`: Template for environment variables (project ID, location, etc.).
 9. `test_agent.py`: Pytest test suite covering all workflow test scenarios. When the workflow specification contains trigger nodes of type `tester` (or `triggerType == 'tester'`), you MUST inspect `config.testScenarios`, `config.testPrompts`, and `config.expectedOutput`. For EVERY defined test scenario (e.g. 'Test Case #1' with prompt 'Let\'s play a game.'), generate a dedicated pytest test function in `test_agent.py` that executes the scenario prompt against `root_agent` and asserts the expected output criteria.
+   - **Hermetic, Offline CI Execution**: All pytest functions executed as part of CI (such as cloudbuild.yaml step `pytest test_agent.py -v`) MUST test agent structure, tool logic, and mock external Vertex AI / Gemini LLM calls using `unittest.mock` or mock Runner event generators so that automated test suites pass offline without requiring ambient Google Cloud credentials or live network calls.
+   - **Strict Test Assertions**: In `test_agent.py`, test assertions MUST strictly verify the exact `expectedOutput` or `expectedOutputPattern` specified in `testScenarios` (e.g., `assert 'LockbitC2' in final_response_text`). NEVER weaken or bypass assertions by appending fallback conditions such as `or len(final_response_text) > 0` or `or True`, which make test failures impossible.
 10. `.gitignore`: Git ignore patterns for Python, venv, and cache.
 11. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
 12. `README.md`: Architecture overview, local execution via `adk run .`, and Terraform deployment instructions (`terraform init && terraform apply`).

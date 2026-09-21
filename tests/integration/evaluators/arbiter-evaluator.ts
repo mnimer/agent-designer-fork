@@ -4,18 +4,19 @@
  * Author: Mike Nimer <mikenimer@google.com>
  *
  * Purpose:
- * Synthesizes reports from the deterministic pre-flight gate and specialized sub-agents.
- * Produces a multi-dimensional scorecard, checks hard veto rules, and generates
- * actionable Prompt Remediation Directives targeting the prompt template files in
- * `resource/prompts/` whenever an evaluation fails.
+ * Synthesizes reports from the deterministic pre-flight gate and specialist sub-agents.
+ * Audits evidence against actual source code to dismiss false positives, produces
+ * a verified multi-dimensional scorecard, and generates actionable Prompt Remediation
+ * Directives targeting prompt template files in `resource/prompts/`.
  *
  * Architectural decisions:
- * - Does NOT patch the generated code when a test fails. Integration tests validate
- *   the LLM Code Generator itself; therefore, remediation consists of formulating
- *   exact prompt rules to update the prompt templates in resource/prompts/ so the
- *   generator model avoids the defect in subsequent generations.
- * - Enforces hard vetoes on compiler syntax errors, plaintext credential leaks,
- *   or broken multi-agent root wiring.
+ * - Solves the False-Positive Veto Trap: Sub-agents may emit false-positive findings
+ *   (e.g. hallucinating missing root_agent). The Lead Arbiter inspects line-numbered
+ *   code, accepts or dismisses findings (`dismissedFindingIds`), and recalculates
+ *   the final baseline scorecard using ONLY confirmed findings.
+ * - Eliminates Prompt Truncation: Full prompt template is provided in context so
+ *   Prompt Remediation Directives can accurately cite valid section names and rules.
+ * - Strict DRY: Deduplicates overlapping findings across specialist domains.
  */
 
 import { GoogleGenAI } from '@google/genai';
@@ -27,12 +28,37 @@ import {
     EvaluationScorecard
 } from './types';
 import { EVALUATOR_MODEL } from './agent-architecture-evaluator';
+import { GeneratedFileCandidate, formatFilesWithLineNumbers } from './deterministic-gate';
+
+/**
+ * Deduplicates overlapping findings across multiple specialist agents.
+ *
+ * @param findings - Array of raw evaluator findings.
+ * @returns Deduplicated findings list.
+ */
+export function deduplicateFindings(findings: EvaluatorFinding[]): EvaluatorFinding[] {
+    const seen = new Set<string>();
+    const deduplicated: EvaluatorFinding[] = [];
+
+    for (const f of findings) {
+        // Create canonical fingerprint based on file, category, and simplified description
+        const simpleDesc = f.description.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 40);
+        const fingerprint = `${f.file}:${f.category}:${simpleDesc}`;
+
+        if (!seen.has(fingerprint)) {
+            seen.add(fingerprint);
+            deduplicated.push(f);
+        }
+    }
+
+    return deduplicated;
+}
 
 /**
  * Calculates rule-based baseline scores and vetoes from findings.
  *
  * @param deterministic - Result of the deterministic pre-flight gate.
- * @param subAgentFindings - Consolidated findings from all sub-agents.
+ * @param subAgentFindings - Consolidated findings from sub-agents.
  * @returns Scorecard, veto status, and veto reasons.
  */
 export function calculateBaselineScorecard(
@@ -47,7 +73,7 @@ export function calculateBaselineScorecard(
 
     const hardVetoReasons: string[] = [];
 
-    // Deterministic gate penalties & vetoes
+    // 1. Deterministic gate penalties & vetoes
     if (!deterministic.syntaxValid) {
         packagingScore = Math.max(0, packagingScore - 50);
         hardVetoReasons.push(...deterministic.syntaxErrors);
@@ -60,8 +86,21 @@ export function calculateBaselineScorecard(
         });
     }
 
-    // Sub-agent findings deductions
-    for (const f of subAgentFindings) {
+    if (deterministic.astCheckPassed === false && deterministic.astFindings) {
+        for (const astFinding of deterministic.astFindings) {
+            if (astFinding.severity === 'CRITICAL') {
+                architectureScore = Math.max(0, architectureScore - 35);
+                hardVetoReasons.push(`Deterministic AST Defect: ${astFinding.description} (${astFinding.file})`);
+            } else {
+                architectureScore = Math.max(0, architectureScore - 15);
+            }
+        }
+    }
+
+    // 2. Sub-agent findings deductions (deduplicated)
+    const uniqueFindings = deduplicateFindings(subAgentFindings);
+
+    for (const f of uniqueFindings) {
         const deduction = f.severity === 'CRITICAL' ? 35 : f.severity === 'MAJOR' ? 15 : 5;
 
         switch (f.category) {
@@ -121,37 +160,52 @@ export function calculateBaselineScorecard(
 }
 
 /**
- * Runs the Lead Arbiter agent to synthesize the final evaluation and generate
- * prompt remediation directives targeting prompt templates in resource/prompts/.
+ * Runs the Lead Arbiter agent to synthesize the final evaluation, audit false positives,
+ * and formulate actionable Prompt Remediation Directives for generator prompt templates.
+ *
+ * @param ai - Initialized GoogleGenAI client.
+ * @param workflowJson - Original .agent workflow JSON document string.
+ * @param deterministic - Result of the deterministic pre-flight gate.
+ * @param specialistResults - Reports from all specialist sub-agents.
+ * @param codeGenPromptTemplate - Unabridged prompt template used for generation.
+ * @param files - All generated files (for ground-truth evidence verification).
+ * @returns Reconciled evaluation result with verified scorecard and remediation directives.
  */
 export async function synthesizeEvaluation(
     ai: GoogleGenAI,
     workflowJson: string,
     deterministic: DeterministicGateResult,
     specialistResults: Record<string, SpecialistAgentResult>,
-    codeGenPromptTemplate: string
+    codeGenPromptTemplate: string,
+    files?: GeneratedFileCandidate[]
 ): Promise<MultiAgentEvaluationResult> {
-    const allFindings: EvaluatorFinding[] = [
+    const rawFindings: EvaluatorFinding[] = [
         ...deterministic.secretFindings,
+        ...(deterministic.astFindings || []),
         ...Object.values(specialistResults).flatMap(r => r.findings)
     ];
 
-    const baseline = calculateBaselineScorecard(deterministic, allFindings);
+    const initialBaseline = calculateBaselineScorecard(deterministic, rawFindings);
+
+    const formattedFiles = files && files.length > 0
+        ? formatFilesWithLineNumbers(files)
+        : '(Files not supplied directly to Arbiter)';
 
     const prompt = `You are the Lead Arbiter & Quality Assurance Synthesizer Agent for the Visual Agent Designer Code Generator Integration Test Suite.
 
 Your tasks:
 1. Synthesize the reports from the Deterministic Gate and the Specialist Sub-Agents:
    - AgentArchitectureAgent (ADK multi-agent topology, naming constraints, models, GoogleSearchTool bypass_multi_tools_limit)
-   - AgentSpecificationAgent (.agent JSON node conformance, system prompts, tools, tester scenarios, deployment target)
-   - SecurityAndHardeningAgent (Secret Manager / ADC, container hardening, shell quoting)
-   - PackagingAndDeployabilityAgent (requirements.txt, test_agent.py, deployment manifests)
-2. Validate findings, filter false positives, and confirm the final evaluation verdict.
-3. CRITICAL: When the test fails or exhibits defects, DO NOT patch or rewrite the generated code.
-   This integration test tests the LLM Code Generator itself. You must formulate actionable
-   **Prompt Remediation Directives** targeting the generator prompt template in \`resource/prompts/\`:
+   - AgentSpecificationAgent (.agent JSON node conformance, Pydantic models, tools, tester scenarios, deployment target)
+   - SecurityAndHardeningAgent (Secret Manager / ADC, BigQuery SQL parameterization, HITL approval gates, container hardening)
+   - PackagingAndDeployabilityAgent (requirements.txt, test_agent.py, offline CI mocking, deployment manifests)
+2. Ground-Truth Verification:
+   - Check the reported findings against the GENERATED SOURCE FILES below.
+   - If a specialist sub-agent hallucinated an issue (e.g. reported root_agent missing when it is clearly defined in agent.py), mark its finding ID in \`dismissedFindingIds\` and explain why it is a false positive.
+3. Formulate Actionable Prompt Remediation Directives:
+   - When confirmed defects exist, DO NOT patch the generated code. Formulate exact prompt rules targeting the prompt template file:
    - Target files: 'resource/prompts/python_adk_agent-engine.prompt.txt' or 'resource/prompts/python_adk_cloudrun.prompt.txt'
-   - Specify the exact section and concrete instruction wording to add or modify in the prompt template so that the generator model avoids this error in future generations.
+   - Specify the exact section and concrete instruction wording so the generator avoids this defect in future generations.
 
 === INPUT WORKFLOW (.agent JSON) ===
 ${workflowJson}
@@ -161,18 +215,22 @@ Syntax Valid: ${deterministic.syntaxValid}
 Syntax Errors: ${JSON.stringify(deterministic.syntaxErrors)}
 Secret Scan Passed: ${deterministic.secretScanPassed}
 Secret Findings: ${JSON.stringify(deterministic.secretFindings)}
+AST Check Passed: ${deterministic.astCheckPassed !== false}
+AST Findings: ${JSON.stringify(deterministic.astFindings || [])}
 
 === SPECIALIST SUB-AGENT REPORTS ===
 ${JSON.stringify(specialistResults, null, 2)}
 
-=== CURRENT CODE GENERATION PROMPT TEMPLATE (EXCERPT) ===
-${codeGenPromptTemplate.substring(0, 3000)}
-...[truncated]
+=== GENERATED SOURCE FILES & ARTIFACTS (FOR VERIFICATION) ===
+${formattedFiles}
 
-=== BASELINE SCORES & VETOES ===
-Hard Veto Triggered: ${baseline.hardVetoTriggered}
-Hard Veto Reasons: ${JSON.stringify(baseline.hardVetoReasons)}
-Scorecard: ${JSON.stringify(baseline.scorecard)}
+=== CURRENT CODE GENERATION PROMPT TEMPLATE ===
+${codeGenPromptTemplate}
+
+=== INITIAL BASELINE SCORES & VETOES ===
+Initial Hard Veto: ${initialBaseline.hardVetoTriggered}
+Initial Veto Reasons: ${JSON.stringify(initialBaseline.hardVetoReasons)}
+Initial Scorecard: ${JSON.stringify(initialBaseline.scorecard)}
 
 Provide your synthesis in JSON.`;
 
@@ -187,9 +245,26 @@ Provide your synthesis in JSON.`;
                 type: "string",
                 description: "Executive synthesis summarizing why the test passed or failed"
             },
+            dismissedFindingIds: {
+                type: "array",
+                description: "Array of finding IDs from specialists that were audited and confirmed to be FALSE POSITIVES",
+                items: { type: "string" }
+            },
+            dismissalReasons: {
+                type: "array",
+                description: "Explanations for why specific findings were dismissed as false positives",
+                items: {
+                    type: "object",
+                    properties: {
+                        findingId: { type: "string" },
+                        reason: { type: "string" }
+                    },
+                    required: ["findingId", "reason"]
+                }
+            },
             promptRemediationDirectives: {
                 type: "array",
-                description: "Actionable directives to update the prompt template files in resource/prompts/ to prevent repeated failures",
+                description: "Actionable directives to update prompt template files in resource/prompts/ to prevent repeated failures",
                 items: {
                     type: "object",
                     properties: {
@@ -221,6 +296,7 @@ Provide your synthesis in JSON.`;
         model: EVALUATOR_MODEL,
         contents: prompt,
         config: {
+            temperature: 0.1,
             responseMimeType: 'application/json',
             responseSchema: schema
         }
@@ -232,15 +308,34 @@ Provide your synthesis in JSON.`;
 
     const parsed = JSON.parse(response.text);
 
+    // Reconcile false positives: filter out dismissed findings before final scoring
+    const dismissedIds = new Set<string>(parsed.dismissedFindingIds || []);
+    const confirmedFindings = rawFindings.filter(f => !dismissedIds.has(f.id));
+
+    // Recalculate true baseline using confirmed findings only
+    const reconciledBaseline = calculateBaselineScorecard(deterministic, confirmedFindings);
+
+    const dismissalMap: Record<string, string> = {};
+    if (Array.isArray(parsed.dismissalReasons)) {
+        for (const dr of parsed.dismissalReasons) {
+            if (dr.findingId) {
+                dismissalMap[dr.findingId] = dr.reason;
+            }
+        }
+    }
+
     // Hard veto overrides model leniency
-    const finalIsGood = !baseline.hardVetoTriggered && parsed.isGood;
+    const finalIsGood = !reconciledBaseline.hardVetoTriggered && parsed.isGood;
 
     return {
         isGood: finalIsGood,
-        scorecard: baseline.scorecard,
-        hardVetoTriggered: baseline.hardVetoTriggered,
-        hardVetoReasons: baseline.hardVetoReasons,
-        allFindings,
+        scorecard: reconciledBaseline.scorecard,
+        hardVetoTriggered: reconciledBaseline.hardVetoTriggered,
+        hardVetoReasons: reconciledBaseline.hardVetoReasons,
+        allFindings: rawFindings,
+        confirmedFindings,
+        dismissedFindingIds: Array.from(dismissedIds),
+        dismissalReasons: dismissalMap,
         specialistResults,
         promptRemediationDirectives: parsed.promptRemediationDirectives || [],
         explanation: parsed.explanation
