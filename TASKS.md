@@ -34,7 +34,7 @@
 | [**TASK-121**](#task-121) | v1.0.9 | Triggers & IAM | Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise IAM OIDC Auth | **Complete** | TASK-105, TASK-111, TASK-116 |
 | [**TASK-122**](#task-122) | v1.1.0 | Framework | LangGraph Framework Support (Python StateGraph Target) | **Not Started** | TASK-106, TASK-114 |
 | [**TASK-123**](#task-123) | v1.1.1 | Runtime | TypeScript Runtime Support (@google/genai SDK & Vitest) | **Not Started** | TASK-106, TASK-122 |
-| [**TASK-124**](#task-124) | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Not Started** | TASK-113, TASK-117 |
+| [**TASK-124**](#task-124) | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Complete** | TASK-113, TASK-117 |
 | [**TASK-125**](#task-125) | v1.0.1 | Deployment | Native Vertex AI Agent Engine (Agent Runtime) Container Deployment & Lifecycle Management | **Complete** | TASK-106, TASK-110 |
 | [**TASK-126**](#task-126) | v1.0.0 | Extension Host | VS Code Activity Bar Container & Sidebar Workflows Explorer | **Done** | TASK-100, TASK-108 |
 | [**TASK-127**](#task-127) | v1.0.0 | Release & CI | Automated VSIX Packaging & Tag-Triggered GitHub Actions Release Workflow | **Done** | TASK-100, TASK-109 |
@@ -708,19 +708,14 @@
 
 ### [TASK-124] Advanced Cognitive Patterns (Debate, Loop, Critic Triad)
 * **Release**: `v1.1.2`
+* **Status**: Complete (Decomposed & Implemented via TASK-191, TASK-192A/B, TASK-193A/B, TASK-194, and TASK-195A/B)
 * **Target Package/Files**:
   - `src/webview/data/patterns.ts`
   - `src/webview/components/Canvas/PaletteCard.tsx`
 * **Context**:
-  Implement advanced cognitive patterns for agent orchestration: Multi-Agent Debate, Evaluator-Optimizer loop, and Review & Critique Triad.
-* **Sub-Agent Prompt**:
-  ```
-  Implement Advanced Multi-Agent Patterns:
-  1. Add Debate, Evaluator-Optimizer, and Critique Triad patterns to patterns.ts.
-  2. Enable canvas insertion and visual palette badges for cognitive patterns.
-  ```
+  Parent umbrella task for advanced cognitive patterns (Evaluator-Optimizer loop, Multi-Agent Debate, Hierarchical Delegation, and Review & Critique Triad). All patterns have been fully integrated into `patterns.ts`, palette cards, property drawers, and prompt codegen via sub-tasks TASK-191 through TASK-195B.
 * **Verification**:
-  - Inserting each cognitive pattern into canvas generates valid node/edge layouts and sub-agent bindings.
+  - All 8 pattern definitions in `patterns.ts` instantiate valid topologies and pass unit tests in `agentPatterns.test.ts`.
 
 ---
 
@@ -3755,43 +3750,48 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-196] Structured Input Schema Builder for Standard & Router Agent Nodes
 * **Release**: `v1.0.7`
+* **Status**: Not Started
 * **Target Package/Files**:
-  - `src/webview/components/inspector/StructuredInputBuilder.tsx`
-  - `src/webview/components/inspector/StandardAgentDrawer.tsx`
-  - `src/webview/components/inspector/RouterAgentDrawer.tsx`
   - `src/shared/agentSpec.ts`
   - `src/webview/types.ts`
+  - `src/webview/components/inspector/StructuredInputBuilder.tsx` (or generalized `TypedSchemaBuilder.tsx`)
+  - `src/webview/components/inspector/StandardAgentDrawer.tsx`
+  - `src/webview/components/inspector/RouterAgentDrawer.tsx`
   - `resource/prompts/python_adk_agent-engine.prompt.txt`
   - `resource/prompts/python_adk_cloudrun.prompt.txt`
-  - `src/extension/AgentRunnerManager.ts`
-  - `tests/webview/StructuredInputBuilder.test.ts`
-* **Context**:
-  While agents currently support Structured Output (`response_schema` / `structuredOutput` Pydantic models), multi-agent orchestration, upstream trigger handoffs, and dynamic decision routers require strongly typed **Structured Inputs** (`inputSchema` / Pydantic `BaseModel` for inputs).
-  - **Standard Agent Nodes**:
-    - Adds an "Input Schema" accordion in `StandardAgentDrawer.tsx` (mirroring the field builder from `StructuredOutputBuilder.tsx`).
-    - Generates typed Pydantic models for incoming agent state / input parameters in generated Python ADK code.
-    - Validates incoming prompt/payload against the input schema in the Test Runner and emits early schema validation errors.
-  - **Router Agent Nodes**:
-    - Adds an "Input Schema" accordion in `RouterAgentDrawer.tsx`.
-    - Enables developers to define structured fields (e.g. `user_intent: string`, `urgency: integer`, `category: enum`, `metadata: object`) that router condition expressions (`input.urgency > 3`, `input.category == 'billing'`) evaluate against.
-    - Enables auto-completion and static syntax validation of condition variables against the configured Input Schema properties in the condition editor.
-  - **Dual Schema Previews**:
-    - Interactive visual field editor supporting `string`, `integer`, `number`, `boolean`, `array`, `object`, and `enum` with required toggles and descriptions.
-    - Live dual preview tab for Pydantic v2 `BaseModel` Python code and JSON Schema Draft-07 specification.
-* **Sub-Agent Prompt**:
-  ```
-  Implement Structured Input Schema Builder for Standard and Router Agent Nodes:
-  1. Create StructuredInputBuilder component (or generalize StructuredOutputBuilder into a reusable TypedSchemaBuilder) with field name, type, description, and required toggles.
-  2. Integrate StructuredInputBuilder accordion into StandardAgentDrawer.tsx and RouterAgentDrawer.tsx.
-  3. Update agentSpec.ts and types.ts to support inputSchema on AgentData and RouterData.
-  4. Update resource/prompts/ templates to instruct Gemini to generate Pydantic input models (e.g., class AgentInput(BaseModel)) and validate incoming payloads in main.py and agent runner harnesses.
-  5. Update RouterAgentDrawer condition builder to provide variable suggestions matching inputSchema fields.
-  6. Add comprehensive unit tests in tests/webview/StructuredInputBuilder.test.ts verifying schema state mutations, Pydantic code generation, and drawer persistence.
-  ```
+  - `tests/unit/webview/StructuredInputBuilder.test.ts`
+* **Context & Architectural Clarification**:
+  - **Existing State**: Standard Agent nodes (`StandardAgentDrawer.tsx`) and Router Agent nodes (`RouterAgentDrawer.tsx`) are already fully implemented on canvas. Furthermore, **Structured Output** is already supported via `StructuredOutputBuilder.tsx` (generating Pydantic v2 `output_schema` models).
+  - **What Is Missing**: Agents and workflows currently lack a strongly typed **Structured Input** definition (`structuredInput` / Pydantic `BaseModel` for incoming requests, session state parameters, or trigger payloads).
+  - **Role Across Node Types**:
+    1. **Standard Agent Nodes**:
+       - Adds an "Input Schema" accordion in `StandardAgentDrawer.tsx` (defining expected input parameters such as `user_id: string`, `query: string`, `context: dict`).
+       - Generates typed Pydantic v2 models (e.g. `class <AgentName>Input(BaseModel): ...`) for the workflow entrypoint or agent call.
+    2. **Router Agent Nodes**:
+       - Adds an "Input Schema" accordion in `RouterAgentDrawer.tsx` (defining incoming routing payload fields such as `urgency: integer`, `category: enum`, `customer_tier: string`).
+       - Provides quick-insert variable chips and static auto-complete for `boolean_expression` conditions (`state.urgency > 3`, `state.category == 'billing'`) directly from the defined input fields.
+    3. **Schema UI & Dual Previews**:
+       - Interactive field editor supporting `string`, `number`, `boolean`, `array`, `object`, and `enum` with required flags and descriptions.
+       - Live dual preview tab for Pydantic v2 `BaseModel` Python code and JSON Schema Draft-07 specification.
+* **Remaining Implementation Checklist**:
+  1. **Data Spec (`src/shared/agentSpec.ts` & `src/webview/types.ts`)**:
+     - Define `StructuredInputSchema` (or unify with `StructuredOutputSchema` as `TypedSchema`).
+     - Add `structuredInput?: StructuredInputSchema;` to `AgentNodeData` and `RouterConfig`.
+  2. **Reusable UI Component (`src/webview/components/inspector/`)**:
+     - Either create `StructuredInputBuilder.tsx` or refactor `StructuredOutputBuilder.tsx` into a reusable `TypedSchemaBuilder.tsx` with customizable title (`Input Schema` vs `Output Schema`), icon, and default class name (`<AgentName>Input` vs `ResponseSchema`).
+  3. **Drawer Integration**:
+     - Mount the Input Schema accordion in `StandardAgentDrawer.tsx` alongside Structured Output.
+     - Mount the Input Schema accordion in `RouterAgentDrawer.tsx` to configure incoming routing state schema.
+  4. **Router Condition Suggestions (`RouterAgentDrawer.tsx`)**:
+     - In `RouterAgentDrawer.tsx`, render clickable variable pills derived from `structuredInput.fields` when editing `boolean_expression` branch conditions so users can click to insert `state.<fieldName>` or `input.<fieldName>`.
+  5. **Codegen Prompt Updates (`resource/prompts/`)**:
+     - Update `python_adk_agent-engine.prompt.txt` and `python_adk_cloudrun.prompt.txt` to instruct Gemini to generate Pydantic v2 input models (`class <AgentName>Input(BaseModel): ...`) and validate incoming payloads when `structuredInput.enabled === true`.
+  6. **Unit Tests (`tests/unit/webview/StructuredInputBuilder.test.ts`)**:
+     - Unit tests verifying field mutations, validation, Pydantic code generation, drawer persistence, and router condition field suggestions.
 * **Verification**:
   - Standard Agent and Router Agent drawers render "Input Schema" accordion with full interactive field editing.
   - Pydantic v2 input models compile cleanly in generated Python ADK code.
-  - Router condition expressions correctly validate against defined input schema keys.
+  - Router condition expressions expose clickable field variable suggestions.
   - 100% unit test coverage for new schema builder components.
 
 ---
