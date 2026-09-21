@@ -59,7 +59,10 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
              * **Loop (`subAgentPattern: "loop"` / `"review_critique"`)**: Use `SequentialAgent(sub_agents=[LoopAgent(name="refinement_loop", sub_agents=[child_1, child_2, ...], max_iterations=3), synthesizer])`. DO NOT use `ParallelAgent`.
              * **Coordinator (`subAgentPattern: "coordinator"` / `"hierarchical_decomposition"`)**: Use `Agent(name="...", model="gemini-3.7-flash", sub_agents=[child_1, child_2, ...], output_schema=ResponseSchema)`.
              * **Agent Class Parameter Constraints**:
-                - `Agent(...)`: Leaf execution agent accepting `name`, `model`, `instruction`, `description`, `tools`, `sub_agents`, `output_key`, `output_schema`. `output_key` stores output to session state.
+                - `Agent(...)`: Leaf execution agent accepting `name`, `model`, `instruction`, `description`, `tools`, `sub_agents`, `output_key`, `output_schema`, `generate_content_config`. `output_key` stores output to session state.
+                  * **Hyperparameter Configuration**: When workflow agent nodes specify `temperature`, `maxOutputTokens`, or sampling parameters, DO NOT pass `temperature` directly to `Agent(...)` (it causes a Pydantic `extra_forbidden` ValidationError). Instead, configure `generate_content_config=genai_types.GenerateContentConfig(temperature=..., max_output_tokens=...)` (importing `from google.genai import types as genai_types`) on the `Agent(...)` definition.
+                  * **Agent Iteration Limits**: For agent loops or iteration bounds, use reasonable defaults between 1 and 3 iterations (never high values like 10, to prevent runaway loops).
+                  * **Structured Output Schema (`output_schema`)**: When an agent node in the workflow specification specifies `structuredOutputSchema` (with `enabled: true`), you MUST wire the generated Pydantic model directly to that agent via `output_schema=<ModelName>` in `agent.py`. Do NOT merely import the model class; it must be passed into `Agent(output_schema=..., output_key=...)` so the model-level structured schema is enforced during execution.
                 - `RemoteA2aAgent(...)`: A2A protocol gateway agent accepting `name`, `description`, `agent_card`, `httpx_client`, `sub_agents`. Forbidden: `instruction`, `temperature`, `output_key`, `tools`. Passing `output_key` causes a Pydantic `extra_forbidden` ValidationError.
                 - `ParallelAgent(...)`, `SequentialAgent(...)`, `LoopAgent(...)`: Composite container agents accepting `name`, `description`, `sub_agents` (and `max_iterations` for Loop). Forbidden: `instruction`, `temperature`, `output_key`, `tools`. Passing `output_key` causes a Pydantic `extra_forbidden` ValidationError.
              * **CRITICAL ADK & VERTEX AI SEARCH TOOL CONSTRAINTS**:
@@ -99,6 +102,14 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
       * Implement tools as native, type-annotated Python functions with descriptive docstrings detailing parameter purposes and return schemas so Gemini's function calling engine can accurately plan tool use.
       * ADK automatically converts typed Python functions into tool declarations and dispatches calls during the agent loop.
 
+    - Structured Input Schemas (`inputSchema` / Pydantic v2 `BaseModel` for inputs):
+      * When an agent or router node has `inputSchema` defined and enabled:
+        - In `pydantic_models.py`, define a Pydantic v2 `BaseModel` for incoming input/state (e.g. `class <AgentName>Input(BaseModel): ...`).
+        - Strongly type each field: `str`, `int`, `float`, `bool`, `List[...]`, `dict`, `Literal[...]`.
+        - Use `Field(description=..., default=...)` for optional/required fields.
+        - In execution entrypoints (`server.py` / `main.py` / agent runner), validate incoming request payloads using `<AgentName>Input.model_validate(payload)`.
+        - For Router Agents (`agentKind: "router"`), condition expressions evaluate against the validated typed attributes (e.g. `input.urgency > 3`, `input.category == 'billing'`).
+
     - Observability: Logging, Tracing & Metrics (ADK & OpenTelemetry Strategy):
       * **NO Hardcoded `print()` Statements**: Under NO circumstances should you use `print()` for agent tracing or logging. Do NOT subclass `Agent` or override `_run_async_impl` to intercept execution.
       * **Structured Logging**: Configure Python's standard `logging` module (`logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')`) in `server.py`, `main.py`, and `agent.py`. All ADK loggers are children of `google_adk` (use `DEBUG` level for LLM prompt/response inspection).
@@ -107,7 +118,7 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
 
 2. **File Structure to Generate**:
    - `agent.py`: Core ADK agent module defining `root_agent` (`Agent`, `SequentialAgent`, `ParallelAgent`, `LoopAgent`, or `Workflow`) with sub-agents, system instructions, tools, and output schemas. Dynamically prepend its own directory to `sys.path` (via `Path(__file__).parent.resolve()`) before importing local sibling modules (e.g. `pydantic_models`, `tools`) to guarantee clean module resolution across local and container environments.
-   - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs ONLY when explicitly defined in nodes (e.g. `outputFormat: "json"`). If `outputFormat` is `"text"` or unconfigured, DO NOT invent artificial Pydantic schema models or result classes.
+   - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs and typed input schemas (`inputSchema`) (when defined in nodes). If `outputFormat` is `"text"` and no `inputSchema` is configured, DO NOT invent artificial Pydantic schema models or result classes.
    - **ZERO TEST-SUITE LEAKAGE (CRITICAL MANDATE)**: `triggerNode`, `testPrompts`, `testPayload`, and `expectedOutput` are strictly for test suites and evaluation. NEVER leak or incorporate test queries, expected assertions, or specific test entities (e.g. stock tickers, sample names) into `agent.py`, `server.py`, or agent instructions. Agent instructions must strictly reflect ONLY the node's `systemPrompt`.
    - `tools/*.py`: Tool definitions (e.g., Google Search, custom functions, MCP tools). Group tools logically by category/source. Use standard `logging.getLogger(__name__)`.
    - `server.py`: Production FastAPI server wrapping Google ADK's `root_agent` and handling incoming client requests, triggers, and health checks. Follow these implementation instructions:
@@ -118,6 +129,7 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
      * **Direct Query & Test Execution Routes (`POST /` and `POST /api/run`)**:
        - ALWAYS expose `@app.post("/")` and `@app.post("/api/run")` so the Visual Agent Designer Interactive Chat tab, smoke testers, and external HTTP clients can invoke the agent directly via POST.
        - Accept flexible JSON request payloads: `{"input": {"query": "..."}}` (extension runner format), `{"query": "..."}`, `{"prompt": "..."}`, or raw strings.
+       - If `root_agent` has `inputSchema` configured, validate incoming payloads against `<AgentName>Input.model_validate(...)` early before executing the agent runner.
        - When resolving sessions, note that `await session_service.get_session(...)` returns `None` (rather than raising an exception) if the session does not exist. Always check `if not session:` and call `await session_service.create_session(...)` before running the agent.
        - Dispatch the query to `root_agent` using ADK's latest asynchronous `Runner` and session service, stream/accumulate the text tokens, and return a standardized JSON response: `{"output": <text>, "response": <text>, "text": <text>, "status": "success"}`.
      * **OpenAI-Compatible Chat Endpoints (`GET /v1/models` and `POST /v1/chat/completions`)**:
@@ -177,6 +189,7 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
          - Set traffic allocation to 100% on latest revision (`TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST`).
          - Set `lifecycle { ignore_changes = [client, client_version, template[0].containers[0].image] }` to allow fast CI/CD container updates via Cloud Build / `gcloud run deploy` without Terraform state drift.
        * **Conditional Triggers & Integrations**:
+         - **Least-Privilege IAM & Invocation Security**: NEVER grant `roles/run.invoker` to `allUsers` unless the workflow specification explicitly specifies unauthenticated public access. For Eventarc, Pub/Sub, and Cloud Scheduler triggers, bind `roles/run.invoker` ONLY to the dedicated trigger service account (e.g. `google_service_account.eventarc_invoker.email` or `google_service_account.pubsub_invoker.email`).
          - **Pub/Sub Trigger** (when `triggerType` / `triggerKind == "pubsub"`): Enable `pubsub.googleapis.com`, provision dedicated invoker service account with `roles/run.invoker` on Cloud Run, and create `google_pubsub_subscription` with `push_config` pointing to the Cloud Run service `/pubsub` (or `/apps/{app}/trigger/pubsub`) endpoint with `oidc_token { service_account_email = google_service_account.pubsub_invoker.email }`.
          - **Eventarc Trigger** (when `triggerType` / `triggerKind == "eventarc"`): Enable `eventarc.googleapis.com`, provision dedicated invoker service account with `roles/run.invoker` on Cloud Run and `roles/eventarc.eventReceiver` on the project, and create `google_eventarc_trigger` matching the configured event routing to the Cloud Run service path.
          - **Cloud Scheduler (Cron Trigger)** (when `triggerType` / `triggerKind == "scheduled"` or `"cron"`): Enable `cloudscheduler.googleapis.com`, provision scheduler invoker service account with `roles/run.invoker` on Cloud Run, and create `google_cloud_scheduler_job` with the configured cron schedule, timezone, and HTTP target pointing to the Cloud Run service URL with OIDC authentication.
@@ -210,6 +223,8 @@ You MUST output EVERY single one of the following files in the returned JSON arr
 2. `server.py`: Production FastAPI server mounting ADK endpoints and health checks.
 3. `main.py`: Local CLI test runner using ADK Runner.
 4. `test_agent.py`: Pytest test suite validating all test scenarios against root_agent. When the workflow specification contains trigger nodes of type `tester` (or `triggerType == 'tester'`), inspect `config.testScenarios`, `config.testPrompts`, and `config.expectedOutput`. For EVERY defined test scenario (e.g. 'Test Case #1' with prompt 'Let\'s play a game.'), generate a dedicated pytest test function in `test_agent.py` that executes the scenario prompt against `root_agent` and asserts the expected output criteria.
+   - **Hermetic, Offline CI Execution**: All pytest functions executed as part of CI (such as cloudbuild.yaml step `pytest test_agent.py -v`) MUST test agent structure, tool logic, and mock external Vertex AI / Gemini LLM calls using `unittest.mock` or mock Runner event generators so that automated test suites pass offline without requiring ambient Google Cloud credentials or live network calls.
+   - **Strict Test Assertions**: In `test_agent.py`, test assertions MUST strictly verify the exact `expectedOutput` or `expectedOutputPattern` specified in `testScenarios` (e.g., `assert 'LockbitC2' in final_response_text`). NEVER weaken or bypass assertions by appending fallback conditions such as `or len(final_response_text) > 0` or `or True`, which make test failures impossible.
 5. `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios.
 6. `evaluate.py`: Vertex AI Agent Evaluation script using vertexai.evaluation.EvalTask.
 7. `requirements.txt`: Complete pinned dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
@@ -578,6 +593,9 @@ When a workflow node has `agentKind: "router"`, compile it into a custom `BaseAg
              yield event
      ```
    - Always route to the designated fallback branch (`isDefault: true`) if no explicit conditions match.
+3. **Structured Input Schema Support**:
+   - When `inputSchema` is enabled on the router node, parse and validate incoming session state or payload into `<RouterName>Input.model_validate(...)`.
+   - Condition expressions evaluate directly against typed input fields (e.g. `input.urgency > 3`, `input.category == 'billing'`).
 
 ### Synthesizer Agents (`agentKind: "synthesizer"`)
 

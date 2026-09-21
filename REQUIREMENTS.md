@@ -354,7 +354,7 @@ The builder includes 8 pre-configured architectural pattern presets that can be 
 | **2** | **Parallel Fan-Out** *(Fan-Out & Synthesize)* | `Orchestrator` ➔ [`Market Analyst`, `Tech Analyst`, `Risk Analyst`] ➔ `Synthesizer` | 5 Agents | Multi-perspective research, parallel web search, ensemble classification. |
 | **3** | **Router** *(Classify & Route)* | `Intent Classifier` ➔ [`Billing Specialist`, `Tech Support`, `General Inquiries`] | 4 Agents | Customer service triage, domain-specific query dispatching. |
 | **4** | **Evaluator-Optimizer** *(Generate & Refine Loop)* | `Generator` ⇄ `Evaluator` (Quality Threshold Loop) | 2 Agents | High-precision code generation, mathematical proofing, iterative translation. |
-| **5** | **Multi-Agent Debate** *(Consensus Panel)* | `Proponent` ⇄ `Opponent` ➔ `Judge` | 3 Agents | Policy analysis, algorithmic risk assessment, bias detection. |
+| **5** | **Multi-Agent Debate** *(Consensus Panel)* | `Moderator` ➔ [`Proponent` ⇄ `Opponent`] ➔ `Judge` | 4 Agents | Policy analysis, algorithmic risk assessment, bias detection. |
 | **6** | **Hierarchical Delegation** *(Supervisor-Workers)* | `Executive Director` ➔ [`Lead 1`, `Lead 2`] ➔ [`Worker A`, `Worker B`, `Worker C`] | 6 Agents | Large-scale software engineering, multi-chapter report drafting. |
 | **7** | **Review & Critique** *(Triad Review)* | `Author` ➔ `Adversarial Critic` ➔ `Editor` | 3 Agents | Academic publishing, legal contract auditing, compliance checking. |
 | **8** | **Coordinator** *(Central State Supervisor)* | `Supervisor (Blackboard)` ⇄ [`Data Ingestion`, `Model Trainer`, `Reporter`] | 4 Agents | Long-running workflow orchestration, shared memory state machines. |

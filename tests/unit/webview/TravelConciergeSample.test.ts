@@ -135,8 +135,8 @@ describe('TASK-173: Travel Concierge Sample & Info Dialog Suite', () => {
     const discovered = provider.discoverResourceSamples();
     assert.strictEqual(
       discovered.length,
-      2,
-      `discoverResourceSamples should discover exactly 2 samples from resource/samples on disk but found ${discovered.length}: ${discovered.map((s) => s.id).join(', ')}`
+      3,
+      `discoverResourceSamples should discover 3 samples from resource/samples on disk but found ${discovered.length}: ${discovered.map((s) => s.id).join(', ')}`
     );
     const travelSample = discovered.find(
       (s) => s.id === 'travel_concierge' || s.id === 'travel-concierge'

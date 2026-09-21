@@ -144,6 +144,13 @@ export async function runCodegenAndEvaluate(
     const framework = parsedJson.framework || 'google-adk';
     const language = parsedJson.language || 'python';
 
+    // Synchronize deploymentTarget into workflowJson if an override was specified
+    if (deploymentTarget && parsedJson.deployment) {
+        parsedJson.deployment.deploymentTarget = target;
+        parsedJson.deployment.target = target;
+        workflowJson = JSON.stringify(parsedJson, null, 2);
+    }
+
     console.log(`\n======================================================`);
     console.log(`🚀 Starting Codegen & Multi-Agent Evaluation for: ${testName}`);
     console.log(`   Pipeline: ${pipelineName} | Target: ${target} | Framework: ${framework}`);
@@ -205,7 +212,7 @@ export async function runCodegenAndEvaluate(
 
     // 4. Run Multi-Agent Evaluation Harness
     console.log(`   [MultiAgentEvaluator] Evaluating generated codebase...`);
-    const evaluation = await runMultiAgentEvaluation(ai, workflowJson, fullPrompt, generatedFiles);
+    const evaluation = await runMultiAgentEvaluation(ai, workflowJson, templateContent, generatedFiles);
 
     const durationMs = Date.now() - startTime;
 

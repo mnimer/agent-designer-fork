@@ -17,6 +17,7 @@
  * - Decision 6: Trigger categories in the Triggers catalog are collapsible: Test Suite QA and Conversational Chat default expanded, while Workflow Triggers defaults collapsed.
  * - Decision 7: Collapsible Sample Categories: Groups sample workflows by domain category (e.g. Retail, SDLC, Finance) into collapsible accordion sections that are collapsed by default.
  * - Decision 8: Collapsible Agent Categories: Core Agents, Flow & Control Agents, and Multi-Agent Patterns in the Agents catalog are collapsible accordion sections with count badges. Core Agents defaults expanded, while Flow & Control Agents and Multi-Agent Patterns default collapsed.
+ * - Decision 9: Multi-Agent Patterns in the Agents catalog render with dedicated visual palette badges and theme styles (Debate in pink, Loop in purple, Review & Critique in rose) and quick-add '+' buttons for rapid canvas insertion.
  */
 
 import React, { useState, useMemo } from 'react';
@@ -476,6 +477,20 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
           iconBorder: 'border-teal-500/30',
           badge: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
         };
+      case 'pink':
+        return {
+          border: 'border-pink-500/40 hover:border-pink-400 shadow-pink-950/20',
+          hoverGrip: 'group-hover:text-pink-400',
+          iconBorder: 'border-pink-500/30',
+          badge: 'bg-pink-500/20 text-pink-300 border-pink-500/30',
+        };
+      case 'indigo':
+        return {
+          border: 'border-indigo-500/40 hover:border-indigo-400 shadow-indigo-950/20',
+          hoverGrip: 'group-hover:text-indigo-400',
+          iconBorder: 'border-indigo-500/30',
+          badge: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+        };
       default:
         return {
           border: 'border-gray-500/40 hover:border-gray-400 shadow-gray-950/20',
@@ -790,37 +805,52 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
 
             {openAgentCategories.patterns && (
               <div className="pt-1.5 space-y-1.5 border-t border-[#30363d]/40">
-                {PATTERN_DEFINITIONS.map((pattern) => (
-                  <div
-                    key={pattern.id}
-                    draggable
-                    onDragStart={(e) => handleDragStartPattern(e, pattern.type)}
-                    onClick={() => onAddPattern(pattern.type)}
-                    className="group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] border-purple-500/40 cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-purple-400 shadow-sm transition-all shadow-purple-950/20"
-                    title={`Drag and drop ${pattern.name} pattern onto canvas`}
-                    data-testid={`palette-pattern-${pattern.type}`}
-                  >
-                    <div className="flex items-start gap-2.5 min-w-0">
-                      <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-purple-400 shrink-0 mt-1" />
-                      <div className="p-1.5 rounded-md bg-[#0d1117] border border-purple-500/30 shrink-0 mt-0.5 shadow-xs">
-                        {getPatternIcon(pattern.iconName)}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-xs text-white truncate max-w-[150px]">
-                            {pattern.name}
-                          </span>
-                          <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                            {pattern.badge}
-                          </span>
+                {PATTERN_DEFINITIONS.map((pattern) => {
+                  const styles = getAgentCardStyles(pattern.colorTheme || 'purple');
+                  return (
+                    <div
+                      key={pattern.id}
+                      draggable
+                      onDragStart={(e) => handleDragStartPattern(e, pattern.type)}
+                      onClick={() => onAddPattern(pattern.type)}
+                      className={`group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] ${styles.border} cursor-grab active:cursor-grabbing hover:bg-[#30363d] shadow-sm transition-all`}
+                      title={`Drag and drop ${pattern.name} pattern onto canvas`}
+                      data-testid={`palette-pattern-${pattern.type}`}
+                    >
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <GripVertical className={`w-3.5 h-3.5 text-gray-400 ${styles.hoverGrip} shrink-0 mt-1`} />
+                        <div className={`p-1.5 rounded-md bg-[#0d1117] ${styles.iconBorder} shrink-0 mt-0.5 border shadow-xs`}>
+                          {getPatternIcon(pattern.iconName)}
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
-                          {pattern.description}
-                        </p>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-xs text-white truncate max-w-[150px]">
+                              {pattern.name}
+                            </span>
+                            <span className={`text-[8px] uppercase font-mono px-1.5 py-0.2 rounded ${styles.badge}`}>
+                              {pattern.badge}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                            {pattern.description}
+                          </p>
+                        </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAddPattern(pattern.type);
+                        }}
+                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-[#30363d] text-gray-400 hover:text-white transition-all shrink-0 cursor-pointer"
+                        title={`Add ${pattern.name} to canvas`}
+                        data-testid={`palette-pattern-add-${pattern.type}`}
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

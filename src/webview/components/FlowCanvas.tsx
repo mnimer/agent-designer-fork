@@ -195,7 +195,7 @@ export function FlowCanvas() {
     outputFolder: initialOutputFolder,
     deploymentTarget: (initialInjectedDoc?.deployment?.target || initialInjectedDoc?.deployment?.deploymentTarget || (initialInjectedDoc?.metadata as any)?.deploymentTarget || 'agent_engine') as any,
     includeTests: typeof initialInjectedDoc?.deployment?.includeTests === 'boolean' ? initialInjectedDoc.deployment.includeTests : true,
-    includeDocker: typeof initialInjectedDoc?.deployment?.includeDocker === 'boolean' ? initialInjectedDoc.deployment.includeDocker : false,
+    includeDocker: typeof initialInjectedDoc?.deployment?.includeDocker === 'boolean' ? initialInjectedDoc.deployment.includeDocker : true,
     useStreaming: typeof initialInjectedDoc?.deployment?.useStreaming === 'boolean' ? initialInjectedDoc.deployment.useStreaming : (settings.useStreamingByDefault ?? true),
     deployedResourceId: initialInjectedDoc?.deployment?.deployedResourceId,
     serviceUrl: initialInjectedDoc?.deployment?.serviceUrl,

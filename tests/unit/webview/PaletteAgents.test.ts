@@ -205,5 +205,38 @@ describe('Basic Agent Types Palette & Node Creation', () => {
     assert.equal(state.flow_control, true);
     assert.equal(state.patterns, true);
   });
+
+  it('should configure cognitive patterns with distinct visual badges, icons, and color themes (TASK-124)', () => {
+    // 1. Multi-Agent Debate
+    const debatePattern = PATTERN_DEFINITIONS.find((p) => p.type === 'debate');
+    assert.ok(debatePattern, 'Debate pattern must exist');
+    assert.equal(debatePattern?.badge, 'Consensus Panel');
+    assert.equal(debatePattern?.colorTheme, 'pink');
+    assert.equal(debatePattern?.iconName, 'Scale');
+    assert.ok(debatePattern?.description.toLowerCase().includes('debate'));
+
+    // 2. Evaluator-Optimizer Loop
+    const loopPattern = PATTERN_DEFINITIONS.find((p) => p.type === 'loop');
+    assert.ok(loopPattern, 'Loop pattern must exist');
+    assert.equal(loopPattern?.badge, 'Generate & Refine');
+    assert.equal(loopPattern?.colorTheme, 'purple');
+    assert.equal(loopPattern?.iconName, 'Repeat');
+    assert.ok(loopPattern?.description.includes('loop'));
+
+    // 3. Review & Critique Triad
+    const critiquePattern = PATTERN_DEFINITIONS.find((p) => p.type === 'review_critique');
+    assert.ok(critiquePattern, 'Review & Critique pattern must exist');
+    assert.equal(critiquePattern?.badge, 'Triad Review');
+    assert.equal(critiquePattern?.colorTheme, 'rose');
+    assert.equal(critiquePattern?.iconName, 'CheckSquare');
+    assert.ok(critiquePattern?.description.includes('Triad'));
+  });
+
+  it('should ensure all 8 pattern definitions possess valid colorTheme properties', () => {
+    for (const pattern of PATTERN_DEFINITIONS) {
+      assert.ok(pattern.colorTheme, `Pattern ${pattern.id} must have a colorTheme defined`);
+      assert.ok(pattern.badge, `Pattern ${pattern.id} must have a badge defined`);
+    }
+  });
 });
 
