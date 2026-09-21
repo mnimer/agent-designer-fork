@@ -178,8 +178,8 @@ describe('Multi-Agent Patterns Catalog & Generation (TASK-124, TASK-191)', () =>
       // 2 agent edges + 1 trigger edge = 3 edges
       assert.strictEqual(edges.length, 3);
 
-      const triggerNode = nodes.find((n) => n.type === 'triggerNode' || (n.data as any)?.triggerType === 'manual_chat');
-      assert.ok(triggerNode, 'Must include chat trigger node');
+      const triggerNode = nodes.find((n) => n.type === 'triggerNode' || (n.data as any)?.triggerType === 'manual_chat' || (n.data as any)?.triggerType === 'tester');
+      assert.ok(triggerNode, 'Must include trigger node');
 
       const triggerEdge = edges.find((e) => e.source === triggerNode?.id);
       assert.ok(triggerEdge, 'Must connect trigger to entrypoint agent');
@@ -191,6 +191,213 @@ describe('Multi-Agent Patterns Catalog & Generation (TASK-124, TASK-191)', () =>
         assert.ok(typeof node.position.x === 'number' && !isNaN(node.position.x));
         assert.ok(typeof node.position.y === 'number' && !isNaN(node.position.y));
       }
+    });
+  });
+
+  describe('Advanced Cognitive Patterns (TASK-124: Debate, Loop, Critic Triad)', () => {
+    describe('Evaluator-Optimizer Loop Pattern', () => {
+      it('should generate valid 2-node topology with feedback loop edge and sub-agent binding', () => {
+        const result = generateRawPattern('loop', 0, 0);
+        assert.strictEqual(result.nodes.length, 2);
+        assert.strictEqual(result.edges.length, 2);
+
+        const generator = result.nodes.find((n) => n.data.subAgentPattern === 'loop' && n.data.isStartNode);
+        const evaluator = result.nodes.find((n) => n.data.isEvaluator);
+
+        assert.ok(generator, 'Generator node must exist');
+        assert.ok(evaluator, 'Evaluator node must exist');
+        assert.strictEqual(generator?.data.label, 'Draft Generator');
+        assert.strictEqual(evaluator?.data.label, 'Critic Evaluator');
+
+        // Verify sub-agent binding from Generator to Evaluator
+        assert.strictEqual(generator?.data.subAgents.length, 1);
+        assert.strictEqual(generator?.data.subAgents[0].agentId, evaluator?.id);
+        assert.strictEqual(generator?.data.subAgents[0].name, 'Critic Evaluator');
+
+        // Verify forward edge
+        const fwdEdge = result.edges.find((e) => e.source === generator?.id && e.target === evaluator?.id);
+        assert.ok(fwdEdge, 'Forward edge must exist from Generator to Evaluator');
+        assert.strictEqual(fwdEdge?.sourceHandle, 'output');
+        assert.strictEqual(fwdEdge?.targetHandle, 'input');
+
+        // Verify feedback loop edge
+        const loopEdge = result.edges.find((e) => e.source === evaluator?.id && e.target === generator?.id);
+        assert.ok(loopEdge, 'Feedback edge must exist from Evaluator back to Generator');
+        assert.strictEqual(loopEdge?.sourceHandle, 'subagent');
+        assert.strictEqual(loopEdge?.targetHandle, 'input');
+        assert.strictEqual(loopEdge?.style?.strokeDasharray, '5 5');
+      });
+
+      it('should create layouted pattern with trigger attachment and valid coordinates', () => {
+        const { nodes, edges } = createPatternNodesAndEdges('loop', 120, 80);
+        // 2 agents + 1 test trigger
+        assert.strictEqual(nodes.length, 3);
+        assert.strictEqual(edges.length, 3);
+
+        const trigger = nodes.find((n) => n.type === 'triggerNode');
+        const generator = nodes.find((n) => n.data?.subAgentPattern === 'loop' && n.data?.isStartNode);
+        const evaluator = nodes.find((n) => n.data?.isEvaluator);
+
+        assert.ok(trigger);
+        assert.ok(generator);
+        assert.ok(evaluator);
+
+        // Verify trigger connection to root agent
+        const triggerEdge = edges.find((e) => e.source === trigger?.id && e.target === generator?.id);
+        assert.ok(triggerEdge, 'Trigger must connect to Generator root node');
+
+        // Verify layout coordinates
+        for (const node of nodes) {
+          assert.ok(typeof node.position.x === 'number' && !isNaN(node.position.x));
+          assert.ok(typeof node.position.y === 'number' && !isNaN(node.position.y));
+          assert.ok(node.position.x >= 0);
+          assert.ok(node.position.y >= 0);
+        }
+
+        // Verify subAgent binding preservation
+        assert.strictEqual(generator?.data.subAgents[0].agentId, evaluator?.id);
+      });
+    });
+
+    describe('Multi-Agent Debate Pattern', () => {
+      it('should generate valid 4-node topology with debate config, structured output, and sub-agent bindings', () => {
+        const result = generateRawPattern('debate', 0, 0);
+        assert.strictEqual(result.nodes.length, 4);
+        assert.strictEqual(result.edges.length, 5);
+
+        const moderator = result.nodes.find((n) => n.data.label === 'Debate Moderator');
+        const proponent = result.nodes.find((n) => n.data.label === 'Affirmative Proponent');
+        const opponent = result.nodes.find((n) => n.data.label === 'Skeptical Opponent');
+        const judge = result.nodes.find((n) => n.data.label === 'Consensus Judge');
+
+        assert.ok(moderator, 'Moderator must exist');
+        assert.ok(proponent, 'Proponent must exist');
+        assert.ok(opponent, 'Opponent must exist');
+        assert.ok(judge, 'Judge must exist');
+
+        // Verify Moderator configuration
+        assert.strictEqual(moderator?.data.isStartNode, true);
+        assert.strictEqual(moderator?.data.isDebateNode, true);
+        assert.strictEqual(moderator?.data.subAgentPattern, 'debate');
+        assert.ok(moderator?.data.debateConfig);
+        assert.strictEqual(moderator?.data.debateConfig?.maxRounds, 2);
+        assert.strictEqual(moderator?.data.debateConfig?.consensusThreshold, 0.85);
+        assert.strictEqual(moderator?.data.debateConfig?.debateStyle, 'structured_rebuttal');
+
+        // Verify sub-agent bindings from Moderator to all 3 debate participants
+        assert.strictEqual(moderator?.data.subAgents.length, 3);
+        const subAgentIds = moderator?.data.subAgents.map((s) => s.agentId);
+        assert.ok(subAgentIds?.includes(proponent?.id));
+        assert.ok(subAgentIds?.includes(opponent?.id));
+        assert.ok(subAgentIds?.includes(judge?.id));
+
+        // Verify Consensus Judge structured output schema
+        assert.ok(judge?.data.structuredOutput?.enabled);
+        assert.strictEqual(judge?.data.structuredOutput?.name, 'ConsensusVerdict');
+        const fieldNames = judge?.data.structuredOutput?.fields.map((f) => f.name);
+        assert.ok(fieldNames?.includes('verdict'));
+        assert.ok(fieldNames?.includes('confidenceScore'));
+        assert.ok(fieldNames?.includes('keyAgreements'));
+        assert.ok(fieldNames?.includes('unresolvedDisputes'));
+        assert.ok(fieldNames?.includes('recommendations'));
+
+        // Verify critique edge between Proponent and Opponent
+        const critiqueEdge = result.edges.find(
+          (e) => e.source === proponent?.id && e.target === opponent?.id
+        );
+        assert.ok(critiqueEdge, 'Critique edge must exist between proponent and opponent');
+        assert.strictEqual(critiqueEdge?.style?.strokeDasharray, '4 4');
+
+        // Verify Judge convergence edges
+        const propToJudge = result.edges.find((e) => e.source === proponent?.id && e.target === judge?.id);
+        const oppToJudge = result.edges.find((e) => e.source === opponent?.id && e.target === judge?.id);
+        assert.ok(propToJudge, 'Proponent must connect to Judge');
+        assert.ok(oppToJudge, 'Opponent must connect to Judge');
+      });
+
+      it('should support consensus alias and produce identical structure', () => {
+        const result = generateRawPattern('consensus' as PatternType, 50, 50);
+        assert.strictEqual(result.nodes.length, 4);
+        assert.strictEqual(result.edges.length, 5);
+        assert.ok(result.nodes.some((n) => n.data.label === 'Debate Moderator'));
+      });
+
+      it('should create layouted pattern with trigger attachment and valid coordinates', () => {
+        const { nodes, edges } = createPatternNodesAndEdges('debate', 200, 150);
+        // 4 agents + 1 test trigger
+        assert.strictEqual(nodes.length, 5);
+        assert.strictEqual(edges.length, 6);
+
+        const trigger = nodes.find((n) => n.type === 'triggerNode');
+        const moderator = nodes.find((n) => n.data?.label === 'Debate Moderator');
+        assert.ok(trigger);
+        assert.ok(moderator);
+
+        // Verify trigger connects to Moderator root node
+        const triggerEdge = edges.find((e) => e.source === trigger?.id && e.target === moderator?.id);
+        assert.ok(triggerEdge, 'Trigger must connect to Moderator');
+
+        // Verify layout positions
+        for (const node of nodes) {
+          assert.ok(typeof node.position.x === 'number' && !isNaN(node.position.x));
+          assert.ok(typeof node.position.y === 'number' && !isNaN(node.position.y));
+        }
+      });
+    });
+
+    describe('Review & Critique Triad Pattern', () => {
+      it('should generate valid 3-node topology with author, critic, editor, and sub-agent bindings', () => {
+        const result = generateRawPattern('review_critique', 0, 0);
+        assert.strictEqual(result.nodes.length, 3);
+        assert.strictEqual(result.edges.length, 2);
+
+        const author = result.nodes.find((n) => n.data.label === 'Content Author');
+        const critic = result.nodes.find((n) => n.data.label === 'Adversarial Critic');
+        const editor = result.nodes.find((n) => n.data.label === 'Synthesis Editor');
+
+        assert.ok(author, 'Author must exist');
+        assert.ok(critic, 'Critic must exist');
+        assert.ok(editor, 'Editor must exist');
+
+        // Author configuration
+        assert.strictEqual(author?.data.isStartNode, true);
+        assert.strictEqual(author?.data.subAgentPattern, 'review_critique');
+        assert.strictEqual(author?.data.subAgents.length, 2);
+        const subAgentIds = author?.data.subAgents.map((s) => s.agentId);
+        assert.ok(subAgentIds?.includes(critic?.id));
+        assert.ok(subAgentIds?.includes(editor?.id));
+
+        // Color themes
+        assert.strictEqual(author?.data.colorTheme, 'blue');
+        assert.strictEqual(critic?.data.colorTheme, 'rose');
+        assert.strictEqual(editor?.data.colorTheme, 'emerald');
+
+        // Sequential edges
+        const authToCritic = result.edges.find((e) => e.source === author?.id && e.target === critic?.id);
+        const criticToEditor = result.edges.find((e) => e.source === critic?.id && e.target === editor?.id);
+        assert.ok(authToCritic, 'Edge from Author to Critic must exist');
+        assert.ok(criticToEditor, 'Edge from Critic to Editor must exist');
+      });
+
+      it('should create layouted pattern with trigger attachment and valid coordinates', () => {
+        const { nodes, edges } = createPatternNodesAndEdges('review_critique', 50, 100);
+        // 3 agents + 1 test trigger
+        assert.strictEqual(nodes.length, 4);
+        assert.strictEqual(edges.length, 3);
+
+        const trigger = nodes.find((n) => n.type === 'triggerNode');
+        const author = nodes.find((n) => n.data?.label === 'Content Author');
+        assert.ok(trigger);
+        assert.ok(author);
+
+        const triggerEdge = edges.find((e) => e.source === trigger?.id && e.target === author?.id);
+        assert.ok(triggerEdge, 'Trigger must connect to Author');
+
+        for (const node of nodes) {
+          assert.ok(typeof node.position.x === 'number' && !isNaN(node.position.x));
+          assert.ok(typeof node.position.y === 'number' && !isNaN(node.position.y));
+        }
+      });
     });
   });
 });

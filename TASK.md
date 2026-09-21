@@ -1,3 +1,21 @@
+# TASK-124: Advanced Cognitive Patterns (Debate, Loop, Critic Triad)
+
+## Goal
+Implement advanced cognitive patterns for agent orchestration: Multi-Agent Debate, Evaluator-Optimizer loop, and Review & Critique Triad.
+1. Ensure Debate, Evaluator-Optimizer, and Critique Triad patterns are defined in `patterns.ts` with valid node topologies, sub-agent bindings, and Dagre layouts.
+2. Enable canvas insertion and visual palette badges for cognitive patterns in `PaletteCard.tsx`.
+3. Provide unit test coverage verifying canvas insertion, sub-agent bindings, layout coordinates, and visual palette badge metadata.
+4. Update `TASKS.md` and project documentation.
+
+## Plan & Progress
+- [x] Step 1: Analyze existing pattern definitions and palette integration.
+- [x] Step 2: Update `PatternDefinition` and `patterns.ts` to associate distinct `colorTheme` with each cognitive pattern.
+- [x] Step 3: Enhance `PaletteCard.tsx` with distinct visual palette badges, theme styling, and quick-add canvas insertion button.
+- [x] Step 4: Write isolated unit tests in `agentPatterns.test.ts` and `PaletteAgents.test.ts` for all 3 cognitive patterns.
+- [x] Step 5: Verify all unit tests pass (38/38 pattern tests pass, 803/803 total suite tests pass).
+- [x] Step 6: Update `TASKS.md` and `REQUIREMENTS.md`.
+
+## Status: COMPLETE
 # TASK-196: Structured Input Schema Builder for Standard & Router Agent Nodes
 
 ## Status

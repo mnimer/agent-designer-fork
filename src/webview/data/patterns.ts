@@ -24,6 +24,7 @@ export const PATTERN_DEFINITIONS: PatternDefinition[] = [
     iconName: 'Workflow',
     badge: 'Prompt Chaining',
     type: 'sequential',
+    colorTheme: 'blue',
   },
   {
     id: 'pattern_parallel',
@@ -32,6 +33,7 @@ export const PATTERN_DEFINITIONS: PatternDefinition[] = [
     iconName: 'GitFork',
     badge: 'Fan-Out & Synthesize',
     type: 'parallel',
+    colorTheme: 'emerald',
   },
   {
     id: 'pattern_router',
@@ -40,6 +42,7 @@ export const PATTERN_DEFINITIONS: PatternDefinition[] = [
     iconName: 'Network',
     badge: 'Classify & Route',
     type: 'router',
+    colorTheme: 'amber',
   },
   {
     id: 'pattern_loop',
@@ -48,6 +51,7 @@ export const PATTERN_DEFINITIONS: PatternDefinition[] = [
     iconName: 'Repeat',
     badge: 'Generate & Refine',
     type: 'loop',
+    colorTheme: 'purple',
   },
   {
     id: 'pattern_debate',
@@ -56,6 +60,7 @@ export const PATTERN_DEFINITIONS: PatternDefinition[] = [
     iconName: 'Scale',
     badge: 'Consensus Panel',
     type: 'debate',
+    colorTheme: 'pink',
   },
   {
     id: 'pattern_hierarchical_decomposition',
@@ -64,6 +69,7 @@ export const PATTERN_DEFINITIONS: PatternDefinition[] = [
     iconName: 'Layers',
     badge: 'Supervisor-Workers',
     type: 'hierarchical_decomposition',
+    colorTheme: 'indigo',
   },
   {
     id: 'pattern_review_critique',
@@ -72,6 +78,7 @@ export const PATTERN_DEFINITIONS: PatternDefinition[] = [
     iconName: 'CheckSquare',
     badge: 'Triad Review',
     type: 'review_critique',
+    colorTheme: 'rose',
   },
   {
     id: 'pattern_coordinator',
@@ -80,6 +87,7 @@ export const PATTERN_DEFINITIONS: PatternDefinition[] = [
     iconName: 'Compass',
     badge: 'Central State',
     type: 'coordinator',
+    colorTheme: 'cyan',
   },
 ];
 

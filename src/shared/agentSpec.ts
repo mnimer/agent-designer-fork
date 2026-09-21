@@ -1005,4 +1005,5 @@ export interface PatternDefinition {
   iconName: string;
   badge: string;
   type: PatternType;
+  colorTheme?: 'blue' | 'cyan' | 'purple' | 'emerald' | 'amber' | 'rose' | 'teal' | 'indigo' | 'pink';
 }
