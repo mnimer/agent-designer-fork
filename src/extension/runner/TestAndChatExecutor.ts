@@ -256,6 +256,28 @@ export class TestAndChatExecutor {
       });
     }
 
+    // Early Input Schema Validation Gate (TASK-196)
+    const schemaValidation = runner.validateScenarioInput(scenario, document);
+    if (!schemaValidation.valid && schemaValidation.errors.length > 0) {
+      const errorMsg = `[Input Schema Validation Error]: ${schemaValidation.errors.join('; ')}`;
+      await bridge.postMessage({
+        type: 'EXECUTION_LOG',
+        payload: {
+          runId,
+          scenarioId: scenario.id,
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          message: errorMsg,
+        },
+      });
+      return {
+        passed: false,
+        output: '',
+        error: errorMsg,
+        durationMs: 0,
+      };
+    }
+
     // Branch 1: Remote Execution
     if (executionTarget === 'remote') {
       await bridge.postMessage({

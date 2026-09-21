@@ -155,7 +155,14 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
           - HITL Approved / Guardrail Pass: Green / Teal (`#10b981` / `#14b8a6`)
           - HITL Rejected / Guardrail Block / Fallback Recovery: Red / Rose (`#f43f5e`)
 
-4. **Structured Output vs Plain Text Output & Strict Data Isolation**:
+4. **Structured Input & Output Schemas & Strict Data Isolation**:
+   - **Structured Input Schemas (`inputSchema` / Pydantic v2 `BaseModel` for inputs)**:
+     * When an agent or router node has `inputSchema` defined and enabled:
+       - In `pydantic_models.py`, define a Pydantic v2 `BaseModel` for incoming input/state (e.g. `class <AgentName>Input(BaseModel): ...`).
+       - Strongly type each field: `str`, `int`, `float`, `bool`, `List[...]`, `dict`, `Literal[...]`.
+       - Use `Field(description=..., default=...)` for optional/required fields.
+       - In execution entrypoints (`main.py` / server harness / agent runner), validate incoming request payloads using `<AgentName>Input.model_validate(payload)`.
+       - For Router Agents (`agentKind: "router"`), condition expressions evaluate against the validated typed attributes (e.g. `input.urgency > 3`, `input.category == 'billing'`).
    - **Only generate Pydantic models if structured output is explicitly defined**: If an agent node specifies `outputFormat: "json"` (or explicitly defines a JSON schema), generate `pydantic_models.py` with that schema model and configure `output_schema=ResponseSchema`.
    - **Plain Text Output (`outputFormat: "text"` or unconfigured)**: If `outputFormat` is `"text"` or not explicitly set to JSON schema, DO NOT generate artificial domain Pydantic models (such as inventing a custom domain result class like `StockAnalysisResult`). The agent or synthesizer MUST return plain text or markdown without `output_schema`.
    - **ZERO TEST-SUITE LEAKAGE (CRITICAL MANDATE)**:
@@ -280,7 +287,7 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
    - `.gitignore` and `.gcloudignore`: Package strictly necessary agent assets, excluding virtualenvs (`.venv/`), `__pycache__`, `.pytest_cache`, `.agent` diagram files, and local credentials.
    - `README.md`: Architecture overview, local execution with `adk run .` or `adk api_server`, initial Day 0 setup instructions (`terraform init && terraform apply`), and CI/CD deployment instructions.
    - Auxiliary files as needed:
-     * `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs (when defined in nodes).
+     * `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs and typed input schemas (`inputSchema`) (when defined in nodes).
      * `tools/*.py`: Custom tools and functions passed to the agents. Group tools logically by category/source.
      * `*_card.json`: A2A agent card metadata JSON files (when A2A agent nodes are in the workflow).
 
@@ -704,6 +711,9 @@ When a workflow node has `agentKind: "router"`, compile it into a custom `BaseAg
              yield event
      ```
    - Always route to the designated fallback branch (`isDefault: true`) if no explicit conditions match.
+3. **Structured Input Schema Support**:
+   - When `inputSchema` is enabled on the router node, parse and validate incoming session state or payload into `<RouterName>Input.model_validate(...)`.
+   - Condition expressions evaluate directly against typed input fields (e.g. `input.urgency > 3`, `input.category == 'billing'`).
 
 ### Synthesizer Agents (`agentKind: "synthesizer"`)
 

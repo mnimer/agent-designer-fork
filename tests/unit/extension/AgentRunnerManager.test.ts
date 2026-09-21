@@ -1039,6 +1039,103 @@ describe('AgentRunnerManager', () => {
     assert.equal(postedMessages[1].payload.status, 'idle');
     assert.equal(postedMessages[1].payload.serviceUrl, undefined);
   });
+
+  it('should extract expectedInputSchema from root agent when scenarios do not define one', () => {
+    const manager = new AgentRunnerManager('/mock/extension/path');
+    const docWithInputSchema: AgentWorkflowDocument = {
+      schemaVersion: '1.0.0',
+      name: 'Structured Flow',
+      description: 'Flow with input schema',
+      framework: 'adk',
+      language: 'python',
+      nodes: [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          position: { x: 100, y: 100 },
+          data: {
+            label: 'Root Agent',
+            role: 'Processor',
+            inputSchema: {
+              enabled: true,
+              name: 'OrderInput',
+              fields: [
+                { id: '1', name: 'order_id', type: 'string', required: true },
+                { id: '2', name: 'quantity', type: 'integer', required: true },
+              ],
+            },
+          },
+        },
+        {
+          id: 'trigger-1',
+          type: 'trigger',
+          position: { x: 0, y: 100 },
+          data: {
+            label: 'Test Trigger',
+            config: {
+              testScenarios: [
+                { id: 'sc-1', name: 'Test Scenario 1', inputQuery: '{"order_id": "123", "quantity": 5}' },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    const scenarios = manager.extractScenarios(docWithInputSchema);
+    assert.equal(scenarios.length, 1);
+    assert.ok(scenarios[0].expectedInputSchema);
+    assert.equal(scenarios[0].expectedInputSchema.name, 'OrderInput');
+    assert.equal(scenarios[0].expectedInputSchema.fields.length, 2);
+  });
+
+  it('should validate scenario input payload against inputSchema correctly', () => {
+    const manager = new AgentRunnerManager('/mock/extension/path');
+    const docWithSchema: AgentWorkflowDocument = {
+      schemaVersion: '1.0.0',
+      name: 'Validation Flow',
+      description: 'Testing validation',
+      framework: 'adk',
+      language: 'python',
+      nodes: [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          position: { x: 100, y: 100 },
+          data: {
+            label: 'Root Agent',
+            role: 'Processor',
+            inputSchema: {
+              enabled: true,
+              name: 'UserInput',
+              fields: [
+                { id: '1', name: 'user_id', type: 'string', required: true },
+                { id: '2', name: 'age', type: 'integer', required: true },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    // Valid payload
+    const validScenario = { id: 's1', name: 'Valid', inputQuery: JSON.stringify({ user_id: 'usr_42', age: 30 }) };
+    const validResult = manager.validateScenarioInput(validScenario, docWithSchema);
+    assert.equal(validResult.valid, true);
+    assert.equal(validResult.errors.length, 0);
+
+    // Missing required field
+    const missingScenario = { id: 's2', name: 'Missing', inputQuery: JSON.stringify({ user_id: 'usr_42' }) };
+    const missingResult = manager.validateScenarioInput(missingScenario, docWithSchema);
+    assert.equal(missingResult.valid, false);
+    assert.ok(missingResult.errors.some((e) => e.includes("Missing required field 'age'")));
+
+    // Non-JSON input with required schema fields
+    const invalidJsonScenario = { id: 's3', name: 'RawText', inputQuery: 'Plain text string' };
+    const invalidJsonResult = manager.validateScenarioInput(invalidJsonScenario, docWithSchema);
+    assert.equal(invalidJsonResult.valid, false);
+    assert.ok(invalidJsonResult.errors.some((e) => e.includes('not valid JSON')));
+  });
 });
 
 

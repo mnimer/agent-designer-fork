@@ -1,0 +1,56 @@
+# TASK-196: Structured Input Schema Builder for Standard & Router Agent Nodes
+
+## Status
+- **Status**: Complete
+- **Release**: v1.0.7
+- **Target Files**:
+  - `src/shared/agentSpec.ts`
+  - `src/shared/types.ts`
+  - `src/shared/schemaValidation.ts`
+  - `src/webview/types.ts`
+  - `src/webview/components/inspector/StructuredInputBuilder.tsx`
+  - `src/webview/components/inspector/StandardAgentDrawer.tsx`
+  - `src/webview/components/inspector/RouterAgentDrawer.tsx`
+  - `src/extension/AgentRunnerManager.ts`
+  - `src/extension/runner/TestAndChatExecutor.ts`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - `resource/prompts/python_adk_cloudrun.prompt.txt`
+  - `tests/unit/webview/StructuredInputBuilder.test.ts`
+  - `tests/unit/webview/RouterAgentConditions.test.ts`
+  - `tests/unit/extension/AgentRunnerManager.test.ts`
+
+## Tasks & Progress
+- [x] 1. Type Definitions & Domain Models (`src/shared/agentSpec.ts` & `src/webview/types.ts`)
+  - [x] Add `'integer'` to `SchemaFieldType`
+  - [x] Add `StructuredInputField`, `StructuredInputSchema`, `RouterData`
+  - [x] Add `inputSchema` to `AgentNodeData`, `AgentData`, and `RouterConfig`
+  - [x] Export types in `src/webview/types.ts` and `src/shared/types.ts`
+- [x] 2. Create Domain Logic & `StructuredInputBuilder.tsx` Component
+  - [x] `src/shared/schemaValidation.ts` with shared Pydantic v2 code generator and JSON Schema Draft-07 generator
+  - [x] Field builder UI supporting `string`, `integer`, `number`, `boolean`, `array`, `object`, `enum`
+  - [x] Required toggle, field description, enum values editor, array item type
+  - [x] Live dual previews: Pydantic v2 `BaseModel` (Python) and JSON Schema Draft-07
+  - [x] Pydantic code generator supporting `int`, `float`, `str`, `bool`, `List[...]`, `dict`, `Literal[...]`
+  - [x] JSON Schema Draft-07 generator with `$schema: "http://json-schema.org/draft-07/schema#"`
+  - [x] Copy to clipboard and accordion expand/collapse
+- [x] 3. Integrate into `StandardAgentDrawer.tsx`
+  - [x] Add "Input Schema" accordion to `StandardAgentDrawer`
+  - [x] Persist `inputSchema` updates via `onUpdateAgent`
+- [x] 4. Integrate into `RouterAgentDrawer.tsx`
+  - [x] Add "Input Schema" accordion to `RouterAgentDrawer`
+  - [x] Persist `inputSchema` in `agent.inputSchema` and `routerConfig.inputSchema`
+  - [x] Add condition variable suggestions chip list (`input.<fieldName>`)
+  - [x] Static syntax validation for condition expressions against input schema fields
+- [x] 5. Early Input Schema Validation in Test Runner (`AgentRunnerManager.ts` / `TestAndChatExecutor.ts`)
+  - [x] Helper method to validate payload against `inputSchema` (`validateScenarioInput`)
+  - [x] Emit early schema validation error logs when required fields are missing or types mismatch before runtime dispatch
+- [x] 6. Update Code Generation Prompts
+  - [x] `resource/prompts/python_adk_agent-engine.prompt.txt`
+  - [x] `resource/prompts/python_adk_cloudrun.prompt.txt`
+  - [x] Add instructions for Gemini to generate Pydantic input models (`class <Agent>Input(BaseModel)`)
+  - [x] Instruct validation of incoming payload in `main.py` / `server.py` and router conditions
+- [x] 7. Unit Tests & Verification
+  - [x] Write tests in `tests/unit/webview/StructuredInputBuilder.test.ts` (13 tests)
+  - [x] Add input validation tests in `tests/unit/extension/AgentRunnerManager.test.ts` (28 tests)
+  - [x] Verify 100% test pass across all 78 test suites (809/809 passing)
+  - [x] Update `TASKS.md` status to Complete

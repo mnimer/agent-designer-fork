@@ -109,7 +109,7 @@
 | [**TASK-194**](#task-194) | v1.1.2 | Patterns | Hierarchical Delegation (Supervisor-Workers) Pattern, Dagre Topology & Codegen | **Complete** | TASK-114, TASK-191 |
 | [**TASK-195A**](#task-195a) | v1.1.2 | Patterns | Review & Critique Triad Pattern UI Card, 3-Node Topology & Rubric Prompt Presets | **Complete** | TASK-114, TASK-191 |
 | [**TASK-195B**](#task-195b) | v1.1.2 | Prompts / Codegen | Review & Critique Sequential State-Passing Pipeline Prompt Engineering | **Complete** | TASK-195A |
-| [**TASK-196**](#task-196) | v1.0.7 | Schema / Agent Nodes | Structured Input Schema Builder for Standard & Router Agent Nodes | **Not Started** | TASK-103, TASK-117, TASK-119 |
+| [**TASK-196**](#task-196) | v1.0.7 | Schema / Agent Nodes | Structured Input Schema Builder for Standard & Router Agent Nodes | **Complete** | TASK-103, TASK-117, TASK-119 |
 | [**TASK-197**](#task-197) | v1.0.3 | Memory / Local Runner | Local Runner SQLite Checkpointer Override & Ephemeral DB Lifecycle | **Complete** | TASK-107, TASK-115 |
 | [**TASK-198**](#task-198) | v1.0.3 | Memory / Cloud SQL | Google Cloud SQL (PostgreSQL/MySQL) Checkpointer & Pre-Deployment Validation | **Complete** | TASK-115 |
 | [**TASK-199**](#task-199) | v1.0.3 | Memory / Spanner | Google Cloud Spanner Enterprise Checkpointer & Resource Validation | **Complete** | TASK-115 |

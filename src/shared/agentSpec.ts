@@ -95,6 +95,7 @@ export interface TestSuiteScenario {
   expectedOutput?: string;
   assertionType?: 'contains' | 'exact' | 'json_schema' | 'llm_eval';
   expectedSchema?: any;
+  expectedInputSchema?: any;
   [key: string]: any;
 }
 
@@ -495,6 +496,7 @@ export interface RouterConfig {
   defaultBranchLabel?: string;
   routingStrategy?: 'first_match' | 'highest_confidence' | 'all_matching';
   branches: RouterBranchCondition[];
+  inputSchema?: StructuredInputSchema;
 }
 
 export type RouterAgentConfig = RouterConfig;
@@ -615,7 +617,7 @@ export function normalizeA2AConfig(config?: Partial<A2AAgentConfig> & Record<str
 // 9. Structured Output Schema Settings
 // ============================================================================
 
-export type SchemaFieldType = 'string' | 'number' | 'boolean' | 'array' | 'object' | 'enum';
+export type SchemaFieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object' | 'enum';
 
 export interface StructuredOutputField {
   id?: string;
@@ -640,6 +642,17 @@ export interface StructuredOutputSchema {
   description?: string;
   strict?: boolean;
   fields: StructuredOutputField[];
+  pydanticClassName?: string;
+  rawJsonSchema?: string;
+}
+
+export type StructuredInputField = StructuredOutputField;
+
+export interface StructuredInputSchema {
+  enabled: boolean;
+  name?: string;
+  description?: string;
+  fields: StructuredInputField[];
   pydanticClassName?: string;
   rawJsonSchema?: string;
 }
@@ -752,6 +765,7 @@ export interface AgentNodeData {
   guardrailConfig?: GuardrailConfig;
   structuredOutput?: StructuredOutputSchema;
   structuredOutputSchema?: StructuredOutputSchema; // Compatibility alias
+  inputSchema?: StructuredInputSchema;
   standardConfig?: any; // Compatibility alias
   tools?: ToolDefinition[];
   subAgents?: SubAgentRef[];
@@ -779,6 +793,7 @@ export interface AgentNodeData {
 }
 
 export type AgentData = AgentNodeData;
+export type RouterData = AgentData;
 
 // ============================================================================
 // 12. Workflow Canvas Document & States
