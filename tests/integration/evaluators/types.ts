@@ -19,11 +19,23 @@
 
 export type FindingSeverity = 'CRITICAL' | 'MAJOR' | 'MINOR';
 
+export type RequirementStatus = 'VERIFIED' | 'PARTIAL' | 'MISSING';
+
+export interface RequirementVerification {
+    id: string;
+    category: 'AGENT' | 'TOOL' | 'SCHEMA' | 'TRIGGER' | 'PARAM' | 'TEST';
+    status: RequirementStatus;
+    evidence: string;
+    details: string;
+}
+
 export interface EvaluatorFinding {
     id: string;
     category: 'ARCHITECTURE' | 'SECURITY' | 'PACKAGING' | 'SYNTAX' | 'IDIOMATIC_ADK' | 'SPECIFICATION';
     severity: FindingSeverity;
     file: string;
+    lineNumber?: number;
+    evidence?: string;
     description: string;
     rationale: string;
 }
@@ -33,6 +45,7 @@ export interface SpecialistAgentResult {
     passed: boolean;
     findings: EvaluatorFinding[];
     summary: string;
+    requirementVerifications?: RequirementVerification[];
 }
 
 export interface DeterministicGateResult {
@@ -40,6 +53,8 @@ export interface DeterministicGateResult {
     syntaxErrors: string[];
     secretScanPassed: boolean;
     secretFindings: EvaluatorFinding[];
+    astCheckPassed?: boolean;
+    astFindings?: EvaluatorFinding[];
 }
 
 export interface PromptRemediationDirective {
@@ -64,7 +79,11 @@ export interface MultiAgentEvaluationResult {
     hardVetoTriggered: boolean;
     hardVetoReasons: string[];
     allFindings: EvaluatorFinding[];
+    confirmedFindings?: EvaluatorFinding[];
+    dismissedFindingIds?: string[];
+    dismissalReasons?: Record<string, string>;
     specialistResults: Record<string, SpecialistAgentResult>;
+    requirementVerifications?: RequirementVerification[];
     promptRemediationDirectives: PromptRemediationDirective[];
     explanation: string;
 }

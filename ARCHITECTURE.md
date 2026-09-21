@@ -186,6 +186,39 @@ Using the official `vertexai.evaluation.EvalTask` SDK:
 * **Vertex AI Experiments Logging**:
   * Evaluation runs automatically record results, latencies, and score distributions to **Vertex AI Experiments** in the Google Cloud Console.
 
+### 4.5 Multi-Agent Integration Test Evaluation Harness
+To ensure generated agent code, tests, and deployment manifests satisfy production quality and visual specification contracts before release, integration tests employ a specialized **Multi-Agent Evaluation Orchestrator** (`tests/integration/evaluators/`):
+
+```mermaid
+graph TD
+    Payload["Generated Artifacts & .agent JSON"] --> DGate["Deterministic Pre-Flight Gate\n(Python py_compile + AST Checks + Regex Secret Scan)"]
+    DGate --> P1["Batch 1 Specialists\n(Concurrency with Backoff)"]
+    DGate --> P2["Batch 2 Specialists\n(Concurrency with Backoff)"]
+
+    subgraph Specialists ["Domain Specialist Evaluator Sub-Agents"]
+        P1 --> ArchAgent["AgentArchitectureAgent\n(gemini-3.8-flash, ADK Topologies & Identifiers)"]
+        P1 --> SpecAgent["AgentSpecificationAgent\n(gemini-3.8-flash, 100% RTM Traceability)"]
+        P2 --> SecAgent["SecurityAndHardeningAgent\n(gemini-3.8-flash-cyber / Fairwind Fallback)"]
+        P2 --> PkgAgent["PackagingAndDeployabilityAgent\n(gemini-3.8-flash, Offline CI & Manifests)"]
+    end
+
+    ArchAgent --> Arbiter["Lead Arbiter & Quality Synthesizer\n(Ground-Truth Code Audit & False-Positive Reconciliation)"]
+    SpecAgent --> Arbiter
+    SecAgent --> Arbiter
+    PkgAgent --> Arbiter
+
+    Arbiter --> Directives["Actionable Prompt Remediation Directives\n(Targeting resource/prompts/*.prompt.txt)"]
+    Arbiter --> Scorecard["Reconciled Evaluation Scorecard & Hard Vetoes"]
+```
+
+1. **Deterministic Pre-Flight Gate (`deterministic-gate.ts`)**: Fast, zero-hallucination ground-truth verification checking Python compilation (`python3 -m py_compile`), static AST exports (`root_agent`, identifier validation, local module import resolution, `requirements.txt` alignment), JSON syntax, and regex scanning for plaintext secrets (AWS, Google API keys, GCP OAuth secrets, GitHub PATs, private keys) supporting both assignment (`=`) and colon (`:`) syntax.
+2. **Specialist Sub-Agents**:
+   - **`SecurityAndHardeningAgent`**: Evaluates using `gemini-3.8-flash-cyber` (with automatic fallback to `gemini-3.8-flash` if Fairwind project access is restricted) against an Agentic CWE rubric (CWE-89 BigQuery SQL injection parameterization, HITL destructive approval gates, CWE-918 SSRF timeouts, external prompt injection boundaries, non-root containers, and least-privilege IAM).
+   - **`AgentArchitectureAgent`**: Audits multi-agent ADK patterns, functional module-level instantiation, valid Python identifiers, `GoogleSearchTool(bypass_multi_tools_limit=True)`, and inter-agent state passing via `output_key`.
+   - **`AgentSpecificationAgent`**: Extracts 100% of `.agent` JSON fields into a structured Requirement Traceability Matrix (RTM) verifying agents, Pydantic structured output schemas, custom tools, and trigger test scenarios against line-numbered source code.
+   - **`PackagingAndDeployabilityAgent`**: Verifies `requirements.txt` dependencies, offline CI test mocking (`test_agent.py`), and target-specific entrypoints (`server.py` vs `deploy_agent_engine.py`).
+3. **Lead Arbiter & Synthesizer (`arbiter-evaluator.ts`)**: Audits specialist findings against verbatim line-numbered code, dismisses false-positive hallucinations (`dismissedFindingIds`), recalculates baseline scorecards using confirmed findings only (eliminating false-positive veto traps), and emits exact Prompt Remediation Directives targeting generator prompt templates in `resource/prompts/`.
+
 ---
 
 ## 5. Cloud Run & Terraform Infrastructure Orchestration

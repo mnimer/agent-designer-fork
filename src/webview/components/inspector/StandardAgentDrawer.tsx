@@ -12,6 +12,7 @@
  * - Pattern Options: Strictly limited to valid Google ADK orchestration patterns (Sequential, Parallel, Loop, Coordinator).
  * - Loop Configuration: Provides numeric Max Iterations bound (defaulting to 3) when Loop pattern is active.
  * - Synchronization: Keeps sub-agent list and order strictly identical with the canvas node card.
+ * - Structured Input Schema: Includes StructuredInputBuilder accordion allowing developers to define typed Pydantic/JSON inputs for incoming agent execution.
  */
 
 import React, { useState } from 'react';
@@ -57,12 +58,14 @@ import {
   AgentMemoryType, 
   AgentKind, 
   StructuredOutputSchema, 
+  StructuredInputSchema,
   DebateConfig, 
   DebateStyle, 
   TieBreakerStrategy,
   ADK_DELEGATION_PATTERNS 
 } from '../../types';
 import { StructuredOutputBuilder } from './StructuredOutputBuilder';
+import { StructuredInputBuilder } from './StructuredInputBuilder';
 import { MemoryDrawer } from './MemoryDrawer';
 import { DrawerSection } from '../drawers/primitives/DrawerSection';
 import { DrawerField } from '../drawers/primitives/DrawerField';
@@ -258,6 +261,17 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
             </div>
           </div>
         </div>
+
+        {/* STRUCTURED INPUT SCHEMA BUILDER */}
+        <StructuredInputBuilder
+          schema={agent.inputSchema}
+          agentLabel={agent.label}
+          onChange={(newSchema: StructuredInputSchema) => {
+            onUpdateAgent({
+              inputSchema: newSchema,
+            });
+          }}
+        />
 
         {/* STRUCTURED OUTPUT SCHEMA BUILDER */}
         <StructuredOutputBuilder

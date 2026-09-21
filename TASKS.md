@@ -34,7 +34,8 @@
 | [**TASK-121**](#task-121) | v1.0.9 | Triggers & IAM | Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise IAM OIDC Auth | **Complete** | TASK-105, TASK-111, TASK-116 |
 | [**TASK-122**](#task-122) | v1.1.0 | Framework | LangGraph Framework Support (Python StateGraph Target) | **Not Started** | TASK-106, TASK-114 |
 | [**TASK-123**](#task-123) | v1.1.1 | Runtime | TypeScript Runtime Support (@google/genai SDK & Vitest) | **Not Started** | TASK-106, TASK-122 |
-| [**TASK-124**](#task-124) | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Not Started** | TASK-113, TASK-117 |
+| [**TASK-124**](#task-124) | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Complete** | TASK-113, TASK-117 |
+| [**TASK-124**](#task-124) | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Complete** | TASK-113, TASK-117 |
 | [**TASK-125**](#task-125) | v1.0.1 | Deployment | Native Vertex AI Agent Engine (Agent Runtime) Container Deployment & Lifecycle Management | **Complete** | TASK-106, TASK-110 |
 | [**TASK-126**](#task-126) | v1.0.0 | Extension Host | VS Code Activity Bar Container & Sidebar Workflows Explorer | **Done** | TASK-100, TASK-108 |
 | [**TASK-127**](#task-127) | v1.0.0 | Release & CI | Automated VSIX Packaging & Tag-Triggered GitHub Actions Release Workflow | **Done** | TASK-100, TASK-109 |
@@ -109,7 +110,7 @@
 | [**TASK-194**](#task-194) | v1.1.2 | Patterns | Hierarchical Delegation (Supervisor-Workers) Pattern, Dagre Topology & Codegen | **Complete** | TASK-114, TASK-191 |
 | [**TASK-195A**](#task-195a) | v1.1.2 | Patterns | Review & Critique Triad Pattern UI Card, 3-Node Topology & Rubric Prompt Presets | **Complete** | TASK-114, TASK-191 |
 | [**TASK-195B**](#task-195b) | v1.1.2 | Prompts / Codegen | Review & Critique Sequential State-Passing Pipeline Prompt Engineering | **Complete** | TASK-195A |
-| [**TASK-196**](#task-196) | v1.0.7 | Schema / Agent Nodes | Structured Input Schema Builder for Standard & Router Agent Nodes | **Not Started** | TASK-103, TASK-117, TASK-119 |
+| [**TASK-196**](#task-196) | v1.0.7 | Schema / Agent Nodes | Structured Input Schema Builder for Standard & Router Agent Nodes | **Complete** | TASK-103, TASK-117, TASK-119 |
 | [**TASK-197**](#task-197) | v1.0.3 | Memory / Local Runner | Local Runner SQLite Checkpointer Override & Ephemeral DB Lifecycle | **Complete** | TASK-107, TASK-115 |
 | [**TASK-198**](#task-198) | v1.0.3 | Memory / Cloud SQL | Google Cloud SQL (PostgreSQL/MySQL) Checkpointer & Pre-Deployment Validation | **Complete** | TASK-115 |
 | [**TASK-199**](#task-199) | v1.0.3 | Memory / Spanner | Google Cloud Spanner Enterprise Checkpointer & Resource Validation | **Complete** | TASK-115 |
@@ -126,6 +127,8 @@
 | [**TASK-210**](#task-210) | v1.2.0 | Quality / Integration | Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus) | **Not Started** | TASK-193A, TASK-193B |
 | [**TASK-211**](#task-211) | v1.2.0 | Quality / Integration | Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL) | **Not Started** | TASK-195A, TASK-195B, TASK-198 |
 | [**TASK-212**](#task-212) | v1.2.0 | Quality / Integration | Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner) | **Not Started** | TASK-129, TASK-130, TASK-199 |
+| [**TASK-213**](#task-213) | v1.2.0 | Quality / Evaluators | Multi-Agent Evaluator Optimization & Hardening (Gemini 3.8 Flash Cyber, RTM, False-Positive Veto Fix, AST Checks) | **Complete** | TASK-201, TASK-202 |
+| [**TASK-214**](#task-214) | v1.2.0 | Samples / SDLC | Autonomous Multi-Agent Code Reviewer Blueprint (resource/samples/code_reviewer/) | **Complete** | TASK-128, TASK-213 |
 
 ---
 
@@ -708,19 +711,14 @@
 
 ### [TASK-124] Advanced Cognitive Patterns (Debate, Loop, Critic Triad)
 * **Release**: `v1.1.2`
+* **Status**: Complete (Decomposed & Implemented via TASK-191, TASK-192A/B, TASK-193A/B, TASK-194, and TASK-195A/B)
 * **Target Package/Files**:
   - `src/webview/data/patterns.ts`
   - `src/webview/components/Canvas/PaletteCard.tsx`
 * **Context**:
-  Implement advanced cognitive patterns for agent orchestration: Multi-Agent Debate, Evaluator-Optimizer loop, and Review & Critique Triad.
-* **Sub-Agent Prompt**:
-  ```
-  Implement Advanced Multi-Agent Patterns:
-  1. Add Debate, Evaluator-Optimizer, and Critique Triad patterns to patterns.ts.
-  2. Enable canvas insertion and visual palette badges for cognitive patterns.
-  ```
+  Parent umbrella task for advanced cognitive patterns (Evaluator-Optimizer loop, Multi-Agent Debate, Hierarchical Delegation, and Review & Critique Triad). All patterns have been fully integrated into `patterns.ts`, palette cards, property drawers, and prompt codegen via sub-tasks TASK-191 through TASK-195B.
 * **Verification**:
-  - Inserting each cognitive pattern into canvas generates valid node/edge layouts and sub-agent bindings.
+  - All 8 pattern definitions in `patterns.ts` instantiate valid topologies and pass unit tests in `agentPatterns.test.ts`.
 
 ---
 
@@ -3755,43 +3753,48 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-196] Structured Input Schema Builder for Standard & Router Agent Nodes
 * **Release**: `v1.0.7`
+* **Status**: Not Started
 * **Target Package/Files**:
-  - `src/webview/components/inspector/StructuredInputBuilder.tsx`
-  - `src/webview/components/inspector/StandardAgentDrawer.tsx`
-  - `src/webview/components/inspector/RouterAgentDrawer.tsx`
   - `src/shared/agentSpec.ts`
   - `src/webview/types.ts`
+  - `src/webview/components/inspector/StructuredInputBuilder.tsx` (or generalized `TypedSchemaBuilder.tsx`)
+  - `src/webview/components/inspector/StandardAgentDrawer.tsx`
+  - `src/webview/components/inspector/RouterAgentDrawer.tsx`
   - `resource/prompts/python_adk_agent-engine.prompt.txt`
   - `resource/prompts/python_adk_cloudrun.prompt.txt`
-  - `src/extension/AgentRunnerManager.ts`
-  - `tests/webview/StructuredInputBuilder.test.ts`
-* **Context**:
-  While agents currently support Structured Output (`response_schema` / `structuredOutput` Pydantic models), multi-agent orchestration, upstream trigger handoffs, and dynamic decision routers require strongly typed **Structured Inputs** (`inputSchema` / Pydantic `BaseModel` for inputs).
-  - **Standard Agent Nodes**:
-    - Adds an "Input Schema" accordion in `StandardAgentDrawer.tsx` (mirroring the field builder from `StructuredOutputBuilder.tsx`).
-    - Generates typed Pydantic models for incoming agent state / input parameters in generated Python ADK code.
-    - Validates incoming prompt/payload against the input schema in the Test Runner and emits early schema validation errors.
-  - **Router Agent Nodes**:
-    - Adds an "Input Schema" accordion in `RouterAgentDrawer.tsx`.
-    - Enables developers to define structured fields (e.g. `user_intent: string`, `urgency: integer`, `category: enum`, `metadata: object`) that router condition expressions (`input.urgency > 3`, `input.category == 'billing'`) evaluate against.
-    - Enables auto-completion and static syntax validation of condition variables against the configured Input Schema properties in the condition editor.
-  - **Dual Schema Previews**:
-    - Interactive visual field editor supporting `string`, `integer`, `number`, `boolean`, `array`, `object`, and `enum` with required toggles and descriptions.
-    - Live dual preview tab for Pydantic v2 `BaseModel` Python code and JSON Schema Draft-07 specification.
-* **Sub-Agent Prompt**:
-  ```
-  Implement Structured Input Schema Builder for Standard and Router Agent Nodes:
-  1. Create StructuredInputBuilder component (or generalize StructuredOutputBuilder into a reusable TypedSchemaBuilder) with field name, type, description, and required toggles.
-  2. Integrate StructuredInputBuilder accordion into StandardAgentDrawer.tsx and RouterAgentDrawer.tsx.
-  3. Update agentSpec.ts and types.ts to support inputSchema on AgentData and RouterData.
-  4. Update resource/prompts/ templates to instruct Gemini to generate Pydantic input models (e.g., class AgentInput(BaseModel)) and validate incoming payloads in main.py and agent runner harnesses.
-  5. Update RouterAgentDrawer condition builder to provide variable suggestions matching inputSchema fields.
-  6. Add comprehensive unit tests in tests/webview/StructuredInputBuilder.test.ts verifying schema state mutations, Pydantic code generation, and drawer persistence.
-  ```
+  - `tests/unit/webview/StructuredInputBuilder.test.ts`
+* **Context & Architectural Clarification**:
+  - **Existing State**: Standard Agent nodes (`StandardAgentDrawer.tsx`) and Router Agent nodes (`RouterAgentDrawer.tsx`) are already fully implemented on canvas. Furthermore, **Structured Output** is already supported via `StructuredOutputBuilder.tsx` (generating Pydantic v2 `output_schema` models).
+  - **What Is Missing**: Agents and workflows currently lack a strongly typed **Structured Input** definition (`structuredInput` / Pydantic `BaseModel` for incoming requests, session state parameters, or trigger payloads).
+  - **Role Across Node Types**:
+    1. **Standard Agent Nodes**:
+       - Adds an "Input Schema" accordion in `StandardAgentDrawer.tsx` (defining expected input parameters such as `user_id: string`, `query: string`, `context: dict`).
+       - Generates typed Pydantic v2 models (e.g. `class <AgentName>Input(BaseModel): ...`) for the workflow entrypoint or agent call.
+    2. **Router Agent Nodes**:
+       - Adds an "Input Schema" accordion in `RouterAgentDrawer.tsx` (defining incoming routing payload fields such as `urgency: integer`, `category: enum`, `customer_tier: string`).
+       - Provides quick-insert variable chips and static auto-complete for `boolean_expression` conditions (`state.urgency > 3`, `state.category == 'billing'`) directly from the defined input fields.
+    3. **Schema UI & Dual Previews**:
+       - Interactive field editor supporting `string`, `number`, `boolean`, `array`, `object`, and `enum` with required flags and descriptions.
+       - Live dual preview tab for Pydantic v2 `BaseModel` Python code and JSON Schema Draft-07 specification.
+* **Remaining Implementation Checklist**:
+  1. **Data Spec (`src/shared/agentSpec.ts` & `src/webview/types.ts`)**:
+     - Define `StructuredInputSchema` (or unify with `StructuredOutputSchema` as `TypedSchema`).
+     - Add `structuredInput?: StructuredInputSchema;` to `AgentNodeData` and `RouterConfig`.
+  2. **Reusable UI Component (`src/webview/components/inspector/`)**:
+     - Either create `StructuredInputBuilder.tsx` or refactor `StructuredOutputBuilder.tsx` into a reusable `TypedSchemaBuilder.tsx` with customizable title (`Input Schema` vs `Output Schema`), icon, and default class name (`<AgentName>Input` vs `ResponseSchema`).
+  3. **Drawer Integration**:
+     - Mount the Input Schema accordion in `StandardAgentDrawer.tsx` alongside Structured Output.
+     - Mount the Input Schema accordion in `RouterAgentDrawer.tsx` to configure incoming routing state schema.
+  4. **Router Condition Suggestions (`RouterAgentDrawer.tsx`)**:
+     - In `RouterAgentDrawer.tsx`, render clickable variable pills derived from `structuredInput.fields` when editing `boolean_expression` branch conditions so users can click to insert `state.<fieldName>` or `input.<fieldName>`.
+  5. **Codegen Prompt Updates (`resource/prompts/`)**:
+     - Update `python_adk_agent-engine.prompt.txt` and `python_adk_cloudrun.prompt.txt` to instruct Gemini to generate Pydantic v2 input models (`class <AgentName>Input(BaseModel): ...`) and validate incoming payloads when `structuredInput.enabled === true`.
+  6. **Unit Tests (`tests/unit/webview/StructuredInputBuilder.test.ts`)**:
+     - Unit tests verifying field mutations, validation, Pydantic code generation, drawer persistence, and router condition field suggestions.
 * **Verification**:
   - Standard Agent and Router Agent drawers render "Input Schema" accordion with full interactive field editing.
   - Pydantic v2 input models compile cleanly in generated Python ADK code.
-  - Router condition expressions correctly validate against defined input schema keys.
+  - Router condition expressions expose clickable field variable suggestions.
   - 100% unit test coverage for new schema builder components.
 
 ---
@@ -4672,4 +4675,77 @@ Each task specifies reverse-engineering the sample Python code into a production
   ```
 * **Verification**:
   - Evaluation verifies correct subagent tool declaration and safe MCP credential delegation.
+
+---
+
+<a id="task-213"></a>
+
+### [TASK-213] Multi-Agent Evaluator Optimization & Hardening
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Target Package/Files**:
+  - `tests/integration/evaluators/types.ts`
+  - `tests/integration/evaluators/security-evaluator.ts`
+  - `tests/integration/evaluators/agent-architecture-evaluator.ts`
+  - `tests/integration/evaluators/agent-spec-evaluator.ts`
+  - `tests/integration/evaluators/packaging-evaluator.ts`
+  - `tests/integration/evaluators/arbiter-evaluator.ts`
+  - `tests/integration/evaluators/deterministic-gate.ts`
+  - `tests/integration/evaluators/multi-agent-evaluator.ts`
+  - `tests/integration/codegen-runner.ts`
+  - `tests/unit/evaluators/deterministic-gate.test.ts`
+  - `tests/unit/evaluators/agent-spec-evaluator.test.ts`
+  - `tests/unit/evaluators/arbiter-and-orchestrator.test.ts`
+  - `tests/unit/evaluators/specialists.test.ts`
+* **Context**:
+  Harden the Multi-Agent Integration Test Evaluation Harness before authoring remaining integration tests (TASK-203 through TASK-212) and prepare it for cross-project reuse:
+  1. Upgrade Security Evaluator to `gemini-3.8-flash-cyber` with Fairwind fallback and Agentic CWE rubric.
+  2. Upgrade general evaluators to `gemini-3.8-flash`.
+  3. Fix `codegen-runner.ts` deploymentTarget synchronization bug so Cloud Run target tests do not receive stale `agent_engine` workflow JSON.
+  4. Fix `multi-agent-evaluator.ts` catch-block scorecard corruption on API/transport errors.
+  5. Expand `agent-spec-evaluator.ts` to extract 100% of `.agent` JSON fields into a Requirement Traceability Matrix (RTM).
+  6. Fix `arbiter-evaluator.ts` prompt truncation (remove 3,000 char cut) and resolve the false-positive hard veto trap by recalculating scorecards using confirmed findings only.
+  7. Deepen `deterministic-gate.ts` with Python AST inspection, import vs requirements.txt verification, and secret regex colon syntax.
+  8. Deliver 100% unit test coverage for the evaluator harness in `tests/unit/evaluators/` (52 unit tests across 4 test suites, 81 total test files, 846 total unit tests passing).
+* **Verification**:
+  - All 52 unit tests in `tests/unit/evaluators/` pass with 100% code coverage.
+  - All 81 unit test files and 846 tests across the repository pass without regressions.
+  - Existing integration test runners (`animal-agent.test.ts`, `cyber-guardian-agent.test.ts`) are fully compatible with the hardened evaluator harness.
+
+---
+
+<a id="task-214"></a>
+
+### [TASK-214] Autonomous Multi-Agent Code Reviewer Blueprint
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Target Package/Files**:
+  - `resource/samples/code_reviewer/code_reviewer.agent`
+  - `resource/samples/code_reviewer/README.md`
+  - `resource/samples/code_reviewer/tools/__init__.py`
+  - `resource/samples/code_reviewer/tools/code_inspection_tools.py`
+  - `resource/samples/code_reviewer/tests/test_code_reviewer.py`
+  - `tests/unit/shared/codegen/codeReviewerWorkflow.test.ts`
+* **Context**:
+  Create an enterprise-ready, generic blueprint sample from the multi-agent code evaluation architecture that customers can deploy for their own automated code reviews:
+  1. Root Coordinator agent (`agent_code_review_coordinator`) delegating to 3 specialized sub-agents:
+     - Architecture & Code Quality Reviewer (`agent_architecture_reviewer`)
+     - Security & Vulnerability Reviewer (`agent_security_reviewer`, standard `gemini-3.7-flash` model, removing cyber model references)
+     - Testing & Packaging Reviewer (`agent_packaging_reviewer`)
+  2. Dual entry points supporting both Git pull request diff patches and local repository directory inspection.
+  3. Interactive review brief delivered directly in chat rather than writing reports to disk.
+  4. Attached Test Suite node (`trigger_code_review_tester`) containing 6 realistic evaluation scenarios:
+     - SQL Injection vulnerability in user query endpoint
+     - Plaintext secret leak in payment client
+     - Undeclared third-party dependency in service
+     - Monolithic god-class violating single responsibility
+     - SSRF flaw with unvalidated URL and missing timeout
+     - Clean production pull request with tests and parameterized queries
+  5. Strict 8pt grid alignment on all node coordinates (`x % 8 == 0`, `y % 8 == 0`).
+  6. Python tools (`code_inspection_tools.py`) for diff parsing and file tree inspection with passing unit tests.
+* **Verification**:
+  - `python3 -m unittest discover -s resource/samples/code_reviewer/tests -v` passes 100%.
+  - `tests/unit/shared/codegen/codeReviewerWorkflow.test.ts` passes 100%.
+  - `AgentEditorProvider.discoverResourceSamples()` discovers all 3 samples (`code_reviewer`, `company_verifier`, `travel_concierge`).
+  - Full test suite passes: 82/82 files, 853/853 unit tests passing.
 

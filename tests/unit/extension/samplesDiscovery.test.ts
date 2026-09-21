@@ -36,6 +36,7 @@ describe('AgentEditorProvider Samples Discovery (TASK-128)', { concurrency: 1 },
     assert.strictEqual(samples.length, 3, `Expected 3 samples discovered from disk, got ${samples.length}`);
 
     const ids = samples.map((s) => s.id);
+    assert.ok(ids.includes('code_reviewer'), 'Expected code_reviewer in discovered samples');
     assert.ok(ids.includes('company_verifier'), 'Expected company_verifier in discovered samples');
     assert.ok(ids.includes('travel_concierge'), 'Expected travel_concierge in discovered samples');
     assert.ok(ids.includes('kc_data_domain_builder'), 'Expected kc_data_domain_builder in discovered samples');

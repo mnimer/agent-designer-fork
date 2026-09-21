@@ -498,7 +498,7 @@
     "framework": "google-adk",
     "language": "python",
     "includeTests": true,
-    "includeDocker": false,
+    "includeDocker": true,
     "useStreaming": true
   }
 }
