@@ -1424,7 +1424,7 @@ export class WebviewMessageRouter {
         if (found?.sourceFilePath) {
           const sampleToolsDir = path.join(path.dirname(found.sourceFilePath), 'tools');
           const targetToolsDir = path.join(path.dirname(targetUri.fsPath), 'tools');
-          if (fs.existsSync(sampleToolsDir) && !fs.existsSync(targetToolsDir)) {
+          if (fs.existsSync(sampleToolsDir) && fs.existsSync(path.dirname(targetUri.fsPath)) && !fs.existsSync(targetToolsDir)) {
             fs.cpSync(sampleToolsDir, targetToolsDir, { recursive: true });
           }
         }

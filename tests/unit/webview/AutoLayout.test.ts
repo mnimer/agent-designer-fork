@@ -290,6 +290,166 @@ describe('AutoLayout', () => {
       assert.ok(res2_B.position.x < res2_A.position.x, 'Child B should be to the left of Child A');
       assert.ok(res2_A.position.x < res2_C.position.x, 'Child A should be to the left of Child C');
     });
+
+    it('should position Test Suite node strictly to the left of the Root Agent when connected to left handle', () => {
+      const rootAgent: WorkflowNode = {
+        id: 'root-agent',
+        type: 'agentNode',
+        position: { x: 0, y: 0 },
+        data: { label: 'Root Coordinator', isStartNode: true },
+      };
+
+      const testSuiteNode: WorkflowNode = {
+        id: 'test-suite-1',
+        type: 'triggerNode',
+        position: { x: 0, y: 0 },
+        data: { label: 'Test Suite', triggerType: 'tester' },
+      };
+
+      const edges: WorkflowEdge[] = [
+        {
+          id: 'test-edge',
+          source: 'test-suite-1',
+          sourceHandle: 'trigger_out_right',
+          target: 'root-agent',
+          targetHandle: 'input_left',
+        },
+      ];
+
+      const { nodes: layouted } = getLayoutedElements([rootAgent, testSuiteNode], edges);
+      const resTester = layouted.find((n) => n.id === 'test-suite-1')!;
+      const resRoot = layouted.find((n) => n.id === 'root-agent')!;
+
+      assert.ok(
+        resTester.position.x < resRoot.position.x,
+        `Test Suite (x: ${resTester.position.x}) must be positioned to the left of Root Agent (x: ${resRoot.position.x})`
+      );
+      // Both should be 8pt aligned
+      assert.equal(resTester.position.x % 8, 0);
+      assert.equal(resTester.position.y % 8, 0);
+      assert.equal(resRoot.position.x % 8, 0);
+      assert.equal(resRoot.position.y % 8, 0);
+    });
+
+    it('should position Inbound Triggers above Root Agent and Test Suite to the left with Subagents below', () => {
+      const rootAgent: WorkflowNode = {
+        id: 'root-agent',
+        type: 'agentNode',
+        position: { x: 0, y: 0 },
+        data: {
+          label: 'Root Coordinator',
+          isStartNode: true,
+          subAgents: [{ agentId: 'sub-agent-1', name: 'Sub 1' }],
+        },
+      };
+
+      const chatTrigger: WorkflowNode = {
+        id: 'chat-trigger',
+        type: 'triggerNode',
+        position: { x: 0, y: 0 },
+        data: { label: 'Chat Trigger', triggerType: 'chat' },
+      };
+
+      const testSuite: WorkflowNode = {
+        id: 'test-suite',
+        type: 'triggerNode',
+        position: { x: 0, y: 0 },
+        data: { label: 'Test Suite', triggerType: 'tester' },
+      };
+
+      const subAgent: WorkflowNode = {
+        id: 'sub-agent-1',
+        type: 'agentNode',
+        position: { x: 0, y: 0 },
+        data: { label: 'Subagent Worker' },
+      };
+
+      const edges: WorkflowEdge[] = [
+        // Chat trigger connects bottom -> top
+        {
+          id: 'e-chat',
+          source: 'chat-trigger',
+          sourceHandle: 'trigger_out_bottom',
+          target: 'root-agent',
+          targetHandle: 'input',
+        },
+        // Test suite connects right -> left
+        {
+          id: 'e-test',
+          source: 'test-suite',
+          sourceHandle: 'trigger_out_right',
+          target: 'root-agent',
+          targetHandle: 'input_left',
+        },
+        // Root agent delegates down to subagent
+        {
+          id: 'e-sub',
+          source: 'root-agent',
+          sourceHandle: 'subagent',
+          target: 'sub-agent-1',
+          targetHandle: 'input',
+        },
+      ];
+
+      const { nodes: layouted } = getLayoutedElements([rootAgent, chatTrigger, testSuite, subAgent], edges);
+      const resChat = layouted.find((n) => n.id === 'chat-trigger')!;
+      const resTest = layouted.find((n) => n.id === 'test-suite')!;
+      const resRoot = layouted.find((n) => n.id === 'root-agent')!;
+      const resSub = layouted.find((n) => n.id === 'sub-agent-1')!;
+
+      // Chat Trigger must be positioned above Root Agent
+      assert.ok(
+        resChat.position.y < resRoot.position.y,
+        `Chat trigger (y: ${resChat.position.y}) must be above Root Agent (y: ${resRoot.position.y})`
+      );
+
+      // Test Suite must be positioned to the left of Root Agent
+      assert.ok(
+        resTest.position.x < resRoot.position.x,
+        `Test Suite (x: ${resTest.position.x}) must be to the left of Root Agent (x: ${resRoot.position.x})`
+      );
+
+      // Subagent must be positioned below Root Agent
+      assert.ok(
+        resSub.position.y > resRoot.position.y,
+        `Subagent (y: ${resSub.position.y}) must be below Root Agent (y: ${resRoot.position.y})`
+      );
+    });
+
+    it('should position any node connected to an agent left handle to the left of that agent', () => {
+      const targetAgent: WorkflowNode = {
+        id: 'target-agent',
+        type: 'agentNode',
+        position: { x: 0, y: 0 },
+        data: { label: 'Target Agent', isStartNode: true },
+      };
+
+      const customLeftNode: WorkflowNode = {
+        id: 'custom-left-node',
+        type: 'agentNode',
+        position: { x: 0, y: 0 },
+        data: { label: 'Custom Upstream' },
+      };
+
+      const edges: WorkflowEdge[] = [
+        {
+          id: 'e-custom',
+          source: 'custom-left-node',
+          sourceHandle: 'output_right',
+          target: 'target-agent',
+          targetHandle: 'input_left',
+        },
+      ];
+
+      const { nodes: layouted } = getLayoutedElements([targetAgent, customLeftNode], edges);
+      const resCustom = layouted.find((n) => n.id === 'custom-left-node')!;
+      const resTarget = layouted.find((n) => n.id === 'target-agent')!;
+
+      assert.ok(
+        resCustom.position.x < resTarget.position.x,
+        `Custom node connected to left handle (x: ${resCustom.position.x}) must be to the left of Target Agent (x: ${resTarget.position.x})`
+      );
+    });
   });
 });
 
