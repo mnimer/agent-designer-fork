@@ -74,7 +74,7 @@ describe('UnifiedDeployRunner', () => {
   });
 
   describe('Standardized CLI / CI/CD Command Builders', () => {
-    it('should build make deploy command with Agent Engine variables', () => {
+    it('should build make deploy command with Agent Engine variables including resource and network UI options', () => {
       const cmd = runner.buildMakeDeployCommand({
         target: 'agent_engine',
         targetDirectory: tempDir,
@@ -84,6 +84,11 @@ describe('UnifiedDeployRunner', () => {
         agentEngineId: '1234567890',
         stagingBucket: 'gs://my-staging-bucket',
         serviceAccount: 'agent-sa@argolis-playground.iam.gserviceaccount.com',
+        networkAttachment: 'projects/argolis-playground/regions/us-central1/networkAttachments/my-psc',
+        cpu: '2',
+        memory: '4Gi',
+        minInstances: 1,
+        maxInstances: 5,
       });
 
       assert.equal(cmd.executable, 'make');
@@ -93,9 +98,18 @@ describe('UnifiedDeployRunner', () => {
       assert.ok(cmd.args.includes('AGENT_ENGINE_ID=1234567890'));
       assert.ok(cmd.args.includes('STAGING_BUCKET=gs://my-staging-bucket'));
       assert.ok(cmd.args.includes('SERVICE_ACCOUNT=agent-sa@argolis-playground.iam.gserviceaccount.com'));
+      assert.ok(
+        cmd.args.includes(
+          'NETWORK_ATTACHMENT=projects/argolis-playground/regions/us-central1/networkAttachments/my-psc'
+        )
+      );
+      assert.ok(cmd.args.includes('CPU=2'));
+      assert.ok(cmd.args.includes('MEMORY=4Gi'));
+      assert.ok(cmd.args.includes('MIN_INSTANCES=1'));
+      assert.ok(cmd.args.includes('MAX_INSTANCES=5'));
     });
 
-    it('should build make deploy command with Cloud Run variables', () => {
+    it('should build make deploy command with Cloud Run variables including CPU, memory, scaling, network, and envVars', () => {
       const cmd = runner.buildMakeDeployCommand({
         target: 'cloud_run',
         targetDirectory: tempDir,
@@ -107,6 +121,8 @@ describe('UnifiedDeployRunner', () => {
         minInstances: 1,
         maxInstances: 10,
         allowUnauthenticated: true,
+        networkAttachment: 'projects/argolis-playground/regions/us-east1/networkAttachments/cr-psc',
+        envVars: { CUSTOM_KEY: 'custom_val' },
       });
 
       assert.equal(cmd.executable, 'make');
@@ -119,6 +135,13 @@ describe('UnifiedDeployRunner', () => {
       assert.ok(cmd.args.includes('MIN_INSTANCES=1'));
       assert.ok(cmd.args.includes('MAX_INSTANCES=10'));
       assert.ok(cmd.args.includes('ALLOW_UNAUTHENTICATED=true'));
+      assert.ok(
+        cmd.args.includes('NETWORK_ATTACHMENT=projects/argolis-playground/regions/us-east1/networkAttachments/cr-psc')
+      );
+      const envArg = cmd.args.find((a) => a.startsWith('ENV_VARS='));
+      assert.ok(envArg, 'Expected ENV_VARS=... argument for Cloud Run make deploy');
+      assert.ok(envArg.includes('CUSTOM_KEY=custom_val'));
+      assert.ok(envArg.includes('GOOGLE_CLOUD_PROJECT=argolis-playground'));
     });
 
     it('should build Cloud Build submission command for CI/CD parity', () => {

@@ -168,6 +168,18 @@ export class UnifiedDeployRunner {
       if (options.networkAttachment) {
         args.push(`NETWORK_ATTACHMENT=${options.networkAttachment}`);
       }
+      if (options.cpu) {
+        args.push(`CPU=${options.cpu}`);
+      }
+      if (options.memory) {
+        args.push(`MEMORY=${options.memory}`);
+      }
+      if (options.minInstances !== undefined) {
+        args.push(`MIN_INSTANCES=${options.minInstances}`);
+      }
+      if (options.maxInstances !== undefined) {
+        args.push(`MAX_INSTANCES=${options.maxInstances}`);
+      }
     } else {
       const serviceName = options.serviceName?.trim() || 'agent-service';
       args.push(`SERVICE_NAME=${serviceName}`);
@@ -188,6 +200,18 @@ export class UnifiedDeployRunner {
       }
       if (options.networkAttachment) {
         args.push(`NETWORK_ATTACHMENT=${options.networkAttachment}`);
+      }
+      const envVars: Record<string, string> = {
+        GOOGLE_GENAI_USE_VERTEXAI: 'true',
+        GOOGLE_CLOUD_LOCATION: 'global',
+        GOOGLE_CLOUD_PROJECT: options.projectId,
+        ...(options.envVars || {}),
+      };
+      const envPairs = Object.entries(envVars)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(',');
+      if (envPairs) {
+        args.push(`ENV_VARS=${envPairs}`);
       }
     }
 

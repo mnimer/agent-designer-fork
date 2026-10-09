@@ -925,6 +925,53 @@ create_params:
       assert.equal(fs.existsSync(path.join(tempDir, 'agent_runtime_app.py')), false, 'agent_runtime_app.py must not be injected during deploy()');
       assert.equal(fs.existsSync(path.join(tempDir, 'agents-cli-manifest.yaml')), false, 'agents-cli-manifest.yaml must not be injected during deploy()');
     });
+
+    it('should execute make deploy directly with all UI options when Makefile is present in targetDirectory', async () => {
+      if (process.platform === 'win32') return;
+      const bridge = createMockBridge();
+      fs.writeFileSync(path.join(tempDir, 'agent.py'), '# agent code\n', 'utf8');
+
+      const expectedId = 'projects/my-project-123/locations/us-central1/reasoningEngines/4455667788';
+      const makefileContent = [
+        '.PHONY: deploy',
+        'deploy:',
+        `\t@echo "Makefile deploy running with PROJECT_ID=\$(PROJECT_ID) REGION=\$(REGION) DISPLAY_NAME=\$(DISPLAY_NAME) STAGING_BUCKET=\$(STAGING_BUCKET) SERVICE_ACCOUNT=\$(SERVICE_ACCOUNT) NETWORK_ATTACHMENT=\$(NETWORK_ATTACHMENT)"`,
+        `\t@echo "Deployed: ${expectedId}"`,
+      ].join('\n');
+      fs.writeFileSync(path.join(tempDir, 'Makefile'), makefileContent + '\n', 'utf8');
+
+      const result = await deployer.deploy({
+        document: mockDocument,
+        targetDirectory: tempDir,
+        projectId: 'my-project-123',
+        region: 'us-central1',
+        displayName: 'dogfood_agent',
+        stagingBucket: 'gs://dogfood-staging',
+        serviceAccount: 'dogfood-sa@my-project-123.iam.gserviceaccount.com',
+        networkAttachment: 'projects/my-project-123/regions/us-central1/networkAttachments/psc-1',
+        bridge,
+      });
+
+      assert.equal(result.success, true, `Expected make deploy to succeed, got error: ${result.error}`);
+      assert.equal(result.remoteRuntimeId, expectedId);
+
+      const logTexts = bridge.postedMessages
+        .filter((m) => m.type === 'AGENT_ENGINE_DEPLOY_LOG')
+        .map((m) => m.payload.text)
+        .join('\n');
+      assert.ok(logTexts.includes('Executing: make deploy'), 'Should log Executing: make deploy');
+      assert.ok(logTexts.includes('PROJECT_ID=my-project-123'), 'Makefile should receive PROJECT_ID');
+      assert.ok(logTexts.includes('DISPLAY_NAME=dogfood_agent'), 'Makefile should receive DISPLAY_NAME');
+      assert.ok(logTexts.includes('STAGING_BUCKET=gs://dogfood-staging'), 'Makefile should receive STAGING_BUCKET');
+      assert.ok(
+        logTexts.includes('SERVICE_ACCOUNT=dogfood-sa@my-project-123.iam.gserviceaccount.com'),
+        'Makefile should receive SERVICE_ACCOUNT'
+      );
+      assert.ok(
+        logTexts.includes('NETWORK_ATTACHMENT=projects/my-project-123/regions/us-central1/networkAttachments/psc-1'),
+        'Makefile should receive NETWORK_ATTACHMENT'
+      );
+    });
   });
 
 

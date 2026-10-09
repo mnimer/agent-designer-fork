@@ -128,14 +128,16 @@ export class CloudRunDeployer {
   private static activeDeployments: Map<string, ActiveCloudRunDeploymentRecord> = new Map();
   private static activeProcesses: Map<string, child_process.ChildProcess> = new Map();
   private static cancelledDirectories: Set<string> = new Set();
+  private gcloudDetector: GcloudDetector;
   private unifiedRunner: UnifiedDeployRunner;
 
   /**
    * Constructs the CloudRunDeployer.
    */
   constructor() {
+    this.gcloudDetector = new GcloudDetector();
     this.unifiedRunner = new UnifiedDeployRunner(
-      new GcloudDetector(),
+      this.gcloudDetector,
       CloudRunDeployer.activeProcesses,
       CloudRunDeployer.cancelledDirectories
     );
@@ -393,8 +395,8 @@ export class CloudRunDeployer {
       'system'
     );
 
-    const args = this.unifiedRunner.buildCloudRunGcloudArgs({
-      target: 'cloud_run',
+    const cmdOptions = {
+      target: 'cloud_run' as const,
       targetDirectory: targetDir,
       projectId,
       region,
@@ -406,14 +408,23 @@ export class CloudRunDeployer {
       allowUnauthenticated,
       networkAttachment,
       envVars: options.envVars,
-    });
+    };
 
-    this.emitLog(targetDir, bridge, `[RUN COMMAND] gcloud ${args.join(' ')}`, 'system');
+    const useMakefile =
+      this.unifiedRunner.hasMakefileTarget(targetDir, 'deploy') &&
+      this.gcloudDetector.hasBinary('make', targetDir);
+
+    const executable = useMakefile ? 'make' : 'gcloud';
+    const args = useMakefile
+      ? this.unifiedRunner.buildMakeDeployCommand(cmdOptions).args
+      : this.unifiedRunner.buildCloudRunGcloudArgs(cmdOptions);
+
+    this.emitLog(targetDir, bridge, `[RUN COMMAND] ${executable} ${args.join(' ')}`, 'system');
 
     return new Promise<CloudRunDeployResult>((resolve) => {
-      // NOTE: Spawn subprocess with extended PATH for gcloud
-      const env = this.getExtendedEnv();
-      const child = child_process.spawn('gcloud', args, {
+      // NOTE: Spawn subprocess with extended PATH for make / gcloud
+      const env = this.getExtendedEnv(targetDir);
+      const child = child_process.spawn(executable, args, {
         cwd: targetDir,
         env,
       });

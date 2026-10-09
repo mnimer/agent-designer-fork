@@ -131,6 +131,8 @@
 | [**TASK-214**](#task-214) | v1.2.0 | Samples / SDLC | Autonomous Multi-Agent Code Reviewer Blueprint (resource/samples/code_reviewer/) | **Complete** | TASK-128, TASK-213 |
 | [**TASK-215**](#task-215) | v1.2.0 | Samples / Retail | Reverse Engineer `retail-data-and-ai-demo` (Agentic Data Cloud for Retail) with Dual-Mode `data/<target>/` Pre-Loading & Asset Sync | **Not Started** | TASK-128 |
 | [**TASK-216**](#task-216) | v1.2.0 | Deployment | Unified Self-Contained CLI & CI/CD Deployment Architecture (`Makefile`, Terraform & Cloud Build) | **Complete** | TASK-111, TASK-125, TASK-142 |
+| [**TASK-217**](#task-217) | v1.2.0 | Governance & Security | Enterprise Agent Governance Pipeline (Agent Registry, Agent Gateway + Model Armor, Security Policies & Vertex AI `EvalTask` Registration) | **Not Started** | TASK-216 |
+| [**TASK-218**](#task-218) | v1.2.0 | Deployment / Gemini Enterprise | Automated Gemini Enterprise App Publishing & Discovery (`discoveryengine.googleapis.com` Integration on Deployment Tab) | **Not Started** | TASK-216, TASK-217 |
 
 ---
 
@@ -4872,3 +4874,108 @@ Each task specifies reverse-engineering the sample Python code into a production
 * **Verification**:
   - Execute `npx vitest run tests/unit/extension/UnifiedDeployRunner.test.ts tests/unit/extension/GeminiCodeGenEngine.test.ts tests/unit/extension/AgentEngineDeployer.test.ts tests/unit/extension/CloudRunDeployer.test.ts` with 100% pass rate.
   - Verify `DeployPipeline.deploy()` performs zero procedural mutations on `agent.py` or `agent_runtime_app.py`.
+
+---
+
+<a id="task-217"></a>
+
+### [TASK-217] Enterprise Agent Governance Pipeline (Agent Registry, Shared Regional Agent Gateway + Model Armor, Security Policies & Vertex AI `EvalTask` Registration)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Governance, Security & Evaluation
+* **Dependencies**: `TASK-216`
+* **Target Package/Files**:
+  - **Code Generation Prompts (Terraform, Makefile, Cloud Build & Governance Scripts)**:
+    - `resource/prompts/python_adk_agent-engine.prompt.txt`
+    - `resource/prompts/python_adk_cloudrun.prompt.txt`
+  - **GCP Discovery Service**:
+    - `src/extension/GcpDiscoveryManager.ts` (Add `getModelArmorTemplates(projectId, location, forceRefresh)` querying `modelarmor.googleapis.com/v1/projects/{project}/locations/{location}/templates`)
+  - **Shared Domain Models & RPC Protocol**:
+    - `src/shared/agentSpec.ts` (Add `AgentGovernanceConfig` to `WorkflowDeploymentConfig`)
+    - `src/shared/rpcProtocol.ts` (Extend `DEPLOY_TO_AGENT_ENGINE` and `DEPLOY_TO_CLOUD_RUN` payloads with governance flags, `FETCH_MODEL_ARMOR_TEMPLATES` / `MODEL_ARMOR_TEMPLATES_RESPONSE`, and return registered governance resource URIs + `evalWarnings`)
+  - **Extension Host Deployment & Governance Orchestration**:
+    - `src/extension/deployer/UnifiedDeployRunner.ts` (Execute post-deploy governance targets: `make register-agent`, `make setup-gateway`, `make register-eval`, and gate `make publish-gemini-enterprise` on evaluation pass when cloud evaluation is enabled)
+    - `src/extension/deployer/DeployTypes.ts` (Extend `DeploymentMetadataRecord` with `agentRegistryResource`, `agentGatewayResource`, `modelArmorTemplateId`, `evalTaskExperimentUrl`, and `evalGateStatus`)
+  - **Webview Deployment UI (8pt Grid Compliant)**:
+    - `src/webview/components/deployment/AgentEngineDeployTab.tsx`
+    - `src/webview/components/deployment/CloudRunDeployTab.tsx`
+    - `src/webview/components/deployment/GovernanceStatusCard.tsx` (New reusable governance controls & post-deploy status badge panel)
+  - **Unit Tests**:
+    - `tests/unit/extension/AgentGovernanceDeploy.test.ts` (New)
+    - `tests/unit/webview/GovernanceStatusCard.test.tsx` (New)
+* **Context**:
+  - **Goal**: Ensure every agent deployed to Vertex AI Agent Engine or Google Cloud Run adheres to Google Cloud's **Gemini Enterprise Agent Platform** governance, security, and testing best practices so deployed agents are production-hardened and ready for business users.
+  - **Four Core Governance Pillars**:
+    1. **Agent Registry (`agentregistry.googleapis.com` — Always Automatic)**:
+       - Automatically registers the deployed agent (ReasoningEngine resource or Cloud Run A2A/ADK service endpoint, Agent Card metadata, attached tools, and MCP server bindings) in **Agent Registry** (`projects/{PROJECT_ID}/locations/{LOCATION}/agents`).
+       - Assigns a trackable **Agent Identity** (SPIFFE ID) and sets lifecycle state to `ACTIVE`, preventing "shadow agents" and making the agent immediately discoverable by GCP admins and Gemini Enterprise.
+    2. **Shared Regional Agent Gateway with Inline Model Armor (`networkservices.googleapis.com` + `modelarmor.googleapis.com` — Checkbox, Default: Checked `true`)**:
+       - **Topology**: Uses a **shared regional Agent Gateway** per project/region (`projects/{PROJECT_ID}/locations/{REGION}/agentGateways/default-shared-agent-gateway`), creating it if none exists in the region and attaching the agent's route/binding to it (`CLIENT_TO_AGENT` ingress and `AGENT_TO_ANYWHERE` egress).
+       - **Model Armor Template Dropdown**: When the checkbox is enabled, displays a **Model Armor Template** dropdown in the Deployment Tab populated via `GcpDiscoveryManager.getModelArmorTemplates()`, defaulting to **"Enterprise Baseline (Managed Default)"** (which provisions/ensures a standard template with prompt injection & jailbreak defense, Sensitive Data Protection PII/SDP redaction, High/Medium Responsible AI filters, and malicious URI blocking), while allowing the user to pick any existing custom Model Armor template in their project.
+       - Binds the selected Model Armor template inline to the shared regional Agent Gateway via a `networksecurity.googleapis.com` `AuthzExtension` / `AuthzPolicy` (`CONTENT_AUTHZ`).
+    3. **Agent Security & Access Policies (`networksecurity.googleapis.com/v1/.../authzPolicies` & IAM Unified Access Policies — Always Automatic Baseline + Gateway Binding)**:
+       - Enforces least-privilege **Agent Identity** service account permissions and attaches **IAM Unified Access Policies (UAP)** / `AuthzPolicies` that default-deny unapproved traffic (`mTLS` + `DPoP`) and explicitly allowlist only the MCP servers, tools, and endpoints configured on the visual canvas.
+    4. **Automated Vertex AI Evaluation Registration & Gating (`eval_dataset.jsonl` -> `vertexai.evaluation.EvalTask`)**:
+       - Always generates `eval_dataset.jsonl` (from the canvas **Test Suite Trigger** node) and `evaluate.py` (`make eval`) to register the evaluation dataset and `EvalTask` (`trajectory_exact_match`, `trajectory_precision`, `groundedness`, `instruction_following`, `safety`) in **Vertex AI Experiments**.
+       - **UI Checkbox**: Displays **"Run Vertex AI Cloud Evaluation Suite Post-Deploy"** on the Deployment Tab (when a Test Suite node exists), **defaulting to unchecked (`false`)** since users typically run tests locally first.
+       - **Evaluation Gate Failure Behavior**: When checked, if any evaluation metric/test case falls below threshold:
+         1. Marks the deployment status as **Succeeded with Evaluation Warnings** (surfacing the failed test cases and clickable Vertex AI Experiment URL in the UI).
+         2. **Blocks publishing to the Gemini Enterprise App** (`TASK-218`) until the evaluation passes.
+  - **Best-Practice Automation vs. User Checkbox Matrix**:
+    | Governance Action | Behavior on Deploy | Default | Rationale |
+    | :--- | :--- | :---: | :--- |
+    | **1. Register in Agent Registry** (`agentregistry.googleapis.com`) | **Always Automatic** | Always On | Every enterprise agent gets a canonical catalog entry and Agent Identity to prevent shadow sprawl and enable Gemini Enterprise discovery. |
+    | **2. Least-Privilege IAM & Tool Allowlist Policies** | **Always Automatic** | Always On | Zero-trust baseline scoping the agent's service account and UAP rules strictly to canvas-declared tools and MCP endpoints. |
+    | **3. Export & Register `eval_dataset.jsonl` + `evaluate.py` (`make eval`)** | **Always Automatic** | Always On | Guarantees reproducible evaluation artifacts in git, Terraform, and `cloudbuild.yaml`. |
+    | **4. Enable Shared Regional Agent Gateway + Model Armor** | **Checkbox + Template Dropdown** | **Checked (`true`)** + *Enterprise Baseline* | Secure-by-default inline prompt injection/DLP firewall on a shared regional gateway, with a dropdown to pick custom project Model Armor templates. |
+    | **5. Run Live Vertex AI `EvalTask` Post-Deploy** | **Checkbox** *(when Test node exists)* | **Unchecked (`false`)** | Users normally test locally before deploying; when opted in, failures mark deploy as *Succeeded with Evaluation Warnings* and block Gemini Enterprise publishing. |
+    | **6. Publish to Gemini Enterprise App** (`TASK-218`) | **Checkbox + App Dropdown** *(only shown when Chat Trigger exists)* | **Checked (`true`)** *(when Chat Trigger exists)* | Conversational agents with a Chat Trigger are meant for business users in Gemini Enterprise; hidden for headless Pub/Sub/Eventarc/Webhook-only agents. |
+* **Verification**:
+  - Verify `python_adk_agent-engine.prompt.txt` and `python_adk_cloudrun.prompt.txt` generate `main.tf` (enabling `agentregistry.googleapis.com`, `networkservices.googleapis.com`, `networksecurity.googleapis.com`, `modelarmor.googleapis.com`, and provisioning Agent Registry, Enterprise Baseline Model Armor Template, Shared Regional Agent Gateway, and `AuthzPolicy` resources), `evaluate.py`, `eval_dataset.jsonl`, and `Makefile` targets (`make register-agent`, `make setup-gateway`, `make eval`).
+  - Execute `npx vitest run tests/unit/extension/AgentGovernanceDeploy.test.ts tests/unit/webview/GovernanceStatusCard.test.tsx` with 100% pass rate.
+
+---
+
+<a id="task-218"></a>
+
+### [TASK-218] Automated Gemini Enterprise App Publishing & Discovery (`discoveryengine.googleapis.com` Integration on Deployment Tab)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Deployment / Gemini Enterprise
+* **Dependencies**: `TASK-216`, `TASK-217`
+* **Target Package/Files**:
+  - **GCP Discovery Service**:
+    - `src/extension/GcpDiscoveryManager.ts` (Add `getGeminiEnterpriseApps(projectId, location, forceRefresh)` querying `discoveryengine.googleapis.com/v1alpha/projects/{project}/locations/{location}/collections/default_collection/engines`)
+  - **RPC Protocol & Message Router**:
+    - `src/shared/rpcProtocol.ts` (Add `FETCH_GEMINI_ENTERPRISE_APPS`, `GEMINI_ENTERPRISE_APPS_RESPONSE`, and `PUBLISH_TO_GEMINI_ENTERPRISE` messages)
+    - `src/extension/editor/WebviewMessageRouter.ts` (Wire discovery and post-deploy Gemini Enterprise registration handlers)
+  - **Code Generation Prompts & Unified Deploy Runner**:
+    - `resource/prompts/python_adk_agent-engine.prompt.txt`
+    - `resource/prompts/python_adk_cloudrun.prompt.txt`
+    - `src/extension/deployer/UnifiedDeployRunner.ts` (Support `make publish-gemini-enterprise` target, IAM binding for `service-{PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com`, and pre-publish evaluation gate check)
+  - **Webview Deployment Tab UI**:
+    - `src/webview/components/deployment/AgentEngineDeployTab.tsx`
+    - `src/webview/components/deployment/CloudRunDeployTab.tsx`
+  - **Unit Tests**:
+    - `tests/unit/extension/GeminiEnterprisePublish.test.ts` (New)
+* **Context**:
+  - **Goal**: Allow users to automatically publish their deployed Agent Engine (`ReasoningEngine`) or Cloud Run A2A/Agent Registry agent directly into a **Gemini Enterprise App** (formerly *Google Agentspace*, backed by `discoveryengine.googleapis.com`) so business users can immediately interact with the agent in the Gemini Enterprise web experience without manual console steps.
+  - **How Automatic Registration Works**:
+    1. **Conditional Visibility & Default-Checked on Deployment Tab**:
+       - **Visibility Rule**: Only render the **"Publish to Gemini Enterprise App"** section on `AgentEngineDeployTab` and `CloudRunDeployTab` if the canvas workflow has a **Chat Trigger** node (`trigger.type === 'chat'`) connected to the agent. Headless agents (triggered strictly by Pub/Sub, Eventarc, Cloud Scheduler, or Webhook without a Chat Trigger) do not show this option.
+       - **Default State**: When a Chat Trigger is present on the canvas, the **"Publish to Gemini Enterprise App"** checkbox defaults to **Checked (`true`)**.
+       - **Sub-Controls Revealed When Checked**:
+         - **Gemini Enterprise App (`engine_id`) Dropdown**: Auto-populated via `GcpDiscoveryManager.getGeminiEnterpriseApps()` (with refresh button and manual App ID entry fallback).
+         - **Location Selector**: `global` (default), `us`, or `eu`.
+         - **Bind Shared Regional Agent Gateway to Gemini Enterprise App**: Automatically routes Gemini Enterprise egress traffic through the governed shared regional Agent Gateway (`TASK-217`) via `UpdateEngine` when the gateway is enabled.
+    2. **Evaluation Gate Enforcement**:
+       - If **"Run Vertex AI Cloud Evaluation Suite Post-Deploy"** (`TASK-217`) is also checked and the evaluation run fails threshold checks, `UnifiedDeployRunner` marks the deployment as **Succeeded with Evaluation Warnings** and **blocks `make publish-gemini-enterprise`** so an unverified/failing agent is not published to business users in Gemini Enterprise.
+    3. **Automated IAM Grant**:
+       - Ensures the project's Discovery Engine Service Agent (`service-{PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com`) is granted `roles/aiplatform.user` and `roles/aiplatform.viewer` (for Agent Engine) or `roles/run.invoker` (for Cloud Run) via Terraform (`main.tf`) and `Makefile` (`make publish-gemini-enterprise`).
+    4. **Assistant Agent Registration (`discoveryengine.googleapis.com`)**:
+       - Registers or updates the agent on the selected Gemini Enterprise App's `default_assistant`:
+         `POST https://{location}-discoveryengine.googleapis.com/v1alpha/projects/{project}/locations/{location}/collections/default_collection/engines/{app_id}/assistants/default_assistant/agents`
+       - Populates `displayName`, `description`, starter prompts (extracted from the canvas Chat Trigger's `suggestedPrompts`), and `reasoningEngineConfig.reasoningEngine` (or A2A / Agent Registry endpoint binding).
+       - Saves the resulting Gemini Enterprise Agent resource URI and console link into `deployment_metadata.json` and surfaces a clickable **"Open in Gemini Enterprise"** link in the Deployment Tab.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/extension/GeminiEnterprisePublish.test.ts` with 100% pass rate, verifying Chat Trigger conditional visibility, default-checked behavior, engine discovery, IAM service agent role binding, evaluation gate blocking on eval failure, and idempotent `POST`/`PATCH` agent registration.

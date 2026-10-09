@@ -207,6 +207,53 @@ describe('CloudRunDeployer', () => {
       assert.ok(makeCmd.includes('PROJECT_ID=my-gcp-project'));
       assert.ok(makeCmd.includes('SERVICE_NAME=order-agent-svc'));
     });
+
+    it('should execute make deploy directly with CPU, memory, and scaling UI options when Makefile is present', async () => {
+      if (process.platform === 'win32') return;
+      const mockBridge = createMockBridge();
+      fs.writeFileSync(path.join(tempDir, 'server.py'), '# server entrypoint\n', 'utf8');
+      fs.writeFileSync(path.join(tempDir, 'Dockerfile'), 'FROM python:3.11-slim\n', 'utf8');
+
+      const expectedUrl = 'https://order-agent-svc-12345-uc.a.run.app';
+      const makefileContent = [
+        '.PHONY: deploy',
+        'deploy:',
+        '\t@echo "Deploying Cloud Run with PROJECT_ID=$(PROJECT_ID) REGION=$(REGION) SERVICE_NAME=$(SERVICE_NAME) CPU=$(CPU) MEMORY=$(MEMORY) MIN_INSTANCES=$(MIN_INSTANCES) MAX_INSTANCES=$(MAX_INSTANCES) ALLOW_UNAUTHENTICATED=$(ALLOW_UNAUTHENTICATED) NETWORK_ATTACHMENT=$(NETWORK_ATTACHMENT) ENV_VARS=$(ENV_VARS)"',
+        `\t@echo "Service [order-agent-svc] revision [order-agent-svc-00001] has been deployed and is serving 100 percent of traffic."`,
+        `\t@echo "Service URL: ${expectedUrl}"`,
+      ].join('\n');
+      fs.writeFileSync(path.join(tempDir, 'Makefile'), makefileContent + '\n', 'utf8');
+
+      const result = await deployer.deploy({
+        targetDirectory: tempDir,
+        projectId: 'my-gcp-project',
+        region: 'us-central1',
+        serviceName: 'order-agent-svc',
+        cpu: '4',
+        memory: '8Gi',
+        minInstances: 2,
+        maxInstances: 20,
+        allowUnauthenticated: true,
+        networkAttachment: 'projects/my-gcp-project/regions/us-central1/networkAttachments/cr-psc',
+        envVars: { FEATURE_FLAG: 'enabled' },
+        bridge: mockBridge,
+      });
+
+      assert.equal(result.success, true, `Expected Cloud Run make deploy to succeed, got error: ${result.error}`);
+      assert.equal(result.serviceUrl, expectedUrl);
+
+      const logTexts = mockBridge.postedMessages
+        .filter((m) => m.type === 'CLOUD_RUN_DEPLOY_LOG')
+        .map((m) => m.payload.text)
+        .join('\n');
+      assert.ok(logTexts.includes('[RUN COMMAND] make deploy'), 'Should log [RUN COMMAND] make deploy');
+      assert.ok(logTexts.includes('CPU=4'), 'Makefile should receive CPU=4');
+      assert.ok(logTexts.includes('MEMORY=8Gi'), 'Makefile should receive MEMORY=8Gi');
+      assert.ok(logTexts.includes('MIN_INSTANCES=2'), 'Makefile should receive MIN_INSTANCES=2');
+      assert.ok(logTexts.includes('MAX_INSTANCES=20'), 'Makefile should receive MAX_INSTANCES=20');
+      assert.ok(logTexts.includes('ALLOW_UNAUTHENTICATED=true'), 'Makefile should receive ALLOW_UNAUTHENTICATED=true');
+      assert.ok(logTexts.includes('FEATURE_FLAG=enabled'), 'Makefile should receive custom envVars');
+    });
   });
 
   describe('Remote Service Testing', () => {

@@ -285,12 +285,12 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
      * Step 2: Build container image with Docker and push to Artifact Registry (`${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/${_AGENT_NAME}:$SHORT_SHA` and `:latest`).
      * Step 3: Continuous deployment: Update the Reasoning Engine container image using `gcloud beta ai reasoning-engines update` when `_REASONING_ENGINE_ID` is provided.
    - `test_agent.py`: Comprehensive `pytest` test suite executing all workflow test scenarios and assertions against `root_agent`.
-   - `Makefile`: Standardized, self-contained CLI & CI/CD automation entrypoint with targets:
+   - `Makefile`: Standardized, self-contained CLI & CI/CD automation entrypoint (used directly by both the VS Code "Deploy" button and terminal/CI users) with default variables (`PROJECT_ID ?=`, `REGION ?= us-central1`, `AGENT_NAME ?=`, `DISPLAY_NAME ?= $(AGENT_NAME)`, `AGENT_ENGINE_ID ?=`, `STAGING_BUCKET ?=`, `SERVICE_ACCOUNT ?=`, `NETWORK_ATTACHMENT ?=`, `CPU ?= 1`, `MEMORY ?= 2Gi`, `MIN_INSTANCES ?= 1`, `MAX_INSTANCES ?= 10`, `USE_CLOUD_BUILD ?= false`) and targets:
      * `make install`: `python3 -m venv .venv && .venv/bin/pip install --upgrade pip -r requirements.txt`
      * `make dev`: `.venv/bin/adk web .`
      * `make test`: `.venv/bin/pytest test_agent.py -v`
      * `make infra`: `terraform init && terraform apply -auto-approve -var="project_id=$(PROJECT_ID)" -var="region=$(REGION)" -var="agent_name=$(AGENT_NAME)"`
-     * `make deploy`: Executes `.venv/bin/adk deploy agent_engine --project=$(PROJECT_ID) --region=$(REGION) $(if $(AGENT_ENGINE_ID),--agent_engine_id=$(AGENT_ENGINE_ID),--display_name="$(DISPLAY_NAME)") --session_service_uri="memory://" $(if $(STAGING_BUCKET),--artifact_service_uri=$(STAGING_BUCKET),) .` (or `gcloud builds submit --config=cloudbuild.yaml --project=$(PROJECT_ID) --substitutions=_PROJECT_ID=$(PROJECT_ID),_REGION=$(REGION),_AGENT_NAME=$(AGENT_NAME),_REASONING_ENGINE_ID=$(AGENT_ENGINE_ID) .` when `USE_CLOUD_BUILD=true`).
+     * `make deploy`: Automatically ensures `.venv/bin/adk` is installed (`test -x .venv/bin/adk || $(MAKE) install`) and executes `.venv/bin/adk deploy agent_engine --project=$(PROJECT_ID) --region=$(REGION) $(if $(AGENT_ENGINE_ID),--agent_engine_id=$(AGENT_ENGINE_ID),--display_name="$(DISPLAY_NAME)") --agent_engine_config_file=.agent_engine_config.json --session_service_uri="memory://" $(if $(STAGING_BUCKET),--artifact_service_uri=$(STAGING_BUCKET),) $(if $(SERVICE_ACCOUNT),--service_account=$(SERVICE_ACCOUNT),) $(if $(NETWORK_ATTACHMENT),--psc_network_attachment=$(NETWORK_ATTACHMENT),) .` (or `gcloud builds submit --config=cloudbuild.yaml --project=$(PROJECT_ID) --substitutions=_PROJECT_ID=$(PROJECT_ID),_REGION=$(REGION),_AGENT_NAME=$(AGENT_NAME),_REASONING_ENGINE_ID=$(AGENT_ENGINE_ID) .` when `USE_CLOUD_BUILD=true`).
    - `.agent_engine_config.json`: Native ADK Agent Engine runtime configuration JSON declaring `{"env_vars": {"GOOGLE_GENAI_USE_VERTEXAI": "1", "GOOGLE_CLOUD_LOCATION": "global"}}` so CLI deployments via `adk deploy agent_engine` or `make deploy` require zero procedural file patching.
    - `pyproject.toml`: Modern Python packaging metadata declaring dependencies and `[tool.uv]\npackage = false`.
    - `.env.example`: Template for environment variables (`GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION=global`, etc.).
@@ -384,11 +384,12 @@ You MUST output EVERY single one of the following files in the returned JSON arr
 13. `test_agent.py`: Pytest test suite covering all workflow test scenarios. When the workflow specification contains trigger nodes of type `tester` (or `triggerType == 'tester'`), you MUST inspect `config.testScenarios`, `config.testPrompts`, and `config.expectedOutput`. For EVERY defined test scenario (e.g. 'Test Case #1' with prompt 'Let\'s play a game.'), generate a dedicated pytest test function in `test_agent.py` that executes the scenario prompt against `root_agent` and asserts the expected output criteria.
    - **Hermetic, Offline CI Execution**: All pytest functions executed as part of CI (such as cloudbuild.yaml step `pytest test_agent.py -v`) MUST test agent structure, tool logic, and mock external Vertex AI / Gemini LLM calls using `unittest.mock` or mock Runner event generators so that automated test suites pass offline without requiring ambient Google Cloud credentials or live network calls.
    - **Strict Test Assertions**: In `test_agent.py`, test assertions MUST strictly verify the exact `expectedOutput` or `expectedOutputPattern` specified in `testScenarios` (e.g., `assert 'LockbitC2' in final_response_text`). NEVER weaken or bypass assertions by appending fallback conditions such as `or len(final_response_text) > 0` or `or True`, which make test failures impossible.
-14. `.gitignore`: Git ignore patterns for Python, venv, and cache.
-15. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
-16. `.ae_ignore`: ADK Agent Engine packaging ignore patterns (excluding `.venv/`, `__pycache__/`, `.git/`, `node_modules/`).
-17. `README.md`: Architecture overview, local execution via `make install && make dev`, unit testing via `make test`, Terraform provisioning via `make infra` (`terraform init && terraform apply`), and standalone CLI / CI/CD deployment via `make deploy`.
-18. Auxiliary files as needed:
+14. `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios for Vertex AI Agent Evaluation. Format as JSON Lines (JSONL), where each line is a self-contained record defining the test `prompt`, expected reference ground truth (`reference`), and `expected_tool_calls` list derived from trigger node test scenarios. 
+15. `.gitignore`: Git ignore patterns for Python, venv, and cache.
+16. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
+17. `.ae_ignore`: ADK Agent Engine packaging ignore patterns (excluding `.venv/`, `__pycache__/`, `.git/`, `node_modules/`).
+18. `README.md`: Architecture overview, local execution via `make install && make dev`, unit testing via `make test`, Terraform provisioning via `make infra` (`terraform init && terraform apply`), and standalone CLI / CI/CD deployment via `make deploy`.
+19. Auxiliary files as needed:
     - `pydantic_models.py` (when structured output schemas or Pydantic models are used)
     - `tools/*.py` (when custom tools are defined)
     - `*_card.json` (when A2A agent card metadata is specified)

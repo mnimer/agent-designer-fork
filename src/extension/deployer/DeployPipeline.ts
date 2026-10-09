@@ -267,11 +267,65 @@ export class DeployPipeline {
       remoteRuntimeId: resolvedEngineId || existingMeta?.remote_agent_runtime_id,
     });
 
-    // 6. Determine deployment tool and build arguments
-    let deployTool: 'adk' | 'agents-cli' | 'python';
+    // 6. Determine deployment tool and build arguments (preferring Makefile dogfooding when present)
+    let deployTool: 'make' | 'adk' | 'agents-cli' | 'python';
     let deployArgs: string[];
 
-    if (this.gcloudDetector.hasBinary('adk', targetDirectory)) {
+    const hasMakefileDeploy =
+      this.unifiedRunner.hasMakefileTarget(targetDirectory, 'deploy') &&
+      this.gcloudDetector.hasBinary('make', targetDirectory);
+
+    // If requirements.txt exists and adk is not yet installed in .venv, auto-provision .venv first
+    // so both `make deploy` and direct `adk deploy` have `.venv/bin/adk` ready with live IDE progress logs.
+    const hasRequirements = fs.existsSync(path.join(targetDirectory, 'requirements.txt'));
+    if (
+      hasRequirements &&
+      !this.gcloudDetector.hasBinary('adk', targetDirectory) &&
+      !this.gcloudDetector.hasBinary('agents-cli', targetDirectory) &&
+      !fs.existsSync(path.join(targetDirectory, 'deploy.py')) &&
+      this.pythonResolver?.ensureVirtualEnvironment &&
+      this.pythonResolver?.ensureDependenciesInstalled
+    ) {
+      try {
+        this.logToBridge(
+          bridge,
+          `[0.4s] Provisioning local Python virtual environment (.venv) and installing ADK CLI dependencies from requirements.txt...`,
+          'system',
+          targetDirectory
+        );
+        const venvEnv = await this.pythonResolver.ensureVirtualEnvironment(targetDirectory);
+        await this.pythonResolver.ensureDependenciesInstalled(
+          venvEnv.path,
+          targetDirectory,
+          (msg, stream = 'system') => {
+            this.logToBridge(bridge, msg, stream, targetDirectory);
+          }
+        );
+      } catch (provErr: any) {
+        this.logToBridge(
+          bridge,
+          `[WARNING] Automatic virtual environment provisioning failed: ${provErr?.message || provErr}`,
+          'stderr',
+          targetDirectory
+        );
+      }
+    }
+
+    if (hasMakefileDeploy) {
+      deployTool = 'make';
+      deployArgs = this.unifiedRunner.buildMakeDeployCommand({
+        target: 'agent_engine',
+        targetDirectory,
+        projectId,
+        region,
+        displayName: options.displayName,
+        agentEngineId: options.agentEngineId || (!options.forceNew ? existingMeta?.remote_agent_runtime_id : undefined),
+        stagingBucket: options.stagingBucket,
+        serviceAccount: options.serviceAccount,
+        networkAttachment: options.networkAttachment,
+        envVars: options.envVars,
+      }).args;
+    } else if (this.gcloudDetector.hasBinary('adk', targetDirectory)) {
       deployTool = 'adk';
       deployArgs = this.buildAdkDeployArgs(options, existingMeta);
     } else if (this.gcloudDetector.hasBinary('agents-cli', targetDirectory)) {
@@ -281,56 +335,16 @@ export class DeployPipeline {
       deployTool = 'python';
       deployArgs = ['deploy.py'];
     } else {
-      // Auto-provision .venv and install requirements.txt (including google-adk) when deploying newly generated agent code
-      const hasRequirements = fs.existsSync(path.join(targetDirectory, 'requirements.txt'));
-      if (
-        hasRequirements &&
-        this.pythonResolver?.ensureVirtualEnvironment &&
-        this.pythonResolver?.ensureDependenciesInstalled
-      ) {
-        try {
-          this.logToBridge(
-            bridge,
-            `[0.4s] Provisioning local Python virtual environment (.venv) and installing ADK CLI dependencies from requirements.txt...`,
-            'system',
-            targetDirectory
-          );
-          const venvEnv = await this.pythonResolver.ensureVirtualEnvironment(targetDirectory);
-          await this.pythonResolver.ensureDependenciesInstalled(
-            venvEnv.path,
-            targetDirectory,
-            (msg, stream = 'system') => {
-              this.logToBridge(bridge, msg, stream, targetDirectory);
-            }
-          );
-        } catch (provErr: any) {
-          this.logToBridge(
-            bridge,
-            `[WARNING] Automatic virtual environment provisioning failed: ${provErr?.message || provErr}`,
-            'stderr',
-            targetDirectory
-          );
-        }
-      }
-
-      if (this.gcloudDetector.hasBinary('adk', targetDirectory)) {
-        deployTool = 'adk';
-        deployArgs = this.buildAdkDeployArgs(options, existingMeta);
-      } else if (this.gcloudDetector.hasBinary('agents-cli', targetDirectory)) {
-        deployTool = 'agents-cli';
-        deployArgs = this.buildDeployArgs(options, existingMeta);
-      } else {
-        const errMsg = "Neither 'adk' nor 'agents-cli' CLI tool was found in PATH, and no 'deploy.py' script was found.";
-        this.logToBridge(bridge, `[ERROR] ${errMsg}`, 'stderr');
-        this.sendStatusToBridge(bridge, {
-          status: 'error',
-          error: errMsg,
-        });
-        return {
-          success: false,
-          error: errMsg,
-        };
-      }
+      const errMsg = "Neither 'adk' nor 'agents-cli' CLI tool was found in PATH, and no 'deploy.py' script was found.";
+      this.logToBridge(bridge, `[ERROR] ${errMsg}`, 'stderr');
+      this.sendStatusToBridge(bridge, {
+        status: 'error',
+        error: errMsg,
+      });
+      return {
+        success: false,
+        error: errMsg,
+      };
     }
 
     const deployCmd = `${deployTool} ${deployArgs.join(' ')}`;
