@@ -17,14 +17,14 @@ This document provides essential context for AI models interacting with the `age
 
 ## Model Selection & Rules
 - **CRITICAL RULE**: Never revert to or map model names to `gemini-2.5` (`gemini-2.5-flash`, `gemini-2.5-pro`) or Gemini 1.x/2.x. They are deprecated.
-- **Valid Models**: Use `gemini-3.7-flash` (Recommended)
-- **Region Configuration for Vertex AI**: `gemini-3.7-flash` on Vertex AI MUST use the `global` region (`location="global"` or `os.environ["GOOGLE_CLOUD_LOCATION"] = "global"`). Regional endpoints like `us-central1` do not host the `gemini-3.7-flash` publisher model and will return 404 NOT_FOUND. Always configure `global` location for model execution.
+- **Valid Models**: Use `gemini-3.8-flash` (Recommended)
+- **Region Configuration for Vertex AI**: `gemini-3.8-flash` on Vertex AI MUST use the `global` region (`location="global"` or `os.environ["GOOGLE_CLOUD_LOCATION"] = "global"`). Regional endpoints like `us-central1` do not host the `gemini-3.8-flash` publisher model and will return 404 NOT_FOUND. Always configure `global` location for model execution.
 - **Search Tools & Multi-Tool Delegation**: When an agent uses search grounding (`GoogleSearchTool` or `VertexAiSearchTool`) alongside sub-agents or function tools, you MUST configure `bypass_multi_tools_limit=True` (e.g. `from google.adk.tools.google_search_tool import GoogleSearchTool; GoogleSearchTool(bypass_multi_tools_limit=True)`).
 - **Search Tools & Controlled Generation**: Vertex AI Gemini does not support combining tools (`google_search`) with controlled generation (`output_schema`) on the same agent. All Agents should write to state keys instead; only downstream synthesizer agents without tools use `output_schema`.
 
 ## Coding Conventions & Style Guide
-- **Author Tag**: Add `Mike Nimer <mikenimer@google.com>` as the Author to every class modified.
-- **Git Commits**: Never commit code unless explicitly requested by the user. When commiting code include detailed summary of work done.
+- **Author Tag**: Add `Mike Nimer <mikenimer@google.com>` as the Author **once per file**, in the class-level (or module-level) docstring of every class modified. Do **NOT** add author credits to individual method or function docstrings.
+- **Git Commits**: When commiting code include detailed summary of work done.
 - **CSS / UI Spacing**: Use the 8pt grid system for all spacing (margins, paddings, sizing in multiples of 8px).
 - **TypeScript / React**: Nested components should take props in and emit events up. Avoid unnecessary two-way data binding.  Do not write large files, break the files up into components and helper classes following general best practices for React, Typescript, and code in general. 
 - In the generated code, DO NOT add unnecessary/undocumented fallbacks, search the web for documentation or fail fast instead.

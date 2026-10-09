@@ -1,5 +1,5 @@
 ---
-name: code-review
+name: nimer-code-review
 description: Rigorous principal-engineer code review of the complete project or a diff, covering correctness, security, performance, and maintainability. Use when the user asks for a code review, an audit of the codebase, or a review of pending changes.
 ---
 

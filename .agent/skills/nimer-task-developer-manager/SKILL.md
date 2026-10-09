@@ -1,5 +1,5 @@
 ---
-name: task-developer-manager
+name: nimer-task-developer-manager
 description: >-
   Orchestrates, assigns, and manages feature development tasks across sub-agents using Flash models.
   Performs rigorous code reviews, enforces UI/UX visual and structural consistency with existing components,

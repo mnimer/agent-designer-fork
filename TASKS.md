@@ -129,6 +129,7 @@
 | [**TASK-212**](#task-212) | v1.2.0 | Quality / Integration | Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner) | **Not Started** | TASK-129, TASK-130, TASK-199 |
 | [**TASK-213**](#task-213) | v1.2.0 | Quality / Evaluators | Multi-Agent Evaluator Optimization & Hardening (Gemini 3.8 Flash Cyber, RTM, False-Positive Veto Fix, AST Checks) | **Complete** | TASK-201, TASK-202 |
 | [**TASK-214**](#task-214) | v1.2.0 | Samples / SDLC | Autonomous Multi-Agent Code Reviewer Blueprint (resource/samples/code_reviewer/) | **Complete** | TASK-128, TASK-213 |
+| [**TASK-215**](#task-215) | v1.2.0 | Samples / Retail | Reverse Engineer `retail-data-and-ai-demo` (Agentic Data Cloud for Retail) Agents to `.agent` & Tools | **Not Started** | TASK-128 |
 
 ---
 
@@ -1547,7 +1548,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 >   - Trigger Edges (Chat & Test Suite): `sourceHandle: "trigger_out_right"` -> `targetHandle: "input_left"` with dashed amber stroke (`#f59e0b`, `strokeWidth: 2`, `strokeDasharray: "5 5"`, `animated: true`).
 > - **Strict Anti-Pattern Rule**: Do NOT create procedural normalization, migration, or loader guardrail scripts in `workflowSync.ts`, `FlowCanvas.tsx`, or `WorkflowEdge.tsx`. All `.agent` blueprints must be 100% correct at rest.
 
-### Category 1: Customer Experience & Retail (TASK-150, TASK-164, TASK-148, TASK-173, TASK-157, TASK-175, TASK-180)
+### Category 1: Customer Experience & Retail (TASK-150, TASK-164, TASK-148, TASK-173, TASK-157, TASK-175, TASK-180, TASK-215)
 
 <a id="task-150"></a>
 
@@ -4749,3 +4750,64 @@ Each task specifies reverse-engineering the sample Python code into a production
   - `AgentEditorProvider.discoverResourceSamples()` discovers all 3 samples (`code_reviewer`, `company_verifier`, `travel_concierge`).
   - Full test suite passes: 82/82 files, 853/853 unit tests passing.
 
+---
+
+<a id="task-215"></a>
+
+### [TASK-215] Reverse Engineer `retail-data-and-ai-demo` (Agentic Data Cloud for Retail) Sample
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Customer Experience & Retail
+* **Target Package/Files**:
+  - `resource/samples/retail-data-and-ai-demo/retail-data-and-ai-demo.agent`
+  - `resource/samples/retail-data-and-ai-demo/README.md`
+  - `resource/samples/retail-data-and-ai-demo/tools/__init__.py`
+  - `resource/samples/retail-data-and-ai-demo/tools/merchandising_tools.py` (Weather/Social Trend Signals, Inventory Audit, Margin Elasticity, and SEO Enrichment tools)
+  - `resource/samples/retail-data-and-ai-demo/tools/supply_chain_graph_tools.py` (Spanner Graph multi-hop route pathfinding & automated supplier PO execution tools)
+  - `resource/samples/retail-data-and-ai-demo/tests/test_tools.py` (Python `unittest` suite)
+* **Context**:
+  - **Source Repository**: `https://github.com/cloud-gtm/retail-data-and-ai-demo` (*Agentic Data Cloud for Retail* — Google Cloud GTM Reference Demo `go/demos/demo/1876`)
+  - **Overview**: Enterprise multi-agent retail merchandising and autonomous supply chain mitigation workbench built on Google ADK and Model Context Protocol (MCP), unifying a BigQuery Borderless Lakehouse (BigLake/Omni across AWS & Azure), AlloyDB operational ledger (with columnar engine), and Cloud Spanner Graph.
+  - **Core Workflows**:
+    1. **Agentic Merchandising (Proactive Assortment & Pricing)**: Correlates regional weather anomalies (e.g., localized heat waves) and viral social sentiment spikes with live multi-cloud inventory to identify stock gaps, simulate localized pricing elasticity, and generate trend-aligned product catalog/SEO updates.
+    2. **Autonomous Supply Chain Mitigation (Predictive Stock Intelligence)**: Detects transit bottlenecks (e.g., rail/freight delays), traverses multi-hop supplier and warehouse graphs in Cloud Spanner Graph to discover alternate fulfillment routes, runs AlloyDB margin simulations (expedited freight surcharge vs. VIP Customer Lifetime Value protection), and executes automated supplier purchase orders via REST API.
+  - **Architecture / Multi-Agent Mesh Topology**:
+    - **Root Coordinator (`retail_operations_coordinator`, `isStartNode: true`)**: Merchant Workbench & Supply Chain Coordinator orchestrating cooperative task handoffs across 5 specialized sub-agents:
+      1. **`weather_trend_agent` (Weather & Social Trend Signals Agent)**:Monitors regional weather forecasts and social sentiment spikes using Google Search Grounding (`bypass_multi_tools_limit=True`) and BigQuery analytics.
+      2. **`inventory_audit_agent` (Inventory Audit & Stock Intelligence Agent)**: Audits real-time stock levels, safety stock thresholds, and regional assortment gaps across BigQuery Borderless Lakehouse and AlloyDB operational ledgers.
+      3. **`pricing_optimization_agent` (Pricing & Margin Elasticity Agent)**: Executes AlloyDB columnar margin forecasting and cost-benefit elasticity simulations (comparing expedited shipping surcharges against out-of-stock penalties and VIP CLV).
+      4. **`product_seo_agent` (Product & SEO Content Enrichment Agent)**: Generates trend-aligned catalog updates, localized merchandising copy, and SEO metadata grounded in governed Looker/catalog schemas.
+      5. **`procurement_logistics_agent` (Procurement & Supply Chain Logistics Agent)**: Runs low-latency GQL multi-hop pathfinding on Cloud Spanner Graph across suppliers, distribution centers, and freight lanes, and dispatches automated REST API purchase orders.
+  - **Model Requirements**: `gemini-3.7-flash` on Vertex AI `global` region (`location="global"`).
+  - **Tools & Connectors**:
+    - `fetch_weather_and_trend_signals`: Queries regional weather anomalies and social trend velocity scores.
+    - `audit_regional_inventory`: Queries multi-cloud inventory ledger for SKU stock levels, reorder points, and warehouse allocation.
+    - `simulate_margin_elasticity`: Runs columnar price elasticity and freight cost vs. VIP CLV impact simulations.
+    - `generate_seo_catalog_update`: Produces structured SEO metadata and localized merchandising copy for trending SKUs.
+    - `find_alternate_supply_chain_routes`: Executes graph traversal over suppliers, distribution hubs, and transit lanes to bypass delayed corridors.
+    - `submit_automated_purchase_order`: Dispatches a structured supplier purchase order /stock transfer order payload.
+  - **Trigger Test Scenario**: `"A severe heat wave is forecasted in the Southwest next week and our primary rail freight corridor from the Midwest hub is delayed by 72 hours. Audit cooling & hydration SKU inventory in Phoenix and Dallas, simulate margin impact for expedited air/truck rerouting to protect VIP orders, recommend localized pricing, and draft the replenishment purchase order."`
+  - **Canvas Topology & Handle Rules**:
+    - Root Agent: `isStartNode: true`, all node coordinates aligned to the 8pt grid (`x % 8 == 0`, `y % 8 == 0`).
+    - Sub-Agent Delegation Edges: `sourceHandle: "output"` -> `targetHandle: "input"` with solid blue stroke (`#3b82f6`, `strokeWidth: 2`, `animated: true`).
+    - Triggers: Chat trigger AND Test Suite trigger attached to root agent via `sourceHandle: "trigger_out_right"` -> `targetHandle: "input_left"` with dashed amber stroke (`#f59e0b`, `strokeWidth: 2`, `strokeDasharray: "5 5"`, `animated: true`).
+  - **Test Suite Requirement**: Attached Test Suite trigger node (`triggerType: 'tester', triggerKind: 'tester'`) with at least 10 comprehensive test scenarios covering merchandising weather/trend alignment, multi-cloud inventory audits, AlloyDB margin elasticity simulations, SEO catalog enrichment, Spanner Graph supply chain rerouting, and automated PO generation with assertion rules (`contains`, `matches`).
+* **Sub-Agent Prompt**:
+  ```
+  Reverse engineer the 'retail-data-and-ai-demo' (Agentic Data Cloud for Retail) multi-agent architecture from https://github.com/cloud-gtm/retail-data-and-ai-demo:
+  1. Inspect the source repository (or reference architecture specifications for Agentic Merchandising & Autonomous Supply Chain Mitigation) covering the Root Retail Operations Coordinator and its 5 specialized sub-agents (weather_trend_agent, inventory_audit_agent, pricing_optimization_agent, product_seo_agent, procurement_logistics_agent).
+  2. Implement self-contained, deterministic Python toolsets in resource/samples/retail-data-and-ai-demo/tools/merchandising_tools.py and resource/samples/retail-data-and-ai-demo/tools/supply_chain_graph_tools.py, and add comprehensive unit tests in resource/samples/retail-data-and-ai-demo/tests/test_tools.py running cleanly via python3 -m unittest.
+  3. Create resource/samples/retail-data-and-ai-demo/retail-data-and-ai-demo.agent following the AgentWorkflowDocument schema:
+     - Root Agent ('retail_operations_coordinator'): isStartNode=true, model='gemini-3.7-flash', location="global", with all node coordinates aligned to the 8pt grid (x % 8 == 0, y % 8 == 0).
+     - 5 Sub-Agents ('weather_trend_agent', 'inventory_audit_agent', 'pricing_optimization_agent', 'product_seo_agent', 'procurement_logistics_agent'): Connected from root via sourceHandle="output" -> targetHandle="input" with stroke="#3b82f6" (solid blue, strokeWidth=2, animated=true).
+     - Triggers: Chat trigger AND Test Suite trigger (triggerType='tester', triggerKind='tester') attached to root via trigger_out_right -> input_left with stroke="#f59e0b" (dashed amber, strokeDasharray="5 5", animated=true).
+     - Test Suite: At least 10 comprehensive test scenarios with id, name, prompt, inputQuery, expectedOutput, and assertionType ('contains' / 'matches').
+     - Metadata: Author 'Mike Nimer <mikenimer@google.com>', category 'Customer Experience & Retail', tags ['retail', 'supply-chain', 'merchandising', 'bigquery', 'alloydb', 'spanner-graph', 'mcp', 'multi-agent'], and description.
+  4. Create resource/samples/retail-data-and-ai-demo/README.md documenting the multi-agent architecture, BigQuery/AlloyDB/Spanner Graph data plane integration, toolsets, and evaluation scenarios.
+  5. ZERO-DUPLICATE ARCHITECTURE: Do NOT create TypeScript duplicate files in src/webview/data/ and do NOT edit sampleWorkflows.ts. The extension host automatically discovers resource/samples/retail-data-and-ai-demo/ on disk and broadcasts it via SAMPLES_LOADED.
+  6. ANTI-PATTERN RULE: Do NOT add procedural normalization or loader guardrail scripts in workflowSync.ts or canvas components. All .agent files must be 100% correct at rest.
+  ```
+* **Verification**:
+  - Validate `retail-data-and-ai-demo.agent` JSON loads cleanly in `AgentEditorProvider.discoverResourceSamples()` with valid nodes, 8pt grid coordinates, and handle bindings.
+  - Execute `python3 -m unittest discover -s resource/samples/retail-data-and-ai-demo/tests -v` with 100% pass rate.
+  - Verify the workflow loads into the React Flow canvas with proper solid blue delegation edges (`#3b82f6`) and dashed amber trigger edges (`#f59e0b`).
