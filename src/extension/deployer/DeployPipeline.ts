@@ -17,6 +17,7 @@ import { WebviewBridge } from '../WebviewBridge';
 import { GcloudDetector } from './GcloudDetector';
 import { ArtifactStager } from './ArtifactStager';
 import { ReasoningEngineClient } from './ReasoningEngineClient';
+import { UnifiedDeployRunner } from './UnifiedDeployRunner';
 import {
   DeploymentMetadataRecord,
   ActiveDeploymentRecord,
@@ -28,13 +29,28 @@ export class DeployPipeline {
   private activeProcesses = new Map<string, ChildProcess>();
   private activeDeployments = new Map<string, ActiveDeploymentRecord>();
   private cancelledDirectories = new Set<string>();
+  private unifiedRunner: UnifiedDeployRunner;
 
   constructor(
     private gcloudDetector: GcloudDetector,
     private artifactStager: ArtifactStager,
     private reasoningEngineClient: ReasoningEngineClient,
-    private pythonResolver?: { resolvePythonEnvironment(targetDir?: string): Promise<{ path: string } | null> }
-  ) {}
+    private pythonResolver?: {
+      resolvePythonEnvironment(targetDir?: string): Promise<{ path: string } | null>;
+      ensureVirtualEnvironment?(targetDir?: string): Promise<{ path: string }>;
+      ensureDependenciesInstalled?(
+        pythonBin: string,
+        targetDir: string,
+        onLog?: (msg: string, stream?: 'stdout' | 'stderr' | 'system') => Promise<void> | void
+      ): Promise<void>;
+    }
+  ) {
+    this.unifiedRunner = new UnifiedDeployRunner(
+      this.gcloudDetector,
+      this.activeProcesses,
+      this.cancelledDirectories
+    );
+  }
 
   /**
    * Constructs the command arguments array for the deployment execution.
@@ -108,7 +124,22 @@ export class DeployPipeline {
    */
   public getDeployCommandString(options: AgentEngineDeployOptions): string {
     const existingMeta = this.artifactStager.readDeploymentMetadata(options.targetDirectory);
-    if (this.gcloudDetector.hasBinary('adk')) {
+    if (this.unifiedRunner.hasMakefileTarget(options.targetDirectory, 'deploy')) {
+      return this.unifiedRunner.buildMakeDeployCommand({
+        target: 'agent_engine',
+        targetDirectory: options.targetDirectory,
+        projectId: options.projectId,
+        region: options.region,
+        displayName: options.displayName,
+        agentEngineId: !options.forceNew
+          ? options.agentEngineId || existingMeta?.remote_agent_runtime_id
+          : undefined,
+        stagingBucket: options.stagingBucket,
+        serviceAccount: options.serviceAccount,
+        networkAttachment: options.networkAttachment,
+      }).commandString;
+    }
+    if (this.gcloudDetector.hasBinary('adk', options.targetDirectory)) {
       const args = this.buildAdkDeployArgs(options, existingMeta);
       return `adk ${args.join(' ')}`;
     }
@@ -166,15 +197,7 @@ export class DeployPipeline {
 
     const executionDir = targetDirectory;
 
-    // 3. Ensure packaging files exist
-    this.artifactStager.ensureIgnoreFiles(targetDirectory);
-    this.artifactStager.ensureManifestFile(targetDirectory, options);
-    this.artifactStager.ensurePyProjectToml(targetDirectory, options);
-    this.artifactStager.ensureAgentRuntimeApp(targetDirectory);
-    this.artifactStager.ensureAgentImports(targetDirectory);
-    this.artifactStager.ensureAgentEngineConfig(targetDirectory);
-
-    // 4. Check for existing deployment metadata or configured engine ID
+    // 3. Check for existing deployment metadata or configured engine ID (zero procedural file mutation)
     const existingMeta = this.artifactStager.readDeploymentMetadata(targetDirectory);
     let candidateEngineId = options.agentEngineId?.trim() || existingMeta?.remote_agent_runtime_id;
 
@@ -248,38 +271,81 @@ export class DeployPipeline {
     let deployTool: 'adk' | 'agents-cli' | 'python';
     let deployArgs: string[];
 
-    if (this.gcloudDetector.hasBinary('adk')) {
+    if (this.gcloudDetector.hasBinary('adk', targetDirectory)) {
       deployTool = 'adk';
       deployArgs = this.buildAdkDeployArgs(options, existingMeta);
-    } else if (this.gcloudDetector.hasBinary('agents-cli')) {
+    } else if (this.gcloudDetector.hasBinary('agents-cli', targetDirectory)) {
       deployTool = 'agents-cli';
       deployArgs = this.buildDeployArgs(options, existingMeta);
     } else if (fs.existsSync(path.join(targetDirectory, 'deploy.py'))) {
       deployTool = 'python';
       deployArgs = ['deploy.py'];
     } else {
-      const errMsg = "Neither 'adk' nor 'agents-cli' CLI tool was found in PATH, and no 'deploy.py' script was found.";
-      this.logToBridge(bridge, `[ERROR] ${errMsg}`, 'stderr');
-      this.sendStatusToBridge(bridge, {
-        status: 'error',
-        error: errMsg,
-      });
-      return {
-        success: false,
-        error: errMsg,
-      };
+      // Auto-provision .venv and install requirements.txt (including google-adk) when deploying newly generated agent code
+      const hasRequirements = fs.existsSync(path.join(targetDirectory, 'requirements.txt'));
+      if (
+        hasRequirements &&
+        this.pythonResolver?.ensureVirtualEnvironment &&
+        this.pythonResolver?.ensureDependenciesInstalled
+      ) {
+        try {
+          this.logToBridge(
+            bridge,
+            `[0.4s] Provisioning local Python virtual environment (.venv) and installing ADK CLI dependencies from requirements.txt...`,
+            'system',
+            targetDirectory
+          );
+          const venvEnv = await this.pythonResolver.ensureVirtualEnvironment(targetDirectory);
+          await this.pythonResolver.ensureDependenciesInstalled(
+            venvEnv.path,
+            targetDirectory,
+            (msg, stream = 'system') => {
+              this.logToBridge(bridge, msg, stream, targetDirectory);
+            }
+          );
+        } catch (provErr: any) {
+          this.logToBridge(
+            bridge,
+            `[WARNING] Automatic virtual environment provisioning failed: ${provErr?.message || provErr}`,
+            'stderr',
+            targetDirectory
+          );
+        }
+      }
+
+      if (this.gcloudDetector.hasBinary('adk', targetDirectory)) {
+        deployTool = 'adk';
+        deployArgs = this.buildAdkDeployArgs(options, existingMeta);
+      } else if (this.gcloudDetector.hasBinary('agents-cli', targetDirectory)) {
+        deployTool = 'agents-cli';
+        deployArgs = this.buildDeployArgs(options, existingMeta);
+      } else {
+        const errMsg = "Neither 'adk' nor 'agents-cli' CLI tool was found in PATH, and no 'deploy.py' script was found.";
+        this.logToBridge(bridge, `[ERROR] ${errMsg}`, 'stderr');
+        this.sendStatusToBridge(bridge, {
+          status: 'error',
+          error: errMsg,
+        });
+        return {
+          success: false,
+          error: errMsg,
+        };
+      }
     }
 
     const deployCmd = `${deployTool} ${deployArgs.join(' ')}`;
     this.logToBridge(bridge, `[0.5s] Executing: ${deployCmd}`, 'system', targetDirectory);
 
-    const env: NodeJS.ProcessEnv = this.gcloudDetector.getExtendedEnv({
-      GOOGLE_CLOUD_PROJECT: projectId,
-      CLOUDSDK_CORE_PROJECT: projectId,
-      GOOGLE_GENAI_USE_VERTEXAI: '1',
-      GOOGLE_CLOUD_LOCATION: 'global',
-      ...(options.envVars || {}),
-    });
+    const env: NodeJS.ProcessEnv = this.gcloudDetector.getExtendedEnv(
+      {
+        GOOGLE_CLOUD_PROJECT: projectId,
+        CLOUDSDK_CORE_PROJECT: projectId,
+        GOOGLE_GENAI_USE_VERTEXAI: '1',
+        GOOGLE_CLOUD_LOCATION: 'global',
+        ...(options.envVars || {}),
+      },
+      targetDirectory
+    );
 
     let pythonExecutable = process.platform === 'win32' ? 'python.exe' : 'python3';
     if (deployTool === 'python') {
@@ -317,7 +383,8 @@ export class DeployPipeline {
           shell: false,
         });
       } else {
-        child = spawn(deployTool, deployArgs, {
+        const resolvedToolPath = this.gcloudDetector.resolveBinaryPath(deployTool, targetDirectory) || deployTool;
+        child = spawn(resolvedToolPath, deployArgs, {
           cwd: executionDir,
           env,
           shell: false,

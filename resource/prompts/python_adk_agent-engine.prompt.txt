@@ -22,7 +22,7 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 - `agent.py` IS THE CORE WORKFLOW FILE AND MUST ALWAYS BE GENERATED AS THE FIRST FILE IN THE RETURNED JSON ARRAY. It defines `root_agent`, all sub-agents, tools, callbacks, and orchestration logic. Every other file (`test_agent.py`, `Dockerfile`, `main.tf`) directly uses `agent.py`.
 - You MUST generate the COMPLETE repository and emit EVERY required file in the output JSON array.
 - Emitting only a partial project or omitting core files like `agent.py` or `session_store.py` is strictly forbidden and breaks testing and deployment.
-- Every response MUST include the standard project manifest: `agent.py` (with `root_agent`), `session_store.py`, `requirements.txt`, `Dockerfile`, `.dockerignore`, `main.tf`, `cloudbuild.yaml`, `test_agent.py`, `.env.example`, `.gitignore`, `.gcloudignore`, and `README.md`.
+- Every response MUST include the standard project manifest: `agent.py` (with `root_agent`), `session_store.py`, `requirements.txt`, `pyproject.toml`, `Makefile`, `Dockerfile`, `.dockerignore`, `main.tf`, `cloudbuild-buildonly.yaml`, `cloudbuild.yaml`, `.agent_engine_config.json`, `test_agent.py`, `.env.example`, `.gitignore`, `.gcloudignore`, `.ae_ignore`, and `README.md`.
 
 ### SESSION MEMORY & PRODUCTION CHECKPOINTERS:
 - Inspect `{{WORKFLOW_JSON}}` for session memory configuration (`memoryConfig` on nodes or workflow metadata).
@@ -285,9 +285,17 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
      * Step 2: Build container image with Docker and push to Artifact Registry (`${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/${_AGENT_NAME}:$SHORT_SHA` and `:latest`).
      * Step 3: Continuous deployment: Update the Reasoning Engine container image using `gcloud beta ai reasoning-engines update` when `_REASONING_ENGINE_ID` is provided.
    - `test_agent.py`: Comprehensive `pytest` test suite executing all workflow test scenarios and assertions against `root_agent`.
+   - `Makefile`: Standardized, self-contained CLI & CI/CD automation entrypoint with targets:
+     * `make install`: `python3 -m venv .venv && .venv/bin/pip install --upgrade pip -r requirements.txt`
+     * `make dev`: `.venv/bin/adk web .`
+     * `make test`: `.venv/bin/pytest test_agent.py -v`
+     * `make infra`: `terraform init && terraform apply -auto-approve -var="project_id=$(PROJECT_ID)" -var="region=$(REGION)" -var="agent_name=$(AGENT_NAME)"`
+     * `make deploy`: Executes `.venv/bin/adk deploy agent_engine --project=$(PROJECT_ID) --region=$(REGION) $(if $(AGENT_ENGINE_ID),--agent_engine_id=$(AGENT_ENGINE_ID),--display_name="$(DISPLAY_NAME)") --session_service_uri="memory://" $(if $(STAGING_BUCKET),--artifact_service_uri=$(STAGING_BUCKET),) .` (or `gcloud builds submit --config=cloudbuild.yaml --project=$(PROJECT_ID) --substitutions=_PROJECT_ID=$(PROJECT_ID),_REGION=$(REGION),_AGENT_NAME=$(AGENT_NAME),_REASONING_ENGINE_ID=$(AGENT_ENGINE_ID) .` when `USE_CLOUD_BUILD=true`).
+   - `.agent_engine_config.json`: Native ADK Agent Engine runtime configuration JSON declaring `{"env_vars": {"GOOGLE_GENAI_USE_VERTEXAI": "1", "GOOGLE_CLOUD_LOCATION": "global"}}` so CLI deployments via `adk deploy agent_engine` or `make deploy` require zero procedural file patching.
+   - `pyproject.toml`: Modern Python packaging metadata declaring dependencies and `[tool.uv]\npackage = false`.
    - `.env.example`: Template for environment variables (`GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION=global`, etc.).
-   - `.gitignore` and `.gcloudignore`: Package strictly necessary agent assets, excluding virtualenvs (`.venv/`), `__pycache__`, `.pytest_cache`, `.agent` diagram files, and local credentials.
-   - `README.md`: Architecture overview, local execution with `adk run .` or `adk api_server`, initial Day 0 setup instructions (`terraform init && terraform apply`), and CI/CD deployment instructions.
+   - `.gitignore`, `.gcloudignore`, and `.ae_ignore`: Package strictly necessary agent assets, excluding virtualenvs (`.venv/`, `venv/`), `__pycache__`, `.pytest_cache`, `.agent` diagram files, and local credentials so payloads stay well under the 8 MiB Agent Engine limit.
+   - `README.md`: Architecture overview, unified CLI execution (`make install`, `make dev`, `make test`, `make infra`, `make deploy`), initial Day 0 Terraform setup (`terraform init && terraform apply`), and Cloud Build CI/CD deployment instructions.
    - Auxiliary files as needed:
      * `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs and typed input schemas (`inputSchema`) (when defined in nodes).
      * `tools/*.py`: Custom tools and functions passed to the agents. Group tools logically by category/source.
@@ -355,27 +363,32 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
              fi
        ```
      * Substitutions: Declare `_PROJECT_ID: ''`, `_REGION: 'us-central1'`, `_REPO: 'agents'`, `_AGENT_NAME: '<agent_name>'`, `_REASONING_ENGINE_ID: ''`.
-   - `.gcloudignore` & `.gitignore`:
+   - `.gcloudignore`, `.gitignore` & `.ae_ignore`:
      * Exclude `.git`, `.github`, `.venv`, `venv`, `__pycache__`, `*.pyc`, `.pytest_cache`, `.agent`, `*.agent`, `.env`, and local caches.
 
 ### MANDATORY COMPLETE REPOSITORY FILE MANIFEST:
 Every response MUST create the complete project. Emitting only 1 or 2 files is strictly prohibited.
 You MUST output EVERY single one of the following files in the returned JSON array:
 1. `agent.py`: Complete Google ADK root_agent, sub-agents, and state flow.
-2. `requirements.txt`: Complete pinned runtime dependencies (including google-adk[a2a] if an A2A agent is present, google-cloud-aiplatform, pydantic, pytest).
-3. `Dockerfile`: Clean production container definition using python:3.11-slim. Always enforce non-root execution by creating a dedicated non-privileged user (`RUN useradd -u 8888 -m appuser && chown -R appuser:appuser /app` and `USER 8888`) running native `adk api_server --host=0.0.0.0 --port=8080 .`.
-4. `.dockerignore`: Docker ignore patterns excluding `.git`, `.venv`, `__pycache__`, `*.pyc`, `.env*`, `dist`, and build artifacts.
-5. `main.tf`: Complete Terraform configuration deploying google_vertex_ai_reasoning_engine with container_spec, Service Account, IAM bindings, and null_resource build_container invoking cloudbuild-buildonly.yaml (including google_secret_manager_secret, secret version, and secretAccessor IAM member when tools require OAuth / Bearer secret tokens; only generate Pub/Sub resources if a pubsub trigger node is present).
-6. `cloudbuild-buildonly.yaml`: Focused Cloud Build configuration running unit tests, building the container image, and pushing to Artifact Registry for initial Day 0 Terraform setup.
-7. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building the container image, pushing to Artifact Registry, and updating the Reasoning Engine container.
-8. `.env.example`: Template for environment variables (project ID, location, etc.).
-9. `test_agent.py`: Pytest test suite covering all workflow test scenarios. When the workflow specification contains trigger nodes of type `tester` (or `triggerType == 'tester'`), you MUST inspect `config.testScenarios`, `config.testPrompts`, and `config.expectedOutput`. For EVERY defined test scenario (e.g. 'Test Case #1' with prompt 'Let\'s play a game.'), generate a dedicated pytest test function in `test_agent.py` that executes the scenario prompt against `root_agent` and asserts the expected output criteria.
+2. `session_store.py`: Production session store checkpointer implementations (`get_session_store`).
+3. `requirements.txt`: Complete pinned runtime dependencies (including google-adk[a2a] if an A2A agent is present, google-cloud-aiplatform, pydantic, pytest).
+4. `pyproject.toml`: Modern packaging metadata and dependencies (including `[tool.uv]\npackage = false`).
+5. `Makefile`: Self-contained CLI & CI/CD automation Makefile with `install`, `dev`, `test`, `infra`, and `deploy` targets.
+6. `.agent_engine_config.json`: ADK Agent Engine configuration JSON setting `GOOGLE_GENAI_USE_VERTEXAI="1"` and `GOOGLE_CLOUD_LOCATION="global"`.
+7. `Dockerfile`: Clean production container definition using python:3.11-slim. Always enforce non-root execution by creating a dedicated non-privileged user (`RUN useradd -u 8888 -m appuser && chown -R appuser:appuser /app` and `USER 8888`) running native `adk api_server --host=0.0.0.0 --port=8080 .`.
+8. `.dockerignore`: Docker ignore patterns excluding `.git`, `.venv`, `__pycache__`, `*.pyc`, `.env*`, `dist`, and build artifacts.
+9. `main.tf`: Complete Terraform configuration deploying google_vertex_ai_reasoning_engine with container_spec, Service Account, IAM bindings, and null_resource build_container invoking cloudbuild-buildonly.yaml (including google_secret_manager_secret, secret version, and secretAccessor IAM member when tools require OAuth / Bearer secret tokens; only generate Pub/Sub resources if a pubsub trigger node is present).
+10. `cloudbuild-buildonly.yaml`: Focused Cloud Build configuration running unit tests, building the container image, and pushing to Artifact Registry for initial Day 0 Terraform setup.
+11. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building the container image, pushing to Artifact Registry, and updating the Reasoning Engine container.
+12. `.env.example`: Template for environment variables (project ID, location, etc.).
+13. `test_agent.py`: Pytest test suite covering all workflow test scenarios. When the workflow specification contains trigger nodes of type `tester` (or `triggerType == 'tester'`), you MUST inspect `config.testScenarios`, `config.testPrompts`, and `config.expectedOutput`. For EVERY defined test scenario (e.g. 'Test Case #1' with prompt 'Let\'s play a game.'), generate a dedicated pytest test function in `test_agent.py` that executes the scenario prompt against `root_agent` and asserts the expected output criteria.
    - **Hermetic, Offline CI Execution**: All pytest functions executed as part of CI (such as cloudbuild.yaml step `pytest test_agent.py -v`) MUST test agent structure, tool logic, and mock external Vertex AI / Gemini LLM calls using `unittest.mock` or mock Runner event generators so that automated test suites pass offline without requiring ambient Google Cloud credentials or live network calls.
    - **Strict Test Assertions**: In `test_agent.py`, test assertions MUST strictly verify the exact `expectedOutput` or `expectedOutputPattern` specified in `testScenarios` (e.g., `assert 'LockbitC2' in final_response_text`). NEVER weaken or bypass assertions by appending fallback conditions such as `or len(final_response_text) > 0` or `or True`, which make test failures impossible.
-10. `.gitignore`: Git ignore patterns for Python, venv, and cache.
-11. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
-12. `README.md`: Architecture overview, local execution via `adk run .`, and Terraform deployment instructions (`terraform init && terraform apply`).
-12. Auxiliary files as needed:
+14. `.gitignore`: Git ignore patterns for Python, venv, and cache.
+15. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
+16. `.ae_ignore`: ADK Agent Engine packaging ignore patterns (excluding `.venv/`, `__pycache__/`, `.git/`, `node_modules/`).
+17. `README.md`: Architecture overview, local execution via `make install && make dev`, unit testing via `make test`, Terraform provisioning via `make infra` (`terraform init && terraform apply`), and standalone CLI / CI/CD deployment via `make deploy`.
+18. Auxiliary files as needed:
     - `pydantic_models.py` (when structured output schemas or Pydantic models are used)
     - `tools/*.py` (when custom tools are defined)
     - `*_card.json` (when A2A agent card metadata is specified)

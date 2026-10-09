@@ -36,6 +36,8 @@ import * as http from 'http';
 import { WebviewBridge } from './WebviewBridge';
 import { GeneratedFile } from '../shared/codegen/types';
 import { AgentWorkflowDocument } from '../shared/types';
+import { UnifiedDeployRunner } from './deployer/UnifiedDeployRunner';
+import { GcloudDetector } from './deployer/GcloudDetector';
 
 /**
  * Persisted schema for `cloud_run_deployment_metadata.json`.
@@ -121,17 +123,61 @@ export interface CloudRunDeployResult {
 
 /**
  * CloudRunDeployer implementation.
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 export class CloudRunDeployer {
   private static activeDeployments: Map<string, ActiveCloudRunDeploymentRecord> = new Map();
   private static activeProcesses: Map<string, child_process.ChildProcess> = new Map();
+  private static cancelledDirectories: Set<string> = new Set();
+  private unifiedRunner: UnifiedDeployRunner;
 
   /**
    * Constructs the CloudRunDeployer.
    */
-  constructor() {}
+  constructor() {
+    this.unifiedRunner = new UnifiedDeployRunner(
+      new GcloudDetector(),
+      CloudRunDeployer.activeProcesses,
+      CloudRunDeployer.cancelledDirectories
+    );
+  }
+
+  /**
+   * Formats a human-readable shell command string representing the Cloud Run deployment,
+   * preferring `make deploy` when a self-contained `Makefile` is present in `targetDirectory`.
+   */
+  public getDeployCommandString(options: CloudRunDeployOptions): string {
+    if (this.unifiedRunner.hasMakefileTarget(options.targetDirectory, 'deploy')) {
+      return this.unifiedRunner.buildMakeDeployCommand({
+        target: 'cloud_run',
+        targetDirectory: options.targetDirectory,
+        projectId: options.projectId,
+        region: options.region,
+        serviceName: options.serviceName,
+        cpu: options.cpu,
+        memory: options.memory,
+        minInstances: options.minInstances,
+        maxInstances: options.maxInstances,
+        allowUnauthenticated: options.allowUnauthenticated,
+        networkAttachment: options.networkAttachment,
+      }).commandString;
+    }
+
+    const args = this.unifiedRunner.buildCloudRunGcloudArgs({
+      target: 'cloud_run',
+      targetDirectory: options.targetDirectory,
+      projectId: options.projectId,
+      region: options.region,
+      serviceName: options.serviceName,
+      cpu: options.cpu,
+      memory: options.memory,
+      minInstances: options.minInstances,
+      maxInstances: options.maxInstances,
+      allowUnauthenticated: options.allowUnauthenticated,
+      networkAttachment: options.networkAttachment,
+      envVars: options.envVars,
+    });
+    return `gcloud ${args.join(' ')}`;
+  }
 
   /**
    * Validates target directory for deployment readiness.
@@ -347,53 +393,20 @@ export class CloudRunDeployer {
       'system'
     );
 
-    // Build deployment arguments for gcloud run deploy
-    // Using source-based deploy: `gcloud run deploy [SERVICE] --source . --project ... --region ...`
-    const args = [
-      'run',
-      'deploy',
-      serviceName,
-      '--source',
-      '.',
-      '--project',
+    const args = this.unifiedRunner.buildCloudRunGcloudArgs({
+      target: 'cloud_run',
+      targetDirectory: targetDir,
       projectId,
-      '--region',
       region,
-      '--platform',
-      'managed',
-      `--cpu=${cpu}`,
-      `--memory=${memory}`,
-      `--min-instances=${minInstances}`,
-      `--max-instances=${maxInstances}`,
-    ];
-
-    if (allowUnauthenticated) {
-      args.push('--allow-unauthenticated');
-    } else {
-      args.push('--no-allow-unauthenticated');
-    }
-
-    if (networkAttachment) {
-      args.push(`--network-attachment=${networkAttachment}`);
-    }
-
-    // Set standard environment variables
-    const envVars = {
-      GOOGLE_GENAI_USE_VERTEXAI: 'true',
-      GOOGLE_CLOUD_LOCATION: 'global',
-      GOOGLE_CLOUD_PROJECT: projectId,
-      ...(options.envVars || {}),
-    };
-
-    const envPairs = Object.entries(envVars)
-      .map(([k, v]) => `${k}=${v}`)
-      .join(',');
-    if (envPairs) {
-      args.push(`--set-env-vars=${envPairs}`);
-    }
-
-    // Also suppress interactive prompts
-    args.push('--quiet');
+      serviceName,
+      cpu,
+      memory,
+      minInstances,
+      maxInstances,
+      allowUnauthenticated,
+      networkAttachment,
+      envVars: options.envVars,
+    });
 
     this.emitLog(targetDir, bridge, `[RUN COMMAND] gcloud ${args.join(' ')}`, 'system');
 

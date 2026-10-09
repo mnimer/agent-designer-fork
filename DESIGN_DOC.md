@@ -304,6 +304,10 @@ sequenceDiagram
     Host->>UI: postMessage({ type: 'TEST_RUN_COMPLETED', summary })
 ```
 
+#### Lifecycle 3: Unified Self-Contained CLI & CI/CD Deployment (`UnifiedDeployRunner`)
+
+Generated repositories include a self-contained `Makefile` (`install`, `dev`, `test`, `infra`, `deploy`), Terraform (`main.tf`, `variables.tf`, `outputs.tf`, `terraform.tfvars`), Cloud Build (`cloudbuild.yaml`), and Agent Engine packaging manifests (`.agent_engine_config.json`, `.ae_ignore`, `pyproject.toml`). Both the VS Code extension (`UnifiedDeployRunner`) and external CLI/CI/CD users invoke the exact same underlying commands without any procedural file mutation of `agent.py`.
+
 ---
 
 ## 6. Alternatives Considered & Trade-Off Analysis

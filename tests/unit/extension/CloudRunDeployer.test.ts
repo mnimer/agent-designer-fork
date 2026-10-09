@@ -181,6 +181,32 @@ describe('CloudRunDeployer', () => {
       deployer.cancelDeploy('non-existent-service', mockBridge);
       assert.equal(mockBridge.postedMessages.length, 0);
     });
+
+    it('should generate standardized deploy command string preferring Makefile when present', () => {
+      const gcloudCmd = deployer.getDeployCommandString({
+        targetDirectory: tempDir,
+        projectId: 'my-gcp-project',
+        region: 'us-central1',
+        serviceName: 'order-agent-svc',
+      });
+      assert.ok(gcloudCmd.includes('gcloud run deploy order-agent-svc'));
+
+      fs.writeFileSync(
+        path.join(tempDir, 'Makefile'),
+        'deploy:\n\tgcloud run deploy $(SERVICE_NAME) --source . --project $(PROJECT_ID) --region $(REGION)\n',
+        'utf8'
+      );
+
+      const makeCmd = deployer.getDeployCommandString({
+        targetDirectory: tempDir,
+        projectId: 'my-gcp-project',
+        region: 'us-central1',
+        serviceName: 'order-agent-svc',
+      });
+      assert.ok(makeCmd.startsWith('make deploy'));
+      assert.ok(makeCmd.includes('PROJECT_ID=my-gcp-project'));
+      assert.ok(makeCmd.includes('SERVICE_NAME=order-agent-svc'));
+    });
   });
 
   describe('Remote Service Testing', () => {

@@ -250,12 +250,18 @@ export class PythonEnvResolver {
     onLog?: (msg: string, stream?: 'stdout' | 'stderr' | 'system') => Promise<void> | void
   ): Promise<void> {
     const needsA2A = this.requiresA2ADependencies(targetDir);
+    const needsAdk = this.requiresAdkDependencies(targetDir);
 
     try {
-      // Step 1: Quick import check for all core packages (including a2a when needed)
-      const importCheck = needsA2A
-        ? 'import fastapi, uvicorn, pydantic, google.genai, a2a'
-        : 'import fastapi, uvicorn, pydantic, google.genai';
+      // Step 1: Quick import check for all core packages (including google.adk and a2a when needed)
+      const requiredModules = ['fastapi', 'uvicorn', 'pydantic', 'google.genai'];
+      if (needsAdk) {
+        requiredModules.push('google.adk');
+      }
+      if (needsA2A) {
+        requiredModules.push('a2a');
+      }
+      const importCheck = `import ${requiredModules.join(', ')}`;
       await execFileAsync(pythonBin, ['-c', importCheck], { cwd: targetDir });
       return; // All required packages are already installed
     } catch {
@@ -310,6 +316,37 @@ export class PythonEnvResolver {
         throw new Error(errorMsg);
       }
     }
+  }
+
+  /**
+   * Scans target directory to detect if Google ADK (`google-adk` / `google.adk`) dependencies are required.
+   *
+   * Logic Flow:
+   * 1. Inspects requirements.txt for references to 'google-adk'.
+   * 2. Scans agent.py for 'google.adk' imports.
+   *
+   * @param targetDir Target workspace directory
+   * @returns boolean true if ADK dependencies are required
+   */
+  public requiresAdkDependencies(targetDir: string): boolean {
+    try {
+      const reqPath = path.join(targetDir, 'requirements.txt');
+      if (fs.existsSync(reqPath)) {
+        const reqContent = fs.readFileSync(reqPath, 'utf-8');
+        if (reqContent.includes('google-adk')) {
+          return true;
+        }
+      }
+
+      const agentPyPath = path.join(targetDir, 'agent.py');
+      if (fs.existsSync(agentPyPath)) {
+        const content = fs.readFileSync(agentPyPath, 'utf-8');
+        if (content.includes('google.adk')) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
   }
 
   /**

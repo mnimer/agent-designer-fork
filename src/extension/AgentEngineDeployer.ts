@@ -12,6 +12,7 @@ import { GcloudDetector } from './deployer/GcloudDetector';
 import { ArtifactStager } from './deployer/ArtifactStager';
 import { ReasoningEngineClient } from './deployer/ReasoningEngineClient';
 import { DeployPipeline } from './deployer/DeployPipeline';
+import { PythonEnvResolver } from './PythonEnvResolver';
 import { WebviewBridge } from './WebviewBridge';
 import {
   DeploymentMetadataRecord,
@@ -45,7 +46,18 @@ export class AgentEngineDeployer implements vscode.Disposable {
   private reasoningEngineClient: ReasoningEngineClient;
   private deployPipeline: DeployPipeline;
 
-  constructor(private pythonResolver?: { resolvePythonEnvironment(targetDir?: string): Promise<{ path: string } | null> }) {
+  constructor(
+    private pythonResolver?: {
+      resolvePythonEnvironment(targetDir?: string): Promise<{ path: string } | null>;
+      ensureVirtualEnvironment?(targetDir?: string): Promise<{ path: string }>;
+      ensureDependenciesInstalled?(
+        pythonBin: string,
+        targetDir: string,
+        onLog?: (msg: string, stream?: 'stdout' | 'stderr' | 'system') => Promise<void> | void
+      ): Promise<void>;
+    }
+  ) {
+    this.pythonResolver = pythonResolver || new PythonEnvResolver();
     this.gcloudDetector = new GcloudDetector(this);
     this.artifactStager = new ArtifactStager(this);
     this.reasoningEngineClient = new ReasoningEngineClient(
@@ -154,16 +166,16 @@ export class AgentEngineDeployer implements vscode.Disposable {
   }
 
   // Delegate gcloud & PATH environment methods
-  public getExtendedEnv(extraEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-    return this.gcloudDetector.getExtendedEnv(extraEnv);
+  public getExtendedEnv(extraEnv?: NodeJS.ProcessEnv, targetDirectory?: string): NodeJS.ProcessEnv {
+    return this.gcloudDetector.getExtendedEnv(extraEnv, targetDirectory);
   }
 
   public resolveGcloudPath(): Promise<string> {
     return this.gcloudDetector.resolveGcloudPath();
   }
 
-  public hasBinary(binaryName: string): boolean {
-    return this.gcloudDetector.hasBinary(binaryName);
+  public hasBinary(binaryName: string, targetDirectory?: string): boolean {
+    return this.gcloudDetector.hasBinary(binaryName, targetDirectory);
   }
 
   public getAccessTokenHeader(): Promise<string> {

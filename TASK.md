@@ -1,74 +1,30 @@
-# TASK-124: Advanced Cognitive Patterns (Debate, Loop, Critic Triad)
+# [TASK-216] Unified Self-Contained CLI & CI/CD Deployment Architecture (Makefile, Terraform & Cloud Build)
 
-## Goal
-Implement advanced cognitive patterns for agent orchestration: Multi-Agent Debate, Evaluator-Optimizer loop, and Review & Critique Triad.
-1. Ensure Debate, Evaluator-Optimizer, and Critique Triad patterns are defined in `patterns.ts` with valid node topologies, sub-agent bindings, and Dagre layouts.
-2. Enable canvas insertion and visual palette badges for cognitive patterns in `PaletteCard.tsx`.
-3. Provide unit test coverage verifying canvas insertion, sub-agent bindings, layout coordinates, and visual palette badge metadata.
-4. Update `TASKS.md` and project documentation.
+## Problem Statement
+1. **Extension-Only Procedural Staging (`ArtifactStager`)**: Previously, `DeployPipeline` relied on `ArtifactStager` to procedurally generate or patch `.ae_ignore`, `.agent_engine_config.json`, `pyproject.toml`, `agents-cli-manifest.yaml`, `agent_runtime_app.py`, and `agent.py` at deploy time inside the VS Code extension. If a developer wanted to deploy the generated repository from the command line or a CI/CD pipeline outside VS Code, those mutations/files were missing or inconsistent, and procedural code patching violated the **Zero Procedural Post-Processing** rule in `AGENTS.md`.
+2. **Duplicate Target-Specific Deployer Pipelines (`DeployPipeline` vs `CloudRunDeployer`)**: `AgentEngineDeployer`/`DeployPipeline` and `CloudRunDeployer` maintained separate subprocess spawners, environment resolvers, process registries, and CLI flag builders instead of sharing a unified deployment runner that executes the repository's own self-contained build/deploy definitions (`Makefile`, `cloudbuild.yaml`, `main.tf`).
 
-## Plan & Progress
-- [x] Step 1: Analyze existing pattern definitions and palette integration.
-- [x] Step 2: Update `PatternDefinition` and `patterns.ts` to associate distinct `colorTheme` with each cognitive pattern.
-- [x] Step 3: Enhance `PaletteCard.tsx` with distinct visual palette badges, theme styling, and quick-add canvas insertion button.
-- [x] Step 4: Write isolated unit tests in `agentPatterns.test.ts` and `PaletteAgents.test.ts` for all 3 cognitive patterns.
-- [x] Step 5: Verify all unit tests pass (38/38 pattern tests pass, 803/803 total suite tests pass).
-- [x] Step 6: Update `TASKS.md` and `REQUIREMENTS.md`.
+## Architectural Plan
+1. **Self-Contained Repository Generation in Prompt Templates (`resource/prompts/*.prompt.txt`)**:
+   - Update `resource/prompts/python_adk_agent-engine.prompt.txt` and `resource/prompts/python_adk_cloudrun.prompt.txt` to include a standardized `Makefile` in the mandatory file manifest with targets:
+     - `make install`: Creates local `.venv` and installs `requirements.txt`.
+     - `make dev`: Starts the local ADK server (`adk web .` or `uvicorn server:app --reload`).
+     - `make test`: Executes `.venv/bin/pytest test_agent.py -v`.
+     - `make infra`: Executes `terraform init && terraform apply -auto-approve` with `project_id`, `region`, and `agent_name`/`service_name`.
+     - `make deploy`: Executes the target deployment from the CLI (`adk deploy agent_engine` / `gcloud builds submit` / `gcloud run deploy`) using standard overrideable Makefile variables (`PROJECT_ID`, `REGION`, `AGENT_NAME`, `SERVICE_NAME`, `AGENT_ENGINE_ID`, `DISPLAY_NAME`, `STAGING_BUCKET`, `SERVICE_ACCOUNT`, `NETWORK_ATTACHMENT`, `USE_CLOUD_BUILD`).
+   - Add `.agent_engine_config.json`, `.ae_ignore`, and `pyproject.toml` to the mandatory file manifest in `resource/prompts/python_adk_agent-engine.prompt.txt` so Agent Engine repositories are 100% self-contained at code generation time without procedural file patching.
+   - Update `README.md` instructions in both prompts to document `make install`, `make dev`, `make test`, `make infra`, and `make deploy`.
+2. **Unified Deployment Runner (`src/extension/deployer/UnifiedDeployRunner.ts`)**:
+   - Create `UnifiedDeployRunner` to provide a single, target-agnostic deployment execution and command builder supporting `agent_engine` and `cloud_run` via `Makefile` (`make deploy` / `make infra`), `Cloud Build` (`gcloud builds submit --config=cloudbuild.yaml`), `Terraform` (`terraform apply`), or direct CLI (`adk deploy agent_engine` / `gcloud run deploy`).
+   - Remove procedural Python file mutation (`ensureAgentImports`, `ensureAgentRuntimeApp`, `ensureManifestFile`, `ensurePyProjectToml`) from `DeployPipeline.deploy()` so the extension never rewrites generated Python code behind the scenes.
+   - Wire `DeployPipeline` and `CloudRunDeployer` to `UnifiedDeployRunner` while preserving 100% backwards compatibility with all existing WebviewBridge RPC messages and UI components.
+3. **TDD & Verification**:
+   - Write comprehensive unit tests in `tests/unit/extension/UnifiedDeployRunner.test.ts`, `tests/unit/extension/GeminiCodeGenEngine.test.ts`, `tests/unit/extension/AgentEngineDeployer.test.ts`, and `tests/unit/extension/CloudRunDeployer.test.ts`.
+   - Update `ARCHITECTURE.md` and `DESIGN_DOC.md` to reflect the unified self-contained deployment architecture.
 
-## Status: COMPLETE
-# TASK-196: Structured Input Schema Builder for Standard & Router Agent Nodes
-
-## Status
-- **Status**: Complete
-- **Release**: v1.0.7
-- **Target Files**:
-  - `src/shared/agentSpec.ts`
-  - `src/shared/types.ts`
-  - `src/shared/schemaValidation.ts`
-  - `src/webview/types.ts`
-  - `src/webview/components/inspector/StructuredInputBuilder.tsx`
-  - `src/webview/components/inspector/StandardAgentDrawer.tsx`
-  - `src/webview/components/inspector/RouterAgentDrawer.tsx`
-  - `src/extension/AgentRunnerManager.ts`
-  - `src/extension/runner/TestAndChatExecutor.ts`
-  - `resource/prompts/python_adk_agent-engine.prompt.txt`
-  - `resource/prompts/python_adk_cloudrun.prompt.txt`
-  - `tests/unit/webview/StructuredInputBuilder.test.ts`
-  - `tests/unit/webview/RouterAgentConditions.test.ts`
-  - `tests/unit/extension/AgentRunnerManager.test.ts`
-
-## Tasks & Progress
-- [x] 1. Type Definitions & Domain Models (`src/shared/agentSpec.ts` & `src/webview/types.ts`)
-  - [x] Add `'integer'` to `SchemaFieldType`
-  - [x] Add `StructuredInputField`, `StructuredInputSchema`, `RouterData`
-  - [x] Add `inputSchema` to `AgentNodeData`, `AgentData`, and `RouterConfig`
-  - [x] Export types in `src/webview/types.ts` and `src/shared/types.ts`
-- [x] 2. Create Domain Logic & `StructuredInputBuilder.tsx` Component
-  - [x] `src/shared/schemaValidation.ts` with shared Pydantic v2 code generator and JSON Schema Draft-07 generator
-  - [x] Field builder UI supporting `string`, `integer`, `number`, `boolean`, `array`, `object`, `enum`
-  - [x] Required toggle, field description, enum values editor, array item type
-  - [x] Live dual previews: Pydantic v2 `BaseModel` (Python) and JSON Schema Draft-07
-  - [x] Pydantic code generator supporting `int`, `float`, `str`, `bool`, `List[...]`, `dict`, `Literal[...]`
-  - [x] JSON Schema Draft-07 generator with `$schema: "http://json-schema.org/draft-07/schema#"`
-  - [x] Copy to clipboard and accordion expand/collapse
-- [x] 3. Integrate into `StandardAgentDrawer.tsx`
-  - [x] Add "Input Schema" accordion to `StandardAgentDrawer`
-  - [x] Persist `inputSchema` updates via `onUpdateAgent`
-- [x] 4. Integrate into `RouterAgentDrawer.tsx`
-  - [x] Add "Input Schema" accordion to `RouterAgentDrawer`
-  - [x] Persist `inputSchema` in `agent.inputSchema` and `routerConfig.inputSchema`
-  - [x] Add condition variable suggestions chip list (`input.<fieldName>`)
-  - [x] Static syntax validation for condition expressions against input schema fields
-- [x] 5. Early Input Schema Validation in Test Runner (`AgentRunnerManager.ts` / `TestAndChatExecutor.ts`)
-  - [x] Helper method to validate payload against `inputSchema` (`validateScenarioInput`)
-  - [x] Emit early schema validation error logs when required fields are missing or types mismatch before runtime dispatch
-- [x] 6. Update Code Generation Prompts
-  - [x] `resource/prompts/python_adk_agent-engine.prompt.txt`
-  - [x] `resource/prompts/python_adk_cloudrun.prompt.txt`
-  - [x] Add instructions for Gemini to generate Pydantic input models (`class <Agent>Input(BaseModel)`)
-  - [x] Instruct validation of incoming payload in `main.py` / `server.py` and router conditions
-- [x] 7. Unit Tests & Verification
-  - [x] Write tests in `tests/unit/webview/StructuredInputBuilder.test.ts` (13 tests)
-  - [x] Add input validation tests in `tests/unit/extension/AgentRunnerManager.test.ts` (28 tests)
-  - [x] Verify 100% test pass across all 78 test suites (809/809 passing)
-  - [x] Update `TASKS.md` status to Complete
+## Checklist
+- [x] Step 1: Document `[TASK-216]` in `TASK.md` and `TASKS.md`.
+- [x] Step 2: Write isolated failing unit tests for `UnifiedDeployRunner` and prompt manifest requirements (`Makefile`, `.agent_engine_config.json`, `.ae_ignore`, `pyproject.toml`).
+- [x] Step 3: Update `resource/prompts/python_adk_agent-engine.prompt.txt` and `resource/prompts/python_adk_cloudrun.prompt.txt` with `Makefile` and self-contained config files.
+- [x] Step 4: Implement `src/extension/deployer/UnifiedDeployRunner.ts` and refactor `DeployPipeline.ts` and `CloudRunDeployer.ts` to use it without procedural Python code mutation.
+- [x] Step 5: Run full unit test suite (`npx vitest run`), compile extension (`npm run compile`), and sync `ARCHITECTURE.md` / `DESIGN_DOC.md`.

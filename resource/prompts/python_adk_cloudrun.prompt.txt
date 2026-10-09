@@ -215,31 +215,39 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
       * Step 2: Build Docker container image (`docker build -t ...`).
       * Step 3: Push image to Google Cloud Artifact Registry (`docker push ...`).
       * Step 4: Deploy container revision to Google Cloud Run (`gcloud run deploy ...`).
+    - `Makefile`: Standardized, self-contained CLI & CI/CD automation entrypoint with targets:
+      * `make install`: `python3 -m venv .venv && .venv/bin/pip install --upgrade pip -r requirements.txt`
+      * `make dev`: `.venv/bin/python -m uvicorn server:app --reload --port $(PORT)`
+      * `make test`: `.venv/bin/pytest test_agent.py -v`
+      * `make infra`: `terraform init && terraform apply -auto-approve -var="project_id=$(PROJECT_ID)" -var="region=$(REGION)" -var="service_name=$(SERVICE_NAME)"`
+      * `make deploy`: Deploys the Cloud Run service from the CLI (`gcloud run deploy $(SERVICE_NAME) --source . --project $(PROJECT_ID) --region $(REGION) --platform managed --cpu=$(CPU) --memory=$(MEMORY) --min-instances=$(MIN_INSTANCES) --max-instances=$(MAX_INSTANCES) --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=global,GOOGLE_CLOUD_PROJECT=$(PROJECT_ID) --quiet`, or `gcloud builds submit --config=cloudbuild.yaml --project=$(PROJECT_ID) .` when `USE_CLOUD_BUILD=true`).
 
 ### MANDATORY COMPLETE REPOSITORY FILE MANIFEST:
 Every response MUST create the complete project. Emitting only 1 or 2 files is strictly prohibited.
 You MUST output EVERY single one of the following files in the returned JSON array:
 1. `agent.py`: Complete Google ADK root_agent, sub-agents, and state flow.
-2. `server.py`: Production FastAPI server mounting ADK endpoints and health checks.
-3. `main.py`: Local CLI test runner using ADK Runner.
-4. `test_agent.py`: Pytest test suite validating all test scenarios against root_agent. When the workflow specification contains trigger nodes of type `tester` (or `triggerType == 'tester'`), inspect `config.testScenarios`, `config.testPrompts`, and `config.expectedOutput`. For EVERY defined test scenario (e.g. 'Test Case #1' with prompt 'Let\'s play a game.'), generate a dedicated pytest test function in `test_agent.py` that executes the scenario prompt against `root_agent` and asserts the expected output criteria.
+2. `session_store.py`: Production session store checkpointer implementations (`get_session_store`).
+3. `server.py`: Production FastAPI server mounting ADK endpoints and health checks.
+4. `main.py`: Local CLI test runner using ADK Runner.
+5. `test_agent.py`: Pytest test suite validating all test scenarios against root_agent. When the workflow specification contains trigger nodes of type `tester` (or `triggerType == 'tester'`), inspect `config.testScenarios`, `config.testPrompts`, and `config.expectedOutput`. For EVERY defined test scenario (e.g. 'Test Case #1' with prompt 'Let\'s play a game.'), generate a dedicated pytest test function in `test_agent.py` that executes the scenario prompt against `root_agent` and asserts the expected output criteria.
    - **Hermetic, Offline CI Execution**: All pytest functions executed as part of CI (such as cloudbuild.yaml step `pytest test_agent.py -v`) MUST test agent structure, tool logic, and mock external Vertex AI / Gemini LLM calls using `unittest.mock` or mock Runner event generators so that automated test suites pass offline without requiring ambient Google Cloud credentials or live network calls.
    - **Strict Test Assertions**: In `test_agent.py`, test assertions MUST strictly verify the exact `expectedOutput` or `expectedOutputPattern` specified in `testScenarios` (e.g., `assert 'LockbitC2' in final_response_text`). NEVER weaken or bypass assertions by appending fallback conditions such as `or len(final_response_text) > 0` or `or True`, which make test failures impossible.
-5. `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios.
-6. `evaluate.py`: Vertex AI Agent Evaluation script using vertexai.evaluation.EvalTask.
-7. `requirements.txt`: Complete pinned dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
-8. `Dockerfile`: Clean production container definition using python:3.11-slim. Always enforce non-root execution by creating a dedicated non-privileged user (`RUN useradd -u 8888 -m appuser && chown -R appuser:appuser /app` and `USER 8888`).
-9. `.dockerignore`: Docker ignore patterns excluding `.git`, `.venv`, `__pycache__`, `*.pyc`, `.env*`, `dist`, and build artifacts.
-10. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building container, and deploying.
-11. `main.tf`: Complete Terraform configuration deploying google_cloud_run_v2_service, Artifact Registry, Service Account, IAM roles, and triggers.
-12. `variables.tf`: Input variable definitions for Terraform.
-13. `outputs.tf`: Output values (service_url, service_id, artifact_repo_id, service_account_email).
-14. `terraform.tfvars`: Default variable values for local initialization.
-15. `pyproject.toml`: Modern packaging metadata and dependencies.
-16. `.gitignore`: Git ignore patterns for Python, venv, and cache.
-17. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
-18. `README.md`: Architecture overview, local execution, and deployment instructions.
-18. Auxiliary files as needed:
+6. `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios.
+7. `evaluate.py`: Vertex AI Agent Evaluation script using vertexai.evaluation.EvalTask.
+8. `requirements.txt`: Complete pinned dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
+9. `Makefile`: Self-contained CLI & CI/CD automation Makefile with `install`, `dev`, `test`, `infra`, and `deploy` targets.
+10. `Dockerfile`: Clean production container definition using python:3.11-slim. Always enforce non-root execution by creating a dedicated non-privileged user (`RUN useradd -u 8888 -m appuser && chown -R appuser:appuser /app` and `USER 8888`).
+11. `.dockerignore`: Docker ignore patterns excluding `.git`, `.venv`, `__pycache__`, `*.pyc`, `.env*`, `dist`, and build artifacts.
+12. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building container, and deploying.
+13. `main.tf`: Complete Terraform configuration deploying google_cloud_run_v2_service, Artifact Registry, Service Account, IAM roles, and triggers.
+14. `variables.tf`: Input variable definitions for Terraform.
+15. `outputs.tf`: Output values (service_url, service_id, artifact_repo_id, service_account_email).
+16. `terraform.tfvars`: Default variable values for local initialization.
+17. `pyproject.toml`: Modern packaging metadata and dependencies.
+18. `.gitignore`: Git ignore patterns for Python, venv, and cache.
+19. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
+20. `README.md`: Architecture overview, local execution (`make install && make dev`), unit testing (`make test`), Terraform provisioning (`make infra`), and standalone CLI / CI/CD deployment (`make deploy`).
+21. Auxiliary files as needed:
     - `pydantic_models.py` (when structured output schemas or Pydantic models are used)
     - `tools/*.py` (when custom tools are defined)
 
