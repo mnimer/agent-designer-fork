@@ -43,12 +43,16 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { AgentWorkflowDocument } from '../../../shared/types';
-import { GeneratedFile } from '../../types';
+import { GeneratedFile, AgentGovernanceConfig } from '../../types';
 import { useWebviewBridge } from '../../hooks/useWebviewBridge';
 import { DeploymentMetadataRecord } from '../../../extension/AgentEngineDeployer';
 import { validateTargetFolder } from '../../../shared/folderValidation';
 import { isValidAgentEngineId } from '../../../shared/identifierValidation';
 import { validateWorkflowMemory } from '../../../shared/memoryValidation';
+import {
+  GovernanceStatusCard,
+  createDefaultGovernanceConfig,
+} from './GovernanceStatusCard';
 
 export interface AgentEngineDeployTabProps {
   document?: AgentWorkflowDocument;
@@ -101,6 +105,9 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
   const [networkAttachment, setNetworkAttachment] = useState<string>('');
   const [stagingBucket, setStagingBucket] = useState<string>('');
   const [forceNew, setForceNew] = useState<boolean>(false);
+  const [governance, setGovernance] = useState<AgentGovernanceConfig>(() =>
+    createDefaultGovernanceConfig(workflowDoc)
+  );
   const [agentEngineId, setAgentEngineId] = useState<string>(() => {
     const deployment = (workflowDoc as any)?.deployment;
     const directId = deployment?.agentEngine?.deployedResourceId;
@@ -279,6 +286,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
         forceNew,
         agentEngineId: agentEngineId.trim() || undefined,
         envVars: secrets,
+        governance,
       },
     });
   };
@@ -324,14 +332,22 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
             </div>
             <span
               className={`text-[10px] px-2 py-0.5 rounded font-mono border ${
-                deployStatus === 'success'
+                deployStatus === 'success' && metadata?.eval_gate_status === 'warning'
+                  ? 'bg-amber-950/40 text-amber-400 border-amber-500/40'
+                  : deployStatus === 'success'
                   ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/40'
                   : isDeploying
                   ? 'bg-amber-950/40 text-amber-400 border-amber-500/40'
                   : 'bg-[#0d1117] text-gray-400 border-[#30363d]'
               }`}
             >
-              {deployStatus === 'success' ? 'Active' : isDeploying ? 'Deploying' : 'Ready'}
+              {deployStatus === 'success' && metadata?.eval_gate_status === 'warning'
+                ? 'Succeeded with Eval Warnings'
+                : deployStatus === 'success'
+                ? 'Active'
+                : isDeploying
+                ? 'Deploying'
+                : 'Ready'}
             </span>
           </div>
 
@@ -442,6 +458,16 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
               </label>
             </div>
           </div>
+
+          {/* Enterprise Agent Governance & Gemini Enterprise Publishing Card */}
+          <GovernanceStatusCard
+            document={workflowDoc}
+            projectId={projectId}
+            region={region}
+            value={governance}
+            onChange={setGovernance}
+            metadata={metadata}
+          />
 
           {/* Action Button */}
           <div className="flex flex-col gap-2">

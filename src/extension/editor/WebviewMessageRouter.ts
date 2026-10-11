@@ -41,7 +41,10 @@ import {
   DEFAULT_PUBSUB_TOPICS_FALLBACK,
   DEFAULT_PUBSUB_SUBSCRIPTIONS_FALLBACK,
   DEFAULT_SERVICE_ACCOUNTS_FALLBACK,
+  DEFAULT_MODEL_ARMOR_TEMPLATES_FALLBACK,
+  DEFAULT_GEMINI_ENTERPRISE_APPS_FALLBACK,
 } from '../GcpDiscoveryManager';
+import { UnifiedDeployRunner } from '../deployer/UnifiedDeployRunner';
 import {
   WebviewToExtensionMessage,
   isWriteFilesPayload,
@@ -947,6 +950,7 @@ export class WebviewMessageRouter {
         agentEngineId: payload.agentEngineId,
         displayName: payload.displayName || parsedDoc?.name,
         envVars: payload.envVars,
+        governance: payload.governance,
         bridge,
       });
 
@@ -962,6 +966,7 @@ export class WebviewMessageRouter {
             serviceUrl: res.serviceUrl,
             consoleUrl: res.consoleUrl,
             deployedAt: new Date().toISOString(),
+            governance: payload.governance || currentDeploy.governance,
             agentEngine: {
               deployedResourceId: res.remoteRuntimeId,
               serviceUrl: res.serviceUrl,
@@ -1044,6 +1049,7 @@ export class WebviewMessageRouter {
         allowUnauthenticated: payload.allowUnauthenticated,
         networkAttachment: payload.networkAttachment,
         envVars: payload.envVars,
+        governance: payload.governance,
         bridge,
       });
 
@@ -1059,6 +1065,7 @@ export class WebviewMessageRouter {
             serviceUrl: res.serviceUrl,
             consoleUrl: res.consoleUrl,
             deployedAt: new Date().toISOString(),
+            governance: payload.governance || currentDeploy.governance,
             cloudRun: {
               deployedResourceId: res.serviceName || payload.serviceName,
               serviceUrl: res.serviceUrl,
@@ -1337,6 +1344,117 @@ export class WebviewMessageRouter {
             serviceAccounts: DEFAULT_SERVICE_ACCOUNTS_FALLBACK,
             source: 'fallback',
             projectId: payload?.projectId,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('FETCH_MODEL_ARMOR_TEMPLATES', async (payload: any, rawMessage?: any) => {
+      try {
+        const projectId = payload?.projectId;
+        const location = payload?.location || 'us-central1';
+        const forceRefresh = payload?.forceRefresh || false;
+        const result = await this.gcpDiscoveryManager.getModelArmorTemplates(projectId, location, forceRefresh);
+        await bridge.postMessage({
+          type: 'MODEL_ARMOR_TEMPLATES_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            templates: result.templates,
+            source: result.source,
+            projectId: result.projectId,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'MODEL_ARMOR_TEMPLATES_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            templates: DEFAULT_MODEL_ARMOR_TEMPLATES_FALLBACK,
+            source: 'fallback',
+            projectId: payload?.projectId,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('FETCH_GEMINI_ENTERPRISE_APPS', async (payload: any, rawMessage?: any) => {
+      try {
+        const projectId = payload?.projectId;
+        const location = payload?.location || 'global';
+        const forceRefresh = payload?.forceRefresh || false;
+        const result = await this.gcpDiscoveryManager.getGeminiEnterpriseApps(projectId, location, forceRefresh);
+        await bridge.postMessage({
+          type: 'GEMINI_ENTERPRISE_APPS_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            apps: result.apps,
+            source: result.source,
+            projectId: result.projectId,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'GEMINI_ENTERPRISE_APPS_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            apps: DEFAULT_GEMINI_ENTERPRISE_APPS_FALLBACK,
+            source: 'fallback',
+            projectId: payload?.projectId,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('PUBLISH_TO_GEMINI_ENTERPRISE', async (payload: any) => {
+      try {
+        const targetDir = this.documentSyncManager.resolveTargetDirectory(document, payload?.targetDirectory);
+        const projectId = payload?.projectId || 'my-gcp-project';
+        const region = payload?.region || 'us-central1';
+        const appId = payload?.appId || 'default-enterprise-workspace';
+        const location = payload?.location || 'global';
+        const agentName = (payload?.agentName || 'agent').toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+        const runner = new UnifiedDeployRunner();
+        const cmd = runner.buildPublishGeminiEnterpriseCommand({
+          targetDirectory: targetDir,
+          projectId,
+          region,
+          agentId: agentName,
+          deployedResourceUri: payload?.deployedResourceId || '',
+          geminiEnterpriseAppId: appId,
+          geminiEnterpriseLocation: location,
+          agentGatewayResource:
+            payload?.bindGateway !== false
+              ? `projects/${projectId}/locations/${region}/agentGateways/default-shared-agent-gateway`
+              : undefined,
+        });
+        const execResult = await runner.executeCommand({
+          targetDirectory: targetDir,
+          executable: cmd.executable,
+          args: cmd.args,
+        });
+        const geminiEnterpriseUrl = `https://console.cloud.google.com/gen-app-builder/engines/${appId}?project=${projectId}`;
+        const geminiEnterpriseAgentId = `projects/${projectId}/locations/${location}/collections/default_collection/engines/${appId}/assistants/default_assistant/agents/${agentName}`;
+        await bridge.postMessage({
+          type: 'GEMINI_ENTERPRISE_PUBLISHED',
+          payload: {
+            success: execResult.exitCode === 0,
+            geminiEnterpriseAppId: appId,
+            geminiEnterpriseUrl,
+            geminiEnterpriseAgentId,
+            error:
+              execResult.exitCode !== 0
+                ? execResult.stderrLines.join('\n') || 'Failed to publish to Gemini Enterprise App'
+                : undefined,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'GEMINI_ENTERPRISE_PUBLISHED',
+          payload: {
+            success: false,
             error: err?.message || String(err),
           },
         });

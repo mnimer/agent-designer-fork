@@ -131,8 +131,8 @@
 | [**TASK-214**](#task-214) | v1.2.0 | Samples / SDLC | Autonomous Multi-Agent Code Reviewer Blueprint (resource/samples/code_reviewer/) | **Complete** | TASK-128, TASK-213 |
 | [**TASK-215**](#task-215) | v1.2.0 | Samples / Retail | Reverse Engineer `retail-data-and-ai-demo` (Agentic Data Cloud for Retail) with Dual-Mode `data/<target>/` Pre-Loading & Asset Sync | **Not Started** | TASK-128 |
 | [**TASK-216**](#task-216) | v1.2.0 | Deployment | Unified Self-Contained CLI & CI/CD Deployment Architecture (`Makefile`, Terraform & Cloud Build) | **Complete** | TASK-111, TASK-125, TASK-142 |
-| [**TASK-217**](#task-217) | v1.2.0 | Governance & Security | Enterprise Agent Governance Pipeline (Agent Registry, Agent Gateway + Model Armor, Security Policies & Vertex AI `EvalTask` Registration) | **Not Started** | TASK-216 |
-| [**TASK-218**](#task-218) | v1.2.0 | Deployment / Gemini Enterprise | Automated Gemini Enterprise App Publishing & Discovery (`discoveryengine.googleapis.com` Integration on Deployment Tab) | **Not Started** | TASK-216, TASK-217 |
+| [**TASK-217**](#task-217) | v1.2.0 | Governance & Security | Enterprise Agent Governance Pipeline (Agent Registry, Agent Gateway + Model Armor, Security Policies & Vertex AI `EvalTask` Registration) | **Complete** | TASK-216 |
+| [**TASK-218**](#task-218) | v1.2.0 | Deployment / Gemini Enterprise | Automated Gemini Enterprise App Publishing & Discovery (`discoveryengine.googleapis.com` Integration on Deployment Tab) | **Complete** | TASK-216, TASK-217 |
 
 ---
 
@@ -4880,7 +4880,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-217"></a>
 
 ### [TASK-217] Enterprise Agent Governance Pipeline (Agent Registry, Shared Regional Agent Gateway + Model Armor, Security Policies & Vertex AI `EvalTask` Registration)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: Governance, Security & Evaluation
 * **Dependencies**: `TASK-216`
@@ -4901,8 +4901,8 @@ Each task specifies reverse-engineering the sample Python code into a production
     - `src/webview/components/deployment/CloudRunDeployTab.tsx`
     - `src/webview/components/deployment/GovernanceStatusCard.tsx` (New reusable governance controls & post-deploy status badge panel)
   - **Unit Tests**:
-    - `tests/unit/extension/AgentGovernanceDeploy.test.ts` (New)
-    - `tests/unit/webview/GovernanceStatusCard.test.tsx` (New)
+    - `tests/unit/extension/UnifiedDeployRunner.test.ts`
+    - `tests/unit/webview/GovernanceStatusCard.test.ts` (New)
 * **Context**:
   - **Goal**: Ensure every agent deployed to Vertex AI Agent Engine or Google Cloud Run adheres to Google Cloud's **Gemini Enterprise Agent Platform** governance, security, and testing best practices so deployed agents are production-hardened and ready for business users.
   - **Four Core Governance Pillars**:
@@ -4932,14 +4932,14 @@ Each task specifies reverse-engineering the sample Python code into a production
     | **6. Publish to Gemini Enterprise App** (`TASK-218`) | **Checkbox + App Dropdown** *(only shown when Chat Trigger exists)* | **Checked (`true`)** *(when Chat Trigger exists)* | Conversational agents with a Chat Trigger are meant for business users in Gemini Enterprise; hidden for headless Pub/Sub/Eventarc/Webhook-only agents. |
 * **Verification**:
   - Verify `python_adk_agent-engine.prompt.txt` and `python_adk_cloudrun.prompt.txt` generate `main.tf` (enabling `agentregistry.googleapis.com`, `networkservices.googleapis.com`, `networksecurity.googleapis.com`, `modelarmor.googleapis.com`, and provisioning Agent Registry, Enterprise Baseline Model Armor Template, Shared Regional Agent Gateway, and `AuthzPolicy` resources), `evaluate.py`, `eval_dataset.jsonl`, and `Makefile` targets (`make register-agent`, `make setup-gateway`, `make eval`).
-  - Execute `npx vitest run tests/unit/extension/AgentGovernanceDeploy.test.ts tests/unit/webview/GovernanceStatusCard.test.tsx` with 100% pass rate.
+  - Execute `npx vitest run tests/unit/extension/UnifiedDeployRunner.test.ts tests/unit/webview/GovernanceStatusCard.test.ts` with 100% pass rate.
 
 ---
 
 <a id="task-218"></a>
 
 ### [TASK-218] Automated Gemini Enterprise App Publishing & Discovery (`discoveryengine.googleapis.com` Integration on Deployment Tab)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: Deployment / Gemini Enterprise
 * **Dependencies**: `TASK-216`, `TASK-217`

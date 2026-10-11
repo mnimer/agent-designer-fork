@@ -35,9 +35,10 @@ import * as https from 'https';
 import * as http from 'http';
 import { WebviewBridge } from './WebviewBridge';
 import { GeneratedFile } from '../shared/codegen/types';
-import { AgentWorkflowDocument } from '../shared/types';
+import { AgentWorkflowDocument, AgentGovernanceConfig } from '../shared/types';
 import { UnifiedDeployRunner } from './deployer/UnifiedDeployRunner';
 import { GcloudDetector } from './deployer/GcloudDetector';
+import { PostDeployGovernanceResult } from './deployer/DeployTypes';
 
 /**
  * Persisted schema for `cloud_run_deployment_metadata.json`.
@@ -56,7 +57,17 @@ export interface CloudRunDeploymentMetadataRecord {
   max_instances?: number;
   allow_unauthenticated?: boolean;
   network_attachment?: string;
-  status: 'ACTIVE' | 'DEPLOYING' | 'FAILED' | 'READY';
+  status: 'ACTIVE' | 'DEPLOYING' | 'FAILED' | 'READY' | 'READY_WITH_EVAL_WARNINGS';
+  agent_registry_resource?: string;
+  security_policy_resource?: string;
+  agent_gateway_resource?: string;
+  model_armor_template_id?: string;
+  eval_gate_status?: 'passed' | 'warning' | 'skipped';
+  eval_warnings?: string[];
+  eval_task_experiment_url?: string;
+  gemini_enterprise_agent_uri?: string;
+  gemini_enterprise_console_url?: string;
+  gemini_enterprise_blocked_by_eval?: boolean;
   [key: string]: any;
 }
 
@@ -94,6 +105,7 @@ export interface CloudRunDeployOptions {
   allowUnauthenticated?: boolean;
   networkAttachment?: string;
   envVars?: Record<string, string>;
+  governance?: AgentGovernanceConfig;
   document?: AgentWorkflowDocument;
   bridge?: WebviewBridge;
 }
@@ -118,6 +130,7 @@ export interface CloudRunDeployResult {
   consoleUrl?: string;
   serviceName?: string;
   metadata?: CloudRunDeploymentMetadataRecord;
+  governanceResult?: PostDeployGovernanceResult;
   error?: string;
 }
 
@@ -408,6 +421,7 @@ export class CloudRunDeployer {
       allowUnauthenticated,
       networkAttachment,
       envVars: options.envVars,
+      governance: options.governance,
     };
 
     const useMakefile =
@@ -476,7 +490,7 @@ export class CloudRunDeployer {
         resolve({ success: false, error: errMsg });
       });
 
-      child.on('close', (code) => {
+      child.on('close', async (code) => {
         CloudRunDeployer.activeProcesses.delete(targetDir);
 
         if (code === 0) {
@@ -491,6 +505,21 @@ export class CloudRunDeployer {
           }
 
           const consoleUrl = `https://console.cloud.google.com/run/detail/${region}/${serviceName}/metrics?project=${projectId}`;
+          const cloudRunResourceUri = `projects/${projectId}/locations/${region}/services/${serviceName}`;
+
+          const governanceResult = await this.unifiedRunner.runPostDeployGovernance({
+            target: 'cloud_run',
+            targetDirectory: targetDir,
+            projectId,
+            region,
+            agentId: serviceName,
+            displayName: options.document?.name || serviceName,
+            description: options.document?.description,
+            deployedResourceUri: cloudRunResourceUri,
+            serviceUrl,
+            governance: options.governance,
+            onLog: (text, stream) => this.emitLog(targetDir, bridge, text, stream),
+          });
 
           const metadata: CloudRunDeploymentMetadataRecord = {
             service_name: serviceName,
@@ -506,7 +535,20 @@ export class CloudRunDeployer {
             max_instances: maxInstances,
             allow_unauthenticated: allowUnauthenticated,
             network_attachment: networkAttachment || undefined,
-            status: 'READY',
+            status:
+              governanceResult.evalGateStatus === 'warning'
+                ? 'READY_WITH_EVAL_WARNINGS'
+                : 'READY',
+            agent_registry_resource: governanceResult.agentRegistryResource,
+            security_policy_resource: governanceResult.securityPolicyResource,
+            agent_gateway_resource: governanceResult.agentGatewayResource,
+            model_armor_template_id: governanceResult.modelArmorTemplateId,
+            eval_gate_status: governanceResult.evalGateStatus,
+            eval_warnings: governanceResult.evalWarnings,
+            eval_task_experiment_url: governanceResult.evalTaskExperimentUrl,
+            gemini_enterprise_agent_uri: governanceResult.geminiEnterpriseAgentUri,
+            gemini_enterprise_console_url: governanceResult.geminiEnterpriseConsoleUrl,
+            gemini_enterprise_blocked_by_eval: governanceResult.geminiEnterpriseBlockedByEval,
           };
 
           this.writeDeploymentMetadata(targetDir, metadata);
@@ -539,6 +581,7 @@ export class CloudRunDeployer {
             consoleUrl,
             serviceName,
             metadata,
+            governanceResult,
           });
         } else {
           const errMsg = `Deployment process exited with code ${code}. Check logs above for details.`;

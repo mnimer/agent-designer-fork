@@ -16,6 +16,9 @@ import {
   McpSecretConfig,
   SampleWorkflowDefinition,
   EventArcCategory,
+  AgentGovernanceConfig,
+  ModelArmorTemplateItem,
+  GeminiEnterpriseAppItem,
 } from './types';
 import { GeneratedFile } from './codegen/types';
 
@@ -227,7 +230,10 @@ export type WebviewToExtensionMessage =
         networkAttachment?: string;
         stagingBucket?: string;
         forceNew?: boolean;
+        agentEngineId?: string;
+        displayName?: string;
         envVars?: Record<string, string>;
+        governance?: AgentGovernanceConfig;
       };
     }
   | {
@@ -287,6 +293,7 @@ export type WebviewToExtensionMessage =
         allowUnauthenticated?: boolean;
         networkAttachment?: string;
         envVars?: Record<string, string>;
+        governance?: AgentGovernanceConfig;
       };
     }
   | {
@@ -365,6 +372,38 @@ export type WebviewToExtensionMessage =
       payload?: {
         projectId?: string;
         forceRefresh?: boolean;
+      };
+    }
+  | {
+      type: 'FETCH_MODEL_ARMOR_TEMPLATES';
+      payload?: {
+        projectId?: string;
+        location?: string;
+        forceRefresh?: boolean;
+      };
+    }
+  | {
+      type: 'FETCH_GEMINI_ENTERPRISE_APPS';
+      payload?: {
+        projectId?: string;
+        location?: string;
+        forceRefresh?: boolean;
+      };
+    }
+  | {
+      type: 'PUBLISH_TO_GEMINI_ENTERPRISE';
+      payload: {
+        targetDirectory?: string;
+        projectId: string;
+        region?: string;
+        target: 'agent_engine' | 'cloud_run';
+        agentResourceUri: string;
+        displayName?: string;
+        description?: string;
+        geminiEnterpriseAppId: string;
+        geminiEnterpriseLocation?: string;
+        bindGatewayToGeminiEnterprise?: boolean;
+        agentGatewayResource?: string;
       };
     }
   | {
@@ -722,6 +761,35 @@ export type ExtensionToWebviewMessage =
         }>;
         source: 'gcloud' | 'fallback';
         projectId?: string;
+        error?: string;
+      };
+    }
+  | {
+      type: 'MODEL_ARMOR_TEMPLATES_RESPONSE';
+      payload: {
+        templates: ModelArmorTemplateItem[];
+        source: 'gcloud' | 'fallback';
+        projectId?: string;
+        location?: string;
+        error?: string;
+      };
+    }
+  | {
+      type: 'GEMINI_ENTERPRISE_APPS_RESPONSE';
+      payload: {
+        apps: GeminiEnterpriseAppItem[];
+        source: 'gcloud' | 'fallback';
+        projectId?: string;
+        location?: string;
+        error?: string;
+      };
+    }
+  | {
+      type: 'GEMINI_ENTERPRISE_PUBLISHED';
+      payload: {
+        success: boolean;
+        geminiEnterpriseAgentUri?: string;
+        geminiEnterpriseConsoleUrl?: string;
         error?: string;
       };
     };

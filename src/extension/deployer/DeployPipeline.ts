@@ -114,6 +114,10 @@ export class DeployPipeline {
       args.push('--artifact_service_uri', bucketUri);
     }
 
+    if (options.serviceAccount && options.serviceAccount.trim()) {
+      args.push('--service_account', options.serviceAccount.trim());
+    }
+
     args.push('.');
 
     return args;
@@ -137,6 +141,7 @@ export class DeployPipeline {
         stagingBucket: options.stagingBucket,
         serviceAccount: options.serviceAccount,
         networkAttachment: options.networkAttachment,
+        governance: options.governance,
       }).commandString;
     }
     if (this.gcloudDetector.hasBinary('adk', options.targetDirectory)) {
@@ -458,7 +463,7 @@ export class DeployPipeline {
         }
       });
 
-      child.on('close', (code: number | null, signal: string | null) => {
+      child.on('close', async (code: number | null, signal: string | null) => {
         this.activeProcesses.delete(targetDirectory);
         this.artifactStager.cleanupAdkTempDirectories(targetDirectory, deployStartTime);
 
@@ -487,6 +492,28 @@ export class DeployPipeline {
           const serviceUrl = this.reasoningEngineClient.resolveEndpointUrl(region, projectId, remoteRuntimeId);
           const consoleUrl = detectedConsoleUrl || this.reasoningEngineClient.resolveConsoleUrl(region, projectId, remoteRuntimeId);
 
+          const resolvedAgentId =
+            options.displayName ||
+            (options.document as any)?.name ||
+            path.basename(targetDirectory);
+
+          const governanceResult = await this.unifiedRunner.runPostDeployGovernance({
+            target: 'agent_engine',
+            targetDirectory,
+            projectId,
+            region,
+            agentId: resolvedAgentId,
+            displayName: resolvedAgentId,
+            description: (options.document as any)?.description,
+            deployedResourceUri: remoteRuntimeId,
+            serviceUrl,
+            serviceAccount: options.serviceAccount,
+            stagingBucket: options.stagingBucket,
+            document: options.document,
+            governance: options.governance,
+            onLog: (text, stream) => this.logToBridge(bridge, text, stream, targetDirectory),
+          });
+
           const metadata: DeploymentMetadataRecord = {
             remote_agent_runtime_id: remoteRuntimeId,
             deployment_target: 'agent_runtime',
@@ -500,7 +527,27 @@ export class DeployPipeline {
             service_account: options.serviceAccount,
             network_attachment: options.networkAttachment,
             staging_bucket: options.stagingBucket,
-            status: 'ACTIVE',
+            status:
+              governanceResult.evalGateStatus === 'warning'
+                ? 'ACTIVE_WITH_EVAL_WARNINGS'
+                : 'ACTIVE',
+            agent_registry_resource: governanceResult.agentRegistryResource,
+            security_policy_resource: governanceResult.securityPolicyResource,
+            agent_gateway_resource: governanceResult.agentGatewayResource,
+            model_armor_template_id: governanceResult.modelArmorTemplateId,
+            telemetry_enabled: governanceResult.telemetryEnabled,
+            evaluation_set_resource: governanceResult.evaluationSetResource,
+            evaluation_experiment_resource: governanceResult.evaluationExperimentResource,
+            evaluation_run_resource: governanceResult.evaluationRunResource,
+            evaluation_items_count: governanceResult.evaluationItemsCount,
+            apphub_application_resource: governanceResult.appHubApplicationResource,
+            apphub_workload_resource: governanceResult.appHubWorkloadResource,
+            eval_gate_status: governanceResult.evalGateStatus,
+            eval_warnings: governanceResult.evalWarnings,
+            eval_task_experiment_url: governanceResult.evalTaskExperimentUrl,
+            gemini_enterprise_agent_uri: governanceResult.geminiEnterpriseAgentUri,
+            gemini_enterprise_console_url: governanceResult.geminiEnterpriseConsoleUrl,
+            gemini_enterprise_blocked_by_eval: governanceResult.geminiEnterpriseBlockedByEval,
           };
 
           this.artifactStager.writeDeploymentMetadata(targetDirectory, metadata);
@@ -514,7 +561,16 @@ export class DeployPipeline {
             active.metadata = metadata;
           }
 
-          this.logToBridge(bridge, `✅ Deployment succeeded!`, 'system', targetDirectory);
+          if (governanceResult.evalGateStatus === 'warning') {
+            this.logToBridge(
+              bridge,
+              `⚠️ Deployment Succeeded with Evaluation Warnings!`,
+              'system',
+              targetDirectory
+            );
+          } else {
+            this.logToBridge(bridge, `✅ Deployment succeeded!`, 'system', targetDirectory);
+          }
           this.logToBridge(bridge, `✨ Resource ID: ${remoteRuntimeId}`, 'system', targetDirectory);
           this.logToBridge(bridge, `🚀 Endpoint: ${serviceUrl}`, 'system', targetDirectory);
 
@@ -532,6 +588,7 @@ export class DeployPipeline {
             serviceUrl,
             consoleUrl,
             metadata,
+            governanceResult,
           });
         } else {
           let errMsg = detectedFailureMessage;

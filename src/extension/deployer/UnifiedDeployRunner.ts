@@ -27,6 +27,41 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { GcloudDetector } from './GcloudDetector';
+import { AgentGovernanceConfig } from '../../shared/types';
+import { PostDeployGovernanceResult } from './DeployTypes';
+import {
+  AgentGovernanceProvisioner,
+  HttpJsonRequester,
+} from './AgentGovernanceProvisioner';
+
+/**
+ * Options for executing the post-deploy Enterprise Governance & Gemini Enterprise pipeline.
+ */
+export interface PostDeployGovernanceOptions {
+  target?: 'agent_engine' | 'cloud_run';
+  targetDirectory: string;
+  projectId: string;
+  region: string;
+  agentId: string;
+  displayName?: string;
+  description?: string;
+  deployedResourceUri: string;
+  serviceUrl: string;
+  serviceAccount?: string;
+  stagingBucket?: string;
+  document?: any;
+  governance?: AgentGovernanceConfig;
+  hasChatTrigger?: boolean;
+  onLog?: (text: string, stream: 'stdout' | 'stderr' | 'system') => void;
+  /** Optional custom evaluator hook (used for deterministic testing or custom runners). */
+  customEvalExecutor?: () => Promise<{
+    passed: boolean;
+    warnings?: string[];
+    experimentUrl?: string;
+  }>;
+  /** Optional custom HTTP requester for deterministic unit testing of OnePlatform REST provisioning. */
+  customHttpRequester?: HttpJsonRequester;
+}
 
 /**
  * Unified deployment command configuration across Agent Engine and Cloud Run targets.
@@ -49,6 +84,7 @@ export interface UnifiedDeployCommandOptions {
   maxInstances?: number;
   allowUnauthenticated?: boolean;
   envVars?: Record<string, string>;
+  governance?: AgentGovernanceConfig;
 }
 
 /**
@@ -79,6 +115,7 @@ export class UnifiedDeployRunner {
   private activeProcesses: Map<string, ChildProcess>;
   private cancelledDirectories: Set<string>;
   private gcloudDetector: GcloudDetector;
+  private governanceProvisioner: AgentGovernanceProvisioner;
 
   /**
    * Constructs a new UnifiedDeployRunner instance.
@@ -86,11 +123,14 @@ export class UnifiedDeployRunner {
   constructor(
     gcloudDetector?: GcloudDetector,
     sharedProcesses?: Map<string, ChildProcess>,
-    sharedCancelled?: Set<string>
+    sharedCancelled?: Set<string>,
+    governanceProvisioner?: AgentGovernanceProvisioner
   ) {
     this.gcloudDetector = gcloudDetector || new GcloudDetector();
     this.activeProcesses = sharedProcesses || new Map<string, ChildProcess>();
     this.cancelledDirectories = sharedCancelled || new Set<string>();
+    this.governanceProvisioner =
+      governanceProvisioner || new AgentGovernanceProvisioner(this.gcloudDetector);
   }
 
   /**
@@ -105,6 +145,17 @@ export class UnifiedDeployRunner {
 
     try {
       const content = fs.readFileSync(makefilePath, 'utf8');
+      // Reject legacy Makefile `deploy` targets that pass a relative
+      // `--agent_engine_config_file=.agent_engine_config.json`. Because `adk deploy agent_engine`
+      // changes working directory to the parent folder during staging, a relative path looks one
+      // folder up (`<parent>/.agent_engine_config.json`) and fails. Returning false causes
+      // DeployPipeline to use direct `adk deploy agent_engine` which resolves `<agent_folder>/.agent_engine_config.json`.
+      if (
+        targetName === 'deploy' &&
+        /--agent_engine_config_file=(?!["']?\$|["']?\/)\.agent_engine_config\.json/.test(content)
+      ) {
+        return false;
+      }
       // Match `targetName:` at the start of a line
       const targetRegex = new RegExp(`^${targetName}\\s*:`, 'm');
       return targetRegex.test(content);
@@ -212,6 +263,28 @@ export class UnifiedDeployRunner {
         .join(',');
       if (envPairs) {
         args.push(`ENV_VARS=${envPairs}`);
+      }
+    }
+
+    if (options.governance) {
+      const gov = options.governance;
+      if (gov.enableAgentGateway !== undefined) {
+        args.push(`ENABLE_AGENT_GATEWAY=${gov.enableAgentGateway}`);
+      }
+      if (gov.modelArmorTemplateId) {
+        args.push(`MODEL_ARMOR_TEMPLATE=${gov.modelArmorTemplateId}`);
+      }
+      if (gov.runCloudEvaluation !== undefined) {
+        args.push(`RUN_CLOUD_EVAL=${gov.runCloudEvaluation}`);
+      }
+      if (gov.publishToGeminiEnterprise !== undefined) {
+        args.push(`PUBLISH_GEMINI_ENTERPRISE=${gov.publishToGeminiEnterprise}`);
+      }
+      if (gov.geminiEnterpriseAppId) {
+        args.push(`GEMINI_ENTERPRISE_APP_ID=${gov.geminiEnterpriseAppId}`);
+      }
+      if (gov.geminiEnterpriseLocation) {
+        args.push(`GEMINI_ENTERPRISE_LOCATION=${gov.geminiEnterpriseLocation}`);
       }
     }
 
@@ -361,6 +434,511 @@ export class UnifiedDeployRunner {
 
     args.push('--quiet');
     return args;
+  }
+
+  /**
+   * Constructs command to register the deployed agent in Google Cloud Agent Registry (`agentregistry.googleapis.com`).
+   */
+  public buildRegisterAgentCommand(options: {
+    targetDirectory: string;
+    projectId: string;
+    region: string;
+    agentId: string;
+    displayName?: string;
+    deployedResourceUri: string;
+    serviceUrl: string;
+  }): { executable: string; args: string[]; commandString: string } {
+    const cleanAgentId = options.agentId
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'adk-agent';
+
+    if (
+      this.hasMakefileTarget(options.targetDirectory, 'register-agent') &&
+      this.gcloudDetector.hasBinary('make', options.targetDirectory)
+    ) {
+      const args = [
+        'register-agent',
+        `PROJECT_ID=${options.projectId}`,
+        `REGION=${options.region}`,
+        `AGENT_NAME=${cleanAgentId}`,
+        `AGENT_URI=${options.deployedResourceUri}`,
+        `ENDPOINT_URL=${options.serviceUrl}`,
+      ];
+      return {
+        executable: 'make',
+        args,
+        commandString: `make ${args.join(' ')}`,
+      };
+    }
+
+    const args = [
+      'alpha',
+      'agent-registry',
+      'agents',
+      'register',
+      cleanAgentId,
+      `--project=${options.projectId}`,
+      `--location=${options.region}`,
+      `--display-name=${options.displayName || cleanAgentId}`,
+      `--framework=google-adk`,
+      `--runtime-resource=${options.deployedResourceUri}`,
+      `--endpoint-uri=${options.serviceUrl}`,
+      '--quiet',
+    ];
+    return {
+      executable: 'gcloud',
+      args,
+      commandString: `gcloud ${args.join(' ')}`,
+    };
+  }
+
+  /**
+   * Constructs command to bind a Shared Regional Agent Gateway (`networkservices.googleapis.com`)
+   * with Model Armor (`modelarmor.googleapis.com`) in front of the deployed agent.
+   */
+  public buildSetupGatewayCommand(options: {
+    targetDirectory: string;
+    projectId: string;
+    region: string;
+    agentId: string;
+    deployedResourceUri: string;
+    sharedGatewayId?: string;
+    modelArmorTemplateId?: string;
+  }): { executable: string; args: string[]; commandString: string } {
+    const gatewayId = options.sharedGatewayId?.trim() || 'default-shared-agent-gateway';
+    const templateId = options.modelArmorTemplateId?.trim() || 'enterprise-baseline';
+
+    if (
+      this.hasMakefileTarget(options.targetDirectory, 'setup-gateway') &&
+      this.gcloudDetector.hasBinary('make', options.targetDirectory)
+    ) {
+      const args = [
+        'setup-gateway',
+        `PROJECT_ID=${options.projectId}`,
+        `REGION=${options.region}`,
+        `GATEWAY_ID=${gatewayId}`,
+        `MODEL_ARMOR_TEMPLATE=${templateId}`,
+        `AGENT_URI=${options.deployedResourceUri}`,
+      ];
+      return {
+        executable: 'make',
+        args,
+        commandString: `make ${args.join(' ')}`,
+      };
+    }
+
+    const args = [
+      'alpha',
+      'network-services',
+      'agent-gateways',
+      'register-target',
+      gatewayId,
+      `--project=${options.projectId}`,
+      `--location=${options.region}`,
+      `--target-resource=${options.deployedResourceUri}`,
+      `--model-armor-template=${templateId}`,
+      '--quiet',
+    ];
+    return {
+      executable: 'gcloud',
+      args,
+      commandString: `gcloud ${args.join(' ')}`,
+    };
+  }
+
+  /**
+   * Constructs command to run post-deploy Vertex AI Cloud Evaluation (`EvalTask`) using `eval_dataset.jsonl`.
+   */
+  public buildCloudEvaluationCommand(options: {
+    targetDirectory: string;
+    projectId: string;
+    region: string;
+    deployedResourceUri: string;
+  }): { executable: string; args: string[]; commandString: string } {
+    if (
+      this.hasMakefileTarget(options.targetDirectory, 'eval') &&
+      this.gcloudDetector.hasBinary('make', options.targetDirectory)
+    ) {
+      const args = [
+        'eval',
+        `PROJECT_ID=${options.projectId}`,
+        `REGION=${options.region}`,
+        `AGENT_URI=${options.deployedResourceUri}`,
+      ];
+      return {
+        executable: 'make',
+        args,
+        commandString: `make ${args.join(' ')}`,
+      };
+    }
+
+    const venvPython = path.join(path.resolve(options.targetDirectory), '.venv', 'bin', 'python');
+    const executable = fs.existsSync(venvPython) ? venvPython : 'python3';
+    const args = [
+      'evaluate.py',
+      `--project=${options.projectId}`,
+      `--location=${options.region}`,
+      `--agent-resource=${options.deployedResourceUri}`,
+      `--dataset=eval_dataset.jsonl`,
+    ];
+    return {
+      executable,
+      args,
+      commandString: `${executable} ${args.join(' ')}`,
+    };
+  }
+
+  /**
+   * Constructs command to publish the deployed agent to a Gemini Enterprise App (`discoveryengine.googleapis.com`).
+   */
+  public buildPublishGeminiEnterpriseCommand(options: {
+    targetDirectory: string;
+    projectId: string;
+    region: string;
+    agentId: string;
+    displayName?: string;
+    description?: string;
+    deployedResourceUri: string;
+    geminiEnterpriseAppId: string;
+    geminiEnterpriseLocation?: string;
+    agentGatewayResource?: string;
+  }): { executable: string; args: string[]; commandString: string } {
+    const location = options.geminiEnterpriseLocation?.trim() || 'global';
+    const appId = options.geminiEnterpriseAppId.trim();
+    const cleanAgentId = options.agentId
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'adk-agent';
+
+    if (
+      this.hasMakefileTarget(options.targetDirectory, 'publish-gemini-enterprise') &&
+      this.gcloudDetector.hasBinary('make', options.targetDirectory)
+    ) {
+      const args = [
+        'publish-gemini-enterprise',
+        `PROJECT_ID=${options.projectId}`,
+        `REGION=${options.region}`,
+        `GEMINI_ENTERPRISE_APP_ID=${appId}`,
+        `GEMINI_ENTERPRISE_LOCATION=${location}`,
+        `AGENT_NAME=${cleanAgentId}`,
+        `AGENT_URI=${options.deployedResourceUri}`,
+      ];
+      if (options.agentGatewayResource) {
+        args.push(`AGENT_GATEWAY_RESOURCE=${options.agentGatewayResource}`);
+      }
+      return {
+        executable: 'make',
+        args,
+        commandString: `make ${args.join(' ')}`,
+      };
+    }
+
+    const args = [
+      'alpha',
+      'discovery-engine',
+      'assistants',
+      'agents',
+      'register',
+      cleanAgentId,
+      `--project=${options.projectId}`,
+      `--location=${location}`,
+      `--collection=default_collection`,
+      `--engine=${appId}`,
+      `--assistant=default_assistant`,
+      `--display-name=${options.displayName || cleanAgentId}`,
+      `--agent-resource=${options.deployedResourceUri}`,
+    ];
+    if (options.agentGatewayResource) {
+      args.push(`--agent-gateway=${options.agentGatewayResource}`);
+    }
+    args.push('--quiet');
+
+    return {
+      executable: 'gcloud',
+      args,
+      commandString: `gcloud ${args.join(' ')}`,
+    };
+  }
+
+  /**
+   * Executes the Post-Deploy Enterprise Governance (`TASK-217`) and Gemini Enterprise App Publishing (`TASK-218`) pipeline:
+   * 1. Always registers the agent in Google Cloud Agent Registry (`agentregistry.googleapis.com`) and applies least-privilege Agent Security Policies.
+   * 2. Optionally binds a Shared Regional Agent Gateway + Model Armor guardrails (`enableAgentGateway !== false`, default template `'enterprise-baseline'`).
+   * 3. Optionally runs post-deploy Vertex AI Cloud Evaluation (`runCloudEvaluation === true`). If evaluation fails threshold checks, marks deployment as `warning` ("Succeeded with Evaluation Warnings") and blocks publishing to Gemini Enterprise.
+   * 4. Optionally publishes the agent to the selected Gemini Enterprise App (`publishToGeminiEnterprise === true` when Chat Trigger exists and not blocked by evaluation warnings).
+   */
+  public async runPostDeployGovernance(
+    options: PostDeployGovernanceOptions
+  ): Promise<PostDeployGovernanceResult> {
+    const {
+      target = 'agent_engine',
+      targetDirectory,
+      projectId,
+      region,
+      agentId,
+      displayName,
+      description,
+      deployedResourceUri,
+      serviceUrl,
+      serviceAccount,
+      stagingBucket,
+      document,
+      governance,
+      onLog,
+      customEvalExecutor,
+      customHttpRequester,
+    } = options;
+
+    const cleanAgentId =
+      agentId
+        .toLowerCase()
+        .replace(/[^a-z0-9-_]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'adk-agent';
+
+    const result: PostDeployGovernanceResult = {};
+
+    // 1. Always Automatic: Agent Registry & Agent Security Policies
+    const agentRegistryResource = `projects/${projectId}/locations/${region}/agents/${cleanAgentId}`;
+    const securityPolicyResource = `projects/${projectId}/locations/${region}/authzPolicies/${cleanAgentId}-least-privilege`;
+    const regCmd = this.buildRegisterAgentCommand({
+      targetDirectory,
+      projectId,
+      region,
+      agentId: cleanAgentId,
+      displayName,
+      deployedResourceUri,
+      serviceUrl,
+    });
+    onLog?.(
+      `[Governance] Registering agent in Google Cloud Agent Registry (${agentRegistryResource})...`,
+      'system'
+    );
+    onLog?.(`[Governance] Command: ${regCmd.commandString}`, 'system');
+    onLog?.(
+      `[Governance] Applying least-privilege Agent Security Policy (${securityPolicyResource})...`,
+      'system'
+    );
+
+    // 2. Shared Regional Agent Gateway + Model Armor (Default: Enabled = true, Template = 'enterprise-baseline')
+    const enableGateway = governance?.enableAgentGateway ?? true;
+    const modelArmorTemplateId = governance?.modelArmorTemplateId?.trim() || 'enterprise-baseline';
+    const sharedGatewayId = governance?.sharedGatewayId?.trim() || 'default-shared-agent-gateway';
+
+    if (enableGateway) {
+      const gatewayResource = `projects/${projectId}/locations/${region}/agentGateways/${sharedGatewayId}`;
+      const gwCmd = this.buildSetupGatewayCommand({
+        targetDirectory,
+        projectId,
+        region,
+        agentId: cleanAgentId,
+        deployedResourceUri,
+        sharedGatewayId,
+        modelArmorTemplateId,
+      });
+      onLog?.(
+        `[Governance] Attaching Shared Regional Agent Gateway (${gatewayResource}) with Model Armor Template '${modelArmorTemplateId}'...`,
+        'system'
+      );
+      onLog?.(`[Governance] Command: ${gwCmd.commandString}`, 'system');
+    }
+
+    // Execute live Google Cloud OnePlatform REST provisioning (Agent Engine Telemetry, Agent Registry discovery, IAP + UAP Security Policies, Model Armor Template, Shared Regional Agent Gateway + AuthzExtensions/AuthzPolicies, and Vertex AI Evaluation Dataset & Experiment registration)
+    const activeProvisioner = customHttpRequester
+      ? new AgentGovernanceProvisioner(this.gcloudDetector, customHttpRequester)
+      : this.governanceProvisioner;
+
+    const provisioned = await activeProvisioner.provisionGovernanceResources({
+      target,
+      targetDirectory,
+      projectId,
+      region,
+      cleanAgentId,
+      displayName: displayName || cleanAgentId,
+      description,
+      deployedResourceUri,
+      serviceUrl,
+      serviceAccount,
+      stagingBucket,
+      document,
+      enableGateway,
+      sharedGatewayId,
+      modelArmorTemplateId,
+      onLog,
+    });
+
+    result.agentRegistryResource = provisioned.agentRegistryResource;
+    result.securityPolicyResource = provisioned.securityPolicyResource;
+    result.telemetryEnabled = provisioned.telemetryEnabled;
+    if (provisioned.evaluationSetResource) {
+      result.evaluationSetResource = provisioned.evaluationSetResource;
+    }
+    if (provisioned.evaluationExperimentResource) {
+      result.evaluationExperimentResource = provisioned.evaluationExperimentResource;
+    }
+    if (provisioned.evaluationRunResource) {
+      result.evaluationRunResource = provisioned.evaluationRunResource;
+    }
+    if (provisioned.evaluationItemsCount !== undefined) {
+      result.evaluationItemsCount = provisioned.evaluationItemsCount;
+    }
+    if (provisioned.evaluationExperimentConsoleUrl) {
+      result.evalTaskExperimentUrl = provisioned.evaluationExperimentConsoleUrl;
+    }
+    if (provisioned.appHubApplicationResource) {
+      result.appHubApplicationResource = provisioned.appHubApplicationResource;
+    }
+    if (provisioned.appHubWorkloadResource) {
+      result.appHubWorkloadResource = provisioned.appHubWorkloadResource;
+    }
+    if (enableGateway) {
+      result.agentGatewayResource = provisioned.agentGatewayResource;
+      result.modelArmorTemplateId = provisioned.modelArmorTemplateId;
+    }
+
+    // 3. Vertex AI Cloud Evaluation Post-Deploy Gate (Default: Unchecked = false)
+    const runCloudEval = governance?.runCloudEvaluation ?? false;
+    const shouldPublishGemini = Boolean(
+      governance?.publishToGeminiEnterprise && governance?.geminiEnterpriseAppId?.trim()
+    );
+
+    if (runCloudEval) {
+      const evalCmd = this.buildCloudEvaluationCommand({
+        targetDirectory,
+        projectId,
+        region,
+        deployedResourceUri,
+      });
+      onLog?.(
+        `[Governance] Running Vertex AI Cloud Evaluation (EvalTask) against eval_dataset.jsonl...`,
+        'system'
+      );
+      onLog?.(`[Governance] Command: ${evalCmd.commandString}`, 'system');
+
+      const defaultExperimentUrl =
+        provisioned.evaluationExperimentConsoleUrl ||
+        `https://console.cloud.google.com/vertex-ai/experiments?project=${projectId}`;
+
+      if (customEvalExecutor) {
+        const evalRes = await customEvalExecutor();
+        result.evalTaskExperimentUrl = evalRes.experimentUrl || defaultExperimentUrl;
+        if (evalRes.passed) {
+          result.evalGateStatus = 'passed';
+          onLog?.(`✅ Vertex AI Cloud Evaluation passed all quality & safety thresholds.`, 'system');
+        } else {
+          result.evalGateStatus = 'warning';
+          result.evalWarnings =
+            evalRes.warnings && evalRes.warnings.length > 0
+              ? evalRes.warnings
+              : ['One or more scenarios in eval_dataset.jsonl fell below quality thresholds.'];
+          onLog?.(
+            `⚠️ Deployment Succeeded with Evaluation Warnings: ${result.evalWarnings.join('; ')}`,
+            'stderr'
+          );
+          if (shouldPublishGemini) {
+            result.geminiEnterpriseBlockedByEval = true;
+            onLog?.(
+              `🛑 Blocking automatic publish to Gemini Enterprise App (${governance?.geminiEnterpriseAppId}) due to Cloud Evaluation gate warnings.`,
+              'stderr'
+            );
+          }
+        }
+      } else {
+        const evaluatePyPath = path.join(path.resolve(targetDirectory), 'evaluate.py');
+        const hasEvalTarget = this.hasMakefileTarget(targetDirectory, 'eval');
+        if (fs.existsSync(evaluatePyPath) || hasEvalTarget) {
+          const execRes = await this.executeCommand({
+            targetDirectory,
+            executable: evalCmd.executable,
+            args: evalCmd.args,
+            onLog: (line, stream) => onLog?.(line, stream),
+          });
+          result.evalTaskExperimentUrl = defaultExperimentUrl;
+          const allLines = [...execRes.stdoutLines, ...execRes.stderrLines];
+          const warningLines = allLines.filter((l) =>
+            /(FAIL|WARNING|Threshold not met|AssertionError)/i.test(l)
+          );
+          if (execRes.exitCode === 0 && warningLines.length === 0) {
+            result.evalGateStatus = 'passed';
+            onLog?.(`✅ Vertex AI Cloud Evaluation passed all quality & safety thresholds.`, 'system');
+          } else {
+            result.evalGateStatus = 'warning';
+            result.evalWarnings =
+              warningLines.length > 0
+                ? warningLines
+                : [`Cloud evaluation exited with code ${execRes.exitCode ?? 1}.`];
+            onLog?.(
+              `⚠️ Deployment Succeeded with Evaluation Warnings: ${result.evalWarnings.join('; ')}`,
+              'stderr'
+            );
+            if (shouldPublishGemini) {
+              result.geminiEnterpriseBlockedByEval = true;
+              onLog?.(
+                `🛑 Blocking automatic publish to Gemini Enterprise App (${governance?.geminiEnterpriseAppId}) due to Cloud Evaluation gate warnings.`,
+                'stderr'
+              );
+            }
+          }
+        } else {
+          result.evalGateStatus = 'passed';
+          result.evalTaskExperimentUrl = defaultExperimentUrl;
+          onLog?.(
+            `✅ Registered eval_dataset.jsonl scenarios with Vertex AI Evaluation (${defaultExperimentUrl}).`,
+            'system'
+          );
+        }
+      }
+    } else {
+      result.evalGateStatus = 'skipped';
+    }
+
+    // 4. Automated Gemini Enterprise App Publishing (TASK-218)
+    if (shouldPublishGemini && !result.geminiEnterpriseBlockedByEval) {
+      const appId = governance!.geminiEnterpriseAppId!.trim();
+      const geminiLocation = governance?.geminiEnterpriseLocation?.trim() || 'global';
+      const bindGateway = governance?.bindGatewayToGeminiEnterprise ?? true;
+      const gatewayToBind =
+        bindGateway && result.agentGatewayResource ? result.agentGatewayResource : undefined;
+
+      const pubCmd = this.buildPublishGeminiEnterpriseCommand({
+        targetDirectory,
+        projectId,
+        region,
+        agentId: cleanAgentId,
+        displayName,
+        description,
+        deployedResourceUri,
+        geminiEnterpriseAppId: appId,
+        geminiEnterpriseLocation: geminiLocation,
+        agentGatewayResource: gatewayToBind,
+      });
+
+      onLog?.(
+        `[Gemini Enterprise] Publishing agent to Gemini Enterprise App '${appId}' (${geminiLocation})...`,
+        'system'
+      );
+      onLog?.(`[Gemini Enterprise] Command: ${pubCmd.commandString}`, 'system');
+
+      const published = await activeProvisioner.publishToGeminiEnterprise({
+        projectId,
+        region,
+        cleanAgentId,
+        displayName: displayName || cleanAgentId,
+        description,
+        deployedResourceUri,
+        agentRegistryResource: result.agentRegistryResource,
+        geminiEnterpriseAppId: appId,
+        geminiEnterpriseLocation: geminiLocation,
+        onLog,
+      });
+
+      onLog?.(`✨ Published to Gemini Enterprise App: ${published.agentUri}`, 'system');
+
+      result.geminiEnterpriseAgentUri = published.agentUri;
+      result.geminiEnterpriseConsoleUrl = published.consoleUrl;
+    }
+
+    return result;
   }
 
   /**

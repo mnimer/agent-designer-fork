@@ -23,8 +23,12 @@
 
 import { spawn } from 'child_process';
 import * as fs from 'fs';
+import * as https from 'https';
 import * as os from 'os';
 import * as path from 'path';
+import { ModelArmorTemplateItem, GeminiEnterpriseAppItem } from '../shared/types';
+
+export type { ModelArmorTemplateItem, GeminiEnterpriseAppItem };
 
 export interface PubSubTopicItem {
   name: string;
@@ -64,6 +68,41 @@ export interface ServiceAccountsResult {
   source: 'gcloud' | 'fallback';
   projectId?: string;
 }
+
+export interface ModelArmorTemplatesResult {
+  templates: ModelArmorTemplateItem[];
+  source: 'gcloud' | 'fallback';
+  projectId?: string;
+  location?: string;
+}
+
+export interface GeminiEnterpriseAppsResult {
+  apps: GeminiEnterpriseAppItem[];
+  source: 'gcloud' | 'fallback';
+  projectId?: string;
+  location?: string;
+}
+
+/**
+ * Built-in fallback catalog of Model Armor Templates (`modelarmor.googleapis.com`).
+ * Only includes "Enterprise Baseline (Managed Default)", which is provisioned automatically by our Terraform/Makefile.
+ */
+export const DEFAULT_MODEL_ARMOR_TEMPLATES_FALLBACK: ModelArmorTemplateItem[] = [
+  {
+    id: 'enterprise-baseline',
+    templateId: 'enterprise-baseline',
+    name: 'projects/my-gcp-project/locations/us-central1/templates/enterprise-baseline',
+    displayName: 'Enterprise Baseline (Managed Default)',
+    description: 'Prompt Injection, Jailbreak, DLP PII De-identification, Malicious URI & CSAM filters enabled',
+    isDefault: true,
+  },
+];
+
+/**
+ * Fallback catalog of Gemini Enterprise Apps (`discoveryengine.googleapis.com`).
+ * Empty by default — never populate fake apps when a project has no Gemini Enterprise Apps.
+ */
+export const DEFAULT_GEMINI_ENTERPRISE_APPS_FALLBACK: GeminiEnterpriseAppItem[] = [];
 
 /**
  * Built-in fallback catalog of Pub/Sub topics.
@@ -132,6 +171,8 @@ export class GcpDiscoveryManager {
   private topicsCache: Map<string, { data: PubSubTopicItem[]; timestamp: number }> = new Map();
   private subsCache: Map<string, { data: PubSubSubscriptionItem[]; timestamp: number }> = new Map();
   private saCache: Map<string, { data: GcpServiceAccountItem[]; timestamp: number }> = new Map();
+  private modelArmorCache: Map<string, { data: ModelArmorTemplateItem[]; timestamp: number }> = new Map();
+  private geminiEnterpriseCache: Map<string, { data: GeminiEnterpriseAppItem[]; timestamp: number }> = new Map();
 
   private constructor() {}
 
@@ -425,6 +466,292 @@ export class GcpDiscoveryManager {
     }
 
     return results.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }
+
+  /**
+   * Fetches Model Armor templates for a given GCP project and location.
+   * Always includes the managed "Enterprise Baseline (Managed Default)" template first.
+   */
+  public async getModelArmorTemplates(
+    projectId?: string,
+    location = 'us-central1',
+    forceRefresh = false
+  ): Promise<ModelArmorTemplatesResult> {
+    const resolvedLocation = location && location !== 'global' ? location : 'us-central1';
+    const cacheKey = `${projectId || 'default'}:${resolvedLocation}`;
+
+    if (!forceRefresh) {
+      const cached = this.modelArmorCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        return {
+          templates: cached.data,
+          source: 'gcloud',
+          projectId,
+          location: resolvedLocation,
+        };
+      }
+    }
+
+    const baselineItem: ModelArmorTemplateItem = {
+      id: 'enterprise-baseline',
+      templateId: 'enterprise-baseline',
+      name: `projects/${projectId || 'my-gcp-project'}/locations/${resolvedLocation}/templates/enterprise-baseline`,
+      displayName: 'Enterprise Baseline (Managed Default)',
+      location: resolvedLocation,
+      description: 'Prompt Injection, Jailbreak, DLP PII De-identification, Malicious URI & CSAM filters enabled',
+      isDefault: true,
+    };
+
+    try {
+      const gcloudBinary = this.resolveGcloudPath();
+      const args = ['model-armor', 'templates', 'list', `--location=${resolvedLocation}`, '--format=json'];
+      if (projectId && projectId.trim().length > 0) {
+        args.push(`--project=${projectId.trim()}`);
+      }
+
+      const stdout = await this.executeProcess(gcloudBinary, args, 10000);
+      const rawTemplates = JSON.parse(stdout);
+      const discovered = this.transformRawModelArmorTemplates(rawTemplates, resolvedLocation);
+      const merged = [
+        baselineItem,
+        ...discovered.filter((t) => t.templateId !== 'enterprise-baseline'),
+      ];
+
+      this.modelArmorCache.set(cacheKey, { data: merged, timestamp: Date.now() });
+      return {
+        templates: merged,
+        source: 'gcloud',
+        projectId,
+        location: resolvedLocation,
+      };
+    } catch {
+      const fallback = DEFAULT_MODEL_ARMOR_TEMPLATES_FALLBACK.map((t) => ({
+        ...t,
+        location: resolvedLocation,
+        name: `projects/${projectId || 'my-gcp-project'}/locations/${resolvedLocation}/templates/${t.templateId}`,
+      }));
+      this.modelArmorCache.set(cacheKey, { data: fallback, timestamp: Date.now() });
+      return {
+        templates: fallback,
+        source: 'fallback',
+        projectId,
+        location: resolvedLocation,
+      };
+    }
+  }
+
+  /**
+   * Transforms raw Model Armor template items from gcloud JSON into ModelArmorTemplateItem objects.
+   * Always guarantees that `enterprise-baseline` ("Enterprise Baseline (Managed Default)") is included first.
+   */
+  public transformRawModelArmorTemplates(
+    rawTemplates: unknown,
+    defaultLocation = 'us-central1'
+  ): ModelArmorTemplateItem[] {
+    const baselineItem: ModelArmorTemplateItem = {
+      id: 'enterprise-baseline',
+      templateId: 'enterprise-baseline',
+      name: `projects/my-gcp-project/locations/${defaultLocation}/templates/enterprise-baseline`,
+      displayName: 'Enterprise Baseline (Managed Default)',
+      location: defaultLocation,
+      description: 'Prompt Injection, Jailbreak, DLP PII De-identification, Malicious URI & CSAM filters enabled',
+      isDefault: true,
+    };
+
+    if (!Array.isArray(rawTemplates)) {
+      return [baselineItem];
+    }
+
+    const results: ModelArmorTemplateItem[] = [];
+    for (const item of rawTemplates) {
+      if (!item || typeof item !== 'object') continue;
+      const rec = item as Record<string, unknown>;
+      const fullName = typeof rec.name === 'string' ? rec.name.trim() : '';
+      if (!fullName) continue;
+
+      const segments = fullName.split('/');
+      const id = segments[segments.length - 1] || fullName;
+      if (id === 'enterprise-baseline') continue;
+      const locIdx = segments.indexOf('locations');
+      const location = locIdx >= 0 && segments[locIdx + 1] ? segments[locIdx + 1] : defaultLocation;
+      const displayName =
+        typeof rec.displayName === 'string' && rec.displayName.trim()
+          ? rec.displayName.trim()
+          : id;
+
+      results.push({
+        id,
+        templateId: id,
+        name: fullName,
+        displayName,
+        location,
+        description: typeof rec.description === 'string' ? rec.description : undefined,
+      });
+    }
+
+    results.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    return [baselineItem, ...results];
+  }
+
+  /**
+   * Fetches Gemini Enterprise Apps (Discovery Engine engines) for a given GCP project and location.
+   * Queries `discoveryengine.googleapis.com/v1alpha/projects/{project}/locations/{location}/collections/default_collection/engines`.
+   * Returns an empty array `[]` when the project has no Gemini Enterprise Apps.
+   */
+  public async getGeminiEnterpriseApps(
+    projectId?: string,
+    location = 'global',
+    forceRefresh = false
+  ): Promise<GeminiEnterpriseAppsResult> {
+    const resolvedLocation = location || 'global';
+    const trimmedProject = projectId?.trim() || '';
+
+    if (!trimmedProject) {
+      return {
+        apps: [],
+        source: 'fallback',
+        projectId,
+        location: resolvedLocation,
+      };
+    }
+
+    const cacheKey = `${trimmedProject}:${resolvedLocation}`;
+
+    if (!forceRefresh) {
+      const cached = this.geminiEnterpriseCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        return {
+          apps: cached.data,
+          source: 'gcloud',
+          projectId: trimmedProject,
+          location: resolvedLocation,
+        };
+      }
+    }
+
+    try {
+      const gcloudBinary = this.resolveGcloudPath();
+      const tokenOut = await this.executeProcess(gcloudBinary, ['auth', 'print-access-token'], 6000);
+      const accessToken = tokenOut.trim();
+      if (!accessToken) {
+        throw new Error('Empty access token from gcloud auth print-access-token');
+      }
+
+      const hostPrefix = resolvedLocation === 'global' ? '' : `${resolvedLocation}-`;
+      const url = `https://${hostPrefix}discoveryengine.googleapis.com/v1alpha/projects/${encodeURIComponent(
+        trimmedProject
+      )}/locations/${encodeURIComponent(resolvedLocation)}/collections/default_collection/engines`;
+
+      const rawBody = await this.fetchHttpsJson(url, accessToken, trimmedProject, 8000);
+      const parsed = rawBody ? JSON.parse(rawBody) : {};
+      const apps = this.transformRawGeminiEnterpriseApps(parsed, resolvedLocation);
+
+      this.geminiEnterpriseCache.set(cacheKey, { data: apps, timestamp: Date.now() });
+      return {
+        apps,
+        source: 'gcloud',
+        projectId: trimmedProject,
+        location: resolvedLocation,
+      };
+    } catch {
+      this.geminiEnterpriseCache.set(cacheKey, { data: [], timestamp: Date.now() });
+      return {
+        apps: [],
+        source: 'fallback',
+        projectId: trimmedProject,
+        location: resolvedLocation,
+      };
+    }
+  }
+
+  /**
+   * Transforms raw Discovery Engine items (array or `{ engines: [...] }` response) into GeminiEnterpriseAppItem objects.
+   */
+  public transformRawGeminiEnterpriseApps(
+    rawApps: unknown,
+    defaultLocation = 'global'
+  ): GeminiEnterpriseAppItem[] {
+    const list: unknown[] = Array.isArray(rawApps)
+      ? rawApps
+      : rawApps && typeof rawApps === 'object' && Array.isArray((rawApps as Record<string, unknown>).engines)
+      ? ((rawApps as Record<string, unknown>).engines as unknown[])
+      : [];
+
+    if (list.length === 0) {
+      return [];
+    }
+
+    const results: GeminiEnterpriseAppItem[] = [];
+    for (const item of list) {
+      if (!item || typeof item !== 'object') continue;
+      const rec = item as Record<string, unknown>;
+      const fullName = typeof rec.name === 'string' ? rec.name.trim() : '';
+      if (!fullName) continue;
+
+      const segments = fullName.split('/');
+      const engineId = segments[segments.length - 1] || fullName;
+      const locIdx = segments.indexOf('locations');
+      const location = locIdx >= 0 && segments[locIdx + 1] ? segments[locIdx + 1] : defaultLocation;
+      const displayName =
+        typeof rec.displayName === 'string' && rec.displayName.trim()
+          ? rec.displayName.trim()
+          : engineId;
+
+      results.push({
+        engineId,
+        name: fullName,
+        displayName,
+        location,
+        solutionType: typeof rec.solutionType === 'string' ? rec.solutionType : undefined,
+      });
+    }
+
+    return results.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }
+
+  /**
+   * Performs an authenticated HTTPS GET request to a Google Cloud API endpoint.
+   */
+  private fetchHttpsJson(
+    url: string,
+    accessToken: string,
+    projectId: string,
+    timeoutMs = 8000
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const req = https.get(
+        url,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'X-Goog-User-Project': projectId,
+            Accept: 'application/json',
+          },
+          timeout: timeoutMs,
+        },
+        (res) => {
+          let body = '';
+          res.on('data', (chunk) => {
+            body += chunk.toString();
+          });
+          res.on('end', () => {
+            if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+              resolve(body);
+            } else {
+              reject(new Error(`HTTP ${res.statusCode}: ${body}`));
+            }
+          });
+        }
+      );
+
+      req.on('timeout', () => {
+        req.destroy(new Error(`HTTPS request timed out after ${timeoutMs}ms: ${url}`));
+      });
+
+      req.on('error', (err) => {
+        reject(err);
+      });
+    });
   }
 
   /**

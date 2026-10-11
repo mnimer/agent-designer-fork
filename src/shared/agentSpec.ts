@@ -876,6 +876,54 @@ export interface GenerationConfig {
 
 export type DeploymentTarget = 'local' | 'agent_engine' | 'cloud_run';
 
+export interface ModelArmorTemplateItem {
+  id?: string;
+  templateId: string;
+  name: string;
+  displayName: string;
+  location?: string;
+  description?: string;
+  isDefault?: boolean;
+}
+
+export interface GeminiEnterpriseAppItem {
+  engineId: string;
+  name: string;
+  displayName: string;
+  location: 'global' | 'us' | 'eu' | string;
+  solutionType?: string;
+}
+
+/**
+ * Enterprise Agent Governance & Gemini Enterprise App Publishing Configuration (TASK-217 & TASK-218).
+ */
+export interface AgentGovernanceConfig {
+  /** Always-on automatic registration in Agent Registry (`agentregistry.googleapis.com`). */
+  registerInAgentRegistry?: boolean;
+  /** Always-on least-privilege Agent Security Policies (`networksecurity.googleapis.com`). */
+  applySecurityPolicies?: boolean;
+  /** Enable Shared Regional Agent Gateway (`networkservices.googleapis.com`) + Model Armor (`modelarmor.googleapis.com`). Defaults to true. */
+  enableAgentGateway?: boolean;
+  /** Selected Model Armor template ID or resource name. Defaults to 'enterprise-baseline'. */
+  modelArmorTemplateId?: string;
+  /** Shared regional Agent Gateway ID. Defaults to 'default-shared-agent-gateway'. */
+  sharedGatewayId?: string;
+  /** Alias for sharedGatewayId. */
+  agentGatewayId?: string;
+  /** Run Vertex AI Cloud Evaluation (`EvalTask` via `eval_dataset.jsonl`) post-deploy. Defaults to false. */
+  runCloudEvaluation?: boolean;
+  /** Publish to Gemini Enterprise App (`discoveryengine.googleapis.com`). Only shown when Chat Trigger is present; defaults to true when shown. */
+  publishToGeminiEnterprise?: boolean;
+  /** Target Gemini Enterprise App (`engine_id`) for publishing. */
+  geminiEnterpriseAppId?: string;
+  /** Discovery Engine location ('global' | 'us' | 'eu'). Defaults to 'global'. */
+  geminiEnterpriseLocation?: 'global' | 'us' | 'eu' | string;
+  /** Bind the Shared Regional Agent Gateway to the Gemini Enterprise App registration. Defaults to true. */
+  bindGatewayToGeminiEnterprise?: boolean;
+  /** Alias for bindGatewayToGeminiEnterprise. */
+  geminiEnterpriseBindGateway?: boolean;
+}
+
 export interface DeploymentConfig {
   target: DeploymentTarget;
   port?: number;
@@ -900,6 +948,7 @@ export interface DeploymentConfig {
   cpu?: string;
   memory?: string;
   allowUnauthenticated?: boolean;
+  governance?: AgentGovernanceConfig;
   [key: string]: any;
 }
 
@@ -912,6 +961,7 @@ export interface WorkflowDeploymentConfig {
   includeTests?: boolean;
   includeDocker?: boolean;
   useStreaming?: boolean;
+  governance?: AgentGovernanceConfig;
   [key: string]: any;
 }
 

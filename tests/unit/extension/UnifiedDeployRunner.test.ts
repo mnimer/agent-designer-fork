@@ -61,6 +61,41 @@ describe('UnifiedDeployRunner', () => {
       assert.equal(runner.hasMakefileTarget(tempDir, 'nonexistent'), false);
     });
 
+    it('should reject Makefile deploy target if it uses relative --agent_engine_config_file=.agent_engine_config.json that looks in parent folder', () => {
+      fs.writeFileSync(
+        path.join(tempDir, 'Makefile'),
+        [
+          'deploy:',
+          '\t.venv/bin/adk deploy agent_engine --project=$(PROJECT_ID) --agent_engine_config_file=.agent_engine_config.json .',
+        ].join('\n'),
+        'utf8'
+      );
+
+      // Should return false so DeployPipeline falls back to direct `adk deploy agent_engine`
+      assert.equal(runner.hasMakefileTarget(tempDir, 'deploy'), false);
+
+      // Should return true when using $(CURDIR)/.agent_engine_config.json or omitting relative flag
+      fs.writeFileSync(
+        path.join(tempDir, 'Makefile'),
+        [
+          'deploy:',
+          '\t.venv/bin/adk deploy agent_engine --project=$(PROJECT_ID) --agent_engine_config_file="$(CURDIR)/.agent_engine_config.json" .',
+        ].join('\n'),
+        'utf8'
+      );
+      assert.equal(runner.hasMakefileTarget(tempDir, 'deploy'), true);
+    });
+
+    it('should ensure python_adk_agent-engine.prompt.txt does not use relative --agent_engine_config_file=.agent_engine_config.json', () => {
+      const promptPath = path.resolve(__dirname, '../../../resource/prompts/python_adk_agent-engine.prompt.txt');
+      const promptContent = fs.readFileSync(promptPath, 'utf8');
+      assert.equal(
+        promptContent.includes('--agent_engine_config_file=.agent_engine_config.json'),
+        false,
+        'Prompt must not use relative --agent_engine_config_file=.agent_engine_config.json because adk deploy chdirs to parent directory'
+      );
+    });
+
     it('should detect cloudbuild.yaml and main.tf in target directory', () => {
       assert.equal(runner.hasCloudBuildConfig(tempDir), false);
       assert.equal(runner.hasTerraformConfig(tempDir), false);
@@ -229,4 +264,511 @@ describe('UnifiedDeployRunner', () => {
       assert.equal(res.cancelled, true);
     });
   });
+
+  describe('Enterprise Agent Governance (TASK-217) & Gemini Enterprise Publishing (TASK-218)', () => {
+    it('should always register agent in Agent Registry and apply Security Policies, and default to shared regional gateway + enterprise-baseline Model Armor', async () => {
+      const logs: string[] = [];
+      const res = await runner.runPostDeployGovernance({
+        targetDirectory: tempDir,
+        projectId: 'my-ent-project',
+        region: 'us-central1',
+        agentId: 'Travel Concierge Agent',
+        displayName: 'Travel Concierge Agent',
+        deployedResourceUri: 'projects/my-ent-project/locations/us-central1/reasoningEngines/998877',
+        serviceUrl: 'https://us-central1-aiplatform.googleapis.com/v1/projects/my-ent-project/locations/us-central1/reasoningEngines/998877',
+        onLog: (msg) => logs.push(msg),
+      });
+
+      assert.equal(
+        res.agentRegistryResource,
+        'projects/my-ent-project/locations/us-central1/agents/travel-concierge-agent'
+      );
+      assert.equal(
+        res.securityPolicyResource,
+        'projects/my-ent-project/locations/us-central1/authzPolicies/travel-concierge-agent-least-privilege'
+      );
+      assert.equal(
+        res.agentGatewayResource,
+        'projects/my-ent-project/locations/us-central1/agentGateways/default-shared-agent-gateway'
+      );
+      assert.equal(res.modelArmorTemplateId, 'enterprise-baseline');
+      assert.equal(res.evalGateStatus, 'skipped');
+      assert.equal(res.geminiEnterpriseAgentUri, undefined);
+    });
+
+    it('should mark deployment as Succeeded with Evaluation Warnings AND block Gemini Enterprise publishing when post-deploy Cloud Evaluation fails', async () => {
+      const logs: string[] = [];
+      const res = await runner.runPostDeployGovernance({
+        targetDirectory: tempDir,
+        projectId: 'my-ent-project',
+        region: 'us-central1',
+        agentId: 'travel_concierge_agent',
+        deployedResourceUri: 'projects/my-ent-project/locations/us-central1/reasoningEngines/998877',
+        serviceUrl: 'https://us-central1-aiplatform.googleapis.com/v1/projects/my-ent-project/locations/us-central1/reasoningEngines/998877',
+        governance: {
+          enableAgentGateway: true,
+          modelArmorTemplateId: 'strict-pci-hipaa',
+          runCloudEvaluation: true,
+          publishToGeminiEnterprise: true,
+          geminiEnterpriseAppId: 'default-enterprise-workspace',
+          geminiEnterpriseLocation: 'global',
+        },
+        customEvalExecutor: async () => ({
+          passed: false,
+          warnings: ['Scenario "Refund Policy Check" groundedness score 0.42 < 0.80 threshold'],
+          experimentUrl: 'https://console.cloud.google.com/vertex-ai/experiments/eval-run-123',
+        }),
+        onLog: (msg) => logs.push(msg),
+      });
+
+      // Verify both: deploy marked with evaluation warnings AND Gemini Enterprise publish blocked
+      assert.equal(res.evalGateStatus, 'warning');
+      assert.deepEqual(res.evalWarnings, [
+        'Scenario "Refund Policy Check" groundedness score 0.42 < 0.80 threshold',
+      ]);
+      assert.equal(
+        res.evalTaskExperimentUrl,
+        'https://console.cloud.google.com/vertex-ai/experiments/eval-run-123'
+      );
+      assert.equal(res.geminiEnterpriseBlockedByEval, true);
+      assert.equal(res.geminiEnterpriseAgentUri, undefined);
+      assert.equal(res.geminiEnterpriseConsoleUrl, undefined);
+      assert.ok(logs.some((l) => l.includes('Succeeded with Evaluation Warnings')));
+      assert.ok(logs.some((l) => l.includes('Blocking automatic publish to Gemini Enterprise App')));
+    });
+
+    it('should publish to Gemini Enterprise App with shared regional Agent Gateway binding when Cloud Evaluation passes (or is skipped)', async () => {
+      const res = await runner.runPostDeployGovernance({
+        targetDirectory: tempDir,
+        projectId: 'my-ent-project',
+        region: 'us-central1',
+        agentId: 'travel_concierge_agent',
+        deployedResourceUri: 'projects/my-ent-project/locations/us-central1/reasoningEngines/998877',
+        serviceUrl: 'https://us-central1-aiplatform.googleapis.com/v1/projects/my-ent-project/locations/us-central1/reasoningEngines/998877',
+        governance: {
+          enableAgentGateway: true,
+          modelArmorTemplateId: 'enterprise-baseline',
+          runCloudEvaluation: true,
+          publishToGeminiEnterprise: true,
+          geminiEnterpriseAppId: 'customer-support-agent-hub',
+          geminiEnterpriseLocation: 'global',
+        },
+        customEvalExecutor: async () => ({
+          passed: true,
+          experimentUrl: 'https://console.cloud.google.com/vertex-ai/experiments/eval-run-456',
+        }),
+      });
+
+      assert.equal(res.evalGateStatus, 'passed');
+      assert.equal(res.geminiEnterpriseBlockedByEval, undefined);
+      assert.equal(
+        res.geminiEnterpriseAgentUri,
+        'projects/my-ent-project/locations/global/collections/default_collection/engines/customer-support-agent-hub/assistants/default_assistant/agents/travel_concierge_agent'
+      );
+      assert.ok(res.geminiEnterpriseConsoleUrl?.includes('customer-support-agent-hub'));
+    });
+
+    it('should execute OnePlatform REST API calls to provision Agent Security Policies (IAP + IAM v3 UAP), Model Armor template, and Shared Regional Agent Gateway + AuthzPolicies', async () => {
+      const capturedRequests: Array<{ method: string; url: string; body?: any }> = [];
+
+      const res = await runner.runPostDeployGovernance({
+        target: 'agent_engine',
+        targetDirectory: tempDir,
+        projectId: 'my-ent-project',
+        region: 'us-central1',
+        agentId: 'travel_concierge_agent',
+        displayName: 'Travel Concierge Agent',
+        deployedResourceUri: 'projects/my-ent-project/locations/us-central1/reasoningEngines/998877',
+        serviceUrl: 'https://us-central1-aiplatform.googleapis.com/v1/projects/my-ent-project/locations/us-central1/reasoningEngines/998877',
+        governance: {
+          enableAgentGateway: true,
+          modelArmorTemplateId: 'enterprise-baseline',
+          sharedGatewayId: 'default-shared-agent-gateway',
+          runCloudEvaluation: false,
+          publishToGeminiEnterprise: true,
+          geminiEnterpriseAppId: 'enterprise-chat-app',
+          geminiEnterpriseLocation: 'global',
+        },
+        customHttpRequester: async (req) => {
+          capturedRequests.push({ method: req.method, url: req.url, body: req.body });
+
+          // 1. Agent Registry list
+          if (req.method === 'GET' && req.url.includes('agentregistry.googleapis.com/v1alpha/')) {
+            return {
+              statusCode: 200,
+              data: {
+                agents: [
+                  {
+                    name: 'projects/my-ent-project/locations/us-central1/agents/agentregistry-998877',
+                    displayName: 'Travel Concierge Agent',
+                    attributes: {
+                      'agentregistry.googleapis.com/system/RuntimeIdentity': {
+                        principal: 'principal://agents.global.org-123.system.id.goog/resources/aiplatform/projects/111/locations/us-central1/reasoningEngines/998877',
+                      },
+                    },
+                  },
+                ],
+              },
+              rawBody: '',
+            };
+          }
+
+          // 2. IAP getIamPolicy / setIamPolicy
+          if (req.url.includes('iap.googleapis.com/v1/')) {
+            return {
+              statusCode: 200,
+              data: { bindings: [], etag: 'BwX123' },
+              rawBody: '',
+            };
+          }
+
+          // 3. GET checks for UAP accessPolicies, policyBindings, Model Armor template, AgentGateway, AuthzExtensions, AuthzPolicies -> return 404 to trigger creation
+          if (req.method === 'GET') {
+            return {
+              statusCode: 404,
+              data: { error: { code: 404, message: 'Not found' } },
+              rawBody: '',
+            };
+          }
+
+          // 4. POST creations -> return 200 done: true
+          return {
+            statusCode: 200,
+            data: { done: true, name: req.url },
+            rawBody: '',
+          };
+        },
+      });
+
+      // Verify discovered Agent Registry resource ID is returned
+      assert.equal(
+        res.agentRegistryResource,
+        'projects/my-ent-project/locations/us-central1/agents/agentregistry-998877'
+      );
+
+      // Verify IAP Allow Policy was set with roles/iap.egressor and RuntimeIdentity principal
+      const iapSetCall = capturedRequests.find(
+        (r) => r.method === 'POST' && r.url.includes('iap_web/agentRegistry:setIamPolicy')
+      );
+      assert.ok(iapSetCall, 'Expected IAP setIamPolicy call for /agent-platform/policies');
+      assert.equal(iapSetCall.body.policy.bindings[0].role, 'roles/iap.egressor');
+      assert.ok(
+        iapSetCall.body.policy.bindings[0].members[0].includes('reasoningEngines/998877')
+      );
+
+      // Verify IAM v3 Unified Access Policy + PolicyBinding were created
+      const uapCreateCall = capturedRequests.find(
+        (r) => r.method === 'POST' && r.url.includes('iam.googleapis.com/v3/') && r.url.includes('/accessPolicies?accessPolicyId=')
+      );
+      assert.ok(uapCreateCall, 'Expected IAM v3 AccessPolicy creation call');
+      assert.deepEqual(
+        uapCreateCall.body.details.rules[0].operation.permissions,
+        ['iap.googleapis.com/resources.egressViaIAP']
+      );
+
+      const uapBindCall = capturedRequests.find(
+        (r) => r.method === 'POST' && r.url.includes('iam.googleapis.com/v3/') && r.url.includes('/policyBindings?policyBindingId=')
+      );
+      assert.ok(uapBindCall, 'Expected IAM v3 PolicyBinding creation call');
+
+      // Verify Model Armor Template was created
+      const modelArmorCreateCall = capturedRequests.find(
+        (r) => r.method === 'POST' && r.url.includes('modelarmor.us-central1.rep.googleapis.com/v1/') && r.url.includes('templateId=enterprise-baseline')
+      );
+      assert.ok(modelArmorCreateCall, 'Expected Model Armor template creation call');
+
+      // Verify Shared Regional Agent Gateway was created in networkservices.googleapis.com/v1alpha1
+      const gatewayCreateCall = capturedRequests.find(
+        (r) => r.method === 'POST' && r.url.includes('networkservices.googleapis.com/v1alpha1/') && r.url.includes('agentGatewayId=default-shared-agent-gateway')
+      );
+      assert.ok(gatewayCreateCall, 'Expected Agent Gateway creation call for /agent-platform/gateways');
+      assert.deepEqual(gatewayCreateCall.body.registries, [
+        '//agentregistry.googleapis.com/projects/my-ent-project/locations/us-central1',
+      ]);
+
+      // Verify both IAP (REQUEST_AUTHZ) and AI Security Model Armor (CONTENT_AUTHZ) AuthzPolicies were attached to the gateway
+      const authzPolicyCalls = capturedRequests.filter(
+        (r) => r.method === 'POST' && r.url.includes('networksecurity.googleapis.com/v1beta1/') && r.url.includes('/authzPolicies?authzPolicyId=')
+      );
+      assert.equal(authzPolicyCalls.length, 2, 'Expected both IAP and AI Security AuthzPolicies to be created');
+      assert.ok(authzPolicyCalls.some((c) => c.body.policyProfile === 'REQUEST_AUTHZ'));
+      assert.ok(authzPolicyCalls.some((c) => c.body.policyProfile === 'CONTENT_AUTHZ'));
+
+      // Verify ReasoningEngine telemetry env patch was executed (`spec.deploymentSpec.env`)
+      const telemetryPatchCall = capturedRequests.find(
+        (r) =>
+          r.method === 'PATCH' &&
+          r.url.includes('reasoningEngines/998877?updateMask=spec.deploymentSpec.env')
+      );
+      assert.ok(
+        telemetryPatchCall,
+        'Expected ReasoningEngine PATCH call with updateMask=spec.deploymentSpec.env to enable telemetry'
+      );
+      const patchedEnv: Array<{ name: string; value: string }> =
+        telemetryPatchCall.body.spec.deploymentSpec.env;
+      assert.ok(
+        patchedEnv.some(
+          (e) => e.name === 'GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY' && e.value === 'true'
+        )
+      );
+      assert.ok(
+        patchedEnv.some(
+          (e) =>
+            e.name === 'OTEL_SEMCONV_STABILITY_OPT_IN' &&
+            e.value === 'gen_ai_latest_experimental'
+        )
+      );
+      assert.ok(
+        patchedEnv.some(
+          (e) =>
+            e.name === 'OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT' &&
+            e.value === 'EVENT_ONLY'
+        )
+      );
+      assert.equal(res.telemetryEnabled, true);
+
+      // Verify Discovery Engine Gemini Enterprise Agent registration
+      const discoveryEngineCall = capturedRequests.find(
+        (r) => r.method === 'POST' && r.url.includes('discoveryengine.googleapis.com/v1alpha/') && r.url.includes('/assistants/default_assistant/agents')
+      );
+      assert.ok(discoveryEngineCall, 'Expected Discovery Engine CreateAgent call');
+      assert.equal(
+        discoveryEngineCall.body.adkAgentDefinition.provisionedReasoningEngine.reasoningEngine,
+        'projects/my-ent-project/locations/us-central1/reasoningEngines/998877'
+      );
+    });
+
+    it('should automatically register eval_dataset.jsonl test prompts as Vertex AI EvaluationItems (with userScenario oneof), patch EvaluationSet with agentConfigs, create EvaluationExperiment, trigger an initial EvaluationRun, and register the agent in App Hub for the Topology tab', async () => {
+      const jsonlLines = [
+        JSON.stringify({
+          prompt: 'Find me a 3-day itinerary in Tokyo',
+          reference: 'Day 1: Shibuya & Shinjuku, Day 2: Asakusa, Day 3: Akihabara',
+          expected_tool_calls: ['search_flights'],
+        }),
+        JSON.stringify({
+          prompt: 'What is the baggage policy for economy class?',
+          reference: '1 carry-on and 1 checked bag up to 23kg',
+        }),
+      ];
+      fs.writeFileSync(path.join(tempDir, 'eval_dataset.jsonl'), jsonlLines.join('\n') + '\n', 'utf8');
+
+      const capturedRequests: Array<{ method: string; url: string; body?: any }> = [];
+      let itemCounter = 0;
+
+      const res = await runner.runPostDeployGovernance({
+        target: 'agent_engine',
+        targetDirectory: tempDir,
+        projectId: 'my-ent-project',
+        region: 'us-central1',
+        agentId: 'travel_concierge_agent',
+        displayName: 'Travel Concierge Agent',
+        deployedResourceUri: 'projects/my-ent-project/locations/us-central1/reasoningEngines/998877',
+        serviceUrl: 'https://us-central1-aiplatform.googleapis.com/v1/projects/my-ent-project/locations/us-central1/reasoningEngines/998877',
+        stagingBucket: 'gs://my-ent-project-staging',
+        customHttpRequester: async (req) => {
+          capturedRequests.push({ method: req.method, url: req.url, body: req.body });
+
+          if (req.method === 'GET' && req.url.includes('apphub.googleapis.com/v1/') && req.url.endsWith('/discoveredWorkloads')) {
+            return {
+              statusCode: 200,
+              data: {
+                discoveredWorkloads: [
+                  {
+                    name: 'projects/my-ent-project/locations/us-central1/discoveredWorkloads/dw-998877',
+                    workloadReference: {
+                      uri: '//aiplatform.googleapis.com/projects/my-ent-project/locations/us-central1/reasoningEngines/998877',
+                    },
+                  },
+                ],
+              },
+              rawBody: '',
+            };
+          }
+
+          if (req.method === 'POST' && req.url.includes('apphub.googleapis.com/v1/') && req.url.includes('/workloads?workloadId=')) {
+            return {
+              statusCode: 200,
+              data: {
+                name: 'projects/my-ent-project/locations/us-central1/applications/agent-platform-us-central1/workloads/travel-concierge-agent-wl',
+              },
+              rawBody: '',
+            };
+          }
+
+          if (req.method === 'POST' && req.url.endsWith('/evaluationItems')) {
+            itemCounter++;
+            return {
+              statusCode: 200,
+              data: {
+                name: `projects/111/locations/us-central1/evaluationItems/item-${itemCounter}`,
+              },
+              rawBody: '',
+            };
+          }
+
+          if (req.method === 'POST' && req.url.endsWith('/evaluationSets')) {
+            return {
+              statusCode: 200,
+              data: {
+                name: 'projects/111/locations/us-central1/evaluationSets/set-555',
+              },
+              rawBody: '',
+            };
+          }
+
+          if (req.method === 'GET' && req.url.includes('/evaluationExperiments')) {
+            return {
+              statusCode: 200,
+              data: { evaluationExperiments: [] },
+              rawBody: '',
+            };
+          }
+
+          if (req.method === 'POST' && req.url.endsWith('/evaluationExperiments')) {
+            return {
+              statusCode: 200,
+              data: {
+                name: 'projects/111/locations/us-central1/evaluationExperiments/exp-777',
+              },
+              rawBody: '',
+            };
+          }
+
+          if (req.method === 'POST' && req.url.endsWith('/evaluationRuns')) {
+            return {
+              statusCode: 200,
+              data: {
+                name: 'projects/111/locations/us-central1/evaluationRuns/run-888',
+              },
+              rawBody: '',
+            };
+          }
+
+          if (req.method === 'GET') {
+            return { statusCode: 404, data: {}, rawBody: '' };
+          }
+
+          return { statusCode: 200, data: { done: true, name: req.url }, rawBody: '' };
+        },
+      });
+
+      assert.equal(res.evaluationItemsCount, 2);
+      assert.equal(
+        res.evaluationSetResource,
+        'projects/111/locations/us-central1/evaluationSets/set-555'
+      );
+      assert.equal(
+        res.evaluationExperimentResource,
+        'projects/111/locations/us-central1/evaluationExperiments/exp-777'
+      );
+      assert.equal(
+        res.evaluationRunResource,
+        'projects/111/locations/us-central1/evaluationRuns/run-888'
+      );
+      assert.equal(
+        res.appHubApplicationResource,
+        'projects/my-ent-project/locations/us-central1/applications/agent-platform-us-central1'
+      );
+      assert.equal(
+        res.appHubWorkloadResource,
+        'projects/my-ent-project/locations/us-central1/applications/agent-platform-us-central1/workloads/travel-concierge-agent-wl'
+      );
+
+      // Verify GCS upload for EvaluationItem sets ONLY prompt.userScenario (oneof data) and NOT prompt.text
+      const gcsUploadCall = capturedRequests.find(
+        (r) => r.method === 'POST' && r.url.includes('storage.googleapis.com/upload/storage/v1/b/my-ent-project-staging/o')
+      );
+      assert.ok(gcsUploadCall, 'Expected GCS upload for EvaluationItem payload');
+      assert.ok(gcsUploadCall.body.prompt.userScenario, 'Expected prompt.userScenario in GCS EvaluationRequest');
+      assert.equal(
+        gcsUploadCall.body.prompt.text,
+        undefined,
+        'prompt.text must not be set alongside prompt.userScenario in protobuf oneof'
+      );
+
+      // Verify EvaluationSet received both EvaluationItem resource names AND was patched with agentConfigs
+      const createSetCall = capturedRequests.find(
+        (r) => r.method === 'POST' && r.url.endsWith('/evaluationSets')
+      );
+      assert.ok(createSetCall, 'Expected POST /evaluationSets call');
+      assert.deepEqual(createSetCall.body.evaluationItems, [
+        'projects/111/locations/us-central1/evaluationItems/item-1',
+        'projects/111/locations/us-central1/evaluationItems/item-2',
+      ]);
+
+      const patchSetCall = capturedRequests.find(
+        (r) =>
+          r.method === 'PATCH' &&
+          r.url.includes('/evaluationSets/set-555?updateMask=evaluation_items,agent_configs')
+      );
+      assert.ok(
+        patchSetCall,
+        'Expected PATCH /evaluationSets/set-555?updateMask=evaluation_items,agent_configs call'
+      );
+      assert.ok(
+        patchSetCall.body.agentConfigs['travel_concierge_agent'],
+        'Expected agentConfigs map keyed by root agent ID'
+      );
+
+      // Verify EvaluationExperiment was created with the exact Agent Engine labels (and without vertex-ai-evaluation-agent-resource-id)
+      const createExpCall = capturedRequests.find(
+        (r) => r.method === 'POST' && r.url.endsWith('/evaluationExperiments')
+      );
+      assert.ok(createExpCall, 'Expected POST /evaluationExperiments call');
+      assert.equal(
+        createExpCall.body.labels['vertex-ai-evaluation-set-name'],
+        'projects/111/locations/us-central1/evaluationSets/set-555'
+      );
+      assert.equal(
+        createExpCall.body.labels['vertex-ai-evaluation-agent-engine-id'],
+        '998877'
+      );
+      assert.equal(
+        createExpCall.body.labels['vertex-ai-evaluation-agent-engine-location'],
+        'us-central1'
+      );
+      assert.equal(
+        createExpCall.body.labels['vertex-ai-evaluation-agent-resource-id'],
+        undefined,
+        'Agent Engine experiments must not set vertex-ai-evaluation-agent-resource-id'
+      );
+
+      // Verify initial EvaluationRun was triggered
+      const createRunCall = capturedRequests.find(
+        (r) => r.method === 'POST' && r.url.endsWith('/evaluationRuns')
+      );
+      assert.ok(createRunCall, 'Expected POST /evaluationRuns call');
+      assert.equal(
+        createRunCall.body.evaluationExperiment,
+        'projects/111/locations/us-central1/evaluationExperiments/exp-777'
+      );
+      assert.equal(
+        createRunCall.body.dataSource.evaluationSet,
+        'projects/111/locations/us-central1/evaluationSets/set-555'
+      );
+    });
+
+    it('should ensure python_adk_agent-engine.prompt.txt includes telemetry env vars in .agent_engine_config.json and google-cloud-aiplatform>=1.126.1', () => {
+      const promptPath = path.resolve(
+        __dirname,
+        '../../../resource/prompts/python_adk_agent-engine.prompt.txt'
+      );
+      const promptContent = fs.readFileSync(promptPath, 'utf8');
+      assert.ok(
+        promptContent.includes('GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY'),
+        'Expected GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY in python_adk_agent-engine.prompt.txt'
+      );
+      assert.ok(
+        promptContent.includes('OTEL_SEMCONV_STABILITY_OPT_IN'),
+        'Expected OTEL_SEMCONV_STABILITY_OPT_IN in python_adk_agent-engine.prompt.txt'
+      );
+      assert.ok(
+        promptContent.includes('google-cloud-aiplatform[adk,agent_engines]>=1.126.1'),
+        'Expected google-cloud-aiplatform[adk,agent_engines]>=1.126.1 in python_adk_agent-engine.prompt.txt'
+      );
+    });
+  });
 });
+
+
+
