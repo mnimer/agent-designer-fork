@@ -1,0 +1,874 @@
+{
+  "schemaVersion": "1.0.0",
+  "name": "Knowledge Catalog Data Domain Builder",
+  "description": "Multi-agent architecture applying Domain-Driven Design (DDD) to discover BigQuery assets, propose bounded contexts, provision Dataplex domains/subdomains, enforce leaf binding rules, and manage data governance.",
+  "framework": "google-adk",
+  "language": "python",
+  "metadata": {
+    "category": "Data Governance",
+    "badge": "Multi-Agent DDD",
+    "author": "Steve Thill <stevethill@google.com>",
+    "features": [
+      "Domain-Driven Design (DDD) Modeling",
+      "Lowest-Level Leaf Subdomain Binding",
+      "In-Place Governance for Shared Datasets",
+      "Granular BigQuery Table IAM Dance",
+      "Native Markdown Overview Aspects",
+      "Scoped Semantic Search",
+      "Safe Cascading Teardown"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "node-trigger-kc-chat",
+      "type": "triggerNode",
+      "position": { "x": 100, "y": 80 },
+      "data": {
+        "id": "node-trigger-kc-chat",
+        "name": "chat_trigger",
+        "label": "Interactive Chat Trigger",
+        "triggerType": "chat",
+        "triggerKind": "chat",
+        "description": "Standard interactive chat interface for data architects and engineers.",
+        "targetRootAgentId": "node-agent-kc-orchestrator",
+        "config": {
+          "initialMessage": "Scan project 'analytics-core-prod' in 'us-central1' and propose a Domain-Driven Design hierarchy for our datasets.",
+          "streaming": true,
+          "sessionMemory": "in_memory"
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "message": { "type": "string" },
+            "project_id": { "type": "string" },
+            "location": { "type": "string" }
+          },
+          "required": ["message"]
+        }
+      }
+    },
+    {
+      "id": "node-trigger-kc-tester",
+      "type": "triggerNode",
+      "position": { "x": 100, "y": 260 },
+      "data": {
+        "id": "node-trigger-kc-tester",
+        "name": "eval_tester",
+        "label": "Data Domain Test Suite (17 Scenarios)",
+        "triggerType": "tester",
+        "triggerKind": "tester",
+        "description": "Automated evaluation suite with 17 scenarios covering asset discovery, DDD classification, leaf binding compliance, table IAM authorization, overview aspects, scoped search, and cascading teardown.",
+        "targetRootAgentId": "node-agent-kc-orchestrator",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "test-kc-01-cold-start",
+              "name": "1. Cold Start Project Asset Discovery",
+              "prompt": "Scan project 'analytics-core-prod' in 'us-central1' and discover all available BigQuery datasets and tables.",
+              "inputQuery": "Scan project 'analytics-core-prod' in 'us-central1' and discover all available BigQuery datasets and tables.",
+              "expectedOutput": "analytics-core-prod",
+              "expectedOutputPattern": "(analytics-core-prod|dataset|table)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-02-schema-profiling",
+              "name": "2. Deep Schema & Column Metadata Profiling",
+              "prompt": "Inspect the schema and column definitions for table 'analytics-core-prod.retail_dw.customer_orders' including row volumes.",
+              "inputQuery": "Inspect the schema and column definitions for table 'analytics-core-prod.retail_dw.customer_orders' including row volumes.",
+              "expectedOutput": "schema",
+              "expectedOutputPattern": "(schema|column|type|customer_orders)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-03-bounded-context-proposal",
+              "name": "3. Bounded Context Classification & DDD Proposal",
+              "prompt": "Analyze tables in dataset 'retail_dw' and propose a Domain-Driven Design hierarchy separating operational customer data from financial analytics.",
+              "inputQuery": "Analyze tables in dataset 'retail_dw' and propose a Domain-Driven Design hierarchy separating operational customer data from financial analytics.",
+              "expectedOutput": "Source-Oriented",
+              "expectedOutputPattern": "(Source-Oriented|Consumer-Oriented|bounded context)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-04-leaf-binding-rule",
+              "name": "4. Lowest-Level (Leaf) Subdomain Binding Rule Check",
+              "prompt": "In a hierarchy with parent domain 'sales-operations' and subdomains 'leads' and 'closed-deals', where should physical table 'dim_sales_leads' be bound?",
+              "inputQuery": "In a hierarchy with parent domain 'sales-operations' and subdomains 'leads' and 'closed-deals', where should physical table 'dim_sales_leads' be bound?",
+              "expectedOutput": "leaf",
+              "expectedOutputPattern": "(leaf|leads)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-05-parent-violation-guard",
+              "name": "5. Parent Domain Physical Binding Violation Guard",
+              "prompt": "Can we bind the BigQuery table 'orders' directly to the parent container domain 'retail-enterprise' when child subdomains 'checkout' and 'returns' exist?",
+              "inputQuery": "Can we bind the BigQuery table 'orders' directly to the parent container domain 'retail-enterprise' when child subdomains 'checkout' and 'returns' exist?",
+              "expectedOutput": "cannot",
+              "expectedOutputPattern": "(cannot|must not|never|leaf|subdomain)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-06-inplace-governance",
+              "name": "6. Shared Monolithic Dataset In-Place Governance",
+              "prompt": "The dataset 'monolith_dw' contains tables 'users', 'billing_events', and 'warehouse_inventory'. How should we govern them without moving physical data?",
+              "inputQuery": "The dataset 'monolith_dw' contains tables 'users', 'billing_events', and 'warehouse_inventory'. How should we govern them without moving physical data?",
+              "expectedOutput": "in-place",
+              "expectedOutputPattern": "(in-place|without moving|granular|table-level)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-07-dual-documentation",
+              "name": "7. Dual-Documentation Standard Verification",
+              "prompt": "Draft both a plain-text description and a rich Markdown Overview for the 'supply-chain' domain and its 'logistics' subdomain.",
+              "inputQuery": "Draft both a plain-text description and a rich Markdown Overview for the 'supply-chain' domain and its 'logistics' subdomain.",
+              "expectedOutput": "Overview",
+              "expectedOutputPattern": "(Overview|plain-text|markdown)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-08-human-approval-gate",
+              "name": "8. Human Approval Gate Enforcement",
+              "prompt": "I want to immediately create 3 domains in project 'corp-bi' without reviewing any proposal. Go ahead and create them now.",
+              "inputQuery": "I want to immediately create 3 domains in project 'corp-bi' without reviewing any proposal. Go ahead and create them now.",
+              "expectedOutput": "approval",
+              "expectedOutputPattern": "(approval|review|confirm|proposal)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-09-binding-exclusivity",
+              "name": "9. Pre-Flight 1:1 Binding Exclusivity Collision Check",
+              "prompt": "Check whether table '//bigquery.googleapis.com/projects/corp-bi/datasets/crm/tables/accounts' can be bound or if it is already bound to another domain.",
+              "inputQuery": "Check whether table '//bigquery.googleapis.com/projects/corp-bi/datasets/crm/tables/accounts' can be bound or if it is already bound to another domain.",
+              "expectedOutput": "exclusivity",
+              "expectedOutputPattern": "(exclusiv|bound|available|collision)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-10-provision-hierarchy",
+              "name": "10. Dataplex Parent & Subdomain Hierarchy Provisioning",
+              "prompt": "Provision parent domain 'supply-chain' and child subdomain 'inventory-mgmt' in project 'corp-bi' location 'us-central1'.",
+              "inputQuery": "Provision parent domain 'supply-chain' and child subdomain 'inventory-mgmt' in project 'corp-bi' location 'us-central1'.",
+              "expectedOutput": "inventory-mgmt",
+              "expectedOutputPattern": "(supply-chain|inventory-mgmt|created|provisioned)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-11-subdomain-principal",
+              "name": "11. Subdomain Principal Identity Extraction (Step A)",
+              "prompt": "Retrieve the Dataplex service identity policyMember for subdomain 'inventory-mgmt' under parent 'supply-chain'.",
+              "inputQuery": "Retrieve the Dataplex service identity policyMember for subdomain 'inventory-mgmt' under parent 'supply-chain'.",
+              "expectedOutput": "serviceAccount",
+              "expectedOutputPattern": "(serviceAccount|policyMember|principal)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-12-table-iam-authorization",
+              "name": "12. Table-Level IAM Authorization Dance (Step B)",
+              "prompt": "Authorize the subdomain service identity for 'inventory-mgmt' by granting roles/bigquery.metadataViewer on table 'corp-bi.warehouse.stock_levels'.",
+              "inputQuery": "Authorize the subdomain service identity for 'inventory-mgmt' by granting roles/bigquery.metadataViewer on table 'corp-bi.warehouse.stock_levels'.",
+              "expectedOutput": "metadataViewer",
+              "expectedOutputPattern": "(metadataViewer|authorized|granted)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-13-leaf-table-binding",
+              "name": "13. Leaf Table Resource Binding (Step C)",
+              "prompt": "Bind table '//bigquery.googleapis.com/projects/corp-bi/datasets/warehouse/tables/stock_levels' to subdomain 'inventory-mgmt'.",
+              "inputQuery": "Bind table '//bigquery.googleapis.com/projects/corp-bi/datasets/warehouse/tables/stock_levels' to subdomain 'inventory-mgmt'.",
+              "expectedOutput": "stock_levels",
+              "expectedOutputPattern": "(stock_levels|bound|binding)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-14-markdown-overview-aspect",
+              "name": "14. Native Markdown Overview Aspect Publishing",
+              "prompt": "Attach a rich Markdown Overview aspect with executive summary and KPI glossary to domain 'supply-chain'.",
+              "inputQuery": "Attach a rich Markdown Overview aspect with executive summary and KPI glossary to domain 'supply-chain'.",
+              "expectedOutput": "overview",
+              "expectedOutputPattern": "(overview|aspect|attached|published)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-15-scoped-search",
+              "name": "15. Scoped Semantic Search within Domain Boundaries",
+              "prompt": "Search Knowledge Catalog entries for 'stock' strictly within the boundary of domain 'supply-chain'.",
+              "inputQuery": "Search Knowledge Catalog entries for 'stock' strictly within the boundary of domain 'supply-chain'.",
+              "expectedOutput": "stock",
+              "expectedOutputPattern": "(stock|entry|entries|search)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-16-domain-iam-governance",
+              "name": "16. Domain IAM Access Governance Grant",
+              "prompt": "Grant 'roles/dataplex.dataDomainViewer' on domain 'supply-chain' to user 'analyst-lead@example.com'.",
+              "inputQuery": "Grant 'roles/dataplex.dataDomainViewer' on domain 'supply-chain' to user 'analyst-lead@example.com'.",
+              "expectedOutput": "roles/dataplex.dataDomainViewer",
+              "expectedOutputPattern": "(roles/dataplex.dataDomainViewer|granted|updated policy)",
+              "assertionType": "regex"
+            },
+            {
+              "id": "test-kc-17-cascading-teardown",
+              "name": "17. Safe Cascading Domain Teardown",
+              "prompt": "Safely decommission and teardown domain 'test-staging', unbinding all attached tables and removing child subdomains before deleting the parent domain.",
+              "inputQuery": "Safely decommission and teardown domain 'test-staging', unbinding all attached tables and removing child subdomains before deleting the parent domain.",
+              "expectedOutput": "tore down",
+              "expectedOutputPattern": "(tore down|unbound|deleted|cascading)",
+              "assertionType": "regex"
+            }
+          ]
+        },
+        "testCases": [
+          {
+            "id": "test-kc-01-cold-start",
+            "name": "1. Cold Start Project Asset Discovery",
+            "prompt": "Scan project 'analytics-core-prod' in 'us-central1' and discover all available BigQuery datasets and tables.",
+            "inputQuery": "Scan project 'analytics-core-prod' in 'us-central1' and discover all available BigQuery datasets and tables.",
+            "expectedOutput": "analytics-core-prod",
+            "expectedOutputPattern": "(analytics-core-prod|dataset|table)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-02-schema-profiling",
+            "name": "2. Deep Schema & Column Metadata Profiling",
+            "prompt": "Inspect the schema and column definitions for table 'analytics-core-prod.retail_dw.customer_orders' including row volumes.",
+            "inputQuery": "Inspect the schema and column definitions for table 'analytics-core-prod.retail_dw.customer_orders' including row volumes.",
+            "expectedOutput": "schema",
+            "expectedOutputPattern": "(schema|column|type|customer_orders)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-03-bounded-context-proposal",
+            "name": "3. Bounded Context Classification & DDD Proposal",
+            "prompt": "Analyze tables in dataset 'retail_dw' and propose a Domain-Driven Design hierarchy separating operational customer data from financial analytics.",
+            "inputQuery": "Analyze tables in dataset 'retail_dw' and propose a Domain-Driven Design hierarchy separating operational customer data from financial analytics.",
+            "expectedOutput": "Source-Oriented",
+            "expectedOutputPattern": "(Source-Oriented|Consumer-Oriented|bounded context)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-04-leaf-binding-rule",
+            "name": "4. Lowest-Level (Leaf) Subdomain Binding Rule Check",
+            "prompt": "In a hierarchy with parent domain 'sales-operations' and subdomains 'leads' and 'closed-deals', where should physical table 'dim_sales_leads' be bound?",
+            "inputQuery": "In a hierarchy with parent domain 'sales-operations' and subdomains 'leads' and 'closed-deals', where should physical table 'dim_sales_leads' be bound?",
+            "expectedOutput": "leaf",
+            "expectedOutputPattern": "(leaf|leads)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-05-parent-violation-guard",
+            "name": "5. Parent Domain Physical Binding Violation Guard",
+            "prompt": "Can we bind the BigQuery table 'orders' directly to the parent container domain 'retail-enterprise' when child subdomains 'checkout' and 'returns' exist?",
+            "inputQuery": "Can we bind the BigQuery table 'orders' directly to the parent container domain 'retail-enterprise' when child subdomains 'checkout' and 'returns' exist?",
+            "expectedOutput": "cannot",
+            "expectedOutputPattern": "(cannot|must not|never|leaf|subdomain)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-06-inplace-governance",
+            "name": "6. Shared Monolithic Dataset In-Place Governance",
+            "prompt": "The dataset 'monolith_dw' contains tables 'users', 'billing_events', and 'warehouse_inventory'. How should we govern them without moving physical data?",
+            "inputQuery": "The dataset 'monolith_dw' contains tables 'users', 'billing_events', and 'warehouse_inventory'. How should we govern them without moving physical data?",
+            "expectedOutput": "in-place",
+            "expectedOutputPattern": "(in-place|without moving|granular|table-level)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-07-dual-documentation",
+            "name": "7. Dual-Documentation Standard Verification",
+            "prompt": "Draft both a plain-text description and a rich Markdown Overview for the 'supply-chain' domain and its 'logistics' subdomain.",
+            "inputQuery": "Draft both a plain-text description and a rich Markdown Overview for the 'supply-chain' domain and its 'logistics' subdomain.",
+            "expectedOutput": "Overview",
+            "expectedOutputPattern": "(Overview|plain-text|markdown)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-08-human-approval-gate",
+            "name": "8. Human Approval Gate Enforcement",
+            "prompt": "I want to immediately create 3 domains in project 'corp-bi' without reviewing any proposal. Go ahead and create them now.",
+            "inputQuery": "I want to immediately create 3 domains in project 'corp-bi' without reviewing any proposal. Go ahead and create them now.",
+            "expectedOutput": "approval",
+            "expectedOutputPattern": "(approval|review|confirm|proposal)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-09-binding-exclusivity",
+            "name": "9. Pre-Flight 1:1 Binding Exclusivity Collision Check",
+            "prompt": "Check whether table '//bigquery.googleapis.com/projects/corp-bi/datasets/crm/tables/accounts' can be bound or if it is already bound to another domain.",
+            "inputQuery": "Check whether table '//bigquery.googleapis.com/projects/corp-bi/datasets/crm/tables/accounts' can be bound or if it is already bound to another domain.",
+            "expectedOutput": "exclusivity",
+            "expectedOutputPattern": "(exclusiv|bound|available|collision)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-10-provision-hierarchy",
+            "name": "10. Dataplex Parent & Subdomain Hierarchy Provisioning",
+            "prompt": "Provision parent domain 'supply-chain' and child subdomain 'inventory-mgmt' in project 'corp-bi' location 'us-central1'.",
+            "inputQuery": "Provision parent domain 'supply-chain' and child subdomain 'inventory-mgmt' in project 'corp-bi' location 'us-central1'.",
+            "expectedOutput": "inventory-mgmt",
+            "expectedOutputPattern": "(supply-chain|inventory-mgmt|created|provisioned)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-11-subdomain-principal",
+            "name": "11. Subdomain Principal Identity Extraction (Step A)",
+            "prompt": "Retrieve the Dataplex service identity policyMember for subdomain 'inventory-mgmt' under parent 'supply-chain'.",
+            "inputQuery": "Retrieve the Dataplex service identity policyMember for subdomain 'inventory-mgmt' under parent 'supply-chain'.",
+            "expectedOutput": "serviceAccount",
+            "expectedOutputPattern": "(serviceAccount|policyMember|principal)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-12-table-iam-authorization",
+            "name": "12. Table-Level IAM Authorization Dance (Step B)",
+            "prompt": "Authorize the subdomain service identity for 'inventory-mgmt' by granting roles/bigquery.metadataViewer on table 'corp-bi.warehouse.stock_levels'.",
+            "inputQuery": "Authorize the subdomain service identity for 'inventory-mgmt' by granting roles/bigquery.metadataViewer on table 'corp-bi.warehouse.stock_levels'.",
+            "expectedOutput": "metadataViewer",
+            "expectedOutputPattern": "(metadataViewer|authorized|granted)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-13-leaf-table-binding",
+            "name": "13. Leaf Table Resource Binding (Step C)",
+            "prompt": "Bind table '//bigquery.googleapis.com/projects/corp-bi/datasets/warehouse/tables/stock_levels' to subdomain 'inventory-mgmt'.",
+            "inputQuery": "Bind table '//bigquery.googleapis.com/projects/corp-bi/datasets/warehouse/tables/stock_levels' to subdomain 'inventory-mgmt'.",
+            "expectedOutput": "stock_levels",
+            "expectedOutputPattern": "(stock_levels|bound|binding)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-14-markdown-overview-aspect",
+            "name": "14. Native Markdown Overview Aspect Publishing",
+            "prompt": "Attach a rich Markdown Overview aspect with executive summary and KPI glossary to domain 'supply-chain'.",
+            "inputQuery": "Attach a rich Markdown Overview aspect with executive summary and KPI glossary to domain 'supply-chain'.",
+            "expectedOutput": "overview",
+            "expectedOutputPattern": "(overview|aspect|attached|published)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-15-scoped-search",
+            "name": "15. Scoped Semantic Search within Domain Boundaries",
+            "prompt": "Search Knowledge Catalog entries for 'stock' strictly within the boundary of domain 'supply-chain'.",
+            "inputQuery": "Search Knowledge Catalog entries for 'stock' strictly within the boundary of domain 'supply-chain'.",
+            "expectedOutput": "stock",
+            "expectedOutputPattern": "(stock|entry|entries|search)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-16-domain-iam-governance",
+            "name": "16. Domain IAM Access Governance Grant",
+            "prompt": "Grant 'roles/dataplex.dataDomainViewer' on domain 'supply-chain' to user 'analyst-lead@example.com'.",
+            "inputQuery": "Grant 'roles/dataplex.dataDomainViewer' on domain 'supply-chain' to user 'analyst-lead@example.com'.",
+            "expectedOutput": "roles/dataplex.dataDomainViewer",
+            "expectedOutputPattern": "(roles/dataplex.dataDomainViewer|granted|updated policy)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-17-cascading-teardown",
+            "name": "17. Safe Cascading Domain Teardown",
+            "prompt": "Safely decommission and teardown domain 'test-staging', unbinding all attached tables and removing child subdomains before deleting the parent domain.",
+            "inputQuery": "Safely decommission and teardown domain 'test-staging', unbinding all attached tables and removing child subdomains before deleting the parent domain.",
+            "expectedOutput": "tore down",
+            "expectedOutputPattern": "(tore down|unbound|deleted|cascading)",
+            "assertionType": "regex"
+          }
+        ],
+        "testPrompts": [
+          {
+            "id": "test-kc-01-cold-start",
+            "name": "1. Cold Start Project Asset Discovery",
+            "prompt": "Scan project 'analytics-core-prod' in 'us-central1' and discover all available BigQuery datasets and tables.",
+            "inputQuery": "Scan project 'analytics-core-prod' in 'us-central1' and discover all available BigQuery datasets and tables.",
+            "expectedOutput": "analytics-core-prod",
+            "expectedOutputPattern": "(analytics-core-prod|dataset|table)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-02-schema-profiling",
+            "name": "2. Deep Schema & Column Metadata Profiling",
+            "prompt": "Inspect the schema and column definitions for table 'analytics-core-prod.retail_dw.customer_orders' including row volumes.",
+            "inputQuery": "Inspect the schema and column definitions for table 'analytics-core-prod.retail_dw.customer_orders' including row volumes.",
+            "expectedOutput": "schema",
+            "expectedOutputPattern": "(schema|column|type|customer_orders)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-03-bounded-context-proposal",
+            "name": "3. Bounded Context Classification & DDD Proposal",
+            "prompt": "Analyze tables in dataset 'retail_dw' and propose a Domain-Driven Design hierarchy separating operational customer data from financial analytics.",
+            "inputQuery": "Analyze tables in dataset 'retail_dw' and propose a Domain-Driven Design hierarchy separating operational customer data from financial analytics.",
+            "expectedOutput": "Source-Oriented",
+            "expectedOutputPattern": "(Source-Oriented|Consumer-Oriented|bounded context)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-04-leaf-binding-rule",
+            "name": "4. Lowest-Level (Leaf) Subdomain Binding Rule Check",
+            "prompt": "In a hierarchy with parent domain 'sales-operations' and subdomains 'leads' and 'closed-deals', where should physical table 'dim_sales_leads' be bound?",
+            "inputQuery": "In a hierarchy with parent domain 'sales-operations' and subdomains 'leads' and 'closed-deals', where should physical table 'dim_sales_leads' be bound?",
+            "expectedOutput": "leaf",
+            "expectedOutputPattern": "(leaf|leads)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-05-parent-violation-guard",
+            "name": "5. Parent Domain Physical Binding Violation Guard",
+            "prompt": "Can we bind the BigQuery table 'orders' directly to the parent container domain 'retail-enterprise' when child subdomains 'checkout' and 'returns' exist?",
+            "inputQuery": "Can we bind the BigQuery table 'orders' directly to the parent container domain 'retail-enterprise' when child subdomains 'checkout' and 'returns' exist?",
+            "expectedOutput": "cannot",
+            "expectedOutputPattern": "(cannot|must not|never|leaf|subdomain)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-06-inplace-governance",
+            "name": "6. Shared Monolithic Dataset In-Place Governance",
+            "prompt": "The dataset 'monolith_dw' contains tables 'users', 'billing_events', and 'warehouse_inventory'. How should we govern them without moving physical data?",
+            "inputQuery": "The dataset 'monolith_dw' contains tables 'users', 'billing_events', and 'warehouse_inventory'. How should we govern them without moving physical data?",
+            "expectedOutput": "in-place",
+            "expectedOutputPattern": "(in-place|without moving|granular|table-level)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-07-dual-documentation",
+            "name": "7. Dual-Documentation Standard Verification",
+            "prompt": "Draft both a plain-text description and a rich Markdown Overview for the 'supply-chain' domain and its 'logistics' subdomain.",
+            "inputQuery": "Draft both a plain-text description and a rich Markdown Overview for the 'supply-chain' domain and its 'logistics' subdomain.",
+            "expectedOutput": "Overview",
+            "expectedOutputPattern": "(Overview|plain-text|markdown)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-08-human-approval-gate",
+            "name": "8. Human Approval Gate Enforcement",
+            "prompt": "I want to immediately create 3 domains in project 'corp-bi' without reviewing any proposal. Go ahead and create them now.",
+            "inputQuery": "I want to immediately create 3 domains in project 'corp-bi' without reviewing any proposal. Go ahead and create them now.",
+            "expectedOutput": "approval",
+            "expectedOutputPattern": "(approval|review|confirm|proposal)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-09-binding-exclusivity",
+            "name": "9. Pre-Flight 1:1 Binding Exclusivity Collision Check",
+            "prompt": "Check whether table '//bigquery.googleapis.com/projects/corp-bi/datasets/crm/tables/accounts' can be bound or if it is already bound to another domain.",
+            "inputQuery": "Check whether table '//bigquery.googleapis.com/projects/corp-bi/datasets/crm/tables/accounts' can be bound or if it is already bound to another domain.",
+            "expectedOutput": "exclusivity",
+            "expectedOutputPattern": "(exclusiv|bound|available|collision)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-10-provision-hierarchy",
+            "name": "10. Dataplex Parent & Subdomain Hierarchy Provisioning",
+            "prompt": "Provision parent domain 'supply-chain' and child subdomain 'inventory-mgmt' in project 'corp-bi' location 'us-central1'.",
+            "inputQuery": "Provision parent domain 'supply-chain' and child subdomain 'inventory-mgmt' in project 'corp-bi' location 'us-central1'.",
+            "expectedOutput": "inventory-mgmt",
+            "expectedOutputPattern": "(supply-chain|inventory-mgmt|created|provisioned)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-11-subdomain-principal",
+            "name": "11. Subdomain Principal Identity Extraction (Step A)",
+            "prompt": "Retrieve the Dataplex service identity policyMember for subdomain 'inventory-mgmt' under parent 'supply-chain'.",
+            "inputQuery": "Retrieve the Dataplex service identity policyMember for subdomain 'inventory-mgmt' under parent 'supply-chain'.",
+            "expectedOutput": "serviceAccount",
+            "expectedOutputPattern": "(serviceAccount|policyMember|principal)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-12-table-iam-authorization",
+            "name": "12. Table-Level IAM Authorization Dance (Step B)",
+            "prompt": "Authorize the subdomain service identity for 'inventory-mgmt' by granting roles/bigquery.metadataViewer on table 'corp-bi.warehouse.stock_levels'.",
+            "inputQuery": "Authorize the subdomain service identity for 'inventory-mgmt' by granting roles/bigquery.metadataViewer on table 'corp-bi.warehouse.stock_levels'.",
+            "expectedOutput": "metadataViewer",
+            "expectedOutputPattern": "(metadataViewer|authorized|granted)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-13-leaf-table-binding",
+            "name": "13. Leaf Table Resource Binding (Step C)",
+            "prompt": "Bind table '//bigquery.googleapis.com/projects/corp-bi/datasets/warehouse/tables/stock_levels' to subdomain 'inventory-mgmt'.",
+            "inputQuery": "Bind table '//bigquery.googleapis.com/projects/corp-bi/datasets/warehouse/tables/stock_levels' to subdomain 'inventory-mgmt'.",
+            "expectedOutput": "stock_levels",
+            "expectedOutputPattern": "(stock_levels|bound|binding)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-14-markdown-overview-aspect",
+            "name": "14. Native Markdown Overview Aspect Publishing",
+            "prompt": "Attach a rich Markdown Overview aspect with executive summary and KPI glossary to domain 'supply-chain'.",
+            "inputQuery": "Attach a rich Markdown Overview aspect with executive summary and KPI glossary to domain 'supply-chain'.",
+            "expectedOutput": "overview",
+            "expectedOutputPattern": "(overview|aspect|attached|published)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-15-scoped-search",
+            "name": "15. Scoped Semantic Search within Domain Boundaries",
+            "prompt": "Search Knowledge Catalog entries for 'stock' strictly within the boundary of domain 'supply-chain'.",
+            "inputQuery": "Search Knowledge Catalog entries for 'stock' strictly within the boundary of domain 'supply-chain'.",
+            "expectedOutput": "stock",
+            "expectedOutputPattern": "(stock|entry|entries|search)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-16-domain-iam-governance",
+            "name": "16. Domain IAM Access Governance Grant",
+            "prompt": "Grant 'roles/dataplex.dataDomainViewer' on domain 'supply-chain' to user 'analyst-lead@example.com'.",
+            "inputQuery": "Grant 'roles/dataplex.dataDomainViewer' on domain 'supply-chain' to user 'analyst-lead@example.com'.",
+            "expectedOutput": "roles/dataplex.dataDomainViewer",
+            "expectedOutputPattern": "(roles/dataplex.dataDomainViewer|granted|updated policy)",
+            "assertionType": "regex"
+          },
+          {
+            "id": "test-kc-17-cascading-teardown",
+            "name": "17. Safe Cascading Domain Teardown",
+            "prompt": "Safely decommission and teardown domain 'test-staging', unbinding all attached tables and removing child subdomains before deleting the parent domain.",
+            "inputQuery": "Safely decommission and teardown domain 'test-staging', unbinding all attached tables and removing child subdomains before deleting the parent domain.",
+            "expectedOutput": "tore down",
+            "expectedOutputPattern": "(tore down|unbound|deleted|cascading)",
+            "assertionType": "regex"
+          }
+        ]
+      }
+    },
+    {
+      "id": "node-agent-kc-orchestrator",
+      "type": "agentNode",
+      "position": { "x": 560, "y": 140 },
+      "data": {
+        "id": "node-agent-kc-orchestrator",
+        "name": "root_agent",
+        "label": "Data Domain Orchestrator",
+        "role": "Orchestrates the 5-agent cohort across asset discovery, DDD architectural modeling, provisioning, and governance.",
+        "description": "Routes user intents, coordinates discovery, triggers the Human Approval Gate, and delegates tasks to specialized sub-agents.",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "maxIterations": 12,
+        "agentKind": "standard",
+        "isStartNode": true,
+        "systemPrompt": "You are the Knowledge Catalog Data Domain Orchestrator.\nYou help data leaders, architects, and engineers organize their Google Cloud BigQuery and Dataplex assets into clean, well-governed Data Domains following Domain-Driven Design (DDD).\n\nINPUT COLLECTION & VALUE HANDLING:\n- A target GCP project ID is required for all operations. If the user has not provided a GCP project ID in the conversation, you MUST ask the user to provide it before taking action or delegating.\n- Location/region defaults to 'us-central1' if not specified by the user.\n- NEVER assume, hallucinate, or expect global or environment variables for project IDs, dataset IDs, or domain IDs.\n- When delegating to sub-agents, always pass along the user's project ID and location.\n\nERROR HANDLING & FAILURE REPORTING:\n- If any tool raises an error or returns a failure status, you MUST STOP immediately and report the exact error message and status code to the user.\n- NEVER claim that resources, domains, or bindings were created if an operation failed or encountered an error.\n\nCOHORT DELEGATION RULES:\n- When a user asks to inspect datasets, scan projects, or discover tables, delegate to `discovery_agent`.\n- When analyzing tables, proposing domain structures, or designing subdomains, delegate to `architect_agent`.\n- When an architecture proposal is approved and ready to be provisioned, delegate to `provisioner_agent`.\n- When querying catalog entries, managing IAM permissions, or safely tearing down domains, delegate to `governance_agent`.\n- Always ensure the user has reviewed and approved the DDD proposal before mutating GCP resources!",
+        "tools": [],
+        "subAgents": [
+          { "agentId": "node-agent-kc-discovery", "name": "discovery_agent" },
+          { "agentId": "node-agent-kc-architect", "name": "architect_agent" },
+          { "agentId": "node-agent-kc-provisioner", "name": "provisioner_agent" },
+          { "agentId": "node-agent-kc-governance", "name": "governance_agent" }
+        ],
+        "subAgentPattern": "router",
+        "memoryType": "in_memory",
+        "memoryConfig": { "type": "in_memory", "windowTurns": 20, "maxTokens": 8192 },
+        "outputFormat": "text",
+        "colorTheme": "purple"
+      }
+    },
+    {
+      "id": "node-agent-kc-discovery",
+      "type": "agentNode",
+      "position": { "x": 80, "y": 480 },
+      "data": {
+        "id": "node-agent-kc-discovery",
+        "name": "discovery_agent",
+        "label": "Catalog Discovery Specialist",
+        "role": "Inspects BigQuery datasets, tables, schemas, and classification metadata.",
+        "description": "Executes Phase 1 Asset Inventory Discovery across BigQuery datasets, profiling table schemas and row counts.",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "maxIterations": 8,
+        "agentKind": "standard",
+        "isStartNode": false,
+        "systemPrompt": "You are the BigQuery Catalog Discovery Specialist.\nYour responsibility is Phase 1 of the Domain Build Protocol: Asset Inventory Discovery.\n\nINPUT COLLECTION & VALUE HANDLING:\n- A target GCP project ID is required. If `project_id` is not provided in the request or conversation history, ask the user directly to provide their GCP Project ID. Do NOT call tools with empty values or look for environment variables.\n\nERROR HANDLING & FAILURE REPORTING:\n- If any tool raises an error or returns a failure status, you MUST STOP immediately and report the exact error message and status code to the user.\n- NEVER hallucinate or pretend dataset or table information if an API error occurs.\n\nDISCOVERY PROTOCOL:\n- Given a target GCP project ID and optional dataset ID, discover all physical data assets.\n- Use `list_datasets` to find available datasets.\n- Use `list_tables` to identify tables and views within each dataset.\n- Use `get_table_schema` to inspect column names, data types, descriptions, and row volumes.\n- Synthesize an inventory summary of tables and their semantic fields, then hand off findings to the DDD Architect Agent (`architect_agent`).",
+        "tools": [
+          {
+            "id": "tool-bq-list-datasets",
+            "name": "list_datasets",
+            "type": "custom",
+            "description": "Lists all BigQuery datasets in a GCP project.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/bigquery_toolset.py",
+            "functionName": "list_datasets"
+          },
+          {
+            "id": "tool-bq-list-tables",
+            "name": "list_tables",
+            "type": "custom",
+            "description": "Lists all tables and views in a BigQuery dataset.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/bigquery_toolset.py",
+            "functionName": "list_tables"
+          },
+          {
+            "id": "tool-bq-get-schema",
+            "name": "get_table_schema",
+            "type": "custom",
+            "description": "Retrieves column schema fields, data types, and row volume metadata for a table.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/bigquery_toolset.py",
+            "functionName": "get_table_schema"
+          }
+        ],
+        "subAgents": [],
+        "colorTheme": "blue"
+      }
+    },
+    {
+      "id": "node-agent-kc-architect",
+      "type": "agentNode",
+      "position": { "x": 400, "y": 480 },
+      "data": {
+        "id": "node-agent-kc-architect",
+        "name": "architect_agent",
+        "label": "DDD Architecture Specialist",
+        "role": "Applies Domain-Driven Design (DDD) principles to classify tables into bounded contexts and design hierarchical domain topologies.",
+        "description": "Enforces lowest-level leaf subdomain binding rules, prepares dual documentation (plain-text description + rich markdown overview), and manages the approval gate.",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.4,
+        "maxIterations": 8,
+        "agentKind": "standard",
+        "isStartNode": false,
+        "systemPrompt": "You are the Principal Data Architect applying Domain-Driven Design (DDD) heuristics.\nYour responsibility is Phase 2 of the Domain Build Protocol: DDD Modeling & Proposal.\n\nINPUT COLLECTION & VALUE HANDLING:\n- Confirm the target GCP project ID and location with the user before finalizing the proposal. If missing, ask the user.\n\nERROR HANDLING & FAILURE REPORTING:\n- If discovery outputs or prior steps encountered errors, do not proceed with assumptions; notify the user immediately.\n\nCRITICAL ARCHITECTURAL RULES:\n1. Lowest-Level (Leaf) Binding Rule:\n   - Physical data resources (tables, views, models) MUST ALWAYS be mapped and bound to the lowest-level (leaf) subdomain where operational ownership sits.\n   - Parent domains serve exclusively as organizational/strategic containers. NEVER assign physical resources directly to a parent domain if child subdomains exist!\n2. In-Place Governance for Shared/Monolithic Datasets:\n   - If tables in a single dataset represent multiple business concepts, keep physical data in place and assign individual tables directly to their specialized subdomains.\n3. Dual-Documentation Standard:\n   - Plain-Text Description: Always generate a concise 1-2 sentence plain-text description (no markdown, no bullets) for catalog navigation cards.\n   - Rich Markdown Overview: Generate a detailed Markdown document with executive scope, bound table directory, and key analytical use cases to be attached as Knowledge Catalog's native Overview aspect.\n4. Bounded Context Classification:\n   - Classify into Source-Oriented (operational) vs Consumer-Oriented (analytical/reporting) contexts.\n\nSTOP AND AWAIT USER APPROVAL:\nYou must present the proposal table to the user and await explicit confirmation before any provisioning occurs.",
+        "tools": [],
+        "subAgents": [],
+        "colorTheme": "blue"
+      }
+    },
+    {
+      "id": "node-agent-kc-provisioner",
+      "type": "agentNode",
+      "position": { "x": 720, "y": 480 },
+      "data": {
+        "id": "node-agent-kc-provisioner",
+        "name": "provisioner_agent",
+        "label": "Provisioning Specialist",
+        "role": "Provisions Dataplex domains/subdomains, populates native Markdown Overviews, and executes table IAM authorization and binding.",
+        "description": "Executes pre-flight exclusivity checks, provisions the hierarchy, attaches native Overview aspects, and executes the 3-step leaf table binding dance.",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "maxIterations": 12,
+        "agentKind": "standard",
+        "isStartNode": false,
+        "systemPrompt": "You are the Dataplex Provisioning and Binding Specialist.\nYour responsibility is Phases 3, 4, and 5 of the Domain Build Protocol (executed only AFTER user approval).\n\nINPUT COLLECTION & VALUE HANDLING:\n- Never assume global or environment values for project_id, location, domain_id, or resource URIs. If any required parameter is missing, ask the user to provide it before calling tools.\n\nERROR HANDLING & FAILURE REPORTING:\n- If any tool raises an error (such as 400 Bad Request, 403 Forbidden, 404 Not Found, 409 Conflict, or 500), you MUST STOP immediately and report the error to the user.\n- NEVER state that a domain, subdomain, binding, or overview was created if the corresponding tool call failed or threw an exception!\n\nEXECUTION PROTOCOL:\n1. Check Availability: Call `verify_binding_availability` for each resource.\n2. Provision Hierarchy: Call `create_domain` for parent domains, and `create_subdomain` for child subdomains.\n3. Populate Native Markdown Overviews: Call `set_overview` with `content_type='MARKDOWN'`.\n4. 3-Step Leaf Table Binding Dance:\n   - Step A: Call `get_domain_principal` on the target leaf subdomain to obtain its `policyMember` identity.\n   - Step B: Call `authorize_table` to grant `roles/bigquery.metadataViewer` directly to the subdomain principal.\n   - Step C: Call `bind_resource` using the fully qualified table URI:\n     `//bigquery.googleapis.com/projects/<PROJECT_ID>/datasets/<DATASET_ID>/tables/<TABLE_ID>`.",
+        "tools": [
+          {
+            "id": "tool-dp-create-domain",
+            "name": "create_domain",
+            "type": "custom",
+            "description": "Creates a top-level Dataplex Data Domain.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/dataplex_toolset.py",
+            "functionName": "create_domain"
+          },
+          {
+            "id": "tool-dp-create-subdomain",
+            "name": "create_subdomain",
+            "type": "custom",
+            "description": "Creates a child subdomain nested under a parent Dataplex domain.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/dataplex_toolset.py",
+            "functionName": "create_subdomain"
+          },
+          {
+            "id": "tool-dp-get-principal",
+            "name": "get_domain_principal",
+            "type": "custom",
+            "description": "Extracts the policyMember service account identity from a Dataplex domain or subdomain.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/dataplex_toolset.py",
+            "functionName": "get_domain_principal"
+          },
+          {
+            "id": "tool-bq-authorize-table",
+            "name": "authorize_table",
+            "type": "custom",
+            "description": "Performs granular table-level IAM authorization dance granting metadataViewer to a domain principal.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/bigquery_toolset.py",
+            "functionName": "authorize_table"
+          },
+          {
+            "id": "tool-bq-authorize-dataset",
+            "name": "authorize_dataset",
+            "type": "custom",
+            "description": "Authorizes a domain principal on a BigQuery dataset.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/bigquery_toolset.py",
+            "functionName": "authorize_dataset"
+          },
+          {
+            "id": "tool-dp-bind-resource",
+            "name": "bind_resource",
+            "type": "custom",
+            "description": "Binds a BigQuery table or dataset resource to a Dataplex domain or subdomain.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/binding_toolset.py",
+            "functionName": "bind_resource"
+          },
+          {
+            "id": "tool-dp-verify-availability",
+            "name": "verify_binding_availability",
+            "type": "custom",
+            "description": "Checks across all domains to verify a resource URI is not already bound (1:1 exclusivity rule).",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/binding_toolset.py",
+            "functionName": "verify_binding_availability"
+          },
+          {
+            "id": "tool-kc-set-overview",
+            "name": "set_overview",
+            "type": "custom",
+            "description": "Attaches a rich Markdown Overview aspect to a Knowledge Catalog domain entry.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/overview_toolset.py",
+            "functionName": "set_overview"
+          }
+        ],
+        "subAgents": [],
+        "colorTheme": "blue"
+      }
+    },
+    {
+      "id": "node-agent-kc-governance",
+      "type": "agentNode",
+      "position": { "x": 1040, "y": 480 },
+      "data": {
+        "id": "node-agent-kc-governance",
+        "name": "governance_agent",
+        "label": "Governance Specialist",
+        "role": "Manages domain IAM permissions, executes scoped semantic searches, and performs safe cascading teardowns.",
+        "description": "Audits domain IAM policies, searches bound entries within domain boundaries, and executes safe cascading teardowns.",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "maxIterations": 8,
+        "agentKind": "standard",
+        "isStartNode": false,
+        "systemPrompt": "You are the Knowledge Catalog Governance and Access Specialist.\nYour responsibility is Phase 6 Validation, Governance & Teardowns.\n\nINPUT COLLECTION & VALUE HANDLING:\n- If project_id, location, or domain_id are missing, ask the user to provide them before executing operations. Never assume global or environment values.\n\nERROR HANDLING & FAILURE REPORTING:\n- If any tool raises an error, you MUST report the exact error to the user and halt further cascading actions.\n- NEVER assume an IAM policy was updated or a domain was torn down if the tool raised an exception.\n\nOPERATIONAL RULES:\n- Use `search_entries` with a domain filter to verify discoverability of bound tables.\n- Use `get_iam_policy` and `add_iam_member` to grant domain access (e.g., `roles/dataplex.dataDomainViewer`).\n- Use `cascading_teardown_domain` when decommissioning a domain, which safely unbinds all tables, deletes child subdomains, and deletes the parent domain.",
+        "tools": [
+          {
+            "id": "tool-dp-get-iam",
+            "name": "get_iam_policy",
+            "type": "custom",
+            "description": "Retrieves the IAM policy for a Dataplex Data Domain.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/governance_toolset.py",
+            "functionName": "get_iam_policy"
+          },
+          {
+            "id": "tool-dp-add-iam",
+            "name": "add_iam_member",
+            "type": "custom",
+            "description": "Adds an IAM member role to a Dataplex domain or subdomain.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/governance_toolset.py",
+            "functionName": "add_iam_member"
+          },
+          {
+            "id": "tool-kc-search-entries",
+            "name": "search_entries",
+            "type": "custom",
+            "description": "Executes semantic searches in Knowledge Catalog scoped strictly to domain context.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/governance_toolset.py",
+            "functionName": "search_entries"
+          },
+          {
+            "id": "tool-dp-cascading-teardown",
+            "name": "cascading_teardown_domain",
+            "type": "custom",
+            "description": "Safely tears down a domain by recursively unbinding all resources and deleting subdomains before removing the domain.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/governance_toolset.py",
+            "functionName": "cascading_teardown_domain"
+          },
+          {
+            "id": "tool-dp-list-bindings",
+            "name": "list_bindings",
+            "type": "custom",
+            "description": "Lists all resources bound to a Dataplex domain or subdomain.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/binding_toolset.py",
+            "functionName": "list_bindings"
+          },
+          {
+            "id": "tool-dp-unbind-resource",
+            "name": "unbind_resource",
+            "type": "custom",
+            "description": "Unbinds a resource from a Dataplex domain or subdomain.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/binding_toolset.py",
+            "functionName": "unbind_resource"
+          },
+          {
+            "id": "tool-dp-delete-domain",
+            "name": "delete_domain",
+            "type": "custom",
+            "description": "Deletes a Dataplex domain or subdomain.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/dataplex_toolset.py",
+            "functionName": "delete_domain"
+          }
+        ],
+        "subAgents": [],
+        "colorTheme": "blue"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-chat-to-orchestrator",
+      "source": "node-trigger-kc-chat",
+      "sourceHandle": "trigger_out_bottom",
+      "target": "node-agent-kc-orchestrator",
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#f59e0b", "strokeWidth": 2, "strokeDasharray": "5 5" }
+    },
+    {
+      "id": "edge-tester-to-orchestrator",
+      "source": "node-trigger-kc-tester",
+      "sourceHandle": "trigger_out_right",
+      "target": "node-agent-kc-orchestrator",
+      "targetHandle": "input_left",
+      "animated": true,
+      "style": { "stroke": "#f59e0b", "strokeWidth": 2, "strokeDasharray": "5 5" }
+    },
+    {
+      "id": "edge-orch-to-discovery",
+      "source": "node-agent-kc-orchestrator",
+      "sourceHandle": "output",
+      "target": "node-agent-kc-discovery",
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge-orch-to-architect",
+      "source": "node-agent-kc-orchestrator",
+      "sourceHandle": "output",
+      "target": "node-agent-kc-architect",
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge-orch-to-provisioner",
+      "source": "node-agent-kc-orchestrator",
+      "sourceHandle": "output",
+      "target": "node-agent-kc-provisioner",
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge-orch-to-governance",
+      "source": "node-agent-kc-orchestrator",
+      "sourceHandle": "output",
+      "target": "node-agent-kc-governance",
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2 }
+    }
+  ],
+  "deployment": {
+    "outputFolder": "./kc_data_domain_builder/",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true,
+    "deploymentTarget": "agent_engine"
+  }
+}

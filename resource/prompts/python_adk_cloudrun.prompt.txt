@@ -80,7 +80,9 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
           4. **Recursive Composition Across N-Layers (2, 3, 4, 5+ Tiers Deep)**:
              * When a child agent itself has its own connected `subAgents: [...]`, that child is an intermediate parent. Its OWN `subAgentPattern` dictates how its grandchildren are orchestrated. Construct the hierarchy bottom-up: leaf agents first, intermediate orchestrators next, and root orchestrator as `root_agent`.
           5. **React Flow (`.agent`) Diagram Graph & Handle Interpretation**:
-             * **Trigger-to-Root Connections (`input_left`)**: Only the Root Coordinator agent (`isStartNode: true`) connects from triggers. All trigger nodes (`chat`, `tester`, `webhook`, `eventarc`, `cron`) connect from `sourceHandle: "trigger_out_right"` to the Root Agent's `targetHandle: "input_left"`. Triggers represent inbound invocation stimuli and test evaluation suites, not sub-agents.
+             * **Trigger-to-Root Connections**:
+               - **Test Suite Trigger Node (`tester` / Test Suite)**: ALWAYS connects from `sourceHandle: "trigger_out_right"` (Right handle) to the Root Agent's `targetHandle: "input_left"` (Left handle). Test Suite nodes represent evaluation suites and test prompts, positioned to the left of the Root Agent.
+               - **Runtime Inbound Triggers (`chat`, `webhook`, `eventarc`, `cron`, `pubsub`)**: Connect from `sourceHandle: "trigger_out_bottom"` (Bottom handle) to the Root Agent's `targetHandle: "input"` (Top handle). Triggers represent inbound invocation stimuli, not sub-agents.
              * **Agent-to-SubAgent Delegation (`output` -> `input`)**: Standard delegation flows from parent `sourceHandle: "output"` to child `targetHandle: "input"`. These edges wire the target agent into the parent agent's `sub_agents=[...]` list.
              * **Control-Flow Source Handles**:
                - Router (`agentKind: "router"`): `sourceHandle` matches branch ID (`branch_if_1`, `branch_else`). Routes to branch target agents conditionally.

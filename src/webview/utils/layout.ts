@@ -312,67 +312,124 @@ export function getLayoutedElements<T extends Record<string, unknown> = Record<s
     }
   });
 
-  // 3. Identify root nodes
-  // Priority: Tester triggers -> Operational triggers -> Start Agents -> In-degree 0 -> First node
+  // 3. Classify node categories
   const testerNodes = nodes.filter(
-    (n) => n.type === 'triggerNode' && (n.data as any)?.triggerType === 'tester'
+    (n) => n.type === 'triggerNode' && ((n.data as any)?.triggerType === 'tester' || (n.data as any)?.triggerType === 'test')
   );
   const operationalTriggers = nodes.filter(
-    (n) => n.type === 'triggerNode' && (n.data as any)?.triggerType !== 'tester'
-  );
-  const startAgents = nodes.filter(
-    (n) => (n.data as any)?.isStartNode || (n.type === 'agentNode' && (inDegreeMap.get(n.id) || 0) === 0)
+    (n) => (n.type === 'triggerNode' || n.type === 'trigger') && !testerNodes.some((tn) => tn.id === n.id)
   );
 
-  const rootCandidates: Node<T>[] = [
-    ...operationalTriggers,
-    ...startAgents,
-    ...nodes.filter(
-      (n) =>
-        (inDegreeMap.get(n.id) || 0) === 0 &&
-        !testerNodes.some((tn) => tn.id === n.id) &&
-        !operationalTriggers.some((ot) => ot.id === n.id) &&
-        !startAgents.some((sa) => sa.id === n.id)
-    ),
-  ];
-
-  if (rootCandidates.length === 0 && nodes.length > 0) {
-    rootCandidates.push(nodes[0]);
-  }
-
-  // 4. Position map for resolved node coordinates
+  // Position map for resolved node coordinates
   const positionMap = new Map<string, { x: number; y: number }>();
   const visited = new Set<string>();
 
-  // Helper to place a subtree starting at node u with coordinate (x, y)
-  const placeNodeAndChildren = (nodeId: string, currentX: number, currentY: number) => {
+  // 4. Identify Left-Inbound incoming nodes (connecting to target's left handle or tester triggers)
+  const leftIncomingNodesByTarget = new Map<string, Node<T>[]>();
+  const leftInboundNodeIds = new Set<string>();
+
+  nodes.forEach((node) => {
+    const outEdges = outgoingEdgesMap.get(node.id) || [];
+    const leftEdge = outEdges.find((e) => getHandleSide(e.targetHandle, false) === 'left');
+    const isTester = testerNodes.some((tn) => tn.id === node.id);
+
+    if (leftEdge) {
+      const targetId = leftEdge.target;
+      if (!leftIncomingNodesByTarget.has(targetId)) {
+        leftIncomingNodesByTarget.set(targetId, []);
+      }
+      leftIncomingNodesByTarget.get(targetId)!.push(node);
+      leftInboundNodeIds.add(node.id);
+    } else if (isTester) {
+      const targetId = outEdges[0]?.target;
+      if (targetId) {
+        if (!leftIncomingNodesByTarget.has(targetId)) {
+          leftIncomingNodesByTarget.set(targetId, []);
+        }
+        leftIncomingNodesByTarget.get(targetId)!.push(node);
+        leftInboundNodeIds.add(node.id);
+      }
+    }
+  });
+
+  // 5. Identify Top-Inbound triggers (operational triggers connecting to target's top handle)
+  const topIncomingNodesByTarget = new Map<string, Node<T>[]>();
+  const topInboundNodeIds = new Set<string>();
+
+  nodes.forEach((node) => {
+    if (leftInboundNodeIds.has(node.id)) return;
+    const isOperational = operationalTriggers.some((ot) => ot.id === node.id);
+    const outEdges = outgoingEdgesMap.get(node.id) || [];
+    const topEdge = outEdges.find((e) => getHandleSide(e.targetHandle, false) === 'top');
+
+    if (topEdge && isOperational) {
+      const targetId = topEdge.target;
+      if (!topIncomingNodesByTarget.has(targetId)) {
+        topIncomingNodesByTarget.set(targetId, []);
+      }
+      topIncomingNodesByTarget.get(targetId)!.push(node);
+      topInboundNodeIds.add(node.id);
+    } else if (isOperational && outEdges.length > 0) {
+      const targetId = outEdges[0].target;
+      if (!topIncomingNodesByTarget.has(targetId)) {
+        topIncomingNodesByTarget.set(targetId, []);
+      }
+      topIncomingNodesByTarget.get(targetId)!.push(node);
+      topInboundNodeIds.add(node.id);
+    }
+  });
+
+  // 6. Identify main structural graph nodes (excluding inbound left triggers and top triggers)
+  const structuralNodes = nodes.filter(
+    (n) => !leftInboundNodeIds.has(n.id) && !topInboundNodeIds.has(n.id)
+  );
+
+  // In-degree among structural nodes only
+  const structuralInDegreeMap = new Map<string, number>();
+  structuralNodes.forEach((n) => structuralInDegreeMap.set(n.id, 0));
+  edges.forEach((edge) => {
+    if (structuralNodes.some((sn) => sn.id === edge.source) && structuralInDegreeMap.has(edge.target)) {
+      structuralInDegreeMap.set(edge.target, (structuralInDegreeMap.get(edge.target) || 0) + 1);
+    }
+  });
+
+  // Root candidates for structural layout
+  const rootCandidates = structuralNodes.filter(
+    (n) => (n.data as any)?.isStartNode || (structuralInDegreeMap.get(n.id) || 0) === 0
+  );
+  if (rootCandidates.length === 0 && structuralNodes.length > 0) {
+    rootCandidates.push(structuralNodes[0]);
+  }
+
+  // 7. Recursive placement for structural graph elements
+  const placeStructuralNodeAndChildren = (nodeId: string, currentX: number, currentY: number) => {
     if (visited.has(nodeId)) return;
     visited.add(nodeId);
 
     positionMap.set(nodeId, { x: currentX, y: currentY });
 
     const parentDims = nodeDimensionsMap.get(nodeId) || { width: 340, height: 380 };
-    const outEdges = outgoingEdgesMap.get(nodeId) || [];
+    const outEdges = (outgoingEdgesMap.get(nodeId) || []).filter(
+      (e) => !leftInboundNodeIds.has(e.target) && !topInboundNodeIds.has(e.target)
+    );
+
+    if (outEdges.length === 0) return;
 
     // Group outgoing edges by source handle side
     const edgesBySide = new Map<HandleSide, Edge[]>();
     outEdges.forEach((edge) => {
-      const isTesterEdge = testerNodes.some((tn) => tn.id === edge.source);
-      const defaultSourceSide = isTesterEdge ? 'right' : 'bottom';
-      const side = getHandleSide(edge.sourceHandle, true) || defaultSourceSide;
+      const side = getHandleSide(edge.sourceHandle, true) || 'bottom';
       if (!edgesBySide.has(side)) {
         edgesBySide.set(side, []);
       }
       edgesBySide.get(side)!.push(edge);
     });
 
-    // Process each group of children
     edgesBySide.forEach((groupEdges, sourceSide) => {
       let unplacedEdges = groupEdges.filter((e) => !visited.has(e.target));
       if (unplacedEdges.length === 0) return;
 
-      // Section: Sort unplaced child edges according to the parent's ordered subAgents list
-      // This ensures that Auto Layout strictly reflects the user's configured sub-agent sequence.
+      // Sort unplaced child edges by parent's subAgents list
       const parentNode = nodes.find((n) => n.id === nodeId);
       const subAgentsList = (parentNode?.data as any)?.subAgents;
       if (Array.isArray(subAgentsList) && subAgentsList.length > 0) {
@@ -385,7 +442,6 @@ export function getLayoutedElements<T extends Record<string, unknown> = Record<s
           }
         });
 
-        // Stable sort: targets in subAgents come first ordered by their index, followed by unlisted targets
         unplacedEdges = [...unplacedEdges].sort((a, b) => {
           const orderA = subAgentOrderMap.has(a.target) ? subAgentOrderMap.get(a.target)! : 9999;
           const orderB = subAgentOrderMap.has(b.target) ? subAgentOrderMap.get(b.target)! : 9999;
@@ -394,7 +450,6 @@ export function getLayoutedElements<T extends Record<string, unknown> = Record<s
       }
 
       if (sourceSide === 'bottom' || sourceSide === 'top') {
-        // Vertical primary direction -> distribute siblings horizontally across X axis in subagent order
         const childDims = unplacedEdges.map(
           (e) => nodeDimensionsMap.get(e.target) || { width: 340, height: 380 }
         );
@@ -419,11 +474,11 @@ export function getLayoutedElements<T extends Record<string, unknown> = Record<s
           const childX = unplacedEdges.length === 1 && offset.dx !== 0 ? currentX + offset.dx : startX;
           const childY = currentY + offset.dy;
 
-          placeNodeAndChildren(edge.target, childX, childY);
+          placeStructuralNodeAndChildren(edge.target, childX, childY);
           startX += targetDims.width + HORIZONTAL_GAP;
         });
       } else {
-        // Horizontal primary direction (Right or Left) -> distribute siblings vertically across Y axis in subagent order
+        // Horizontal primary direction (Right or Left)
         const childDims = unplacedEdges.map(
           (e) => nodeDimensionsMap.get(e.target) || { width: 340, height: 380 }
         );
@@ -448,79 +503,119 @@ export function getLayoutedElements<T extends Record<string, unknown> = Record<s
           const childX = currentX + offset.dx;
           const childY = unplacedEdges.length === 1 && offset.dy !== 0 ? currentY + offset.dy : startY;
 
-          placeNodeAndChildren(edge.target, childX, childY);
+          placeStructuralNodeAndChildren(edge.target, childX, childY);
           startY += targetDims.height + VERTICAL_GAP;
         });
       }
     });
   };
 
-  // 5. Place each root candidate and traverse subtrees
+  // 8. Place each root candidate and traverse subtrees
   let currentRootX = 0;
-  let currentRootY = 0;
-
   rootCandidates.forEach((rootNode) => {
     if (!visited.has(rootNode.id)) {
-      placeNodeAndChildren(rootNode.id, currentRootX, currentRootY);
+      placeStructuralNodeAndChildren(rootNode.id, currentRootX, 0);
       const rootDims = nodeDimensionsMap.get(rootNode.id) || { width: 340, height: 380 };
       currentRootX += rootDims.width + HORIZONTAL_GAP * 2;
     }
   });
 
-  // Place any remaining unvisited nodes
-  nodes.forEach((node) => {
-    if (!visited.has(node.id) && !testerNodes.some((tn) => tn.id === node.id)) {
-      placeNodeAndChildren(node.id, currentRootX, currentRootY);
+  // Place any remaining unvisited structural nodes
+  structuralNodes.forEach((node) => {
+    if (!visited.has(node.id)) {
+      placeStructuralNodeAndChildren(node.id, currentRootX, 0);
       const dims = nodeDimensionsMap.get(node.id) || { width: 340, height: 380 };
       currentRootX += dims.width + HORIZONTAL_GAP;
     }
   });
 
-  // 6. Position QA Tester Trigger nodes cleanly to the left of their target nodes
-  testerNodes.forEach((tNode, idx) => {
-    const dims = nodeDimensionsMap.get(tNode.id) || { width: 340, height: 420 };
-    const targetEdge = edges.find((e) => e.source === tNode.id);
-    const targetPos = targetEdge ? positionMap.get(targetEdge.target) : null;
+  // 9. Place Left-Inbound Nodes strictly to the LEFT of their target nodes
+  leftIncomingNodesByTarget.forEach((incomingList, targetId) => {
+    const targetPos = positionMap.get(targetId) || { x: 0, y: 0 };
+    const targetDims = nodeDimensionsMap.get(targetId) || { width: 340, height: 380 };
 
-    if (targetPos) {
-      positionMap.set(tNode.id, {
-        x: targetPos.x - dims.width - HORIZONTAL_GAP - idx * (dims.width + 48),
-        y: targetPos.y,
-      });
-    } else {
-      positionMap.set(tNode.id, {
-        x: -dims.width - HORIZONTAL_GAP,
-        y: idx * (dims.height + VERTICAL_GAP),
-      });
-    }
-    visited.add(tNode.id);
+    const totalHeight =
+      incomingList.reduce((acc, n) => acc + (nodeDimensionsMap.get(n.id)?.height || 380), 0) +
+      (incomingList.length - 1) * VERTICAL_GAP;
+
+    let startY = targetPos.y + (targetDims.height - totalHeight) / 2;
+
+    incomingList.forEach((incomingNode) => {
+      const dims = nodeDimensionsMap.get(incomingNode.id) || { width: 340, height: 380 };
+      const x = targetPos.x - dims.width - HORIZONTAL_GAP;
+      const y = startY;
+
+      positionMap.set(incomingNode.id, { x, y });
+      visited.add(incomingNode.id);
+      startY += dims.height + VERTICAL_GAP;
+    });
   });
 
-  // 7. Collision relaxation pass (Push overlapping bounding boxes)
-  const placedNodesList = Array.from(positionMap.entries()).map(([id, pos]) => ({
+  // 10. Place Top-Inbound Triggers strictly ABOVE their target nodes
+  topIncomingNodesByTarget.forEach((incomingList, targetId) => {
+    const targetPos = positionMap.get(targetId) || { x: 0, y: 0 };
+    const targetDims = nodeDimensionsMap.get(targetId) || { width: 340, height: 380 };
+
+    const totalWidth =
+      incomingList.reduce((acc, n) => acc + (nodeDimensionsMap.get(n.id)?.width || 280), 0) +
+      (incomingList.length - 1) * HORIZONTAL_GAP;
+
+    let startX = targetPos.x + (targetDims.width - totalWidth) / 2;
+
+    incomingList.forEach((incomingNode) => {
+      const dims = nodeDimensionsMap.get(incomingNode.id) || { width: 280, height: 180 };
+      const x = startX;
+      const y = targetPos.y - dims.height - VERTICAL_GAP;
+
+      positionMap.set(incomingNode.id, { x, y });
+      visited.add(incomingNode.id);
+      startX += dims.width + HORIZONTAL_GAP;
+    });
+  });
+
+  // 11. Place any remaining unvisited nodes
+  nodes.forEach((node) => {
+    if (!visited.has(node.id)) {
+      const dims = nodeDimensionsMap.get(node.id) || { width: 340, height: 380 };
+      positionMap.set(node.id, { x: currentRootX, y: 0 });
+      visited.add(node.id);
+      currentRootX += dims.width + HORIZONTAL_GAP;
+    }
+  });
+
+  // 12. Anchor-preserving collision relaxation pass
+  const placedList = Array.from(positionMap.entries()).map(([id, pos]) => ({
     id,
     x: pos.x,
     y: pos.y,
     ...nodeDimensionsMap.get(id)!,
   }));
 
-  for (let iter = 0; iter < 10; iter++) {
+  for (let iter = 0; iter < 8; iter++) {
     let hadOverlap = false;
-    for (let i = 0; i < placedNodesList.length; i++) {
-      for (let j = i + 1; j < placedNodesList.length; j++) {
-        const a = placedNodesList[i];
-        const b = placedNodesList[j];
+    for (let i = 0; i < placedList.length; i++) {
+      for (let j = i + 1; j < placedList.length; j++) {
+        const a = placedList[i];
+        const b = placedList[j];
 
         const overlapX = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
         const overlapY = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
 
-        if (overlapX > -32 && overlapY > -32) {
+        // Only shift if bounding boxes actually intersect
+        if (overlapX > 0 && overlapY > 0) {
           hadOverlap = true;
-          // Shift b downwards or rightwards to resolve collision
-          if (overlapX > overlapY) {
-            b.y += Math.max(48, overlapY + 32);
+          if (overlapX <= overlapY) {
+            if (b.x < a.x) {
+              b.x -= Math.max(24, overlapX + 16);
+            } else {
+              b.x += Math.max(24, overlapX + 16);
+            }
           } else {
-            b.x += Math.max(48, overlapX + 32);
+            if (b.y < a.y) {
+              b.y -= Math.max(24, overlapY + 16);
+            } else {
+              b.y += Math.max(24, overlapY + 16);
+            }
           }
         }
       }
@@ -528,12 +623,12 @@ export function getLayoutedElements<T extends Record<string, unknown> = Record<s
     if (!hadOverlap) break;
   }
 
-  // Write back relaxed positions
-  placedNodesList.forEach((item) => {
+  // Update position map
+  placedList.forEach((item) => {
     positionMap.set(item.id, { x: item.x, y: item.y });
   });
 
-  // 8. Find bounding box minX, minY across all nodes to normalize coordinates
+  // 13. Normalize coordinates to canvas origin margin and snap strictly to 8pt grid
   let minX = Infinity;
   let minY = Infinity;
 
@@ -548,9 +643,8 @@ export function getLayoutedElements<T extends Record<string, unknown> = Record<s
   if (minX === Infinity) minX = 0;
   if (minY === Infinity) minY = 0;
 
-  const CANVAS_ORIGIN_MARGIN = 48; // 8pt grid aligned margin
+  const CANVAS_ORIGIN_MARGIN = 48; // 8pt grid aligned margin (multiple of 8)
 
-  // 9. Apply normalized and 8pt-grid-snapped layout positions
   const layoutedNodes = nodes.map((node) => {
     const pos = positionMap.get(node.id);
     if (!pos) return node;
@@ -558,7 +652,7 @@ export function getLayoutedElements<T extends Record<string, unknown> = Record<s
     const rawX = pos.x - minX + CANVAS_ORIGIN_MARGIN;
     const rawY = pos.y - minY + CANVAS_ORIGIN_MARGIN;
 
-    // Snap strictly to 8pt grid
+    // Strict 8pt grid snapping
     const snappedX = Math.round(rawX / 8) * 8;
     const snappedY = Math.round(rawY / 8) * 8;
 

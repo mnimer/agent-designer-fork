@@ -383,14 +383,29 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
   }, []);
 
   /**
-   * Handles keyboard events in the prompt textarea (Enter to submit, Shift+Enter for newline).
+   * Handles keyboard events in the prompt textarea (Enter to submit message, Shift+Enter for newline).
+   *
+   * Architectural Decisions:
+   * - Checks e.key === 'Enter' and e.keyCode === 13 for cross-environment compatibility.
+   * - Prevents submit when Shift is held (allowing multiline input).
+   * - Prevents submit during active IME composition (CJK).
+   * - Passes target value directly to handleSendMessage to avoid any state synchronization race condition.
+   *
+   * @param e React KeyboardEvent
+   * @author Mike Nimer <mikenimer@google.com>
    */
-  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
+  const handleInputKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if ((e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey && !e.nativeEvent.isComposing) {
+        e.preventDefault();
+        const text = (e.currentTarget?.value ?? inputPrompt).trim();
+        if (text && isTargetReady) {
+          handleSendMessage(text);
+        }
+      }
+    },
+    [handleSendMessage, inputPrompt, isTargetReady]
+  );
 
   /**
    * Handles text input change and dynamically adjusts height.
