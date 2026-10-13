@@ -406,10 +406,20 @@ except Exception as e:
       (urlObj.pathname.includes('reasoningEngines') &&
         !urlObj.hostname.includes('127.0.0.1') &&
         !urlObj.hostname.includes('localhost'));
+    const isCloudRun = urlObj.hostname.endsWith('.run.app');
 
     let authHeader = '';
     try {
-      authHeader = await this.gcloudDetector.getAccessTokenHeader();
+      // NOTE: Cloud Run (*.run.app) IAM authentication requires an OIDC Identity Token
+      // (`gcloud auth print-identity-token`), whereas Vertex AI Agent Engine requires an
+      // OAuth2 access token (`gcloud auth print-access-token`). Sending an OAuth2 access
+      // token to Cloud Run causes Google Front End (GFE) to reject with HTTP 401 Unauthorized.
+      if (isCloudRun && typeof this.gcloudDetector.getIdentityTokenHeader === 'function') {
+        authHeader = await this.gcloudDetector.getIdentityTokenHeader();
+      }
+      if (!authHeader) {
+        authHeader = await this.gcloudDetector.getAccessTokenHeader();
+      }
     } catch {
       // Proceeding without explicit auth header
     }

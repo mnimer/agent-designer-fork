@@ -79,6 +79,15 @@ describe('PythonEnvResolver', () => {
       fs.unlinkSync(path.join(tempDir, 'requirements.txt'));
       fs.writeFileSync(path.join(tempDir, 'agent.py'), 'from google.adk.agents.remote_a2a_agent import RemoteA2aAgent\n');
       assert.equal(resolver.requiresA2ADependencies(tempDir), true);
+
+      // Test 4: server.py with native FastAPI A2A routes (/v1/message:send) or comments mentioning RemoteA2aAgent
+      // should NOT falsely require the external a2a-sdk package
+      fs.unlinkSync(path.join(tempDir, 'agent.py'));
+      fs.writeFileSync(
+        path.join(tempDir, 'server.py'),
+        '"""A2A endpoints for Gemini Enterprise & RemoteA2aAgent"""\n# RemoteA2aAgent comment\n@app.post("/v1/message:send")\nasync def a2a_send_message():\n    return {}\n'
+      );
+      assert.equal(resolver.requiresA2ADependencies(tempDir), false);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

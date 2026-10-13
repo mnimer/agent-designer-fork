@@ -525,6 +525,11 @@ describe('UnifiedDeployRunner', () => {
             e.value === 'EVENT_ONLY'
         )
       );
+      assert.ok(
+        patchedEnv.some(
+          (e) => e.name === 'ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS' && e.value === 'true'
+        )
+      );
       assert.equal(res.telemetryEnabled, true);
 
       // Verify Discovery Engine Gemini Enterprise Agent registration
@@ -733,7 +738,7 @@ describe('UnifiedDeployRunner', () => {
         'Agent Engine experiments must not set vertex-ai-evaluation-agent-resource-id'
       );
 
-      // Verify initial EvaluationRun was triggered
+      // Verify initial EvaluationRun was triggered with inferenceConfigs and outputConfig
       const createRunCall = capturedRequests.find(
         (r) => r.method === 'POST' && r.url.endsWith('/evaluationRuns')
       );
@@ -745,6 +750,14 @@ describe('UnifiedDeployRunner', () => {
       assert.equal(
         createRunCall.body.dataSource.evaluationSet,
         'projects/111/locations/us-central1/evaluationSets/set-555'
+      );
+      assert.equal(
+        createRunCall.body.evaluationConfig.outputConfig.gcsDestination.outputUriPrefix,
+        'gs://my-ent-project-staging/evaluation-runs/travel_concierge_agent'
+      );
+      assert.equal(
+        createRunCall.body.inferenceConfigs['travel_concierge_agent'].agentRunConfig.agentEngine,
+        'projects/my-ent-project/locations/us-central1/reasoningEngines/998877'
       );
     });
 
@@ -763,8 +776,142 @@ describe('UnifiedDeployRunner', () => {
         'Expected OTEL_SEMCONV_STABILITY_OPT_IN in python_adk_agent-engine.prompt.txt'
       );
       assert.ok(
+        promptContent.includes('ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS'),
+        'Expected ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS in python_adk_agent-engine.prompt.txt'
+      );
+      assert.ok(
+        promptContent.includes('--otel_to_cloud'),
+        'Expected --otel_to_cloud in python_adk_agent-engine.prompt.txt'
+      );
+      assert.ok(
         promptContent.includes('google-cloud-aiplatform[adk,agent_engines]>=1.126.1'),
         'Expected google-cloud-aiplatform[adk,agent_engines]>=1.126.1 in python_adk_agent-engine.prompt.txt'
+      );
+    });
+
+    it('should fall back to python3 evaluate.py when Makefile eval target references missing .venv/bin/python, ignore benign FutureWarning logs, and publish Cloud Run agent to Gemini Enterprise via a2aAgentDefinition', async () => {
+      if (process.platform === 'win32') return;
+
+      // Write a Makefile whose eval target hardcodes .venv/bin/python without `make install`
+      fs.writeFileSync(
+        path.join(tempDir, 'Makefile'),
+        [
+          'eval:',
+          '\t.venv/bin/python evaluate.py --project=$(PROJECT_ID) --location=$(REGION) --dataset=eval_dataset.jsonl',
+        ].join('\n'),
+        'utf8'
+      );
+
+      // Write an evaluate.py that emits a benign FutureWarning to stderr and exits 0
+      fs.writeFileSync(
+        path.join(tempDir, 'evaluate.py'),
+        [
+          'import sys',
+          'sys.stderr.write("FutureWarning: The vertexai.Client class is deprecated.\\n")',
+          'print("Evaluation completed successfully.")',
+        ].join('\n'),
+        'utf8'
+      );
+
+      assert.equal(
+        runner.hasMakefileTarget(tempDir, 'eval'),
+        false,
+        'Should return false when Makefile eval target requires missing .venv/bin/python without install'
+      );
+
+      const evalCmd = runner.buildCloudEvaluationCommand({
+        targetDirectory: tempDir,
+        projectId: 'argolis-playground',
+        region: 'us-central1',
+        deployedResourceUri: 'projects/argolis-playground/locations/us-central1/services/company-verifier',
+      });
+      assert.equal(evalCmd.executable, 'python3');
+      assert.ok(!evalCmd.args.some((a) => a.startsWith('--agent-resource=')));
+
+      const capturedRequests: Array<{ method: string; url: string; body?: any }> = [];
+      const res = await runner.runPostDeployGovernance({
+        target: 'cloud_run',
+        targetDirectory: tempDir,
+        projectId: 'argolis-playground',
+        region: 'us-central1',
+        agentId: 'company-verifier',
+        displayName: 'Company Verifier',
+        deployedResourceUri: 'projects/argolis-playground/locations/us-central1/services/company-verifier',
+        serviceUrl: 'https://company-verifier-717498696647.us-central1.run.app',
+        governance: {
+          enableAgentGateway: true,
+          runCloudEvaluation: true,
+          publishToGeminiEnterprise: true,
+          geminiEnterpriseAppId: 'agent-designer_1791823970674',
+          geminiEnterpriseLocation: 'global',
+        },
+        customHttpRequester: async (req) => {
+          capturedRequests.push({ method: req.method, url: req.url, body: req.body });
+          return { statusCode: 200, data: { done: true, name: req.url }, rawBody: '' };
+        },
+      });
+
+      assert.equal(res.evalGateStatus, 'passed');
+      assert.equal(res.geminiEnterpriseBlockedByEval, undefined);
+      assert.ok(res.geminiEnterpriseAgentUri?.includes('agent-designer_1791823970674'));
+
+      const discoveryCall = capturedRequests.find(
+        (r) =>
+          r.method === 'POST' &&
+          r.url.includes('discoveryengine.googleapis.com/v1alpha/') &&
+          r.url.endsWith('/assistants/default_assistant/agents')
+      );
+      assert.ok(discoveryCall, 'Expected POST to Discovery Engine /assistants/default_assistant/agents without ?agentId=');
+      assert.equal(
+        discoveryCall.body.sharingConfig?.scope,
+        'ALL_USERS',
+        'Expected Cloud Run agent registration to set sharingConfig.scope = ALL_USERS'
+      );
+      assert.ok(
+        discoveryCall.body.a2aAgentDefinition?.jsonAgentCard,
+        'Expected Cloud Run agent to be registered with a2aAgentDefinition.jsonAgentCard'
+      );
+      const parsedCard = JSON.parse(discoveryCall.body.a2aAgentDefinition.jsonAgentCard);
+      assert.equal(parsedCard.url, 'https://company-verifier-717498696647.us-central1.run.app');
+      assert.equal(parsedCard.preferredTransport, 'JSONRPC');
+
+      const setIamCall = capturedRequests.find(
+        (r) =>
+          r.method === 'POST' &&
+          r.url.includes('run.googleapis.com/v2/projects/argolis-playground/locations/us-central1/services/company-verifier:setIamPolicy')
+      );
+      assert.ok(setIamCall, 'Expected Cloud Run setIamPolicy call to grant roles/run.invoker to Discovery Engine service agent');
+      const invokerBinding = setIamCall.body?.policy?.bindings?.find(
+        (b: any) => b.role === 'roles/run.invoker'
+      );
+      assert.ok(
+        invokerBinding?.members?.includes('serviceAccount:service-717498696647@gcp-sa-discoveryengine.iam.gserviceaccount.com'),
+        'Expected roles/run.invoker binding for service-717498696647@gcp-sa-discoveryengine.iam.gserviceaccount.com'
+      );
+    });
+
+    it('should ensure Cloud Run prompt template includes standalone CLI, Terraform, and Cloud Build CI/CD parity for Discovery Engine IAM and JSONRPC A2A publishing', () => {
+      const cloudRunPromptPath = path.join(
+        __dirname,
+        '..',
+        '..',
+        '..',
+        'resource',
+        'prompts',
+        'python_adk_cloudrun.prompt.txt'
+      );
+      const promptText = fs.readFileSync(cloudRunPromptPath, 'utf8');
+      assert.ok(
+        promptText.includes('discovery_engine_invoker'),
+        'Expected main.tf instructions in python_adk_cloudrun.prompt.txt to provision discovery_engine_invoker IAM member'
+      );
+      assert.ok(
+        promptText.includes('@gcp-sa-discoveryengine.iam.gserviceaccount.com'),
+        'Expected python_adk_cloudrun.prompt.txt to grant roles/run.invoker to the Discovery Engine service agent'
+      );
+      assert.ok(
+        promptText.includes('preferredTransport: "JSONRPC"'),
+        'Expected Makefile publish-gemini-enterprise target in python_adk_cloudrun.prompt.txt to use JSONRPC transport'
       );
     });
   });

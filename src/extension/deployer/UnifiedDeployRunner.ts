@@ -156,6 +156,21 @@ export class UnifiedDeployRunner {
       ) {
         return false;
       }
+      // If `make eval` invokes `.venv/bin/python` directly without bootstrapping `.venv` (`$(MAKE) install`)
+      // and `.venv/bin/python` does not exist (e.g. Cloud Run deployments where builds run remotely),
+      // return false so `buildCloudEvaluationCommand` can invoke `python3 evaluate.py` directly.
+      if (targetName === 'eval') {
+        const venvPython = path.join(path.resolve(targetDirectory), '.venv', 'bin', 'python');
+        const evalBlockMatch = content.match(/^eval\s*:[^\n]*\n((?:\t[^\n]*\n?)*)/m);
+        const evalBlock = evalBlockMatch ? evalBlockMatch[1] : '';
+        if (
+          evalBlock.includes('.venv/bin/python') &&
+          !evalBlock.includes('install') &&
+          !fs.existsSync(venvPython)
+        ) {
+          return false;
+        }
+      }
       // Match `targetName:` at the start of a line
       const targetRegex = new RegExp(`^${targetName}\\s*:`, 'm');
       return targetRegex.test(content);
@@ -579,7 +594,6 @@ export class UnifiedDeployRunner {
       'evaluate.py',
       `--project=${options.projectId}`,
       `--location=${options.region}`,
-      `--agent-resource=${options.deployedResourceUri}`,
       `--dataset=eval_dataset.jsonl`,
     ];
     return {
@@ -855,8 +869,10 @@ export class UnifiedDeployRunner {
           });
           result.evalTaskExperimentUrl = defaultExperimentUrl;
           const allLines = [...execRes.stdoutLines, ...execRes.stderrLines];
-          const warningLines = allLines.filter((l) =>
-            /(FAIL|WARNING|Threshold not met|AssertionError)/i.test(l)
+          const warningLines = allLines.filter(
+            (l) =>
+              /(?:\bFAIL(?:ED|URE)?\b|Threshold not met|AssertionError|EVALUATION_WARNING)/i.test(l) &&
+              !/(?:FutureWarning|DeprecationWarning|UserWarning|PendingDeprecationWarning|RuntimeWarning)/i.test(l)
           );
           if (execRes.exitCode === 0 && warningLines.length === 0) {
             result.evalGateStatus = 'passed';
@@ -926,6 +942,7 @@ export class UnifiedDeployRunner {
         displayName: displayName || cleanAgentId,
         description,
         deployedResourceUri,
+        serviceUrl,
         agentRegistryResource: result.agentRegistryResource,
         geminiEnterpriseAppId: appId,
         geminiEnterpriseLocation: geminiLocation,

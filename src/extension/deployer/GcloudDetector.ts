@@ -15,6 +15,8 @@ import { spawn } from 'child_process';
 export class GcloudDetector {
   private _cachedAccessToken: string | null = null;
   private _cachedAccessTokenExpiresAt = 0;
+  private _cachedIdentityToken: string | null = null;
+  private _cachedIdentityTokenExpiresAt = 0;
   private resolvedGcloudPath?: string;
 
   constructor(private deployer?: any) {}
@@ -318,6 +320,74 @@ export class GcloudDetector {
       if (token && token.length > 0) {
         this.cachedAccessToken = token;
         this.cachedAccessTokenExpiresAt = now + 10 * 60 * 1000; // 10 minutes
+        return `Bearer ${token}`;
+      }
+    } catch {}
+
+    return '';
+  }
+
+  /**
+   * Public getIdentityTokenHeader that delegates to deployer if overridden.
+   * Cloud Run (*.run.app) IAM authentication requires an OIDC Identity Token
+   * rather than an OAuth2 access token.
+   */
+  public async getIdentityTokenHeader(): Promise<string> {
+    if (this.deployer && this.deployer.getIdentityTokenHeader && this.deployer.getIdentityTokenHeader !== AgentEngineDeployer.prototype.getIdentityTokenHeader) {
+      return this.deployer.getIdentityTokenHeader();
+    }
+    return this.getIdentityTokenHeaderInternal();
+  }
+
+  /**
+   * Internal implementation of Google Cloud OIDC identity token fetcher (`gcloud auth print-identity-token`).
+   */
+  public async getIdentityTokenHeaderInternal(): Promise<string> {
+    const now = Date.now();
+    if (this._cachedIdentityToken && this._cachedIdentityTokenExpiresAt > now) {
+      return `Bearer ${this._cachedIdentityToken}`;
+    }
+
+    const envIdToken = process.env.GOOGLE_IDENTITY_TOKEN || process.env.CLOUDSDK_AUTH_IDENTITY_TOKEN;
+    if (envIdToken && envIdToken.trim().length > 0) {
+      this._cachedIdentityToken = envIdToken.trim();
+      this._cachedIdentityTokenExpiresAt = now + 10 * 60 * 1000;
+      return `Bearer ${this._cachedIdentityToken}`;
+    }
+
+    const gcloudBinary = await this.resolveGcloudPath();
+    const extendedEnv = this.getExtendedEnv();
+
+    try {
+      const token = await new Promise<string>((resolve, reject) => {
+        const cp = spawn(gcloudBinary, ['auth', 'print-identity-token'], {
+          env: extendedEnv,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        let stdout = '';
+        cp.stdout.on('data', (d) => {
+          stdout += d.toString();
+        });
+        cp.on('error', reject);
+        const timer = setTimeout(() => {
+          try {
+            cp.kill('SIGTERM');
+          } catch {}
+          reject(new Error('gcloud auth print-identity-token timed out'));
+        }, 15000);
+        cp.on('close', (code) => {
+          clearTimeout(timer);
+          if (code === 0 && stdout.trim().length > 0) {
+            resolve(stdout.trim());
+          } else {
+            reject(new Error(`${gcloudBinary} auth print-identity-token exited with code ${code}`));
+          }
+        });
+      });
+
+      if (token && token.length > 0) {
+        this._cachedIdentityToken = token;
+        this._cachedIdentityTokenExpiresAt = now + 10 * 60 * 1000;
         return `Bearer ${token}`;
       }
     } catch {}

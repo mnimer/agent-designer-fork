@@ -139,13 +139,20 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
     remoteEngineId;
   const isDeployed = Boolean(deployedResourceId);
 
+  const userSelectedTargetRef = useRef<boolean>(false);
+
   const [executionTarget, setExecutionTarget] = useState<'local' | 'remote'>(() => {
     return isDeployed ? 'remote' : 'local';
   });
 
-  // Automatically select remote execution if deployed and local runner is offline
+  // Automatically select remote execution if deployed and local runner is idle/stopped,
+  // unless the user manually chose a target or the local runner is starting/running.
   useEffect(() => {
-    if (isDeployed && localRunnerStatus !== 'running') {
+    if (
+      isDeployed &&
+      (localRunnerStatus === 'idle' || localRunnerStatus === 'stopped') &&
+      !userSelectedTargetRef.current
+    ) {
       setExecutionTarget('remote');
     }
   }, [isDeployed, localRunnerStatus]);
@@ -181,24 +188,20 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
 
   /**
    * Health check callback (invoked on tab open, target change, or manual user refresh).
-   * Dynamically queries GET_AGENT_ENGINE_STATUS when targeting remote Agent Engine,
-   * or GET_LOCAL_RUNNER_STATUS when targeting the local uvicorn runner.
-   *
-   * @author Mike Nimer <mikenimer@google.com>
+   * Queries both GET_LOCAL_RUNNER_STATUS and GET_AGENT_ENGINE_STATUS so the tab always
+   * reflects live status for both the local uvicorn server and remote deployment.
    */
   const checkRunnerHealth = useCallback(() => {
     setIsCheckingHealth(true);
-    if (executionTarget === 'remote') {
-      const targetDir = config?.outputFolder;
+    bridge.postMessage({ type: 'GET_LOCAL_RUNNER_STATUS' });
+    const targetDir = config?.outputFolder;
+    if (executionTarget === 'remote' || targetDir) {
       bridge.postMessage({
         type: 'GET_AGENT_ENGINE_STATUS',
         payload: { targetDirectory: targetDir },
       });
-      setTimeout(() => setIsCheckingHealth(false), 1500);
-    } else {
-      bridge.postMessage({ type: 'GET_LOCAL_RUNNER_STATUS' });
-      setTimeout(() => setIsCheckingHealth(false), 1500);
     }
+    setTimeout(() => setIsCheckingHealth(false), 1500);
   }, [bridge, executionTarget, config?.outputFolder]);
 
   // Check health once on tab mount or whenever execution target changes
@@ -211,6 +214,9 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
     const unsubStatus = bridge.subscribe('LOCAL_RUNNER_STATUS', (payload) => {
       if (payload?.status) {
         setLocalRunnerStatus(payload.status);
+        if (payload.status === 'running') {
+          setExecutionTarget('local');
+        }
       }
       if (payload?.port) {
         setLocalRunnerPort(payload.port);
@@ -628,7 +634,10 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
             <span className="text-gray-400 font-medium shrink-0">Target:</span>
             <select
               value={executionTarget}
-              onChange={(e) => setExecutionTarget(e.target.value as 'local' | 'remote')}
+              onChange={(e) => {
+                userSelectedTargetRef.current = true;
+                setExecutionTarget(e.target.value as 'local' | 'remote');
+              }}
               className="bg-transparent text-white text-xs font-medium focus:outline-none cursor-pointer"
             >
               <option value="local" className="bg-[#161b22] text-white">

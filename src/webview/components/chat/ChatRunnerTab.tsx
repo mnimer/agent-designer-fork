@@ -116,6 +116,8 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
     return isDeployed ? 'remote' : 'local';
   });
 
+  const userSelectedTargetRef = useRef<boolean>(false);
+
   // Persist execution target selection to localStorage
   useEffect(() => {
     try {
@@ -123,9 +125,14 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
     } catch {}
   }, [executionTarget]);
 
-  // Automatically select remote execution if deployed and local runner is offline
+  // Automatically select remote execution if deployed and local runner is idle/stopped,
+  // unless the user manually chose a target or the local runner is starting/running.
   useEffect(() => {
-    if (isDeployed && localRunnerStatus !== 'running') {
+    if (
+      isDeployed &&
+      (localRunnerStatus === 'idle' || localRunnerStatus === 'stopped') &&
+      !userSelectedTargetRef.current
+    ) {
       setExecutionTarget('remote');
     }
   }, [isDeployed, localRunnerStatus]);
@@ -176,25 +183,20 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
 
   /**
    * Health check callback (invoked on tab open, target change, or manual user refresh).
-   * Dynamically queries GET_AGENT_ENGINE_STATUS when targeting remote Agent Engine,
-   * or GET_LOCAL_RUNNER_STATUS when targeting the local uvicorn runner.
-   * Matches the exact checkRunnerHealth implementation in TestRunnerTab.
-   *
-   * @author Mike Nimer <mikenimer@google.com>
+   * Queries both GET_LOCAL_RUNNER_STATUS and GET_AGENT_ENGINE_STATUS so the tab always
+   * reflects live status for both the local uvicorn server and remote deployment.
    */
   const checkRunnerHealth = useCallback(() => {
     setIsCheckingHealth(true);
-    if (executionTarget === 'remote') {
-      const targetDir = config?.outputFolder || config?.targetDirectory;
+    bridge.postMessage({ type: 'GET_LOCAL_RUNNER_STATUS' });
+    const targetDir = config?.outputFolder || config?.targetDirectory;
+    if (executionTarget === 'remote' || targetDir) {
       bridge.postMessage({
         type: 'GET_AGENT_ENGINE_STATUS',
         payload: { targetDirectory: targetDir },
       });
-      setTimeout(() => setIsCheckingHealth(false), 1500);
-    } else {
-      bridge.postMessage({ type: 'GET_LOCAL_RUNNER_STATUS' });
-      setTimeout(() => setIsCheckingHealth(false), 1500);
     }
+    setTimeout(() => setIsCheckingHealth(false), 1500);
   }, [bridge, executionTarget, config?.outputFolder, config?.targetDirectory]);
 
   // Check health once on tab mount or whenever execution target changes
@@ -207,6 +209,9 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
     const unsubStatus = bridge.subscribe('LOCAL_RUNNER_STATUS', (payload) => {
       if (payload?.status) {
         setLocalRunnerStatus(payload.status);
+        if (payload.status === 'running') {
+          setExecutionTarget('local');
+        }
       }
       if (payload?.port) {
         setLocalRunnerPort(payload.port);
@@ -264,7 +269,6 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
    * Strictly enforces that the target runtime must be ready before dispatching.
    *
    * @param textToSend Optional text overriding the current inputPrompt
-   * @author Mike Nimer <mikenimer@google.com>
    */
   const handleSendMessage = useCallback(
     async (textToSend?: string) => {
@@ -392,7 +396,6 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
    * - Passes target value directly to handleSendMessage to avoid any state synchronization race condition.
    *
    * @param e React KeyboardEvent
-   * @author Mike Nimer <mikenimer@google.com>
    */
   const handleInputKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -453,7 +456,10 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
             <span className="text-gray-400 font-medium shrink-0">Target:</span>
             <select
               value={executionTarget}
-              onChange={(e) => setExecutionTarget(e.target.value as 'local' | 'remote')}
+              onChange={(e) => {
+                userSelectedTargetRef.current = true;
+                setExecutionTarget(e.target.value as 'local' | 'remote');
+              }}
               className="bg-transparent text-white text-xs font-medium focus:outline-none cursor-pointer"
             >
               <option value="local" className="bg-[#161b22] text-white">

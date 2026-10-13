@@ -218,4 +218,35 @@ describe('ChatRunnerTab Execution Target & Remote Chat Logic', () => {
     assert.ok(chatTrigger);
     assert.equal((chatTrigger.defaultConfig as any)?.initialMessage, undefined);
   });
+
+  it('should automatically switch executionTarget to local when LOCAL_RUNNER_STATUS reports running, and respect manual user target selection', () => {
+    function resolveNextTarget(
+      currentTarget: 'local' | 'remote',
+      isDeployed: boolean,
+      localRunnerStatus: 'idle' | 'starting' | 'running' | 'stopped' | 'error',
+      userSelectedTarget: boolean
+    ): 'local' | 'remote' {
+      if (localRunnerStatus === 'running') {
+        return 'local';
+      }
+      if (
+        isDeployed &&
+        (localRunnerStatus === 'idle' || localRunnerStatus === 'stopped') &&
+        !userSelectedTarget
+      ) {
+        return 'remote';
+      }
+      return currentTarget;
+    }
+
+    // Initial load when deployed and local runner idle -> defaults to remote
+    assert.equal(resolveNextTarget('local', true, 'idle', false), 'remote');
+
+    // When local runner starts ('starting'), it must not snap back to 'remote' if user chose 'local'
+    assert.equal(resolveNextTarget('local', true, 'starting', true), 'local');
+    assert.equal(resolveNextTarget('local', true, 'idle', true), 'local');
+
+    // When local runner reaches 'running', it automatically selects 'local'
+    assert.equal(resolveNextTarget('remote', true, 'running', false), 'local');
+  });
 });

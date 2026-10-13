@@ -116,6 +116,7 @@ export interface GeminiEnterprisePublishRequest {
   displayName: string;
   description?: string;
   deployedResourceUri: string;
+  serviceUrl?: string;
   agentRegistryResource?: string;
   geminiEnterpriseAppId: string;
   geminiEnterpriseLocation: string;
@@ -467,11 +468,12 @@ export class AgentGovernanceProvisioner {
   ): Promise<{ agentUri: string; consoleUrl: string }> {
     const {
       projectId,
+      region,
       cleanAgentId,
       displayName,
       description,
       deployedResourceUri,
-      agentRegistryResource,
+      serviceUrl,
       geminiEnterpriseAppId,
       geminiEnterpriseLocation,
       onLog,
@@ -490,32 +492,127 @@ export class AgentGovernanceProvisioner {
     const parentPath = `projects/${projectId}/locations/${loc}/collections/default_collection/engines/${appId}/assistants/default_assistant`;
     const baseUrl = `https://${hostPrefix}discoveryengine.googleapis.com/v1alpha/${parentPath}/agents`;
 
+    const resolvedDisplayName = displayName || cleanAgentId;
+    const resolvedDescription =
+      description || `Enterprise ADK Agent (${resolvedDisplayName})`;
+
     const agentPayload: Record<string, any> = {
-      displayName: displayName || cleanAgentId,
-      description: description || `Enterprise ADK Agent (${displayName || cleanAgentId})`,
+      displayName: resolvedDisplayName,
+      description: resolvedDescription,
+      sharingConfig: {
+        scope: 'ALL_USERS',
+      },
     };
 
-    if (deployedResourceUri.includes('/reasoningEngines/')) {
+    const isAgentEngine = deployedResourceUri.includes('/reasoningEngines/');
+    if (isAgentEngine) {
       agentPayload.adkAgentDefinition = {
         provisionedReasoningEngine: {
           reasoningEngine: deployedResourceUri,
         },
       };
-    } else if (agentRegistryResource) {
-      agentPayload.importedAgent = {
-        agent: agentRegistryResource,
+    } else {
+      const resolvedHttpsUrl =
+        serviceUrl && serviceUrl.startsWith('https://')
+          ? serviceUrl.replace(/\/+$/, '')
+          : `https://${cleanAgentId}.a.run.app`;
+      // NOTE: For Cloud Run (*.run.app), Gemini Enterprise's A2A client (`a2a_agent.py` -> `_get_cloud_run_headers`)
+      // signs `X-Google-GFE-Cloud-Client-Network-Project-Number` into `Sec-Authenticated-Request-Headers`
+      // bound to the exact host + path of `agent_card.url` (`/`). If `preferredTransport` is `'HTTP+JSON'`,
+      // `a2a-sdk` RestTransport appends `/v1/message:send`, causing GFE's AEAD verification of
+      // `Sec-Authenticated-Request-Headers` to fail on the path mismatch (`/v1/message:send` != `/`) and
+      // Cloud Run's Route Resolver (`CheckNetworkSettingsInternal`) to return 404 Not Found at the edge.
+      // Using `'JSONRPC'` causes `JsonRpcTransport` to POST directly to `agent_card.url` (`/`), matching GFE's signature.
+      agentPayload.a2aAgentDefinition = {
+        jsonAgentCard: JSON.stringify({
+          name: resolvedDisplayName,
+          description: resolvedDescription,
+          url: resolvedHttpsUrl,
+          version: '1.0.0',
+          protocolVersion: '0.3.0',
+          preferredTransport: 'JSONRPC',
+          defaultInputModes: ['text/plain', 'application/json'],
+          defaultOutputModes: ['text/plain', 'application/json'],
+          capabilities: {
+            streaming: false,
+            pushNotifications: false,
+            stateTransitionHistory: false,
+          },
+          skills: [
+            {
+              id: cleanAgentId,
+              name: resolvedDisplayName,
+              description: resolvedDescription,
+              tags: ['adk', 'cloud-run', cleanAgentId],
+            },
+          ],
+        }),
       };
     }
 
+    // Check if an agent with the same displayName already exists in this Gemini Enterprise App
+    // so redeployments update the existing registration in-place instead of creating duplicates.
+    const listRes = await this.requestJson({
+      method: 'GET',
+      url: baseUrl,
+      projectId,
+    });
+    const existingAgents: Array<Record<string, any>> = Array.isArray(listRes.data?.agents)
+      ? listRes.data.agents
+      : [];
+
+    if (!isAgentEngine) {
+      await this.ensureCloudRunInvokerForDiscoveryEngine({
+        projectId,
+        region,
+        cleanAgentId,
+        deployedResourceUri,
+        serviceUrl,
+        existingAgents,
+        onLog,
+      });
+    }
+
+    const existingMatch = existingAgents.find(
+      (a) =>
+        typeof a?.name === 'string' &&
+        (a.displayName === resolvedDisplayName || a.displayName === cleanAgentId)
+    );
+
+    if (existingMatch && typeof existingMatch.name === 'string') {
+      const existingUrl = `https://${hostPrefix}discoveryengine.googleapis.com/v1alpha/${existingMatch.name}`;
+      const patchExistingRes = await this.requestJson({
+        method: 'PATCH',
+        url: existingUrl,
+        projectId,
+        body: agentPayload,
+      });
+      if (patchExistingRes.statusCode >= 200 && patchExistingRes.statusCode < 300) {
+        onLog?.(
+          `[Gemini Enterprise] Updated existing agent registration in Gemini Enterprise App '${appId}': ${existingMatch.name}`,
+          'system'
+        );
+        return { agentUri: existingMatch.name, consoleUrl };
+      }
+    }
+
+    // CreateAgentRequest.agent_id (`?agentId=...`) is GOOGLE_INTERNAL-only in Discovery Engine v1alpha;
+    // public REST calls must POST directly to `${baseUrl}` so Discovery Engine assigns the agent ID.
     const createRes = await this.requestJson({
       method: 'POST',
-      url: `${baseUrl}?agentId=${encodeURIComponent(cleanAgentId)}`,
+      url: baseUrl,
       projectId,
       body: agentPayload,
     });
 
     if (createRes.statusCode >= 200 && createRes.statusCode < 300) {
-      const createdName = createRes.data?.name || agentUri;
+      const rawName = createRes.data?.name;
+      const createdName =
+        typeof rawName === 'string' &&
+        rawName.startsWith('projects/') &&
+        !rawName.includes('http')
+          ? rawName
+          : agentUri;
       onLog?.(
         `[Gemini Enterprise] Registered agent in Gemini Enterprise App '${appId}': ${createdName}`,
         'system'
@@ -545,6 +642,115 @@ export class AgentGovernanceProvisioner {
     }
 
     return { agentUri, consoleUrl };
+  }
+
+  /**
+   * Grants `roles/run.invoker` on the Cloud Run service to the project's Discovery Engine
+   * Service Agent (`service-{projectNumber}@gcp-sa-discoveryengine.iam.gserviceaccount.com`)
+   * so Gemini Enterprise can invoke the A2A Cloud Run service using `X-Serverless-Authorization`.
+   */
+  private async ensureCloudRunInvokerForDiscoveryEngine(options: {
+    projectId: string;
+    region: string;
+    cleanAgentId: string;
+    deployedResourceUri: string;
+    serviceUrl?: string;
+    existingAgents?: Array<Record<string, any>>;
+    onLog?: (text: string, stream: 'stdout' | 'stderr' | 'system') => void;
+  }): Promise<void> {
+    const {
+      projectId,
+      region,
+      cleanAgentId,
+      deployedResourceUri,
+      serviceUrl,
+      existingAgents,
+      onLog,
+    } = options;
+
+    // 1. Resolve numeric projectNumber from Cloud Run URL (`https://<service>-<projectNumber>.<region>.run.app`),
+    // existing Discovery Engine agent resource names (`projects/<projectNumber>/...`), or Cloud Resource Manager API.
+    let projectNumber: string | undefined;
+    const runUrlMatch = serviceUrl?.match(/-(\d{6,20})\.[a-z0-9-]+\.run\.app/i);
+    if (runUrlMatch?.[1]) {
+      projectNumber = runUrlMatch[1];
+    }
+    if (!projectNumber && Array.isArray(existingAgents)) {
+      for (const agent of existingAgents) {
+        const m = typeof agent?.name === 'string' ? agent.name.match(/^projects\/(\d+)\//) : null;
+        if (m?.[1]) {
+          projectNumber = m[1];
+          break;
+        }
+      }
+    }
+    if (!projectNumber) {
+      const crmRes = await this.requestJson({
+        method: 'GET',
+        url: `https://cloudresourcemanager.googleapis.com/v1/projects/${encodeURIComponent(projectId)}`,
+        projectId,
+      });
+      if (crmRes.statusCode >= 200 && crmRes.statusCode < 300 && crmRes.data?.projectNumber) {
+        projectNumber = String(crmRes.data.projectNumber);
+      }
+    }
+
+    if (!projectNumber) {
+      return;
+    }
+
+    const serviceResource =
+      deployedResourceUri.startsWith('projects/') && deployedResourceUri.includes('/services/')
+        ? deployedResourceUri
+        : `projects/${projectId}/locations/${region}/services/${cleanAgentId}`;
+    const runIamBaseUrl = `https://run.googleapis.com/v2/${serviceResource}`;
+    const discoveryEngineP4saMember = `serviceAccount:service-${projectNumber}@gcp-sa-discoveryengine.iam.gserviceaccount.com`;
+
+    const getIamRes = await this.requestJson({
+      method: 'GET',
+      url: `${runIamBaseUrl}:getIamPolicy`,
+      projectId,
+    });
+    if (getIamRes.statusCode < 200 || getIamRes.statusCode >= 300) {
+      return;
+    }
+
+    const currentPolicy = getIamRes.data || {};
+    const bindings: Array<{ role: string; members: string[]; condition?: any }> = Array.isArray(
+      currentPolicy.bindings
+    )
+      ? [...currentPolicy.bindings]
+      : [];
+
+    const invokerRole = 'roles/run.invoker';
+    let roleBinding = bindings.find((b) => b.role === invokerRole && !b.condition);
+    if (!roleBinding) {
+      roleBinding = { role: invokerRole, members: [discoveryEngineP4saMember] };
+      bindings.push(roleBinding);
+    } else if (!roleBinding.members.includes(discoveryEngineP4saMember)) {
+      roleBinding.members = [...roleBinding.members, discoveryEngineP4saMember];
+    } else {
+      return;
+    }
+
+    const setIamRes = await this.requestJson({
+      method: 'POST',
+      url: `${runIamBaseUrl}:setIamPolicy`,
+      projectId,
+      body: {
+        policy: {
+          ...currentPolicy,
+          bindings,
+        },
+      },
+    });
+
+    if (setIamRes.statusCode >= 200 && setIamRes.statusCode < 300) {
+      onLog?.(
+        `[Gemini Enterprise] Granted Cloud Run Invoker (${invokerRole}) to ${discoveryEngineP4saMember} on ${serviceResource}`,
+        'system'
+      );
+    }
   }
 
   /**
@@ -1266,6 +1472,7 @@ export class AgentGovernanceProvisioner {
       OTEL_SEMCONV_STABILITY_OPT_IN: 'gen_ai_latest_experimental',
       OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT:
         envMap.get('OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT') || 'EVENT_ONLY',
+      ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS: 'true',
     };
 
     const alreadyConfigured =
@@ -1273,7 +1480,8 @@ export class AgentGovernanceProvisioner {
       getRes.statusCode < 300 &&
       envMap.get('GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY') === 'true' &&
       envMap.get('OTEL_SEMCONV_STABILITY_OPT_IN') === 'gen_ai_latest_experimental' &&
-      Boolean(envMap.get('OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT'));
+      Boolean(envMap.get('OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT')) &&
+      envMap.get('ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS') === 'true';
 
     if (alreadyConfigured) {
       onLog?.(

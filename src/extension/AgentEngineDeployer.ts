@@ -182,6 +182,10 @@ export class AgentEngineDeployer implements vscode.Disposable {
     return this.gcloudDetector.getAccessTokenHeader();
   }
 
+  public getIdentityTokenHeader(): Promise<string> {
+    return this.gcloudDetector.getIdentityTokenHeader();
+  }
+
   // Delegate remote engine client methods
   public findExistingReasoningEngine(projectId: string, region: string, displayName: string): Promise<string | null> {
     return this.reasoningEngineClient.findExistingReasoningEngine(projectId, region, displayName);

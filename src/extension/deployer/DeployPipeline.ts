@@ -105,7 +105,7 @@ export class DeployPipeline {
       }
     }
 
-    args.push('--session_service_uri', 'memory://');
+    args.push('--otel_to_cloud');
 
     if (options.stagingBucket && options.stagingBucket.trim()) {
       const bucketUri = options.stagingBucket.trim().startsWith('gs://')

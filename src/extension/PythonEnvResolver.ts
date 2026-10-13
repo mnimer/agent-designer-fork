@@ -370,19 +370,28 @@ export class PythonEnvResolver {
         }
       }
 
+      const stripCommentsAndDocstrings = (src: string): string =>
+        src
+          .replace(/"""[\s\S]*?"""|'''[\s\S]*?'''/g, '')
+          .replace(/#.*$/gm, '');
+
+      const hasA2APackageImport = (src: string): boolean => {
+        const cleaned = stripCommentsAndDocstrings(src);
+        return (
+          /^\s*(?:import\s+a2a\b|from\s+a2a\b)/m.test(cleaned) ||
+          cleaned.includes('RemoteA2aAgent') ||
+          cleaned.includes('google.adk.a2a') ||
+          /\bto_a2a\s*\(/.test(cleaned)
+        );
+      };
+
       // Check common python entrypoints
       const pyFiles = ['agent.py', 'server.py', 'agent_workflow.py', 'main.py', '_agent_test_runner.py'];
       for (const file of pyFiles) {
         const filePath = path.join(targetDir, file);
         if (fs.existsSync(filePath)) {
           const content = fs.readFileSync(filePath, 'utf-8');
-          if (
-            content.includes('import a2a') ||
-            content.includes('from a2a') ||
-            content.includes('RemoteA2aAgent') ||
-            content.includes('to_a2a') ||
-            content.includes('google.adk.a2a')
-          ) {
+          if (hasA2APackageImport(content)) {
             return true;
           }
         }
@@ -395,7 +404,7 @@ export class PythonEnvResolver {
         for (const file of files) {
           if (file.endsWith('.py')) {
             const content = fs.readFileSync(path.join(toolsDir, file), 'utf-8');
-            if (content.includes('a2a') || content.includes('RemoteA2aAgent')) {
+            if (hasA2APackageImport(content)) {
               return true;
             }
           }

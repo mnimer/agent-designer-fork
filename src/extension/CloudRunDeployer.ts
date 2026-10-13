@@ -673,15 +673,27 @@ export class CloudRunDeployer {
     let idToken = '';
     if (serviceUrl.startsWith('https://') && !serviceUrl.includes('localhost') && !serviceUrl.includes('127.0.0.1')) {
       try {
+        // NOTE: User credentials do not support `--audiences` on `gcloud auth print-identity-token`,
+        // so try standard identity token generation first and fall back to `--audiences` for service accounts.
         idToken = child_process
-          .execSync(`gcloud auth print-identity-token --audiences="${serviceUrl}"`, {
+          .execSync('gcloud auth print-identity-token', {
             encoding: 'utf8',
             timeout: 5000,
             stdio: ['pipe', 'pipe', 'ignore'],
           })
           .trim();
       } catch {
-        // NOTE: Unauthenticated services do not require identity tokens
+        try {
+          idToken = child_process
+            .execSync(`gcloud auth print-identity-token --audiences="${serviceUrl}"`, {
+              encoding: 'utf8',
+              timeout: 5000,
+              stdio: ['pipe', 'pipe', 'ignore'],
+            })
+            .trim();
+        } catch {
+          // NOTE: Unauthenticated services do not require identity tokens
+        }
       }
     }
 
