@@ -614,6 +614,7 @@ export class UnifiedDeployRunner {
     displayName?: string;
     description?: string;
     deployedResourceUri: string;
+    serviceUrl?: string;
     geminiEnterpriseAppId: string;
     geminiEnterpriseLocation?: string;
     agentGatewayResource?: string;
@@ -636,8 +637,12 @@ export class UnifiedDeployRunner {
         `GEMINI_ENTERPRISE_APP_ID=${appId}`,
         `GEMINI_ENTERPRISE_LOCATION=${location}`,
         `AGENT_NAME=${cleanAgentId}`,
+        `SERVICE_NAME=${cleanAgentId}`,
         `AGENT_URI=${options.deployedResourceUri}`,
       ];
+      if (options.serviceUrl) {
+        args.push(`SERVICE_URL=${options.serviceUrl}`);
+      }
       if (options.agentGatewayResource) {
         args.push(`AGENT_GATEWAY_RESOURCE=${options.agentGatewayResource}`);
       }
@@ -729,6 +734,14 @@ export class UnifiedDeployRunner {
       'system'
     );
     onLog?.(`[Governance] Command: ${regCmd.commandString}`, 'system');
+    if (regCmd.executable === 'make' && !customHttpRequester) {
+      await this.executeCommand({
+        targetDirectory,
+        executable: regCmd.executable,
+        args: regCmd.args,
+        onLog: (line, stream) => onLog?.(line, stream),
+      });
+    }
     onLog?.(
       `[Governance] Applying least-privilege Agent Security Policy (${securityPolicyResource})...`,
       'system'
@@ -755,6 +768,14 @@ export class UnifiedDeployRunner {
         'system'
       );
       onLog?.(`[Governance] Command: ${gwCmd.commandString}`, 'system');
+      if (gwCmd.executable === 'make' && !customHttpRequester) {
+        await this.executeCommand({
+          targetDirectory,
+          executable: gwCmd.executable,
+          args: gwCmd.args,
+          onLog: (line, stream) => onLog?.(line, stream),
+        });
+      }
     }
 
     // Execute live Google Cloud OnePlatform REST provisioning (Agent Engine Telemetry, Agent Registry discovery, IAP + UAP Security Policies, Model Armor Template, Shared Regional Agent Gateway + AuthzExtensions/AuthzPolicies, and Vertex AI Evaluation Dataset & Experiment registration)
@@ -924,6 +945,7 @@ export class UnifiedDeployRunner {
         displayName,
         description,
         deployedResourceUri,
+        serviceUrl,
         geminiEnterpriseAppId: appId,
         geminiEnterpriseLocation: geminiLocation,
         agentGatewayResource: gatewayToBind,
@@ -934,6 +956,14 @@ export class UnifiedDeployRunner {
         'system'
       );
       onLog?.(`[Gemini Enterprise] Command: ${pubCmd.commandString}`, 'system');
+      if (pubCmd.executable === 'make' && !customHttpRequester) {
+        await this.executeCommand({
+          targetDirectory,
+          executable: pubCmd.executable,
+          args: pubCmd.args,
+          onLog: (line, stream) => onLog?.(line, stream),
+        });
+      }
 
       const published = await activeProvisioner.publishToGeminiEnterprise({
         projectId,

@@ -165,9 +165,11 @@ export class AgentRunnerManager {
    * @author Mike Nimer <mikenimer@google.com>
    */
   public async sendStatus(bridge: WebviewBridge, targetPort?: number): Promise<void> {
-    // Section 1: Resolve target port and probe health
+    // Section 1: Resolve target port and probe health (/health and /healthz)
     const port = targetPort || this.lastRunningPort || 8000;
-    const isAlive = await this.healthCheck.httpGetCheck(port, '/health', 600);
+    const isAlive =
+      (await this.healthCheck.httpGetCheck(port, '/health', 600)) ||
+      (await this.healthCheck.httpGetCheck(port, '/healthz', 600));
     const isProcessTracked = this.processManager.activeLocalRunners.size > 0;
     const isRunning = isAlive || isProcessTracked;
 

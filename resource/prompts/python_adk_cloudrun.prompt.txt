@@ -127,7 +127,7 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
      * **Core Server Configuration**:
        - Import and use Google ADK's `get_fast_api_app(agents_dir=..., web=True, trigger_sources=[...])` from `google.adk.cli.fast_api` to automatically mount built-in ADK routes (`/run_sse`, `/apps/{app}/trigger/pubsub`, health checks, etc.).
        - Initialize ADK's `InMemorySessionService()` (or configured persistence) and construct `Runner(agent=root_agent, app_name=..., session_service=session_service, auto_create_session=True)` with `auto_create_session=True` to guarantee sessions are automatically provisioned on request.
-       - Expose `GET /healthz` returning `{"status": "ok", "agent": root_agent.name}` for Cloud Run health probes.
+       - Expose both `GET /health` and `GET /healthz` returning `{"status": "ok", "agent": root_agent.name}` for local runner and Cloud Run health probes.
      * **Direct Query & Test Execution Routes (`POST /` and `POST /api/run`)**:
        - ALWAYS expose `@app.post("/")` and `@app.post("/api/run")` so the Visual Agent Designer Interactive Chat tab, smoke testers, and external HTTP clients can invoke the agent directly via POST.
        - Accept flexible JSON request payloads: `{"input": {"query": "..."}}` (extension runner format), `{"query": "..."}`, `{"prompt": "..."}`, or raw strings.
@@ -257,7 +257,7 @@ You MUST output EVERY single one of the following files in the returned JSON arr
 6. `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios.
 7. `evaluate.py`: Vertex AI Agent Evaluation script using vertexai.evaluation.EvalTask.
 8. `requirements.txt`: Complete pinned dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
-9. `Makefile`: Self-contained CLI & CI/CD automation Makefile with `install`, `dev`, `test`, `infra`, and `deploy` targets.
+9. `Makefile`: Self-contained CLI & CI/CD automation Makefile with `install`, `dev`, `test`, `eval`, `infra`, `deploy`, `register-agent`, `setup-gateway`, and `publish-gemini-enterprise` targets.
 10. `Dockerfile`: Clean production container definition using python:3.11-slim. Always enforce non-root execution by creating a dedicated non-privileged user (`RUN useradd -u 8888 -m appuser && chown -R appuser:appuser /app` and `USER 8888`).
 11. `.dockerignore`: Docker ignore patterns excluding `.git`, `.venv`, `__pycache__`, `*.pyc`, `.env*`, `dist`, and build artifacts.
 12. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building container, and deploying.
