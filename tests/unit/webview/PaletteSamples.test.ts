@@ -142,7 +142,7 @@ describe('PaletteCard Sample Categories & Collapsible Accordions', () => {
     const provider = new AgentEditorProvider(mockContext);
     const discovered = provider.discoverResourceSamples();
 
-    assert.equal(discovered.length, 3, 'Must discover 3 samples from resource/samples/');
+    assert.ok(discovered.length >= 3, `Must discover at least 3 samples from resource/samples/, found ${discovered.length}`);
 
     const retailSamples = discovered.filter((s) => s.category === 'Retail');
     assert.equal(

@@ -39,7 +39,7 @@
 | [**TASK-125**](#task-125) | v1.0.1 | Deployment | Native Vertex AI Agent Engine (Agent Runtime) Container Deployment & Lifecycle Management | **Complete** | TASK-106, TASK-110 |
 | [**TASK-126**](#task-126) | v1.0.0 | Extension Host | VS Code Activity Bar Container & Sidebar Workflows Explorer | **Done** | TASK-100, TASK-108 |
 | [**TASK-127**](#task-127) | v1.0.0 | Release & CI | Automated VSIX Packaging & Tag-Triggered GitHub Actions Release Workflow | **Done** | TASK-100, TASK-109 |
-| [**TASK-128**](#task-128) | v1.0.1 | Blueprints | Visual Samples & Blueprints Gallery (Samples Tab & Palette) | **In Progress** | TASK-103, TASK-108 |
+| [**TASK-128**](#task-128) | v1.0.1 | Blueprints | Visual Samples & Blueprints Gallery (Samples Tab & Palette) | **Complete** | TASK-103, TASK-108 |
 | [**TASK-129**](#task-129) | v1.0.6 | Tools | ADK Built-in Tools Registry & Cross-Harness Tool Adapter Architecture | **Done** | TASK-104, TASK-118 |
 | [**TASK-130**](#task-130) | v1.0.8 | MCP / Tools | Google Cloud Remote MCP Servers Registry in Tools Tab | **Completed** | TASK-120, TASK-129 |
 | [**TASK-131**](#task-131) | v1.1.3 | i18n | Extension Host & Webview Internationalization (i18n / l10n) | **Not Started** | TASK-100, TASK-102 |
@@ -133,6 +133,28 @@
 | [**TASK-216**](#task-216) | v1.2.0 | Deployment | Unified Self-Contained CLI & CI/CD Deployment Architecture (`Makefile`, Terraform & Cloud Build) | **Complete** | TASK-111, TASK-125, TASK-142 |
 | [**TASK-217**](#task-217) | v1.2.0 | Governance & Security | Enterprise Agent Governance Pipeline (Agent Registry, Agent Gateway + Model Armor, Security Policies & Vertex AI `EvalTask` Registration) | **Complete** | TASK-216 |
 | [**TASK-218**](#task-218) | v1.2.0 | Deployment / Gemini Enterprise | Automated Gemini Enterprise App Publishing & Discovery (`discoveryengine.googleapis.com` Integration on Deployment Tab) | **Complete** | TASK-216, TASK-217 |
+| [**TASK-219**](#task-219) | v1.2.0 | MCP / Tools | Databricks Managed MCP Servers Integration (Genie, Vector Search, Unity Catalog Functions & Databricks SQL) | **Not Started** | TASK-120, TASK-130, TASK-135 |
+| [**TASK-220**](#task-220) | v1.2.0 | MCP / Tools | Snowflake Managed & Cortex MCP Servers Integration (Cortex Analyst, Cortex Search, Cortex Agent, SQL & Custom Procedures) | **Not Started** | TASK-120, TASK-130, TASK-135 |
+| [**TASK-221**](#task-221) | v1.2.0 | A2UI / Agent UI | A2UI (Agent-to-User Interface v0.9.1) Protocol Support, Agent Drawer Configuration, A2A Adaptor Codegen & Chat Renderer | **Not Started** | TASK-103, TASK-110, TASK-116, TASK-218 |
+| [**TASK-222**](#task-222) | v1.2.0 | Samples / Retail A2UI | Retail Merchandising Workbench A2UI Agent Sample (`cloud-gtm/retail-data-and-ai-demo` / Demospace 1876) | **Not Started** | TASK-128, TASK-215, TASK-221 |
+| [**TASK-223**](#task-223) | v1.2.0 | ADK Skills | ADK Agent Skills (`SkillToolset`, Progressive Disclosure L1/L2/L3 & Dynamic Skill Factory) | **Not Started** | TASK-103, TASK-106 |
+| [**TASK-224**](#task-224) | v1.2.0 | ADK Artifacts | ADK Artifact Service (`InMemoryArtifactService` & `GcsArtifactService`), Multimodal Versioning & Chat File I/O | **Not Started** | TASK-103, TASK-110, TASK-115 |
+| [**TASK-225**](#task-225) | v1.2.0 | ADK Context | ADK Context Management (`ContextCacheConfig`, `EventsCompactionConfig` Auto-Summarization & `include_contents`) | **Not Started** | TASK-103, TASK-106 |
+| [**TASK-226**](#task-226) | v1.2.0 | ADK Planners | ADK Planners Configuration (`BuiltInPlanner` & `PlanReActPlanner` Multi-Step Reasoning Loop) | **Not Started** | TASK-103, TASK-106 |
+| [**TASK-227**](#task-227) | v1.2.0 | Tools / OpenAPI | ADK `OpenAPIToolset` Integration (OpenAPI v3 Spec Import, Endpoint Discovery & Auth) | **Not Started** | TASK-118, TASK-129 |
+| [**TASK-228**](#task-228) | v1.2.0 | Tools / Enterprise | ADK `ApplicationIntegrationToolset` (`IntegrationConnectorTool` for GCP Application Integration & Connectors) | **Not Started** | TASK-129, TASK-135 |
+| [**TASK-229**](#task-229) | v1.2.0 | Tools / RAG | ADK `VertexAiRagRetrieval` Tool (Managed Vertex AI RAG Engine Corpora Grounding) | **Not Started** | TASK-104, TASK-129 |
+| [**TASK-230**](#task-230) | v1.2.0 | Tools / BigQuery | ADK Native `BigQueryToolset` Integration (`WriteMode`, SQL Execution, Forecasting & Contribution Analysis) | **Not Started** | TASK-129 |
+| [**TASK-231**](#task-231) | v1.2.0 | Tools / Spanner | ADK Native `SpannerToolset` Integration (Parameterized SQL, Schema Inspection & Vector Similarity Search) | **Not Started** | TASK-129, TASK-199 |
+| [**TASK-232**](#task-232) | v1.2.0 | Tools / Computer Use | ADK `ComputerUseToolset` Integration (Gemini Computer Use Browser/Playwright & Desktop GUI Automation) | **Not Started** | TASK-129 |
+| [**TASK-233**](#task-233) | v1.2.0 | Tools / DB Toolbox | ADK `MCPToolboxForDatabases` (`ToolboxToolset` for AlloyDB, Cloud SQL, Spanner & Neo4j) | **Not Started** | TASK-120, TASK-129 |
+| [**TASK-234**](#task-234) | v1.2.0 | Tools / Control Flow | ADK Built-in Control Flow & Memory Tools (`exit_loop`, `transfer_to_agent`, `load_memory`, `load_artifacts`) | **Not Started** | TASK-129, TASK-192A |
+| [**TASK-235**](#task-235) | v1.2.0 | Streaming / Live | ADK Live Bidirectional Streaming (`Runner.run_live()`, `LiveRequestQueue` & Voice/Video WebRTC/WS Mode) | **Not Started** | TASK-107, TASK-110 |
+| [**TASK-236**](#task-236) | v1.2.0 | Memory / Long-Term | ADK Cross-Session Long-Term Memory Services (`VertexAiMemoryBankService` & `VertexAiRagMemoryService`) | **Not Started** | TASK-115, TASK-125 |
+| [**TASK-237**](#task-237) | v1.2.0 | Deployment / GKE | Google Kubernetes Engine (GKE Autopilot) Deployment Target, Terraform & Agent Registry Workload Sync | **Not Started** | TASK-216, TASK-217 |
+| [**TASK-238**](#task-238) | v1.2.0 | Runtime / Multi-Lang | Multi-Language ADK Code Generation Targets (`Go` & `Java` ADK SDK Support) | **Not Started** | TASK-106, TASK-123 |
+| [**TASK-239**](#task-239) | v1.2.0 | ADK Callbacks | ADK Agent-Level Lifecycle Callbacks (`before/after_agent`, `before/after_model`, `before/after_tool` with Declarative Presets, Workspace `callbacks/*.py` & AI Prompt Generator) | **Not Started** | TASK-103, TASK-106 |
+| [**TASK-240**](#task-240) | v1.2.0 | ADK Plugins | ADK Runner-Level Plugins (`ReflectAndRetryToolPlugin`, `BigQueryAgentAnalyticsPlugin`, `ContextFilterPlugin`, `SaveFilesAsArtifactsPlugin` & Custom `BasePlugin`) | **Not Started** | TASK-106, TASK-239 |
 
 ---
 
@@ -840,7 +862,7 @@
 
 ### [TASK-128] Visual Samples & Blueprints Gallery (Samples Tab & Palette)
 * **Release**: `v1.0.1`
-* **Status**: In Progress
+* **Status**: Complete
 * **Target Package/Files**:
   - `src/webview/components/Canvas/PaletteCard.tsx`
   - `src/webview/utils/sampleUtils.ts`
@@ -4979,3 +5001,664 @@ Each task specifies reverse-engineering the sample Python code into a production
        - Saves the resulting Gemini Enterprise Agent resource URI and console link into `deployment_metadata.json` and surfaces a clickable **"Open in Gemini Enterprise"** link in the Deployment Tab.
 * **Verification**:
   - Execute `npx vitest run tests/unit/extension/GeminiEnterprisePublish.test.ts` with 100% pass rate, verifying Chat Trigger conditional visibility, default-checked behavior, engine discovery, IAM service agent role binding, evaluation gate blocking on eval failure, and idempotent `POST`/`PATCH` agent registration.
+
+---
+
+<a id="task-219"></a>
+
+### [TASK-219] Databricks Managed MCP Servers Integration (Genie, Vector Search, Unity Catalog Functions & Databricks SQL)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: MCP / Enterprise Data Cloud Tools
+* **Dependencies**: `TASK-120`, `TASK-130`, `TASK-135`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `DatabricksMcpServiceType`, `DatabricksMcpServerDefinition`, and optional `databricksConfig` on `McpToolConfig`)
+  - `src/shared/types.ts` (Re-export Databricks MCP types)
+  - `src/webview/data/databricksMcpServers.ts` (New catalog of official Databricks Managed MCP servers and `createToolDefinitionFromDatabricksMcpServer()` builder)
+  - `src/webview/data/defaultTools.ts` (Include `DATABRICKS_MCP_DEFAULT_TOOLS` in `AVAILABLE_TOOLS`)
+  - `src/webview/data/builtinTools.ts` (Ensure `categorizeTools` routes Databricks MCP tools cleanly into the `MCP Servers` palette section)
+  - `src/webview/components/Canvas/PaletteCard.tsx` (Render Databricks MCP Server cards with service icons and endpoint previews)
+  - `src/webview/components/inspector/tools/McpToolDrawer.tsx` (Add structured Databricks Workspace Hostname, Service Type selector, and Unity Catalog coordinate inputs that dynamically interpolate the `/api/2.0/mcp/...` URL and pre-populate OAuth / PAT secret defaults)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Add ADK `McpToolset` + `StreamableHTTPConnectionParams` codegen rules for Databricks Managed MCP endpoints, `DATABRICKS_TOKEN` Secret Manager bindings, and `_meta.warehouse_id` header/payload conventions)
+  - `tests/unit/webview/databricksMcpServers.test.ts` (New unit test suite)
+* **Context**:
+  - **Official Architecture**: Databricks provides first-party **Managed Model Context Protocol (MCP) Servers** governed by **Unity Catalog (UC)** and exposed over Streamable HTTP under workspace endpoints (`https://<workspace-hostname>/api/2.0/mcp/...`) and Unity Gateway (`system.ai.*`), eliminating the need to self-host middleware containers.
+  - **Four Official Databricks Managed MCP Server Endpoints**:
+    1. **Databricks Genie Space (`databricks_mcp_genie` — `system.ai.genie_one_mcp`)**:
+       - **Endpoint Pattern**: `https://{workspace_hostname}/api/2.0/mcp/genie/{genie_space_id}`
+       - **OAuth Scope**: `genie`
+       - **Purpose**: Natural-language analytics routed through curated Genie Spaces and the governed Genie Ontology (business metric definitions, table relationships, and verified SQL lineage).
+       - **Required Parameters**: `workspaceHostname` (e.g., `adb-1234567890.12.azuredatabricks.net` or `my-workspace.cloud.databricks.com`), `genieSpaceId`.
+    2. **Databricks Vector Search / AI Search (`databricks_mcp_vector_search` — `system.ai.vector_search`)**:
+       - **Endpoint Pattern**: `https://{workspace_hostname}/api/2.0/mcp/vector-search/{catalog}/{schema}/{index_name}` (also supports `/api/2.0/mcp/ai-search/{catalog}/{schema}/{index_name}`)
+       - **OAuth Scope**: `vector-search` / `ai-search`
+       - **Purpose**: Semantic and hybrid similarity retrieval over Delta Sync or Direct Vector Search indexes governed by Unity Catalog permissions.
+       - **Required Parameters**: `workspaceHostname`, `catalog`, `schema`, `indexName`.
+    3. **Databricks Unity Catalog (UC) Functions (`databricks_mcp_uc_functions`)**:
+       - **Endpoint Pattern**: `https://{workspace_hostname}/api/2.0/mcp/functions/{catalog}/{schema}` (or specific function `/api/2.0/mcp/functions/{catalog}/{schema}/{function_name}`)
+       - **OAuth Scope**: `unity-catalog`
+       - **Purpose**: Exposes registered Python or SQL UDFs in Unity Catalog as callable MCP tools, dynamically reading function `COMMENT` blocks and parameter schemas for LLM tool calling.
+       - **Required Parameters**: `workspaceHostname`, `catalog`, `schema`, optional `functionName`.
+    4. **Databricks SQL Warehouse (`databricks_mcp_dbsql` — `system.ai.dbsql`)**:
+       - **Endpoint Pattern**: `https://{workspace_hostname}/api/2.0/mcp/sql`
+       - **OAuth Scope**: `sql`
+       - **Purpose**: Executes SQL queries and schema inspections directly against a designated Databricks SQL Warehouse (`warehouseId`) for data engineering and analytical workflows.
+       - **Required Parameters**: `workspaceHostname`, `warehouseId`.
+  - **Authentication & Secret Storage**:
+    - Uses `authProviderType: 'bearer_token'` with either a **Databricks Personal Access Token (`dapi...`)** or **Databricks OAuth 2.0 U2M / M2M Service Principal** (`https://{workspace_hostname}/oidc/v1/authorize` and `https://{workspace_hostname}/oidc/v1/token`).
+    - Pre-populates `secretConfig` with `secretName: 'databricks-mcp-token'` and `envVar: 'DATABRICKS_TOKEN'`, stored locally in VS Code `SecretStorage` / `.env` and provisioned in production via Google Cloud Secret Manager (`google_secret_manager_secret` in `main.tf`).
+  - **Inspector Drawer (`McpToolDrawer.tsx`)**:
+    - When editing a Databricks MCP tool (`id.startsWith('databricks_mcp_')` or `mcpConfig.databricksConfig`), render a dedicated **Databricks Managed MCP Configuration** card above the endpoint URL field:
+      - **Workspace Hostname** input (`<workspace-hostname>`, stripping `https://` automatically)
+      - **Managed Service Type** badge/selector (`genie` | `vector_search` | `uc_functions` | `dbsql`)
+      - Contextual parameter fields (`Genie Space ID`, `Catalog` + `Schema` + `Index Name` / `Function Name`, or `SQL Warehouse ID`) that live-assemble `mcpConfig.serverUrl` and OAuth URLs (`https://{workspace_hostname}/oidc/v1/authorize`).
+      - Supports live **"Test MCP Handshake & List Tools"** via `McpSubprocessManager.discoverTools()`.
+  - **Code Generation (`resource/prompts/*.prompt.txt`)**:
+    - Instruct Gemini code generation templates to emit ADK `McpToolset` using `StreamableHTTPConnectionParams(url=...)` with `header_provider=lambda ctx: {"Authorization": f"Bearer {os.environ['DATABRICKS_TOKEN']}"}`, include `DATABRICKS_TOKEN` in `.env.example`, and provision the corresponding `google_secret_manager_secret` in `main.tf`.
+* **Sub-Agent Prompt**:
+  ```
+  Implement TASK-219: Add Databricks Managed MCP Servers to the Visual Agent Designer Tools catalog, MCP Inspector Drawer, and ADK Code Generation prompts:
+  1. In src/shared/agentSpec.ts (and re-exported in src/shared/types.ts), define DatabricksMcpServiceType ('genie' | 'vector_search' | 'uc_functions' | 'dbsql'), DatabricksMcpConfig (workspaceHostname, serviceType, genieSpaceId, catalog, schema, indexName, functionName, warehouseId), and DatabricksMcpServerDefinition. Extend McpToolConfig with optional databricksConfig?: DatabricksMcpConfig.
+  2. Create src/webview/data/databricksMcpServers.ts containing the 4 official Databricks Managed MCP server catalog entries (databricks_mcp_genie, databricks_mcp_vector_search, databricks_mcp_uc_functions, databricks_mcp_dbsql), URL builder buildDatabricksMcpEndpoint(config), and createToolDefinitionFromDatabricksMcpServer(server, overrides) defaulting to Streamable HTTP, authProviderType='bearer_token', secretName='databricks-mcp-token', and envVar='DATABRICKS_TOKEN'.
+  3. Register DATABRICKS_MCP_DEFAULT_TOOLS in src/webview/data/defaultTools.ts and verify categorizeTools() in src/webview/data/builtinTools.ts places them in the MCP Servers category.
+  4. Update src/webview/components/inspector/tools/McpToolDrawer.tsx to render a Databricks Managed MCP configuration panel when a Databricks MCP tool is selected, allowing users to enter Workspace Hostname and service-specific coordinates (Genie Space ID, Unity Catalog/Schema/Index/Function, or SQL Warehouse ID) and automatically updating mcpConfig.serverUrl and OAuth endpoints.
+  5. Update resource/prompts/python_adk_agent-engine.prompt.txt and resource/prompts/python_adk_cloudrun.prompt.txt with instructions for generating ADK McpToolset(connection_params=StreamableHTTPConnectionParams(...)) with DATABRICKS_TOKEN authentication and Secret Manager Terraform resources.
+  6. Add unit tests in tests/unit/webview/databricksMcpServers.test.ts covering endpoint URL interpolation for all 4 Databricks services, tool definition creation, drawer state updates, and categorization with 100% coverage.
+  ```
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/databricksMcpServers.test.ts` with 100% pass rate.
+  - Verify all 4 Databricks Managed MCP servers appear in the Tools tab under `MCP Servers`, open in `McpToolDrawer` with dynamic `/api/2.0/mcp/...` URL construction, and test cleanly with `McpSubprocessManager`.
+
+---
+
+<a id="task-220"></a>
+
+### [TASK-220] Snowflake Managed & Cortex MCP Servers Integration (Cortex Analyst, Cortex Search, Cortex Agent, SQL & Custom Procedures)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: MCP / Enterprise Data Cloud Tools
+* **Dependencies**: `TASK-120`, `TASK-130`, `TASK-135`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `SnowflakeMcpDeploymentMode`, `SnowflakeMcpToolType`, `SnowflakeMcpConfig`, `SnowflakeMcpServerDefinition`, and optional `snowflakeConfig` on `McpToolConfig`)
+  - `src/shared/types.ts` (Re-export Snowflake MCP types)
+  - `src/webview/data/snowflakeMcpServers.ts` (New catalog of official Snowflake Managed & Cortex MCP servers, SQL DDL generator `generateSnowflakeMcpServerDdl()`, and `createToolDefinitionFromSnowflakeMcpServer()` builder)
+  - `src/webview/data/defaultTools.ts` (Include `SNOWFLAKE_MCP_DEFAULT_TOOLS` in `AVAILABLE_TOOLS`)
+  - `src/webview/data/builtinTools.ts` (Ensure `categorizeTools` routes Snowflake MCP tools into the `MCP Servers` palette section)
+  - `src/webview/components/Canvas/PaletteCard.tsx` (Render Snowflake MCP Server cards with icons and endpoint previews)
+  - `src/webview/components/inspector/tools/McpToolDrawer.tsx` (Add Snowflake Account URL, Database, Schema, MCP Server Name, Role/Warehouse inputs, Cortex tool type toggles, and a copyable `CREATE OR REPLACE MCP SERVER` SQL DDL helper)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Add ADK `McpToolset` + `StreamableHTTPConnectionParams` and `StdioConnectionParams` (`uvx snowflake-labs-mcp`) codegen rules, `SNOWFLAKE_PAT` / OAuth Secret Manager bindings, and `.env.example` templates)
+  - `tests/unit/webview/snowflakeMcpServers.test.ts` (New unit test suite)
+* **Context**:
+  - **Official Architecture**: Snowflake supports two complementary Model Context Protocol (MCP) integration modes:
+    1. **Snowflake-Managed MCP Server (Recommended for Cloud Production — Streamable HTTP)**:
+       - Hosted natively inside Snowflake as a schema-level object created via `CREATE [OR REPLACE] MCP SERVER <name> FROM SPECIFICATION $$ ... $$`.
+       - **Standard REST Endpoint Pattern**:
+         `https://{account_url}/api/v2/databases/{database}/schemas/{schema}/mcp-servers/{server_name}`
+         *(where `{account_url}` uses hyphens for account/region identifiers, e.g., `myorg-myaccount.snowflakecomputing.com`)*
+       - Enforces Snowflake Role-Based Access Control (RBAC), dynamic data masking, row-access policies, and audit trails natively.
+    2. **Open-Source `Snowflake-Labs/mcp` Server (Optional Local `stdio` Mode)**:
+       - Executed via `uvx snowflake-labs-mcp --service-config-file tools_config.yaml` for local desktop development.
+  - **Official Snowflake Managed MCP Server Catalog Entries & Tool Types**:
+    1. **Snowflake Cortex Analyst MCP (`snowflake_mcp_cortex_analyst` — `CORTEX_ANALYST_MESSAGE`)**:
+       - Translates natural language questions into governed SQL using Snowflake Semantic Views (`semantic_view`) or stage-hosted Semantic Model YAML files (`@db.schema.stage/model.yaml`).
+    2. **Snowflake Cortex Search MCP (`snowflake_mcp_cortex_search` — `CORTEX_SEARCH_SERVICE_QUERY`)**:
+       - Performs hybrid vector and keyword RAG retrieval over unstructured enterprise documents indexed in a Snowflake Cortex Search Service (`db.schema.search_service_name`).
+    3. **Snowflake Cortex Agent MCP (`snowflake_mcp_cortex_agent` — `CORTEX_AGENT_RUN`)**:
+       - Delegates multi-step orchestration combining structured Cortex Analyst queries and unstructured Cortex Search retrieval to a Snowflake Cortex Agent.
+    4. **Snowflake SQL Execution & Custom Tools MCP (`snowflake_mcp_sql_and_tools` — `SYSTEM_EXECUTE_SQL` & `GENERIC`)**:
+       - Executes parameterized SQL statements on a target Snowflake Warehouse (`warehouse`) and invokes custom Snowflake Stored Procedures / UDFs (`GENERIC` tool type).
+  - **Authentication & Secret Storage**:
+    - Uses `authProviderType: 'bearer_token'` supporting **Snowflake Programmatic Access Tokens (PAT)** or **Snowflake OAuth 2.0 Security Integrations** (`https://{account_url}/oauth/authorize` and `https://{account_url}/oauth/token-request`).
+    - Pre-populates `secretConfig` with `secretName: 'snowflake-mcp-token'` and `envVar: 'SNOWFLAKE_MCP_TOKEN'` (stored locally in VS Code `SecretStorage` / `.env` and deployed via Google Cloud Secret Manager in `main.tf`).
+  - **Inspector Drawer (`McpToolDrawer.tsx`)**:
+    - When editing a Snowflake MCP tool (`id.startsWith('snowflake_mcp_')` or `mcpConfig.snowflakeConfig`), render a dedicated **Snowflake Managed MCP Configuration** panel:
+      - **Account URL / Identifier** (`myorg-myaccount.snowflakecomputing.com`, normalizing underscores to hyphens per Snowflake REST API requirements)
+      - **Database**, **Schema**, and **MCP Server Object Name** inputs that dynamically build `https://{account_url}/api/v2/databases/{database}/schemas/{schema}/mcp-servers/{server_name}`
+      - **Target Warehouse & Role** optional metadata fields (`warehouse`, `role`) and **Cortex Target Resource** (`semanticView`, `searchServiceName`, `agentName`, or `procedureName`)
+      - **Copyable `CREATE MCP SERVER` SQL DDL Preview**: Generates the exact Snowflake SQL DDL (`CREATE OR REPLACE MCP SERVER ... FROM SPECIFICATION $$ ... $$`) so the user can provision the MCP server object in a Snowflake worksheet with one click.
+  - **Code Generation (`resource/prompts/*.prompt.txt`)**:
+    - Instruct Gemini code generation templates to emit ADK `McpToolset` with `StreamableHTTPConnectionParams(url=...)` and `header_provider=lambda ctx: {"Authorization": f"Bearer {os.environ['SNOWFLAKE_MCP_TOKEN']}"}` (or `StdioConnectionParams` with `uvx snowflake-labs-mcp` when `stdio` transport is selected), populate `.env.example`, and provision `google_secret_manager_secret` in `main.tf`.
+* **Sub-Agent Prompt**:
+  ```
+  Implement TASK-220: Add Snowflake Managed & Cortex MCP Servers to the Visual Agent Designer Tools catalog, MCP Inspector Drawer, and ADK Code Generation prompts:
+  1. In src/shared/agentSpec.ts (and re-exported in src/shared/types.ts), define SnowflakeMcpToolType ('CORTEX_ANALYST_MESSAGE' | 'CORTEX_SEARCH_SERVICE_QUERY' | 'CORTEX_AGENT_RUN' | 'SYSTEM_EXECUTE_SQL' | 'GENERIC'), SnowflakeMcpConfig (accountUrl, database, schema, mcpServerName, toolType, semanticView, searchServiceName, cortexAgentName, warehouse, role), and SnowflakeMcpServerDefinition. Extend McpToolConfig with optional snowflakeConfig?: SnowflakeMcpConfig.
+  2. Create src/webview/data/snowflakeMcpServers.ts containing the 4 official Snowflake MCP server catalog entries (snowflake_mcp_cortex_analyst, snowflake_mcp_cortex_search, snowflake_mcp_cortex_agent, snowflake_mcp_sql_and_tools), URL builder buildSnowflakeMcpEndpoint(config) normalizing underscores to hyphens in account hostnames, SQL DDL helper generateSnowflakeMcpServerDdl(config), and createToolDefinitionFromSnowflakeMcpServer(server, overrides) defaulting to Streamable HTTP, authProviderType='bearer_token', secretName='snowflake-mcp-token', and envVar='SNOWFLAKE_MCP_TOKEN'.
+  3. Register SNOWFLAKE_MCP_DEFAULT_TOOLS in src/webview/data/defaultTools.ts and verify categorizeTools() in src/webview/data/builtinTools.ts places them in the MCP Servers category.
+  4. Update src/webview/components/inspector/tools/McpToolDrawer.tsx to render a Snowflake Managed MCP configuration panel when a Snowflake MCP tool is selected, allowing users to enter Account URL, Database, Schema, MCP Server Name, and Cortex service coordinates, automatically updating mcpConfig.serverUrl and OAuth URLs, and displaying a copyable 'CREATE OR REPLACE MCP SERVER' SQL DDL snippet.
+  5. Update resource/prompts/python_adk_agent-engine.prompt.txt and resource/prompts/python_adk_cloudrun.prompt.txt with instructions for generating ADK McpToolset(connection_params=StreamableHTTPConnectionParams(...)) with SNOWFLAKE_MCP_TOKEN authentication and Secret Manager Terraform resources.
+  6. Add unit tests in tests/unit/webview/snowflakeMcpServers.test.ts covering endpoint URL construction, account hostname underscore normalization, SQL DDL specification generation, tool definition creation, and categorization with 100% coverage.
+  ```
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/snowflakeMcpServers.test.ts` with 100% pass rate.
+  - Verify all 4 Snowflake MCP servers appear in the Tools tab under `MCP Servers`, open in `McpToolDrawer` with dynamic `/api/v2/databases/{db}/schemas/{schema}/mcp-servers/{name}` URL construction and SQL DDL preview, and test cleanly with `McpSubprocessManager`.
+
+---
+
+<a id="task-221"></a>
+
+### [TASK-221] A2UI (Agent-to-User Interface v0.9.1) Protocol Support, Agent Drawer Configuration, A2A Adaptor Codegen & Chat Renderer
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: A2UI / Generative Agent UI & Gemini Enterprise Integration
+* **Dependencies**: `TASK-103`, `TASK-110`, `TASK-116`, `TASK-218`
+* **Target Package/Files**:
+  - **Shared Domain Models**:
+    - `src/shared/agentSpec.ts` (Add `A2UICatalogType`, `A2UIGenerationMode`, `A2UIActionHandlerRule`, `A2UISurfaceTemplate`, `A2UIConfig`, and `a2uiConfig?: A2UIConfig` on `AgentNodeData` / `AgentData`)
+    - `src/shared/types.ts` (Re-export A2UI domain types)
+  - **Widget Catalog Registry**:
+    - `src/webview/data/a2uiCatalogRegistry.ts` (New catalog registry defining A2UI v0.9.1 Basic Catalog widgets, Gemini Enterprise Material Catalog `https://a2ui.org/specification/v0_9/material_catalog.json` widgets, and Gemini Enterprise Composite Catalog `https://www.gstatic.com/vertexaisearch/a2ui/v0_9/gemini_enterprise_composite_catalog.json` widgets)
+  - **Canvas Node Badge & Inspector Drawer UI**:
+    - `src/webview/components/nodes/AgentNode.tsx` (Render `A2UI v0.9` pill badge on agents with `a2uiConfig.enabled === true`)
+    - `src/webview/components/inspector/StandardAgentDrawer.tsx` & `src/webview/components/inspector/A2UIConfigSection.tsx` (New collapsible **Rich UI (A2UI v0.9.1)** accordion section in the Agent Inspector Drawer)
+  - **In-IDE Chat Runner A2UI Surface Renderer**:
+    - `src/webview/components/runner/A2UISurfaceRenderer.tsx` (New interactive React renderer translating A2UI v0.9.1 `createSurface`, `updateComponents`, `updateDataModel`, and `deleteSurface` messages + `application/a2ui+json` parts into live Material/React widgets in the Chat Runner tab and dispatching `UserAction` events on button/form interactions)
+    - `src/webview/components/runner/ChatMessageRenderer.tsx` (Detect and render A2UI JSON / `application/a2ui+json` payloads via `A2UISurfaceRenderer`)
+  - **Prompt-Driven Code Generation (`resource/prompts/*.prompt.txt`)**:
+    - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Add codegen rules for `a2ui_executor.py`, `a2ui_adaptor.py`, `a2ui_components.py` typed Python builder library, and `SendA2uiToClientToolset`)
+  - **Unit Tests**:
+    - `tests/unit/webview/a2uiCatalogAndDrawer.test.ts` (New)
+    - `tests/unit/webview/A2UISurfaceRenderer.test.ts` (New)
+* **Context**:
+  - **Reference Architecture**: [Using A2UI with ADK - Design Patterns (`go/a2ui-adk-design-patterns`)](https://docs.google.com/document/d/1fx5Kc1HXvWyOFxs41k4Y4lmp4zXz4NiVZyQQU4yz03o/edit?tab=t.0#heading=h.ew5rfo4l3tbq)
+  - **Architectural Placement (Capability on Agent Node + Built-in Toolset, NOT a Separate Canvas Node)**:
+    - In the `Using A2UI with ADK` design patterns, A2UI is not a standalone downstream agent—it is an **interaction & presentation layer** wrapping an ADK Agent (`AgentExecutor` + `A2uiAdaptor` + `SendA2uiToClientToolset` / State-Driven Component Builder) where each sub-agent or root agent can emit its own domain UI surface and handle structured `UserAction` events.
+    - Making A2UI a **configurable capability on `AgentNode`** (`a2uiConfig` in `StandardAgentDrawer` / `SynthesizerAgentDrawer` / `HitlAgentDrawer`) avoids doubling canvas node counts while allowing any agent in a multi-agent hierarchy to render rich UI surfaces.
+  - **Three Supported A2UI Widget Catalogs (v0.9.1)**:
+    1. **Gemini Enterprise Material Catalog (`material_v09` — Recommended Default for GE)**:
+       - Catalog URI: `https://a2ui.org/specification/v0_9/material_catalog.json`
+       - **Layout**: `MaterialColumn`, `MaterialRow`, `MaterialCard`, `MaterialDivider`, `MaterialGridList`, `MaterialExpansionPanel`
+       - **Content**: `MaterialText` (`h1`–`h5`, `subtitle1`–`2`, `body1`–`2`, `caption`), `MaterialIcon`, `MaterialImage`, `MaterialBadge`
+       - **Actions**: `MaterialButton` (`text`, `filled`, `elevated`, `outlined`, `tonal`, `icon`, `fab`, `mini-fab`), `MaterialIconButton`, `MaterialButtonToggle`, `MaterialMenu`
+       - **Inputs (Two-Way Data Model Bound via `{path: "/field"}`)**: `MaterialInput`, `MaterialCheckbox`, `MaterialSlideToggle`, `MaterialRadioButton`, `MaterialSelect`, `MaterialChips`, `MaterialSlider`, `MaterialDatepicker`, `MaterialTimepicker`
+       - **Feedback & Overlays**: `MaterialProgressBar`, `MaterialProgressSpinner`, `MaterialDialog`
+       - **Data Display**: `MaterialTabs`, `MaterialTable`
+    2. **Gemini Enterprise Composite & Custom Catalog (`gemini_enterprise_composite_v09`)**:
+       - Catalog URI: `https://www.gstatic.com/vertexaisearch/a2ui/v0_9/gemini_enterprise_composite_catalog.json`
+       - **Rich Visualizations & Enterprise Widgets**: `VegaChart` (Vega-Lite v5 specs), `InteractiveChart` (Studio Viz bar/line/pie charts), `RichTable` (Data Studio interactive table), `GoogleMap` + `PlaceDetailsCompact`, `MosaicCarousel` + `MosaicSlideCard`, `Stepper` (multi-step reasoning/workflow progress), `SplitButton`, `RightPanelForm`, `WorkOrderList`, `SowList`
+    3. **OSS Basic Catalog (`basic_v09`)**:
+       - **18 Standard Primitives**: `Text`, `Image`, `Icon`, `Video`, `AudioPlayer`, `Row`, `Column`, `List`, `Card`, `Tabs`, `Modal`, `Divider`, `Button`, `TextField`, `CheckBox`, `ChoicePicker`, `Slider`, `DateTimeInput`
+  - **Three A2UI Generation Design Patterns (from `go/a2ui-adk-design-patterns`)**:
+    1. **`state_adapter` (Deterministic Python Component Builder from Session State / `output_schema` — Recommended for Production)**:
+       - The ADK Agent remains focused on reasoning/tools and writes structured data to `session.state[output_key]`.
+       - The generated `A2uiAdaptor` inspects the updated state key after the turn and deterministically builds the A2UI `createSurface` + `updateComponents` + `updateDataModel` payload using the generated Python `a2ui_components.py` builder library (zero O(state) prompt bloat, zero JSON schema hallucinations, supports large `VegaChart` / `MaterialTable` payloads).
+    2. **`dsl_template` (Compact LLM DSL -> Python Component Library)**:
+       - The LLM emits a tiny JSON DSL (e.g. `{"render_surface": "po_approval_form", "data": {...}}`) which the `A2uiAdaptor` expands into a 100+ component A2UI surface via a Python template function.
+    3. **`llm_toolset` (Dynamic LLM Generation via `SendA2uiToClientToolset`)**:
+       - Attaches `SendA2uiToClientToolset` (`send_a2ui_json_to_client`) to the ADK Agent so the LLM dynamically composes A2UI JSON validated against the active catalog schema.
+  - **Automatic vs. User-Defined Responsibilities**:
+    - **Automatic (Handled by Designer & Generated Scaffold)**:
+      - A2A transport negotiation (`v0.9.1` / `v0.8`) and `application/a2ui+json` `DataPart` wrapping (`create_a2ui_part`).
+      - Generation of `a2ui_executor.py` (`AgentExecutor` subclass bridging A2A `execute()`/`cancel()` and `TaskState.working` progress events from ADK thoughts/tool calls).
+      - Generation of `a2ui_adaptor.py` (MVC Controller routing incoming `UserAction` button clicks/form submissions vs. plain text queries, plus `state_delta` session state updates).
+      - Generation of `a2ui_components.py` (strongly-typed Python fluent builder classes for `MaterialCard`, `MaterialColumn`, `MaterialRow`, `MaterialTable`, `MaterialInput`, `MaterialButton`, `VegaChart`, etc.).
+      - Built-in non-LLM controller handlers for standard utility actions (`help`, `about`, `reset`) and automatic A2UI action-confirmation forms for tools with `require_confirmation=True`.
+    - **User-Defined (Configured in the Agent Inspector Drawer)**:
+      - **Enable A2UI Toggle** (`a2uiConfig.enabled`) & **Target Catalog** (`material_v09` | `gemini_enterprise_composite_v09` | `basic_v09`).
+      - **Generation Pattern** (`state_adapter` | `dsl_template` | `llm_toolset`).
+      - **Allowed Widgets / Surface Templates**: Selecting which widgets or pre-built surface templates (e.g., *Data Table + Chart*, *Approval Form*, *Contact/Entity Card*, *Interactive Map*, or pasted A2UI Composer JSON) map to the agent's `outputSchema` / state keys.
+      - **Controller Action Routing Rules**: Mapping UI button `action.event.name` IDs (e.g., `submit_po`, `adjust_price`, `approve_loan`) to either:
+        1. **Direct Deterministic Tool Call** (invokes a Python tool directly in the adaptor without an LLM round-trip),
+        2. **Session State Update (`state_delta`)**, or
+        3. **Templated Prompt to Agent** (converts form context into a precise agent instruction).
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/a2uiCatalogAndDrawer.test.ts tests/unit/webview/A2UISurfaceRenderer.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-222"></a>
+
+### [TASK-222] Retail Merchandising Workbench A2UI Agent Sample (`cloud-gtm/retail-data-and-ai-demo` / Demospace 1876)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Samples / Customer Experience & Retail (A2UI v0.9.1 Showcase)
+* **Dependencies**: `TASK-128`, `TASK-215`, `TASK-221`
+* **Target Package/Files**:
+  - **Sample Blueprint & Documentation**:
+    - `resource/samples/merchandising_agent_a2ui/merchandising_agent_a2ui.agent`
+    - `resource/samples/merchandising_agent_a2ui/README.md`
+  - **A2UI v0.9.1 Surface Builders, MVC Controller & Action Handlers (`a2ui/`)**:
+    - `resource/samples/merchandising_agent_a2ui/a2ui/__init__.py`
+    - `resource/samples/merchandising_agent_a2ui/a2ui/a2ui_component.py` (Typed Python builder library for A2UI v0.9.1 Material & Gemini Enterprise Composite widgets, modeled on `agents/adk-agents/a2ui_util/src/a2ui_component/a2ui_component.py`)
+    - `resource/samples/merchandising_agent_a2ui/a2ui/a2ui_adaptor.py` (MVC Controller `A2uiAdaptor` routing incoming `UserAction` events, `state_delta` updates, and deterministic non-LLM actions `help`, `about`, `show_skills`, `feedback`, `bug`)
+    - `resource/samples/merchandising_agent_a2ui/a2ui/alarm_ui.py` (A2UI Material component tree for active alarms ranking dashboard, drill-down details, and recommendations)
+    - `resource/samples/merchandising_agent_a2ui/a2ui/map_chart.py` (`VegaChart` geographic inventory & store transfer map visualization)
+    - `resource/samples/merchandising_agent_a2ui/a2ui/purchase_order_submission_dialog.py` (Interactive A2UI Store Transfer / Purchase Order confirmation & override dialog with `po-submission-dialog` ID prefix and two-way data model paths `/selectedWarehouse`, `/transferQuantity`, `/overrideReason`)
+    - `resource/samples/merchandising_agent_a2ui/a2ui/action_handlers.py` (`PriceAdjustmentHandler`, `StoreTransferHandler`, `ProductDescriptionApprovalHandler`, and `CustomerReviewResolutionHandler`)
+  - **Dual-Mode Retail Data Cloud Toolsets & Seed Data (`tools/` & `data/<target>/`)**:
+    - `resource/samples/merchandising_agent_a2ui/tools/__init__.py`
+    - `resource/samples/merchandising_agent_a2ui/tools/merchandising_tools.py` (Active alarms ranking across BigQuery forecasting, Cloud Spanner, AlloyDB, and SAP BDC Cortex; stockout & store transfer optimization; competitor price correlation; weather-driven product description enrichment; negative customer review triage)
+    - `resource/samples/merchandising_agent_a2ui/data/initial_session_state.json` (Sam — Supplier/Merchandising Manager persona, active alarms queue, store locations, and company business rules)
+    - `resource/samples/merchandising_agent_a2ui/data/bigquery/active_alarms_and_forecasts.json` (Ranked alarms: Stockout Alert, Competitor Price Opportunity, Southern California Heat Wave AC Product Description Enrichment, and Negative Customer Review)
+    - `resource/samples/merchandising_agent_a2ui/data/alloydb/store_inventory_and_pricing.json` (Store/warehouse inventory levels, transit times, shipping costs, and competitor price correlation matrices)
+    - `resource/samples/merchandising_agent_a2ui/data/sap_cortex/sap_bdc_purchase_orders.json` (Near-real-time SAP Business Data Cloud / Cortex ERP inventory & PO records)
+  - **Unit & A2UI Fixture Tests**:
+    - `resource/samples/merchandising_agent_a2ui/tests/test_merchandising_a2ui.py` (Python `unittest` suite validating `alarm_ui.py`, `map_chart.py`, `purchase_order_submission_dialog.py`, `PriceAdjustmentHandler`, and `a2ui_adaptor.py` non-LLM + form submission `UserAction` routing, plus A2UI Composer JSON fixture output)
+* **Context**:
+  - **Reference Repository & Live Demo**:
+    - GitHub Repo: [`https://github.com/cloud-gtm/retail-data-and-ai-demo`](https://github.com/cloud-gtm/retail-data-and-ai-demo) (`agents/adk-agents/merchandising-agent` and `agents/adk-agents/a2ui_util`)
+    - Demospace Demo: [`https://demospace.corp.goog/demo/Agentic-Data-Cloud/1876`](https://demospace.corp.goog/demo/Agentic-Data-Cloud/1876) (*Agentic Data Cloud — Merchandising Agent Demo*)
+    - Design Pattern Spec: [Using A2UI with ADK - Design Patterns (`go/a2ui-adk-design-patterns`)](https://docs.google.com/document/d/1fx5Kc1HXvWyOFxs41k4Y4lmp4zXz4NiVZyQQU4yz03o/edit?tab=t.0#heading=h.ew5rfo4l3tbq)
+  - **End-to-End Demo 1876 Storyline ("Sam, Supplier & Merchandising Manager" in Gemini Enterprise)**:
+    1. **Morning Triage — Active Alarms Ranking & Geographic Map (`alarm_ui.py` + `map_chart.py`)**:
+       - Sam starts his day asking if any event requires attention.
+       - The agent queries BigQuery demand forecasts, operational databases (Cloud Spanner, AlloyDB), cross-cloud lakehouses, and near-real-time SAP data (via SAP BDC Connect for BigQuery and Cortex Framework).
+       - Applies company business rules to rank active alarms by urgency/margin impact, explains why the #1 alarm is most pressing, and renders an interactive **A2UI Alarms Dashboard (`MaterialCard` + `MaterialExpansionPanel` + `MaterialTable`)** alongside a **`VegaChart` Geographic Store & Inventory Map (`map_chart.py`)**.
+    2. **Alarm #1 — Stockout Prevention & Store Transfer / PO Form (`purchase_order_submission_dialog.py`)**:
+       - A potential regional store stockout is detected. The agent evaluates available warehouse/store inventory, transit times, and shipping costs, and recommends the optimal store-to-store transfer or supplier purchase order.
+       - Renders an interactive **A2UI Store Transfer / PO Submission Dialog** (`po-submission-dialog`) with pre-populated recommendations bound to the A2UI data model (`MaterialSelect`, `MaterialInput`, `MaterialCheckbox`, `MaterialButton`). Sam can accept the recommendation or override the source warehouse/quantity and click **Confirm Transfer / Submit PO**, firing a structured `UserAction` (`submit_po`) that posts to the system of record and re-ranks the remaining alarms.
+    3. **Alarm #2 — Competitor Price Correlation & Interactive Price Adjustment (`PriceAdjustmentHandler`)**:
+       - With the stockout resolved, the agent re-ranks the queue and surfaces a pricing opportunity triggered by competitor price correlation.
+       - Proposes a new margin-optimal price using company pricing rules inside an interactive **A2UI Price Adjustment Form** (`MaterialSlider` / `MaterialInput` bound to `{path: "/adjustedPrice"}` + **Apply Price Update** `MaterialButton`).
+       - When Sam confirms (or overrides) the price, `PriceAdjustmentHandler` processes the `UserAction` (`adjust_price`) with `state_delta` updates and commits the price change.
+    4. **Alarm #3 — Weather-Driven Product Description Enrichment (Southern California Heat Wave AC Unit)**:
+       - Correlates a regional weather event (heat wave in Southern California) with a floor-standing air conditioner whose current catalog description is bland and underperforming.
+       - Uses Gemini to generate a compelling, heat-wave-tailored product description and presents a side-by-side **A2UI Content Comparison & Approval Card** (`MaterialCard` + editable `MaterialInput` + **Approve & Publish** `MaterialButton`).
+    5. **Alarm #4 — Negative Customer Review Triage & Action Card**:
+       - Evaluates a newly arrived negative customer review, proposes remediation actions and a personalized response, and renders an **A2UI Review Triage Card** for one-click approval.
+    6. **Deterministic Non-LLM Controller Actions (`a2ui_adaptor.py`)**:
+       - Top-bar/inline A2UI utility buttons (`help`, `about`, `show_skills`, `feedback`, `bug`) are intercepted directly by `A2uiAdaptor` in Python and return instant A2UI surfaces without an LLM round-trip.
+  - **Multi-Agent Canvas Topology & A2UI Configuration (`TASK-221`)**:
+    - **Root Coordinator (`merchandising_workbench_coordinator`, `isStartNode: true`)**:
+      - Configured with `a2uiConfig`:
+        - `enabled: true`
+        - `catalog: 'gemini_enterprise_composite_v09'` (with `material_v09` widgets enabled)
+        - `generationMode: 'state_adapter'`
+        - `surfaceTemplates`: `['alarm_dashboard', 'vega_store_map', 'po_submission_dialog', 'price_adjustment_card', 'product_description_card', 'review_triage_card']`
+        - `actionHandlers`: deterministic & state-delta rules for `help`, `about`, `show_skills`, `feedback`, `select_alarm`, `submit_po`, `adjust_price`, `approve_description`, and `resolve_review`.
+    - **4 Specialized Sub-Agents**:
+      1. **`alarm_ranking_agent` (Active Alarms & SAP/BigQuery Intelligence Agent)**: Queries BigQuery forecasts and SAP BDC Cortex data to rank active merchandising alarms and populate `session.state["active_alarms"]` + `VegaChart` map coordinates.
+      2. **`inventory_transfer_agent` (Stockout & Store Transfer / PO Agent)**: Evaluates AlloyDB/Spanner inventory and shipping lanes, populates `session.state["transfer_recommendation"]` for `purchase_order_submission_dialog.py`, and executes approved transfers/POs.
+      3. **`pricing_intelligence_agent` (Competitor Price Correlation & Elasticity Agent)**: Analyzes competitor price movements, calculates rule-compliant price recommendations, and binds to `PriceAdjustmentHandler`.
+      4. **`catalog_review_agent` (Weather-Driven Copy Enrichment & Review Triage Agent)**: Uses Google Search Grounding (`bypass_multi_tools_limit=True`) + regional weather signals to enrich product descriptions and triage negative customer reviews.
+  - **Model & Canvas Rules**:
+    - All agents use `gemini-3.8-flash` on Vertex AI `global` region (`location="global"`).
+    - All node coordinates aligned to the 8pt grid (`x % 8 == 0`, `y % 8 == 0`).
+    - Sub-agent edges use solid blue (`#3b82f6`, `strokeWidth: 2`, `animated: true`); Chat and Test Suite triggers use dashed amber (`#f59e0b`, `strokeDasharray: "5 5"`, `animated: true`).
+* **Sub-Agent Prompt**:
+  ```
+  Implement TASK-222: Create the 'merchandising_agent_a2ui' sample in resource/samples/merchandising_agent_a2ui/ based on cloud-gtm/retail-data-and-ai-demo (agents/adk-agents/merchandising-agent and a2ui_util) driving Demospace Demo 1876, powered by A2UI v0.9.1 (TASK-221):
+  1. Create the A2UI v0.9.1 Python package under resource/samples/merchandising_agent_a2ui/a2ui/:
+     - a2ui_component.py: Typed Python builder classes for Material & Composite widgets (MaterialCard, MaterialColumn, MaterialRow, MaterialText, MaterialButton, MaterialInput, MaterialSelect, MaterialSlider, MaterialCheckbox, MaterialTable, MaterialExpansionPanel, VegaChart).
+     - alarm_ui.py: Builds the ranked Active Alarms A2UI surface with severity badges, business rule explanations, and drill-down action buttons.
+     - map_chart.py: Builds the VegaChart geographic map surface showing store locations, stockout risk, and warehouse transfer routes.
+     - purchase_order_submission_dialog.py: Builds the interactive Store Transfer / PO confirmation dialog (ID prefix 'po-submission-dialog') with two-way data model bindings (/selectedWarehouse, /transferQuantity, /overrideReason) and Confirm/Override button actions.
+     - action_handlers.py: Implements PriceAdjustmentHandler, StoreTransferHandler, ProductDescriptionApprovalHandler, and CustomerReviewResolutionHandler.
+     - a2ui_adaptor.py: Implements A2uiAdaptor routing UserAction payloads (both deterministic non-LLM actions: help, about, show_skills, feedback, bug and domain actions: select_alarm, submit_po, adjust_price, approve_description, resolve_review) with session state_delta updates.
+  2. Create dual-mode seed data and tools under resource/samples/merchandising_agent_a2ui/data/ and tools/merchandising_tools.py covering the 4 Demo 1876 scenarios (Stockout Store Transfer, Competitor Price Adjustment, SoCal Heat Wave AC Product Description Enrichment, and Negative Customer Review Triage).
+  3. Create resource/samples/merchandising_agent_a2ui/merchandising_agent_a2ui.agent with:
+     - Root agent ('merchandising_workbench_coordinator', isStartNode=true, model='gemini-3.8-flash') configured with a2uiConfig (enabled=true, catalog='gemini_enterprise_composite_v09', generationMode='state_adapter', surfaceTemplates, and actionHandlers).
+     - 4 specialized sub-agents ('alarm_ranking_agent', 'inventory_transfer_agent', 'pricing_intelligence_agent', 'catalog_review_agent').
+     - Chat trigger and Test Suite trigger with 10+ end-to-end test scenarios covering the full Demo 1876 storyline and A2UI surface emissions.
+  4. Add comprehensive Python unit tests in resource/samples/merchandising_agent_a2ui/tests/test_merchandising_a2ui.py (including A2UI Composer JSON validation for po_form_test and alarm_ui).
+  ```
+* **Verification**:
+  - Execute `python3 -m unittest discover -s resource/samples/merchandising_agent_a2ui/tests -v` with 100% pass rate.
+  - Validate `merchandising_agent_a2ui.agent` loads cleanly via `AgentEditorProvider.discoverResourceSamples()` with `a2uiConfig.enabled === true`, valid 8pt grid coordinates, and valid handle bindings.
+
+---
+
+<a id="task-223"></a>
+
+### [TASK-223] ADK Agent Skills (`SkillToolset`, Progressive Disclosure L1/L2/L3 & Dynamic Skill Factory)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: ADK Core / Agent Skills (`google.adk.tools.skill_toolset`)
+* **Dependencies**: `TASK-103`, `TASK-106`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `AgentSkillDefinition`, `SkillSourceType`: `'inline' | 'workspace_dir' | 'external_repo'`, `SkillFactoryConfig`, and `skills?: AgentSkillDefinition[]` on `AgentNodeData`)
+  - `src/webview/components/inspector/SkillsSection.tsx` (New Inspector Drawer section to author inline `SKILL.md` frontmatter/instructions, attach workspace `skills/<name>/SKILL.md` directories with `references/` and `scripts/`, or toggle **Skill Factory** mode)
+  - `src/webview/components/nodes/AgentNode.tsx` (Display attached skills count badge on Agent Node)
+  - `src/extension/AgentEditorProvider.ts` (Sync sibling `skills/` folders during code generation and workspace export)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `from google.adk.tools.skill_toolset import SkillToolset, Skill` and generate `skills/<skill_name>/SKILL.md` files)
+  - `tests/unit/webview/agentSkills.test.ts` (New)
+* **Context**:
+  - Implements the official ADK Agent Skills specification (`https://adk.dev/skills/`) using **Progressive Disclosure**:
+    - **L1 (Startup Metadata, ~100 tokens)**: `name` and `description` from `SKILL.md` YAML frontmatter injected into the agent menu.
+    - **L2 (On-Demand Instructions)**: Full `SKILL.md` markdown instructions loaded dynamically when the agent invokes the skill.
+    - **L3 (Deep References & Scripts)**: Supporting files in `references/`, `scripts/`, and `assets/` loaded only when requested by the skill workflow.
+  - Also supports the **Skill Factory Pattern**, allowing an agent to author and persist new `SKILL.md` files at runtime.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/agentSkills.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-224"></a>
+
+### [TASK-224] ADK Artifact Service (`InMemoryArtifactService` & `GcsArtifactService`), Multimodal Versioning & Chat File I/O
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: ADK Core / Artifacts (`google.adk.artifacts`)
+* **Dependencies**: `TASK-103`, `TASK-110`, `TASK-115`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `ArtifactServiceType`: `'none' | 'in_memory' | 'gcs'`, `ArtifactServiceConfig` with `gcsBucketName`, `defaultScope`: `'session' | 'user'`, `allowedMimeTypes`, and `artifactConfig?: ArtifactServiceConfig` on `AgentNodeData` / `WorkflowDeploymentConfig`)
+  - `src/webview/components/inspector/MemoryConfigSection.tsx` (Add **Artifact Storage (`ArtifactService`)** configuration for `InMemoryArtifactService` vs. `GcsArtifactService`)
+  - `src/webview/components/runner/ChatPanel.tsx` (Add multimodal file attachment picker and generated artifact download/version chip preview in the Chat Runner)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `InMemoryArtifactService` / `GcsArtifactService(bucket_name=...)` into `Runner(..., artifact_service=...)`, `context.save_artifact()` / `context.load_artifact()` helpers, and Terraform `google_storage_bucket` when `gcs` is selected)
+  - `tests/unit/webview/artifactServiceConfig.test.ts` (New)
+* **Context**:
+  - Implements ADK's `BaseArtifactService` (`InMemoryArtifactService` and `GcsArtifactService`) for automatically versioned binary/file management (`google.genai.types.Part` with `inline_data` & `mime_type`), supporting both session-scoped (`filename`) and persistent cross-session user-scoped (`user:filename`) namespaces.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/artifactServiceConfig.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-225"></a>
+
+### [TASK-225] ADK Context Management (`ContextCacheConfig`, `EventsCompactionConfig` Auto-Summarization & `include_contents`)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: ADK Core / Context Optimization (`google.adk.apps`)
+* **Dependencies**: `TASK-103`, `TASK-106`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `ContextCacheConfig`: `{ enabled: boolean; minTokens?: number; ttlSeconds?: number; cacheIntervals?: number }`, `EventsCompactionConfig`: `{ enabled: boolean; compactionInterval?: number; overlapSize?: number; summarizerModel?: string }`, and `includeContents?: 'default' | 'none'` on `AgentNodeData`)
+  - `src/webview/components/inspector/StandardAgentDrawer.tsx` (Add **Context & Token Optimization** controls for `include_contents`, Context Caching, and Event Compaction)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `ContextCacheConfig`, `EventsCompactionConfig`, `LlmEventSummarizer`, and `include_contents='none'` on stateless sub-agents)
+  - `tests/unit/webview/contextManagementConfig.test.ts` (New)
+* **Context**:
+  - Implements ADK's context caching (`ContextCacheConfig`) to cache large system instructions/reference contexts across turns, event compaction (`EventsCompactionConfig`) to automatically summarize older conversation events over a sliding window (`compaction_interval`, `overlap_size`), and `include_contents='none'` so specialist worker agents operate strictly on structured state inputs without parent history bloat.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/contextManagementConfig.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-226"></a>
+
+### [TASK-226] ADK Planners Configuration (`BuiltInPlanner` & `PlanReActPlanner` Multi-Step Reasoning Loop)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: ADK Core / Planners (`google.adk.planners`)
+* **Dependencies**: `TASK-103`, `TASK-106`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `AdkPlannerType`: `'none' | 'built_in' | 'plan_re_act'`, `PlannerConfig`: `{ type: AdkPlannerType; includeThoughts?: boolean; thinkingBudget?: number }` on `ModelConfig` / `AgentNodeData`)
+  - `src/webview/components/inspector/StandardAgentDrawer.tsx` (Add **Reasoning Planner** selector supporting `None`, `BuiltInPlanner` with `include_thoughts` + `thinking_budget`, and `PlanReActPlanner`)
+  - `src/webview/components/runner/ChatMessageRenderer.tsx` (Render collapsible `/*PLANNING*/` / `/*REASONING*/` / `/*REPLANNING*/` thought traces in the Chat Runner)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `BuiltInPlanner(thinking_config=types.ThinkingConfig(...))` or `PlanReActPlanner()` on `LlmAgent(planner=...)`)
+  - `tests/unit/webview/adkPlanners.test.ts` (New)
+* **Context**:
+  - Exposes ADK's two native planning strategies: `BuiltInPlanner` (delegating to Gemini's native thinking tokens) and `PlanReActPlanner` (enforcing explicit `/*PLANNING*/` -> `/*ACTION*/` -> `/*REASONING*/` -> `/*REPLANNING*/` -> `/*FINAL_ANSWER*/` scaffolding).
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/adkPlanners.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-227"></a>
+
+### [TASK-227] ADK `OpenAPIToolset` Integration (OpenAPI v3 Spec Import, Endpoint Discovery & Auth)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Tools / OpenAPI (`google.adk.tools.openapi_tool`)
+* **Dependencies**: `TASK-118`, `TASK-129`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `'openapi_toolset'` to `AdkBuiltinToolType` and `OpenApiToolsetConfig` with `specSource`: `'inline' | 'file' | 'url'`, `specContentOrUri`, `specType`: `'json' | 'yaml'`, `authSchemeType`: `'none' | 'api_key' | 'bearer' | 'oauth2' | 'service_account'`, `selectedOperations?: string[]`)
+  - `src/webview/components/palette/OpenApiToolsetModal.tsx` (New modal in Tools Tab to paste/upload/fetch an OpenAPI v3 JSON/YAML spec, preview discovered `RestApiTool` endpoints, filter operations, and configure global auth credentials via `SecretStorage`)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_toolset import OpenAPIToolset`)
+  - `tests/unit/webview/openApiToolset.test.ts` (New)
+* **Context**:
+  - Allows users to import an entire OpenAPI v3 specification (JSON or YAML) in one step so ADK automatically generates callable `RestApiTool` instances for every endpoint with unified authentication.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/openApiToolset.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-228"></a>
+
+### [TASK-228] ADK `ApplicationIntegrationToolset` (`IntegrationConnectorTool` for GCP Application Integration & Connectors)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Tools / Enterprise Integration (`google.adk.tools.application_integration_tool`)
+* **Dependencies**: `TASK-129`, `TASK-135`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `'application_integration'` to `AdkBuiltinToolType` and `ApplicationIntegrationConfig` supporting both **Application Integration Triggers** (`project`, `location`, `integration`, `triggers`) and **Integration Connectors** (`connection`, `entityOperations`, `actions`))
+  - `src/webview/components/inspector/ToolConfigModal.tsx` (Add configuration form for GCP Application Integration workflows and Enterprise Connectors like Salesforce, ServiceNow, Jira, SAP, and Workday)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `from google.adk.tools.application_integration_tool.application_integration_toolset import ApplicationIntegrationToolset`)
+  - `tests/unit/webview/applicationIntegrationToolset.test.ts` (New)
+* **Context**:
+  - Connects ADK agents directly to Google Cloud Application Integration workflows and 100+ managed Integration Connectors (ERP, CRM, ITSM) using `ApplicationIntegrationToolset`.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/applicationIntegrationToolset.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-229"></a>
+
+### [TASK-229] ADK `VertexAiRagRetrieval` Tool (Managed Vertex AI RAG Engine Corpora Grounding)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Tools / RAG (`google.adk.tools.retrieval.vertex_ai_rag_retrieval`)
+* **Dependencies**: `TASK-104`, `TASK-129`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `'vertex_ai_rag_retrieval'` to `AdkBuiltinToolType` and `VertexAiRagRetrievalConfig`: `{ ragCorpora: string[]; similarityTopK?: number; vectorDistanceThreshold?: number; location?: string; project?: string }`)
+  - `src/webview/data/builtinToolsRegistry.ts` & `src/webview/components/inspector/ToolConfigModal.tsx` (Add **Vertex AI RAG Engine (`VertexAiRagRetrieval`)** tool card and corpus configuration form)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `from google.adk.tools.retrieval.vertex_ai_rag_retrieval import VertexAiRagRetrieval` and `rag.RagResource`)
+  - `tests/unit/webview/vertexAiRagRetrievalTool.test.ts` (New)
+* **Context**:
+  - Adds native support for Vertex AI RAG Engine (`VertexAiRagRetrieval`), enabling semantic retrieval over managed RAG corpora with configurable `similarity_top_k` and `vector_distance_threshold`.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/vertexAiRagRetrievalTool.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-230"></a>
+
+### [TASK-230] ADK Native `BigQueryToolset` Integration (`WriteMode`, SQL Execution, Forecasting & Contribution Analysis)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Tools / BigQuery (`google.adk.tools.bigquery`)
+* **Dependencies**: `TASK-129`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `'bigquery_toolset'` to `AdkBuiltinToolType` and `BigQueryToolsetConfig`: `{ projectId?: string; writeMode: 'BLOCKED' | 'ALLOWED' | 'PROTECTED'; enabledTools?: ('list_dataset_ids' | 'get_dataset_info' | 'list_table_ids' | 'get_table_info' | 'execute_sql' | 'forecast' | 'analyze_contribution' | 'ask_data_insights')[] }`)
+  - `src/webview/data/builtinToolsRegistry.ts` & `src/webview/components/inspector/ToolConfigModal.tsx` (Add **ADK Native BigQuery Toolset** card with `WriteMode` safety selector and tool filter toggles)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `from google.adk.tools.bigquery import BigQueryToolset, BigQueryCredentialsConfig` and `from google.adk.tools.bigquery.config import BigQueryToolConfig, WriteMode`)
+  - `tests/unit/webview/bigQueryToolset.test.ts` (New)
+* **Context**:
+  - Exposes ADK's first-party Python `BigQueryToolset` (distinct from the remote BigQuery MCP server) with fine-grained `WriteMode.BLOCKED` / `ALLOWED` / `PROTECTED` controls and built-in `forecast`, `analyze_contribution`, and `ask_data_insights` capabilities.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/bigQueryToolset.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-231"></a>
+
+### [TASK-231] ADK Native `SpannerToolset` Integration (Parameterized SQL, Schema Inspection & Vector Similarity Search)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Tools / Spanner (`google.adk.tools.spanner`)
+* **Dependencies**: `TASK-129`, `TASK-199`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `'spanner_toolset'` to `AdkBuiltinToolType` and `SpannerToolsetConfig`: `{ projectId: string; instanceId: string; databaseId: string; readOnly?: boolean; vectorSearchTable?: string; embeddingModel?: string; enabledTools?: ('execute_sql' | 'list_table_names' | 'get_table_schema' | 'similarity_search')[] }`)
+  - `src/webview/data/builtinToolsRegistry.ts` & `src/webview/components/inspector/ToolConfigModal.tsx` (Add **ADK Native Spanner Toolset** card and configuration form)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `from google.adk.tools.spanner import SpannerToolset, SpannerCredentialsConfig` and `SpannerToolSettings`)
+  - `tests/unit/webview/spannerToolset.test.ts` (New)
+* **Context**:
+  - Exposes ADK's first-party `SpannerToolset` for OLTP SQL queries, schema inspection, and in-database `similarity_search` (`vector_store_similarity_search`).
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/spannerToolset.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-232"></a>
+
+### [TASK-232] ADK `ComputerUseToolset` Integration (Gemini Computer Use Browser/Playwright & Desktop GUI Automation)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Tools / Computer Use (`google.adk.tools.computer_use`)
+* **Dependencies**: `TASK-129`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `'computer_use'` to `AdkBuiltinToolType` and `ComputerUseConfig`: `{ environment: 'playwright_chromium' | 'browserbase' | 'custom_desktop'; screenWidth?: number; screenHeight?: number; headless?: boolean; allowedDomains?: string[]; requireConfirmationOnPurchases?: boolean }`)
+  - `src/webview/data/builtinToolsRegistry.ts` & `src/webview/components/inspector/ToolConfigModal.tsx` (Add **Computer Use Toolset (Browser / GUI Automation)** card and configuration modal)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `from google.adk.tools.computer_use.computer_use_toolset import ComputerUseToolset` and Playwright/Browserbase `BaseComputer` environment setup)
+  - `tests/unit/webview/computerUseToolset.test.ts` (New)
+* **Context**:
+  - Enables ADK's `ComputerUseToolset` so agents can visually inspect screens via screenshots and execute mouse clicks, typing, scrolling, and navigation in a headless or interactive Playwright browser or desktop environment.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/computerUseToolset.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-233"></a>
+
+### [TASK-233] ADK `MCPToolboxForDatabases` (`ToolboxToolset` for AlloyDB, Cloud SQL, Spanner & Neo4j)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Tools / GenAI Toolbox for Databases (`google.adk.tools.toolbox_toolset`)
+* **Dependencies**: `TASK-120`, `TASK-129`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `'toolbox_databases'` to `AdkBuiltinToolType` and `ToolboxDatabaseConfig`: `{ serverUrl: string; toolsetName?: string; toolNames?: string[]; toolsYamlContent?: string; dbKind?: 'alloydb' | 'cloud_sql_pg' | 'cloud_sql_mysql' | 'spanner' | 'neo4j' | 'bigquery' }`)
+  - `src/webview/data/builtinToolsRegistry.ts` & `src/webview/components/inspector/ToolConfigModal.tsx` (Add **MCP Toolbox for Databases (`ToolboxToolset`)** card with `tools.yaml` generator & server URL configuration)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `from google.adk.tools.toolbox_toolset import ToolboxToolset` and optional `tools.yaml` scaffold)
+  - `tests/unit/webview/toolboxDatabases.test.ts` (New)
+* **Context**:
+  - Integrates Google's open-source **MCP Toolbox for Databases** (`ToolboxToolset(server_url=..., toolset_name=...)`) for connection pooling, parameterized SQL/Cypher queries, and OIDC auth across AlloyDB, Cloud SQL, Spanner, and Neo4j.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/toolboxDatabases.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-234"></a>
+
+### [TASK-234] ADK Built-in Control Flow & Memory Tools (`exit_loop`, `transfer_to_agent`, `load_memory`, `load_artifacts`)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Tools / ADK Built-in Control & Context Tools (`google.adk.tools`)
+* **Dependencies**: `TASK-129`, `TASK-192A`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `'exit_loop' | 'transfer_to_agent' | 'load_memory' | 'load_artifacts'` to `AdkBuiltinToolType`)
+  - `src/webview/data/builtinToolsRegistry.ts` (Register `exit_loop`, `transfer_to_agent`, `load_memory`, and `load_artifacts` in the ADK Built-in Tools catalog)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `from google.adk.tools import exit_loop, transfer_to_agent, load_memory, load_artifacts`)
+  - `tests/unit/webview/builtinControlFlowTools.test.ts` (New)
+* **Context**:
+  - Completes the set of lightweight ADK built-in function tools:
+    - `exit_loop`: Sets `tool_context.actions.escalate = True` to cleanly exit a `LoopAgent` when quality criteria are met.
+    - `transfer_to_agent`: Explicitly hands off execution to a named peer or parent agent.
+    - `load_memory`: Queries `BaseMemoryService` on demand when the agent decides historical recall is needed (complementing `preload_memory`).
+    - `load_artifacts`: Loads session/user binary artifacts into the model context on demand.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/builtinControlFlowTools.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-235"></a>
+
+### [TASK-235] ADK Live Bidirectional Streaming (`Runner.run_live()`, `LiveRequestQueue` & Voice/Video WebRTC/WS Mode)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Streaming / Multimodal Live API (`google.adk.agents.live_request_queue`)
+* **Dependencies**: `TASK-107`, `TASK-110`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `LiveStreamingConfig`: `{ enabled: boolean; responseModalities: ('AUDIO' | 'TEXT')[]; voiceName?: 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Aoede'; enableInputAudioTranscription?: boolean; enableOutputAudioTranscription?: boolean; enableAffectiveDialog?: boolean; proactivity?: boolean }` on `ChatTriggerConfig` / `TriggerConfig`)
+  - `src/webview/components/inspector/TriggerInspectorDrawer.tsx` (Add **Live Bidirectional Streaming (Voice / Audio / Video)** configuration to Chat Trigger Drawer)
+  - `src/webview/components/runner/ChatPanel.tsx` (Add Live Microphone / Audio waveform controls and real-time audio transcription stream in the Chat Runner)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit FastAPI WebSocket `/ws/live` endpoint using `LiveRequestQueue`, `RunConfig(response_modalities=..., speech_config=...)`, and `runner.run_live()`)
+  - `tests/unit/webview/liveBidiStreaming.test.ts` (New)
+* **Context**:
+  - Implements ADK's real-time bidirectional streaming (`runner.run_live()` + `LiveRequestQueue`) powered by the Gemini Live API (`bidiGenerateContent`) with voice selection, barge-in interruption handling, and live audio transcription.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/liveBidiStreaming.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-236"></a>
+
+### [TASK-236] ADK Cross-Session Long-Term Memory Services (`VertexAiMemoryBankService` & `VertexAiRagMemoryService`)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Memory / Long-Term Memory (`google.adk.memory`)
+* **Dependencies**: `TASK-115`, `TASK-125`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `LongTermMemoryServiceType`: `'none' | 'in_memory' | 'vertex_ai_memory_bank' | 'vertex_ai_rag'`, `LongTermMemoryConfig`: `{ serviceType: LongTermMemoryServiceType; agentEngineId?: string; ragCorpusId?: string; similarityTopK?: number; vectorDistanceThreshold?: number; autoSaveSessionToMemory?: boolean }` on `AgentMemoryConfig`)
+  - `src/webview/components/inspector/MemoryConfigSection.tsx` (Separate **Short-Term Session Store (`SessionService`)** from **Long-Term Cross-Session Memory (`MemoryService`)** with support for `VertexAiMemoryBankService` and `VertexAiRagMemoryService`)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `VertexAiMemoryBankService` / `VertexAiRagMemoryService` into `Runner(..., memory_service=...)` and `after_agent_callback` calling `memory_service.add_session_to_memory(session)`)
+  - `tests/unit/webview/longTermMemoryService.test.ts` (New)
+* **Context**:
+  - Separates single-thread `BaseSessionService` checkpointers from cross-session `BaseMemoryService` (`VertexAiMemoryBankService` and `VertexAiRagMemoryService`) so agents can automatically extract and recall durable user facts across conversations.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/longTermMemoryService.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-237"></a>
+
+### [TASK-237] Google Kubernetes Engine (GKE Autopilot) Deployment Target, Terraform & Agent Registry Workload Sync
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Deployment / GKE (`adk deploy gke`)
+* **Dependencies**: `TASK-216`, `TASK-217`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `'gke'` to `DeploymentTarget` and GKE config fields `gkeClusterName`, `gkeNamespace`, `gkeLocation`, `gkeReplicas`, `enableWorkloadIdentity` on `DeploymentConfig`)
+  - `src/webview/components/deployment/DeploymentPanel.tsx` (Add **Google Kubernetes Engine (GKE)** target card alongside Vertex AI Agent Engine and Cloud Run)
+  - `src/extension/deployer/UnifiedDeployRunner.ts` & `src/extension/deployer/AgentGovernanceProvisioner.ts` (Support `adk deploy gke` / `kubectl apply` and App Hub GKE discovered workload registration)
+  - `resource/prompts/python_adk_gke.prompt.txt` (New prompt template generating `k8s/deployment.yaml`, `k8s/service.yaml`, `Dockerfile`, GKE Autopilot Terraform `main.tf` with Workload Identity Federation, and `Makefile`)
+  - `tests/unit/extension/gkeDeployTarget.test.ts` (New)
+* **Context**:
+  - Implements the official ADK GKE deployment path (`https://adk.dev/deploy/gke/`) with Kubernetes manifests, Workload Identity IAM bindings, Terraform GKE Autopilot provisioning, and Agent Registry/App Hub topology registration.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/extension/gkeDeployTarget.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-238"></a>
+
+### [TASK-238] Multi-Language ADK Code Generation Targets (`Go` & `Java` ADK SDK Support)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Runtime / Multi-Language ADK (`google.golang.org/adk` & `com.google.adk`)
+* **Dependencies**: `TASK-106`, `TASK-123`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Extend `LanguageType` / `LanguageTarget` to `'python' | 'typescript' | 'go' | 'java'`)
+  - `src/webview/components/deployment/DeploymentPanel.tsx` & Toolbar language selector (Add **Go (ADK Go SDK)** and **Java (ADK Java Maven/Gradle SDK)** options)
+  - `resource/prompts/go_adk_cloudrun.prompt.txt` (New prompt template generating idiomatic Go ADK code `go.mod`, `cmd/agent/main.go`, `internal/agents/agent.go` using `google.golang.org/adk`, `agent_test.go`, `Dockerfile`, and `Makefile`)
+  - `resource/prompts/java_adk_cloudrun.prompt.txt` (New prompt template generating idiomatic Java 21 ADK code `pom.xml`, `src/main/java/.../AgentApp.java` using `com.google.adk.agents.LlmAgent`, JUnit 5 tests, `Dockerfile`, and `Makefile`)
+  - `tests/unit/extension/multiLanguageAdkCodegen.test.ts` (New)
+* **Context**:
+  - Brings Visual Agent Designer to full parity with all 4 official ADK languages documented at `https://adk.dev/`: Python, TypeScript (`TASK-123`), Go, and Java.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/extension/multiLanguageAdkCodegen.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-239"></a>
+
+### [TASK-239] ADK Agent-Level Lifecycle Callbacks (`before/after_agent`, `before/after_model`, `before/after_tool` with Declarative Presets, Workspace `callbacks/*.py` & AI Prompt Generator)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: ADK Core / Lifecycle Callbacks (`google.adk.agents.callback_context`)
+* **Dependencies**: `TASK-103`, `TASK-106`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `AdkCallbackHookType`: `'before_agent' | 'after_agent' | 'before_model' | 'after_model' | 'before_tool' | 'after_tool'`, `AdkCallbackDefinitionMode`: `'preset' | 'workspace_function' | 'ai_prompt'`, `AdkCallbackPresetType`: `'tool_arg_guardrail' | 'tool_response_cache' | 'pii_secret_redaction' | 'turn_rate_limiter' | 'state_initializer_audit'`, `AdkCallbackRule`, and `callbacks?: AdkCallbackRule[]` on `AgentNodeData`)
+  - `src/webview/components/inspector/CallbacksConfigSection.tsx` (New Inspector Drawer section in `StandardAgentDrawer` allowing users to attach rules across the 6 ADK callback hooks using Declarative Policy Presets, Workspace `callbacks/*.py` function references, or AI Prompt-Driven callback generation)
+  - `src/extension/AgentEditorProvider.ts` (Sync sibling `callbacks/` Python files during code generation and workspace export)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `callbacks.py` with typed ADK callback signatures returning `Optional[types.Content]`, `Optional[LlmResponse]`, or `Optional[dict]` to short-circuit execution when appropriate, and bind `before_agent_callback`, `after_agent_callback`, `before_model_callback`, `after_model_callback`, `before_tool_callback`, `after_tool_callback` on `LlmAgent`)
+  - `tests/unit/webview/adkCallbacksConfig.test.ts` (New)
+* **Context**:
+  - Implements ADK's 6 lifecycle callback hooks (`https://adk.dev/callbacks/`) supporting three authoring modes:
+    1. **Declarative Policy Presets (Zero-Code)**:
+       - *Tool Argument Guardrail / RBAC (`before_tool_callback`)*: Blocks tool execution and returns a structured error dict if tool arguments violate regex/expression rules or `callback_context.state['user_role']` checks.
+       - *Tool Response Cache (`before_tool_callback` + `after_tool_callback`)*: Caches deterministic tool outputs in `session.state` keyed by `(tool.name, args)` with configurable TTL.
+       - *PII & Secret Redaction (`before_model_callback` & `after_tool_callback`)*: Masks emails, SSNs, credit cards, or custom regexes before hitting the LLM or persisting to `SessionService`.
+       - *Turn / Token Rate-Limiter (`before_model_callback`)*: Short-circuits with a polite `LlmResponse` if session model call count exceeds threshold `N`.
+       - *State Initializer / Audit Stamp (`before_agent_callback` / `after_agent_callback`)*: Initializes default `callback_context.state` keys or records execution latency/audit timestamps.
+    2. **Workspace Python Function (`callbacks/*.py`)**: Selects an existing Python function from the workspace's `callbacks/` folder.
+    3. **AI Prompt-Generated Callback**: Generates a custom typed Python callback function in `callbacks.py` from a natural-language specification.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/adkCallbacksConfig.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-240"></a>
+
+### [TASK-240] ADK Runner-Level Plugins (`ReflectAndRetryToolPlugin`, `BigQueryAgentAnalyticsPlugin`, `ContextFilterPlugin`, `SaveFilesAsArtifactsPlugin` & Custom `BasePlugin`)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: ADK Core / Runner Plugins (`google.adk.plugins`)
+* **Dependencies**: `TASK-106`, `TASK-239`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `AdkBuiltinPluginType`: `'reflect_and_retry_tool' | 'bigquery_agent_analytics' | 'context_filter' | 'save_files_as_artifacts' | 'debug_logging' | 'custom_plugin'`, `AdkRunnerPluginConfig`, and `plugins?: AdkRunnerPluginConfig[]` on `GenerationConfig` / `WorkflowDeploymentConfig`)
+  - `src/webview/components/deployment/DeploymentPanel.tsx` & `src/webview/components/inspector/StandardAgentDrawer.tsx` (Add **Runner Plugins (`google.adk.plugins`)** configuration panel for enabling 1-click built-in ADK plugins and custom `BasePlugin` classes)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit `Runner(..., plugins=[...])` / `App(..., plugins=[...])` with configured `ReflectAndRetryToolPlugin`, `BigQueryAgentAnalyticsPlugin`, `ContextFilterPlugin`, `SaveFilesAsArtifactsPlugin`, or custom `BasePlugin` subclasses)
+  - `tests/unit/webview/adkRunnerPlugins.test.ts` (New)
+* **Context**:
+  - Implements ADK's cross-cutting `BasePlugin` architecture (`https://adk.dev/plugins/`), allowing users to enable first-party plugins (`ReflectAndRetryToolPlugin` for automatic tool self-correction, `BigQueryAgentAnalyticsPlugin` for streaming operational analytics to BigQuery, `ContextFilterPlugin` for context window bounding, and `SaveFilesAsArtifactsPlugin` for automatic chat attachment persistence) at the `Runner`/`App` level.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/adkRunnerPlugins.test.ts` with 100% pass rate.
+
+
