@@ -2224,7 +2224,7 @@ export class AgentGovernanceProvisioner {
 
     if (createdItemNames.length === 0) {
       onLog?.(
-        `[Governance] Note: Could not register EvaluationItems in ${region} (verify Vertex AI Evaluation API availability in region).`,
+        `[Governance] Note: Could not register EvaluationItems in ${region} (verify Cloud Evaluation API availability in region).`,
         'system'
       );
       return {};
@@ -2325,7 +2325,7 @@ export class AgentGovernanceProvisioner {
       if (patchExpRes.statusCode >= 200 && patchExpRes.statusCode < 300) {
         evaluationExperimentResource = patchExpRes.data?.name || existingName;
         onLog?.(
-          `[Governance] Updated Vertex AI Evaluation Experiment (${evaluationExperimentResource}) with ${createdItemNames.length} test scenario(s) from eval_dataset.jsonl.`,
+          `[Governance] Updated Cloud Evaluation Experiment (${evaluationExperimentResource}) with ${createdItemNames.length} test scenario(s) from eval_dataset.jsonl.`,
           'system'
         );
       }
@@ -2353,7 +2353,7 @@ export class AgentGovernanceProvisioner {
             `projects/${projectId}/locations/${region}/evaluationExperiments/${cleanAgentId}-eval-exp`;
         }
         onLog?.(
-          `[Governance] Registered ${createdItemNames.length} test scenario(s) from eval_dataset.jsonl into Vertex AI Evaluation Experiment (${evaluationExperimentResource}).`,
+          `[Governance] Registered ${createdItemNames.length} test scenario(s) from eval_dataset.jsonl into Cloud Evaluation Experiment (${evaluationExperimentResource}).`,
           'system'
         );
       } else {
@@ -2429,7 +2429,7 @@ export class AgentGovernanceProvisioner {
       if (createRunRes.statusCode >= 200 && createRunRes.statusCode < 300 && createRunRes.data?.name) {
         evaluationRunResource = createRunRes.data.name;
         onLog?.(
-          `[Governance] Started initial Vertex AI Evaluation Run (${evaluationRunResource}) in Cloud Console.`,
+          `[Governance] Started initial Cloud Evaluation Run (${evaluationRunResource}) in Cloud Console.`,
           'system'
         );
       }

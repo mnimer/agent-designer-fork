@@ -258,7 +258,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
     if (!folderValidation.isValid) {
       setErrorMessage(
         folderValidation.error ||
-          `Target folder '${folderValidation.folderBase}' is not a valid Python identifier. Vertex AI Agent Runtime requires the agent directory to be a valid Python module name.`
+          `Target folder '${folderValidation.folderBase}' is not a valid Python identifier. Agent Runtime requires the agent directory to be a valid Python module name.`
       );
       return;
     }
@@ -328,7 +328,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
           <div className="flex items-center justify-between border-b border-[#30363d] pb-2">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-white">
               <Server className="w-4 h-4 text-emerald-400" />
-              <span>Vertex AI Agent Runtime</span>
+              <span>Agent Runtime</span>
             </div>
             <span
               className={`text-[10px] px-2 py-0.5 rounded font-mono border ${
@@ -506,7 +506,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
                   className="flex-1 py-2 rounded-lg text-xs font-bold bg-[#238636] opacity-70 text-white flex items-center justify-center gap-2 cursor-wait"
                 >
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Deploying to Vertex AI...</span>
+                  <span>Deploying to Agent Runtime...</span>
                 </button>
                 <button
                   onClick={handleCancelDeploy}
@@ -538,7 +538,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
                 <span>
                   {hasExistingDeployment && !forceNew
                     ? 'Update Agent Runtime Instance'
-                    : 'Deploy to Vertex AI Agent Runtime'}
+                    : 'Deploy to Agent Runtime'}
                 </span>
               </button>
             )}

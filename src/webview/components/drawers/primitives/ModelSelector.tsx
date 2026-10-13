@@ -23,22 +23,22 @@ const SUPPORTED_MODELS = [
   { 
     id: 'gemini-3.8-flash', 
     name: 'Gemini 3.8 Flash (Recommended)', 
-    desc: 'Next-gen hybrid reasoning with adaptive thinking on Vertex AI (location="global")' 
+    desc: 'Next-gen hybrid reasoning with adaptive thinking (location="global")' 
   },
   { 
     id: 'gemini-3.7-flash', 
     name: 'Gemini 3.7 Flash', 
-    desc: 'Hybrid reasoning with adaptive thinking on Vertex AI (location="global")' 
+    desc: 'Hybrid reasoning with adaptive thinking (location="global")' 
   },
   { 
     id: 'gemini-3.6-flash', 
     name: 'Gemini 3.6 Flash', 
-    desc: 'Advanced multimodal reasoning on Vertex AI' 
+    desc: 'Advanced multimodal reasoning' 
   },
   { 
     id: 'gemini-3.5-flash', 
     name: 'Gemini 3.5 Flash', 
-    desc: 'Fast, lightweight multimodal reasoning on Vertex AI' 
+    desc: 'Fast, lightweight multimodal reasoning' 
   },
 ];
 

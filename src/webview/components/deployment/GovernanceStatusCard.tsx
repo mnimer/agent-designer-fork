@@ -402,7 +402,7 @@ export const GovernanceStatusCard: React.FC<GovernanceStatusCardProps> = ({
             <div className="flex-1">
               <span className="flex items-center gap-1.5 text-[11px] text-white font-medium">
                 <FlaskConical className="w-3.5 h-3.5 text-blue-400" />
-                <span>Run Vertex AI Cloud Evaluation Post-Deploy</span>
+                <span>Run Cloud Evaluation Post-Deploy</span>
               </span>
               <span className="block text-[10px] text-gray-400">
                 Executes <code className="font-mono text-gray-300">eval_dataset.jsonl</code> against the deployed endpoint. Failures mark deploy as Succeeded with Evaluation Warnings and block Gemini Enterprise publishing.
@@ -564,7 +564,7 @@ export const GovernanceStatusCard: React.FC<GovernanceStatusCardProps> = ({
                       rel="noreferrer"
                       className="text-[10px] text-amber-300 hover:underline flex items-center gap-1"
                     >
-                      <span>Vertex AI Experiment</span>
+                      <span>Evaluation Experiment</span>
                       <ExternalLink className="w-3 h-3" />
                     </a>
                   )}

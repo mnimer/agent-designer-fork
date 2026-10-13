@@ -184,7 +184,7 @@ export function activate(context: vscode.ExtensionContext): void {
     'agentFlow.deployToAgentEngine',
     async () => {
       vscode.window.showInformationMessage(
-        'Agent Flow: Open the Deployment tab in the Agent Designer to configure and deploy to Vertex AI Agent Runtime.'
+        'Agent Flow: Open the Deployment tab in the Agent Designer to configure and deploy to Agent Runtime.'
       );
     }
   );

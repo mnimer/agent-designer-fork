@@ -86,18 +86,18 @@ describe('AgentEngineDeployTab State & Logic', () => {
     // Mode 1: Has existing deployment, forceNew = false -> in-place update
     let hasExisting = Boolean(existingMetadata?.remote_agent_runtime_id);
     let forceNew = false;
-    let label = hasExisting && !forceNew ? 'Update Agent Runtime Instance' : 'Deploy to Vertex AI Agent Runtime';
+    let label = hasExisting && !forceNew ? 'Update Agent Runtime Instance' : 'Deploy to Agent Runtime';
     assert.equal(label, 'Update Agent Runtime Instance');
 
     // Mode 2: Has existing deployment, forceNew = true -> provision new instance
     forceNew = true;
-    label = hasExisting && !forceNew ? 'Update Agent Runtime Instance' : 'Deploy to Vertex AI Agent Runtime';
-    assert.equal(label, 'Deploy to Vertex AI Agent Runtime');
+    label = hasExisting && !forceNew ? 'Update Agent Runtime Instance' : 'Deploy to Agent Runtime';
+    assert.equal(label, 'Deploy to Agent Runtime');
 
     // Mode 3: No existing deployment -> provision new instance
     hasExisting = false;
-    label = hasExisting && !forceNew ? 'Update Agent Runtime Instance' : 'Deploy to Vertex AI Agent Runtime';
-    assert.equal(label, 'Deploy to Vertex AI Agent Runtime');
+    label = hasExisting && !forceNew ? 'Update Agent Runtime Instance' : 'Deploy to Agent Runtime';
+    assert.equal(label, 'Deploy to Agent Runtime');
   });
 
   it('should format DEPLOY_TO_AGENT_ENGINE message payload adhering to rpcProtocol specification', () => {

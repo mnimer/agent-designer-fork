@@ -254,7 +254,7 @@ export class DeployPipeline {
 
     const actionLabel = isUpdate ? 'Updating existing Agent Runtime' : 'Deploying new Agent Runtime';
     this.logToBridge(bridge, `[0.0s] Initializing ${actionLabel}...`, 'system', targetDirectory);
-    this.logToBridge(bridge, `[0.1s] Target: Vertex AI Agent Runtime (${region})`, 'system', targetDirectory);
+    this.logToBridge(bridge, `[0.1s] Target: Agent Runtime (${region})`, 'system', targetDirectory);
     this.logToBridge(bridge, `[0.2s] Project: ${projectId}`, 'system', targetDirectory);
 
     if (isUpdate && resolvedEngineId) {

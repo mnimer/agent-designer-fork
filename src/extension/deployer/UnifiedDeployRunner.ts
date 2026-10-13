@@ -845,7 +845,7 @@ export class UnifiedDeployRunner {
         deployedResourceUri,
       });
       onLog?.(
-        `[Governance] Running Vertex AI Cloud Evaluation (EvalTask) against eval_dataset.jsonl...`,
+        `[Governance] Running Cloud Evaluation (EvalTask) against eval_dataset.jsonl...`,
         'system'
       );
       onLog?.(`[Governance] Command: ${evalCmd.commandString}`, 'system');
@@ -859,7 +859,7 @@ export class UnifiedDeployRunner {
         result.evalTaskExperimentUrl = evalRes.experimentUrl || defaultExperimentUrl;
         if (evalRes.passed) {
           result.evalGateStatus = 'passed';
-          onLog?.(`✅ Vertex AI Cloud Evaluation passed all quality & safety thresholds.`, 'system');
+          onLog?.(`✅ Cloud Evaluation passed all quality & safety thresholds.`, 'system');
         } else {
           result.evalGateStatus = 'warning';
           result.evalWarnings =
@@ -897,7 +897,7 @@ export class UnifiedDeployRunner {
           );
           if (execRes.exitCode === 0 && warningLines.length === 0) {
             result.evalGateStatus = 'passed';
-            onLog?.(`✅ Vertex AI Cloud Evaluation passed all quality & safety thresholds.`, 'system');
+            onLog?.(`✅ Cloud Evaluation passed all quality & safety thresholds.`, 'system');
           } else {
             result.evalGateStatus = 'warning';
             result.evalWarnings =
@@ -920,7 +920,7 @@ export class UnifiedDeployRunner {
           result.evalGateStatus = 'passed';
           result.evalTaskExperimentUrl = defaultExperimentUrl;
           onLog?.(
-            `✅ Registered eval_dataset.jsonl scenarios with Vertex AI Evaluation (${defaultExperimentUrl}).`,
+            `✅ Registered eval_dataset.jsonl scenarios with Cloud Evaluation (${defaultExperimentUrl}).`,
             'system'
           );
         }

@@ -105,7 +105,7 @@
       },
       {
         "command": "agentFlow.deployToAgentEngine",
-        "title": "Deploy to Vertex AI Agent Runtime",
+        "title": "Deploy to Agent Runtime",
         "category": "Agent Designer",
         "icon": "$(cloud-upload)"
       },

@@ -321,7 +321,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                 selectedTarget === 'agent_engine' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-white'
               }`}
             >
-              🧠 Vertex AI Agent Runtime
+              🧠 Agent Runtime
             </button>
           ) : (
             <button
@@ -399,7 +399,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
               >
                 <option value="local">🖥️ Local Runner</option>
                 {cloudTarget === 'agent_engine' ? (
-                  <option value="agent_engine">🧠 Vertex AI Agent Runtime</option>
+                  <option value="agent_engine">🧠 Agent Runtime</option>
                 ) : (
                   <option value="cloud_run">☁️ Google Cloud Run</option>
                 )}
