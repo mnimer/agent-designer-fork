@@ -696,6 +696,7 @@ except Exception as e:
     const hasReasoningContext =
       combined.includes('reasoning engine') ||
       combined.includes('agent engine') ||
+      combined.includes('agent runtime') ||
       combined.includes('reasoningengine') ||
       combined.includes('reasoningengines');
 

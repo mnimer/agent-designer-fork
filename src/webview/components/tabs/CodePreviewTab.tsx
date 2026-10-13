@@ -462,7 +462,7 @@ export const CodePreviewTab: React.FC<CodePreviewTabProps> = ({
               onChange={(e) => onChangeConfig({ deploymentTarget: e.target.value as any })}
               className="w-full bg-[#0d1117] border border-[#30363d] text-xs text-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 cursor-pointer font-medium"
             >
-              <option value="agent_engine">🧠 Google Agent Engine (Managed ADK)</option>
+              <option value="agent_engine">🧠 Google Agent Runtime (Managed ADK)</option>
               <option value="cloud_run">☁️ Google Cloud Run (Containerized Microservice)</option>
             </select>
           </div>

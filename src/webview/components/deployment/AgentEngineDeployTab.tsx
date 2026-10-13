@@ -258,7 +258,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
     if (!folderValidation.isValid) {
       setErrorMessage(
         folderValidation.error ||
-          `Target folder '${folderValidation.folderBase}' is not a valid Python identifier. Vertex AI Agent Engine requires the agent directory to be a valid Python module name.`
+          `Target folder '${folderValidation.folderBase}' is not a valid Python identifier. Vertex AI Agent Runtime requires the agent directory to be a valid Python module name.`
       );
       return;
     }
@@ -328,7 +328,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
           <div className="flex items-center justify-between border-b border-[#30363d] pb-2">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-white">
               <Server className="w-4 h-4 text-emerald-400" />
-              <span>Vertex AI Agent Engine</span>
+              <span>Vertex AI Agent Runtime</span>
             </div>
             <span
               className={`text-[10px] px-2 py-0.5 rounded font-mono border ${
@@ -537,8 +537,8 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
                 <Rocket className="w-3.5 h-3.5" />
                 <span>
                   {hasExistingDeployment && !forceNew
-                    ? 'Update Agent Engine Instance'
-                    : 'Deploy to Vertex AI Agent Engine'}
+                    ? 'Update Agent Runtime Instance'
+                    : 'Deploy to Vertex AI Agent Runtime'}
                 </span>
               </button>
             )}
@@ -561,7 +561,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
           <div className="flex items-center gap-2">
             <Terminal className="w-3.5 h-3.5 text-emerald-400" />
             <span className="text-xs font-mono font-semibold text-white">
-              Agent Engine Build & Provisioning Telemetry
+              Agent Runtime Build & Provisioning Telemetry
             </span>
           </div>
 
@@ -658,7 +658,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
           ) : (
             <div className="p-3 bg-[#161b22]/50 border border-[#30363d] rounded-lg text-xs text-gray-400 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Deploy to Agent Engine to obtain live HTTP passthrough credentials and endpoints.</span>
+              <span>Deploy to Agent Runtime to obtain live HTTP passthrough credentials and endpoints.</span>
             </div>
           )}
         </div>

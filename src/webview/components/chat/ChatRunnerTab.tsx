@@ -558,7 +558,7 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
               </span>
               <span className="text-amber-200/90 ml-1">
                 {executionTarget === 'remote' ? (
-                  <>Deploy to Agent Engine on the <strong>Deployment</strong> tab to enable interactive chat.</>
+                  <>Deploy to Agent Runtime on the <strong>Deployment</strong> tab to enable interactive chat.</>
                 ) : (
                   <>Start the local agent on the <strong>Deployment</strong> tab to enable interactive chat.</>
                 )}
@@ -727,7 +727,7 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
               title={
                 !isTargetReady
                   ? executionTarget === 'remote'
-                    ? 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab.'
+                    ? 'Remote agent is not deployed. Deploy to Agent Runtime on the Deployment tab.'
                     : 'Local agent server is offline. Start the agent in the Deployment tab.'
                   : prompt
               }
@@ -759,7 +759,7 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
             placeholder={
               !isTargetReady
                 ? executionTarget === 'remote'
-                  ? 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab to chat...'
+                  ? 'Remote agent is not deployed. Deploy to Agent Runtime on the Deployment tab to chat...'
                   : localRunnerStatus === 'starting'
                   ? 'Local agent server is starting...'
                   : 'Local agent server is offline. Start the agent in the Deployment tab to chat...'
@@ -786,7 +786,7 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
               title={
                 !isTargetReady
                   ? executionTarget === 'remote'
-                    ? 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab to send messages.'
+                    ? 'Remote agent is not deployed. Deploy to Agent Runtime on the Deployment tab to send messages.'
                     : 'Local agent server is offline. Start the agent in the Deployment tab to send messages.'
                   : !inputPrompt.trim()
                   ? 'Enter a message first'
@@ -812,7 +812,7 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
               <AlertCircle className="w-3 h-3 text-amber-400 shrink-0" />
               <span>
                 {executionTarget === 'remote' ? (
-                  <>Remote Agent Engine is currently <strong>not deployed</strong>. Deploy to Agent Engine on the Deployment tab to enable chat.</>
+                  <>Remote Agent Runtime is currently <strong>not deployed</strong>. Deploy to Agent Runtime on the Deployment tab to enable chat.</>
                 ) : (
                   <>Agent server is currently <strong>{localRunnerStatus}</strong>. Start the runner in the Deployment tab to enable chat.</>
                 )}

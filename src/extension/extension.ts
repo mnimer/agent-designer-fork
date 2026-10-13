@@ -179,12 +179,12 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   context.subscriptions.push(runTestsCmd);
 
-  // 8. Command: Deploy to Agent Engine
+  // 8. Command: Deploy to Agent Runtime
   const deployAgentEngineCmd = vscode.commands.registerCommand(
     'agentFlow.deployToAgentEngine',
     async () => {
       vscode.window.showInformationMessage(
-        'Agent Flow: Open the Deployment tab in the Agent Designer to configure and deploy to Vertex AI Agent Engine.'
+        'Agent Flow: Open the Deployment tab in the Agent Designer to configure and deploy to Vertex AI Agent Runtime.'
       );
     }
   );

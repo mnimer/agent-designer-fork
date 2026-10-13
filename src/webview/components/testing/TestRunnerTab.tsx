@@ -602,10 +602,10 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
             title={
               !isTargetReady
                 ? executionTarget === 'remote'
-                  ? 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab to run tests.'
+                  ? 'Remote agent is not deployed. Deploy to Agent Runtime on the Deployment tab to run tests.'
                   : 'Local agent is offline. Start the agent in the Deployment tab to run tests.'
                 : executionTarget === 'remote'
-                ? 'Run all unit tests against remote Agent Engine'
+                ? 'Run all unit tests against remote Agent Runtime'
                 : 'Run all unit tests'
             }
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-pink-600 hover:bg-pink-500 disabled:opacity-40 disabled:hover:bg-pink-600 text-white font-bold text-xs shadow-md transition-all cursor-pointer disabled:cursor-not-allowed"
@@ -786,7 +786,7 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                 <span className="text-amber-200/90 ml-1">
                   {executionTarget === 'remote' ? (
                     <>
-                      Deploy the workflow to <strong>Agent Engine</strong> on the Deployment tab to enable remote unit test execution.
+                      Deploy the workflow to <strong>Agent Runtime</strong> on the Deployment tab to enable remote unit test execution.
                     </>
                   ) : (
                     <>
@@ -905,9 +905,9 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                       title={
                         !isTargetReady
                           ? executionTarget === 'remote'
-                            ? 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab to run this test.'
+                            ? 'Remote agent is not deployed. Deploy to Agent Runtime on the Deployment tab to run this test.'
                             : 'Local agent server is offline. Start the agent in the Deployment tab to run this test.'
-                          : `Execute test scenario against ${executionTarget === 'remote' ? 'remote Agent Engine' : 'local runner'}`
+                          : `Execute test scenario against ${executionTarget === 'remote' ? 'remote Agent Runtime' : 'local runner'}`
                       }
                       className="px-2.5 py-1 rounded-md bg-[#0d1117] hover:bg-pink-600 border border-[#30363d] hover:border-pink-500 text-gray-300 hover:text-white text-[11px] font-medium transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:hover:bg-[#0d1117] disabled:hover:border-[#30363d] disabled:cursor-not-allowed"
                     >

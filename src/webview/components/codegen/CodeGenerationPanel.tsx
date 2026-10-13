@@ -121,7 +121,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
             <Server className="w-3.5 h-3.5 text-emerald-400" />
             <span>Deployment</span>
             <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-              {config.deploymentTarget === 'cloud_run' ? 'Cloud Run' : 'Google Agent Engine'}
+              {config.deploymentTarget === 'cloud_run' ? 'Cloud Run' : 'Google Agent Runtime'}
             </span>
           </button>
 

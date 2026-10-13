@@ -252,9 +252,9 @@ export class DeployPipeline {
       remoteRuntimeId: resolvedEngineId || existingMeta?.remote_agent_runtime_id,
     });
 
-    const actionLabel = isUpdate ? 'Updating existing Agent Engine Runtime' : 'Deploying new Agent Engine Runtime';
+    const actionLabel = isUpdate ? 'Updating existing Agent Runtime' : 'Deploying new Agent Runtime';
     this.logToBridge(bridge, `[0.0s] Initializing ${actionLabel}...`, 'system', targetDirectory);
-    this.logToBridge(bridge, `[0.1s] Target: Vertex AI Agent Engine (${region})`, 'system', targetDirectory);
+    this.logToBridge(bridge, `[0.1s] Target: Vertex AI Agent Runtime (${region})`, 'system', targetDirectory);
     this.logToBridge(bridge, `[0.2s] Project: ${projectId}`, 'system', targetDirectory);
 
     if (isUpdate && resolvedEngineId) {

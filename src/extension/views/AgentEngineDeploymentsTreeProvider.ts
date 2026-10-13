@@ -149,7 +149,7 @@ export class DeploymentTreeItem extends vscode.TreeItem {
       this.description = 'Deploy via Deployment Tab';
       this.tooltip =
         'No active local runner sessions or deployed .agent workflows found. ' +
-        'Open a workflow and switch to the Deployment Tab to deploy to Vertex AI Agent Engine or Cloud Run.';
+        'Open a workflow and switch to the Deployment Tab to deploy to Vertex AI Agent Runtime or Cloud Run.';
       this.iconPath = new vscode.ThemeIcon('info');
       this.contextValue = 'emptyDeploymentItem';
     }
@@ -263,7 +263,7 @@ export class AgentEngineDeploymentsTreeProvider
 
           const deploy = doc.deployment;
           if (deploy && (deploy.deployedResourceId || deploy.serviceUrl)) {
-            const runtimeId = deploy.deployedResourceId || 'Deployed Agent Engine';
+            const runtimeId = deploy.deployedResourceId || 'Deployed Agent Runtime';
             discoveredIds.add(runtimeId);
 
             const meta: DeploymentMetadataRecord = {

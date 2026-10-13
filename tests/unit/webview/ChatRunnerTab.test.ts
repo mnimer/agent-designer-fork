@@ -45,7 +45,7 @@ describe('ChatRunnerTab Execution Target & Remote Chat Logic', () => {
   ): string {
     if (!isTargetReady) {
       if (executionTarget === 'remote') {
-        return 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab to chat...';
+        return 'Remote agent is not deployed. Deploy to Agent Runtime on the Deployment tab to chat...';
       }
       return localRunnerStatus === 'starting'
         ? 'Local agent server is starting...'
@@ -61,7 +61,7 @@ describe('ChatRunnerTab Execution Target & Remote Chat Logic', () => {
   ): string {
     if (!isTargetReady) {
       return executionTarget === 'remote'
-        ? 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab to send messages.'
+        ? 'Remote agent is not deployed. Deploy to Agent Runtime on the Deployment tab to send messages.'
         : 'Local agent server is offline. Start the agent in the Deployment tab to send messages.';
     }
     if (!inputPrompt.trim()) {
@@ -81,7 +81,7 @@ describe('ChatRunnerTab Execution Target & Remote Chat Logic', () => {
       return {
         show: true,
         title: 'Remote Agent is Not Deployed.',
-        message: 'Deploy to Agent Engine on the Deployment tab to enable interactive chat.',
+        message: 'Deploy to Agent Runtime on the Deployment tab to enable interactive chat.',
       };
     }
     return {
@@ -160,7 +160,7 @@ describe('ChatRunnerTab Execution Target & Remote Chat Logic', () => {
     const banner = resolveWarningBanner(isReady, 'remote');
     assert.equal(banner.show, true);
     assert.equal(banner.title, 'Remote Agent is Not Deployed.');
-    assert.ok(banner.message.includes('Deploy to Agent Engine'));
+    assert.ok(banner.message.includes('Deploy to Agent Runtime'));
   });
 
   it('should show local offline banner when local runner is selected and offline', () => {

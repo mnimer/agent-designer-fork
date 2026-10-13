@@ -264,8 +264,7 @@ describe('AgentEngineDeployer', () => {
         'us-central1',
         '--display_name',
         'Customer Service Agent',
-        '--session_service_uri',
-        'memory://',
+        '--otel_to_cloud',
         '.',
       ]);
     });
@@ -299,8 +298,7 @@ describe('AgentEngineDeployer', () => {
         'us-east4',
         '--agent_engine_id',
         '987654321',
-        '--session_service_uri',
-        'memory://',
+        '--otel_to_cloud',
         '.',
       ]);
     });

@@ -1485,7 +1485,7 @@ export class AgentGovernanceProvisioner {
 
     if (alreadyConfigured) {
       onLog?.(
-        `[Governance] Verified Agent Engine OpenTelemetry Tracing & Security Telemetry is active (${resourcePath}).`,
+        `[Governance] Verified Agent Runtime OpenTelemetry Tracing & Security Telemetry is active (${resourcePath}).`,
         'system'
       );
       return true;
@@ -1515,7 +1515,7 @@ export class AgentGovernanceProvisioner {
         await this.pollOperation(apiBase, patchRes.data.name, projectId, 10, 1500);
       }
       onLog?.(
-        `[Governance] Enabled Agent Engine OpenTelemetry Tracing & Security Telemetry (GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY=true).`,
+        `[Governance] Enabled Agent Runtime OpenTelemetry Tracing & Security Telemetry (GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY=true).`,
         'system'
       );
       return true;
