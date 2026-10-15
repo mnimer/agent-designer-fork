@@ -155,6 +155,7 @@
 | [**TASK-238**](#task-238) | v1.2.0 | Runtime / Multi-Lang | Multi-Language ADK Code Generation Targets (`Go` & `Java` ADK SDK Support) | **Not Started** | TASK-106, TASK-123 |
 | [**TASK-239**](#task-239) | v1.2.0 | ADK Callbacks | ADK Agent-Level Lifecycle Callbacks (`before/after_agent`, `before/after_model`, `before/after_tool` with Declarative Presets, Workspace `callbacks/*.py` & AI Prompt Generator) | **Not Started** | TASK-103, TASK-106 |
 | [**TASK-240**](#task-240) | v1.2.0 | ADK Plugins | ADK Runner-Level Plugins (`ReflectAndRetryToolPlugin`, `BigQueryAgentAnalyticsPlugin`, `ContextFilterPlugin`, `SaveFilesAsArtifactsPlugin` & Custom `BasePlugin`) | **Not Started** | TASK-106, TASK-239 |
+| [**TASK-241**](#task-241) | v1.2.0 | Interactive Chat | Interactive Chat GFM Markdown Table Rendering Support (`ChatMessageRenderer.tsx`) | **Complete** | TASK-110 |
 
 ---
 
@@ -5660,5 +5661,25 @@ Each task specifies reverse-engineering the sample Python code into a production
   - Implements ADK's cross-cutting `BasePlugin` architecture (`https://adk.dev/plugins/`), allowing users to enable first-party plugins (`ReflectAndRetryToolPlugin` for automatic tool self-correction, `BigQueryAgentAnalyticsPlugin` for streaming operational analytics to BigQuery, `ContextFilterPlugin` for context window bounding, and `SaveFilesAsArtifactsPlugin` for automatic chat attachment persistence) at the `Runner`/`App` level.
 * **Verification**:
   - Execute `npx vitest run tests/unit/webview/adkRunnerPlugins.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-241"></a>
+
+### [TASK-241] Interactive Chat GFM Markdown Table Rendering Support (`ChatMessageRenderer.tsx`)
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Category / Group**: Interactive Chat / Markdown Rendering
+* **Dependencies**: `TASK-110`
+* **Target Package/Files**:
+  - `src/webview/components/chat/ChatMessageRenderer.tsx`
+  - `src/webview/components/chat/ChatRunnerTab.tsx`
+  - `tests/unit/webview/ChatMessageRenderer.test.ts`
+* **Context**:
+  - Adds GitHub Flavored Markdown (GFM) table parsing and rendering to `ChatMessageRenderer.tsx` for the Interactive Chat panel (such as the Data Domain Builder sample agent's DDD bounded-context proposals and BigQuery schema tables).
+  - Supports standard pipe tables, borderless outer-pipe tables, column alignments (`:---`, `:---:`, `---:`), inline formatting (`**bold**`, `*italic*`, `` `code` ``, `[links](url)`, `<br>` / `<br/>` line breaks), escaped pipes (`\|`), pipes inside inline code spans, snake_case identifier preservation (`retail_dw`, `customer_orders`), and live streaming partial table rows.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/ChatMessageRenderer.test.ts` with 100% pass rate.
+
 
 

@@ -2,7 +2,9 @@
  * ChatMessageRenderer Component
  *
  * Renders interactive chat message turns with rich formatting:
- * - Markdown text formatting (bold, italics, headers, lists, quotes, inline code)
+ * - Markdown text formatting (bold, italics, headers H1-H4, lists, quotes, inline code, <br> breaks)
+ * - GitHub Flavored Markdown (GFM) tables with column alignment, inline formatting, escaped pipes,
+ *   backtick-aware cell splitting, borderless outer-pipe tables, and live streaming table support
  * - Fenced code blocks with language pills and copy-to-clipboard button
  * - Markdown images (![alt](url)) with responsive preview and error fallbacks
  * - Declarative A2UI component detection and interactive rendering:
@@ -14,6 +16,8 @@
  * - Implemented using native React & Tailwind CSS without heavy external dependencies.
  * - Adheres strictly to the 8pt grid system (multiples of 8px) for all spacing and margins.
  * - Safely handles mixed Markdown and JSON strings or partial streaming tokens.
+ * - Table parser respects escaped pipes (\|) and inline code spans (`a | b`) so technical
+ *   schemas, SQL expressions, and Data Domain URIs inside cells never corrupt column layout.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -27,6 +31,8 @@ export interface ChatMessageRendererProps {
   isStreaming?: boolean;
   onActionClick?: (actionText: string) => void;
 }
+
+export type TableColumnAlignment = 'left' | 'center' | 'right';
 
 interface A2uiPayload {
   type?: string;
@@ -42,6 +48,121 @@ interface A2uiPayload {
   options?: string[];
   fields?: Array<{ label?: string; placeholder?: string; type?: string }>;
   [key: string]: any;
+}
+
+/**
+ * Splits a Markdown table row into individual cell strings while preserving:
+ * - Pipes inside inline backtick code spans (e.g., `` `a | b` ``)
+ * - Escaped pipes (`\|`), unescaping them to literal `|` in the resulting cell text
+ *
+ * Leading and trailing empty cells produced by outer table pipes (`| col1 | col2 |`)
+ * are stripped automatically.
+ */
+export function splitTableRow(line: string): string[] {
+  const trimmed = line.trim();
+  if (!trimmed) return [];
+
+  // Strip optional leading and trailing outer pipe characters (unless escaped \|)
+  let inner = trimmed;
+  if (inner.startsWith('|')) {
+    inner = inner.slice(1);
+  }
+  if (inner.endsWith('|') && !inner.endsWith('\\|')) {
+    inner = inner.slice(0, -1);
+  }
+
+  const cells: string[] = [];
+  let current = '';
+  let inBackticks = false;
+
+  // Iterate character by character to respect inline code spans and escaped pipes
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+
+    // Handle escaped pipe \|
+    if (ch === '\\' && i + 1 < inner.length && inner[i + 1] === '|') {
+      current += '|';
+      i++;
+      continue;
+    }
+
+    // Toggle backtick code state
+    if (ch === '`') {
+      inBackticks = !inBackticks;
+      current += ch;
+      continue;
+    }
+
+    // Split on unescaped pipe outside of inline code
+    if (ch === '|' && !inBackticks) {
+      cells.push(current.trim());
+      current = '';
+      continue;
+    }
+
+    current += ch;
+  }
+
+  cells.push(current.trim());
+  return cells;
+}
+
+/**
+ * Determines whether an array of parsed table cells represents a GFM delimiter row
+ * (e.g., `| --- | :--- | :---: | ---: |`).
+ */
+export function isTableDelimiterRow(cells: string[]): boolean {
+  if (!cells || cells.length === 0) return false;
+  return cells.every((cell) => /^\s*:?-{2,}:?\s*$/.test(cell));
+}
+
+/**
+ * Extracts column alignment directives (`left`, `center`, `right`) from a GFM delimiter row.
+ */
+export function parseColumnAlignments(delimiterCells: string[]): TableColumnAlignment[] {
+  return delimiterCells.map((cell) => {
+    const c = cell.trim();
+    const startsWithColon = c.startsWith(':');
+    const endsWithColon = c.endsWith(':');
+    if (startsWithColon && endsWithColon) return 'center';
+    if (endsWithColon) return 'right';
+    return 'left';
+  });
+}
+
+/**
+ * Checks whether a single line looks like a candidate table row.
+ * Supports standard pipe-bounded rows (`| a | b |`), partial streaming rows starting with `|`,
+ * or borderless rows containing at least one unescaped `|` when part of a table block.
+ */
+function isCandidateTableLine(line: string, nextLine?: string, alreadyInTable = false): boolean {
+  const trimmed = line.trim();
+  if (!trimmed || !trimmed.includes('|')) return false;
+
+  // Avoid matching blockquotes or bullet lines that happen to have a pipe unless they start with |
+  if (/^(?:>|[-*]\s|\d+\.\s|#)/.test(trimmed)) return false;
+
+  if (alreadyInTable) {
+    return true;
+  }
+
+  // Standard row starting and ending with pipe (with at least 2 pipes)
+  if (trimmed.startsWith('|') && trimmed.indexOf('|', 1) !== -1) {
+    return true;
+  }
+
+  // Borderless table header row where the very next line is a valid GFM delimiter row
+  if (nextLine) {
+    const nextTrimmed = nextLine.trim();
+    if (nextTrimmed.includes('|') && nextTrimmed.includes('-')) {
+      const nextCells = splitTableRow(nextTrimmed);
+      if (nextCells.length >= 2 && isTableDelimiterRow(nextCells)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -100,18 +221,27 @@ function isA2uiLike(obj: any): boolean {
 }
 
 /**
- * Renders an inline text segment with bold, italics, inline code, and links.
+ * Renders an inline text segment with bold, italics, inline code, links, and <br> line breaks.
+ * Avoids matching intra-word underscores so snake_case identifiers (e.g., `retail_dw`, `customer_orders`)
+ * in unquoted text or table cells are never mangled as italics.
  */
 function renderInlineText(text: string): React.ReactNode {
-  // Regex to split by inline code, bold/italics, and links
-  const tokenRegex = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
+  if (!text) return null;
+
+  // Regex to split by <br> tags, inline code, bold (**), italics (*), and links
+  const tokenRegex = /(<br\s*\/?>|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/gi;
   const parts = text.split(tokenRegex);
 
   return parts.map((part, idx) => {
     if (!part) return null;
 
+    // HTML Line Break: <br>, <br/>, <br />
+    if (/^<br\s*\/?>$/i.test(part)) {
+      return <br key={idx} />;
+    }
+
     // Inline code: `code`
-    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+    if (part.startsWith('`') && part.endsWith('`') && part.length >= 2) {
       return (
         <code
           key={idx}
@@ -126,7 +256,7 @@ function renderInlineText(text: string): React.ReactNode {
     if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
       return (
         <strong key={idx} className="font-semibold text-white">
-          {part.slice(2, -2)}
+          {renderInlineText(part.slice(2, -2))}
         </strong>
       );
     }
@@ -135,7 +265,7 @@ function renderInlineText(text: string): React.ReactNode {
     if (part.startsWith('*') && part.endsWith('*') && part.length >= 2) {
       return (
         <em key={idx} className="italic text-gray-300">
-          {part.slice(1, -1)}
+          {renderInlineText(part.slice(1, -1))}
         </em>
       );
     }
@@ -334,6 +464,15 @@ function A2uiCardView({
 }
 
 /**
+ * Maps a TableColumnAlignment value to the corresponding Tailwind text alignment class.
+ */
+function getAlignmentClass(alignment?: TableColumnAlignment): string {
+  if (alignment === 'center') return 'text-center';
+  if (alignment === 'right') return 'text-right';
+  return 'text-left';
+}
+
+/**
  * Main ChatMessageRenderer Component.
  */
 export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
@@ -351,20 +490,111 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
   }
 
   // Parse lines for markdown elements
-  const textToRender = nonJsonText || content;
+  const textToRender = (nonJsonText || content || '').replace(/\r\n/g, '\n');
   const lines = textToRender.split('\n');
   const renderedElements: React.ReactNode[] = [];
 
   let inCodeBlock = false;
   let codeBuffer: string[] = [];
   let codeLang = '';
+  let tableBuffer: string[] = [];
 
-  lines.forEach((line, index) => {
-    // Check for fenced code block start/end
-    if (line.trim().startsWith('```')) {
+  /**
+   * Flushes accumulated Markdown table lines into a styled HTML <table> or falls back
+   * to a paragraph if only a single non-table pipe line was buffered.
+   */
+  const flushTable = (keyPrefix: string) => {
+    if (tableBuffer.length === 0) return;
+
+    const rawLines = [...tableBuffer];
+    tableBuffer = [];
+
+    const parsedRows = rawLines.map((rowLine) => splitTableRow(rowLine));
+
+    // A single line with pipes is not a complete table; render it as normal inline text
+    if (parsedRows.length < 2) {
+      renderedElements.push(
+        <p key={`${keyPrefix}-p-fallback`} className="text-[11px] text-gray-200 leading-relaxed my-0.5 break-words">
+          {renderInlineText(rawLines[0])}
+        </p>
+      );
+      return;
+    }
+
+    const headerCells = parsedRows[0];
+    const hasDelimiter = isTableDelimiterRow(parsedRows[1]);
+    const alignments = hasDelimiter
+      ? parseColumnAlignments(parsedRows[1])
+      : headerCells.map(() => 'left' as TableColumnAlignment);
+    const bodyRows = hasDelimiter ? parsedRows.slice(2) : parsedRows.slice(1);
+    const columnCount = Math.max(
+      headerCells.length,
+      ...bodyRows.map((r) => r.length)
+    );
+
+    renderedElements.push(
+      <div
+        key={`${keyPrefix}-table`}
+        className="my-2 overflow-x-auto rounded-lg border border-[#30363d] bg-[#0d1117] shadow-sm"
+      >
+        <table className="w-full border-collapse text-[11px]">
+          <thead>
+            <tr className="bg-[#21262d] border-b border-[#30363d]">
+              {headerCells.map((headerCell, colIdx) => (
+                <th
+                  key={colIdx}
+                  className={`px-3 py-2 font-semibold text-white tracking-wide border-r last:border-r-0 border-[#30363d]/60 ${getAlignmentClass(
+                    alignments[colIdx]
+                  )}`}
+                >
+                  {renderInlineText(headerCell)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#30363d]/70">
+            {bodyRows.map((row, rowIdx) => {
+              // Pad ragged streaming rows up to the header column count so borders align cleanly
+              const normalizedCells =
+                row.length < headerCells.length
+                  ? [...row, ...Array(headerCells.length - row.length).fill('')]
+                  : row.slice(0, Math.max(columnCount, headerCells.length));
+
+              return (
+                <tr
+                  key={rowIdx}
+                  className="bg-[#0d1117]/80 even:bg-[#161b22]/50 hover:bg-emerald-950/20 transition-colors"
+                >
+                  {normalizedCells.map((cell, cellIdx) => (
+                    <td
+                      key={cellIdx}
+                      className={`px-3 py-2 text-gray-200 align-top border-r last:border-r-0 border-[#30363d]/40 ${getAlignmentClass(
+                        alignments[cellIdx]
+                      )}`}
+                    >
+                      {renderInlineText(cell)}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    const nextLine = index + 1 < lines.length ? lines[index + 1] : undefined;
+
+    // 1. Check for fenced code block start/end
+    if (trimmed.startsWith('```')) {
+      flushTable(`line-${index}`);
       if (!inCodeBlock) {
         inCodeBlock = true;
-        codeLang = line.trim().slice(3).trim();
+        codeLang = trimmed.slice(3).trim();
         codeBuffer = [];
       } else {
         inCodeBlock = false;
@@ -377,71 +607,87 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
         );
         codeBuffer = [];
       }
-      return;
+      continue;
     }
 
     if (inCodeBlock) {
       codeBuffer.push(line);
-      return;
+      continue;
     }
 
-    // Markdown image: ![alt](url)
-    const imgMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    // 2. Check for GFM table rows
+    if (isCandidateTableLine(line, nextLine, tableBuffer.length > 0)) {
+      tableBuffer.push(line);
+      continue;
+    } else if (tableBuffer.length > 0) {
+      flushTable(`line-${index}`);
+    }
+
+    // 3. Markdown image: ![alt](url)
+    const imgMatch = trimmed.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
     if (imgMatch) {
       renderedElements.push(
         <MediaImage key={`img-${index}`} alt={imgMatch[1]} url={imgMatch[2]} />
       );
-      return;
+      continue;
     }
 
-    // Horizontal Rule: --- or ***
+    // 4. Horizontal Rule: --- or ***
     if (/^(\s*[-*_]\s*){3,}$/.test(line)) {
       renderedElements.push(
         <hr key={`hr-${index}`} className="my-2 border-t border-[#30363d]" />
       );
-      return;
+      continue;
     }
 
-    // Headings
-    if (line.startsWith('### ')) {
+    // 5. Headings (H1 - H4)
+    if (trimmed.startsWith('#### ')) {
+      renderedElements.push(
+        <h4 key={`h4-${index}`} className="text-xs font-semibold text-emerald-300 mt-2 mb-1">
+          {renderInlineText(trimmed.slice(5))}
+        </h4>
+      );
+      continue;
+    }
+    if (trimmed.startsWith('### ')) {
       renderedElements.push(
         <h3 key={`h3-${index}`} className="text-xs font-bold text-white mt-2 mb-1">
-          {renderInlineText(line.slice(4))}
+          {renderInlineText(trimmed.slice(4))}
         </h3>
       );
-      return;
+      continue;
     }
-    if (line.startsWith('## ')) {
+    if (trimmed.startsWith('## ')) {
       renderedElements.push(
         <h2 key={`h2-${index}`} className="text-sm font-bold text-white mt-2.5 mb-1 border-b border-[#30363d]/50 pb-0.5">
-          {renderInlineText(line.slice(3))}
+          {renderInlineText(trimmed.slice(3))}
         </h2>
       );
-      return;
+      continue;
     }
-    if (line.startsWith('# ')) {
+    if (trimmed.startsWith('# ')) {
       renderedElements.push(
         <h1 key={`h1-${index}`} className="text-base font-bold text-white mt-3 mb-1 border-b border-[#30363d] pb-1">
-          {renderInlineText(line.slice(2))}
+          {renderInlineText(trimmed.slice(2))}
         </h1>
       );
-      return;
+      continue;
     }
 
-    // Blockquote: >
-    if (line.startsWith('> ') || line === '>') {
+    // 6. Blockquote: >
+    if (trimmed.startsWith('> ') || trimmed === '>') {
       renderedElements.push(
         <blockquote
           key={`quote-${index}`}
           className="border-l-2 border-emerald-500/60 pl-2.5 my-1 text-gray-300 italic text-[11px]"
         >
-          {renderInlineText(line.slice(2))}
+          {renderInlineText(trimmed.replace(/^>\s?/, ''))}
         </blockquote>
       );
-      return;
+      continue;
     }
 
-    // Unordered list: - or *
+    // 7. Unordered list: - or *
     const unorderedMatch = line.match(/^\s*[-*]\s+(.+)$/);
     if (unorderedMatch) {
       renderedElements.push(
@@ -450,10 +696,10 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
           <span className="text-[11px] text-gray-200">{renderInlineText(unorderedMatch[1])}</span>
         </div>
       );
-      return;
+      continue;
     }
 
-    // Numbered list: 1. or 2.
+    // 8. Numbered list: 1. or 2.
     const orderedMatch = line.match(/^\s*(\d+)\.\s+(.+)$/);
     if (orderedMatch) {
       renderedElements.push(
@@ -464,22 +710,27 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({
           <span className="text-[11px] text-gray-200">{renderInlineText(orderedMatch[2])}</span>
         </div>
       );
-      return;
+      continue;
     }
 
-    // Empty line / line break
-    if (!line.trim()) {
+    // 9. Empty line / line break
+    if (!trimmed) {
       renderedElements.push(<div key={`blank-${index}`} className="h-2" />);
-      return;
+      continue;
     }
 
-    // Standard paragraph line
+    // 10. Standard paragraph line
     renderedElements.push(
       <p key={`p-${index}`} className="text-[11px] text-gray-200 leading-relaxed my-0.5 break-words">
         {renderInlineText(line)}
       </p>
     );
-  });
+  }
+
+  // Flush any trailing table rows at the end of the message
+  if (tableBuffer.length > 0) {
+    flushTable('table-end');
+  }
 
   // If still in code block (e.g. streaming partial response)
   if (inCodeBlock && codeBuffer.length > 0) {

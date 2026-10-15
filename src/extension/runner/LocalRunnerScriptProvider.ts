@@ -81,7 +81,7 @@ def _get_loop():
         _async_thread.start()
     return _async_loop
 
-def _run_coroutine(coro, timeout=300):
+def _run_coroutine(coro, timeout=600):
     loop = _get_loop()
     future = asyncio.run_coroutine_threadsafe(coro, loop)
     return future.result(timeout=timeout)

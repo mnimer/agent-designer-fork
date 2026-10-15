@@ -614,7 +614,7 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
                 )}
 
                 <div
-                  className={`relative max-w-[85%] rounded-xl p-3 text-xs leading-relaxed shadow-sm transition-all ${
+                  className={`relative max-w-[85%] min-w-0 rounded-xl p-3 text-xs leading-relaxed shadow-sm transition-all ${
                     isUser
                       ? 'bg-blue-600/20 border border-blue-500/30 text-blue-100 rounded-tr-none'
                       : 'bg-[#161b22] border border-[#30363d] text-gray-200 rounded-tl-none group-hover:border-emerald-500/30'

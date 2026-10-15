@@ -6,16 +6,21 @@ Provides core lifecycle management functions (CRUD) and principal extraction
 for Dataplex Data Domains and Subdomains in Google Cloud Knowledge Catalog.
 
 Architectural Decisions:
-- Author: Steve Thill <stevethill@google.com>
-- Uses Google Application Default Credentials (ADC) for zero-hardcoded secret authentication.
-- Implements resilient error handling and uniform JSON dictionary return formats compatible with ADK ToolContext.
-- Follows Dataplex v1 REST API standards (https://dataplex.googleapis.com/v1).
+- Author: Mike Nimer <mikenimer@google.com>
+- Uses Google Application Default Credentials (ADC) with explicit `x-goog-user-project`
+  quota project headers so all requests execute under the user's own GCP identity and quota.
+- Returns structured error dictionaries (`{"status": "error", ...}`) rather than raising
+  uncaught exceptions so Google ADK's tool runner never crashes the agent turn with HTTP 500
+  or drops sibling parallel tool calls.
+- Normalizes location identifiers to lowercase (e.g. BigQuery 'US' -> Dataplex 'us').
+- Handles 409 Already Exists idempotently on domain/subdomain creation and matches both
+  project ID and numeric project number in `list_subdomains`.
 """
 
 import sys
 import time
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 import requests
 import google.auth
 from google.auth.transport.requests import Request
@@ -39,9 +44,41 @@ def get_credentials() -> google.auth.credentials.Credentials:
     )
 
     # Section 2: Refresh token if expired or not yet valid
-    if not creds.valid:
+    if not creds.valid or not getattr(creds, "token", None):
         creds.refresh(Request())
     return creds
+
+
+def build_headers(
+    creds: google.auth.credentials.Credentials,
+    project_id: Optional[str] = None,
+    json_content: bool = False,
+) -> Dict[str, str]:
+    """
+    Builds HTTP request headers using User ADC credentials and quota project binding.
+
+    Args:
+        creds: Refreshed ADC credentials.
+        project_id: Target GCP project ID for `x-goog-user-project` quota header.
+        json_content: Whether to include `Content-Type: application/json`.
+
+    Returns:
+        Dictionary of HTTP headers.
+    """
+    headers: Dict[str, str] = {"Authorization": f"Bearer {creds.token}"}
+    if project_id:
+        headers["x-goog-user-project"] = str(project_id).strip()
+    if json_content:
+        headers["Content-Type"] = "application/json"
+    return headers
+
+
+def normalize_location(location: str) -> str:
+    """
+    Normalizes a GCP location or BigQuery multi-region string (e.g. 'US', 'EU')
+    to lowercase Dataplex format ('us', 'eu', 'us-central1').
+    """
+    return str(location).strip().lower()
 
 
 def wait_for_lro(
@@ -49,6 +86,7 @@ def wait_for_lro(
     creds: google.auth.credentials.Credentials,
     timeout_seconds: int = 120,
     poll_interval: float = 2.0,
+    project_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Polls a Google Cloud Dataplex Long Running Operation (LRO) until completion.
@@ -58,13 +96,10 @@ def wait_for_lro(
         creds: Refreshed google.auth credentials.
         timeout_seconds: Maximum time to wait for completion.
         poll_interval: Seconds between polling requests.
+        project_id: Optional project ID for quota header.
 
     Returns:
-        Dictionary with status 'ok' and completed operation or resource data.
-
-    Raises:
-        RuntimeError: If the LRO completes with an error or fails.
-        TimeoutError: If the operation does not complete within timeout.
+        Dictionary with status 'ok' or 'error' and operation result data.
     """
     # Section 1: Check if already completed
     if op_data.get("done") is True:
@@ -72,24 +107,32 @@ def wait_for_lro(
             err = op_data["error"]
             err_code = err.get("code", "UNKNOWN")
             err_msg = err.get("message", "Operation failed")
-            raise RuntimeError(f"Dataplex Operation Error ({err_code}): {err_msg}")
+            return {
+                "status": "error",
+                "http_status": err_code,
+                "message": f"Dataplex Operation Error ({err_code}): {err_msg}",
+            }
         return {"status": "ok", "data": op_data.get("response", op_data)}
 
     op_name = op_data.get("name")
     if not op_name:
         return {"status": "ok", "data": op_data}
 
-    # Section 2: Poll operation endpoint
+    # Section 2: Poll operation endpoint until done or timeout
     start_time = time.time()
     url = f"{DATAPLEX_API_BASE}/{op_name}"
 
     while time.time() - start_time < timeout_seconds:
-        if not creds.valid:
+        if not creds.valid or not getattr(creds, "token", None):
             creds.refresh(Request())
-        headers = {"Authorization": f"Bearer {creds.token}"}
+        headers = build_headers(creds, project_id=project_id)
         resp = requests.get(url, headers=headers, timeout=TIMEOUT_SECONDS)
         if resp.status_code >= 400:
-            raise RuntimeError(f"Failed to poll LRO {op_name} ({resp.status_code}): {resp.text}")
+            return {
+                "status": "error",
+                "http_status": resp.status_code,
+                "message": f"Failed to poll LRO {op_name} ({resp.status_code}): {resp.text}",
+            }
 
         status_json = resp.json()
         if status_json.get("done") is True:
@@ -97,69 +140,82 @@ def wait_for_lro(
                 err = status_json["error"]
                 err_code = err.get("code", "UNKNOWN")
                 err_msg = err.get("message", "Operation failed")
-                raise RuntimeError(f"Dataplex Operation Error ({err_code}): {err_msg}")
+                return {
+                    "status": "error",
+                    "http_status": err_code,
+                    "message": f"Dataplex Operation Error ({err_code}): {err_msg}",
+                }
             return {"status": "ok", "data": status_json.get("response", status_json)}
 
         time.sleep(poll_interval)
 
-    raise TimeoutError(f"Dataplex Operation {op_name} timed out after {timeout_seconds}s")
+    return {
+        "status": "error",
+        "http_status": 504,
+        "message": f"Dataplex Operation {op_name} timed out after {timeout_seconds}s",
+    }
 
 
 def handle_response(
     response: requests.Response,
     creds: Optional[google.auth.credentials.Credentials] = None,
     wait_lro: bool = True,
+    project_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Handles HTTP responses uniformly across Dataplex REST endpoints.
-    Awaits Long Running Operations (LRO) when applicable.
-    Raises RuntimeError on HTTP errors so ADK and Gemini are immediately aware of failures.
+    Awaits Long Running Operations (LRO) when applicable and returns structured
+    dictionaries on HTTP errors so ADK can feed error details back to Gemini
+    without crashing the agent turn.
 
     Args:
         response: The requests Response object.
         creds: Optional credentials to poll LROs.
         wait_lro: Whether to await completion of Long Running Operations.
+        project_id: Optional project ID for quota header.
 
     Returns:
-        A dictionary with 'status' and 'data' or success message.
-
-    Raises:
-        RuntimeError: When HTTP status code >= 400 or when LRO fails.
+        A dictionary with 'status' ('ok' or 'error') and 'data' or 'message'.
     """
     # Section 1: Attempt standard HTTP response parsing
     try:
         response.raise_for_status()
         if response.status_code == 204:
             return {"status": "ok", "message": "Resource deleted successfully"}
-        data = response.json() if response.text else {}
+        data = response.json() if getattr(response, "text", None) is not False else {}
 
         # Section 2: Detect and await Long Running Operation if requested
         if wait_lro and isinstance(data, dict) and "name" in data and ("done" in data or "metadata" in data):
             if creds is None:
                 creds = get_credentials()
-            return wait_for_lro(data, creds)
+            return wait_for_lro(data, creds, project_id=project_id)
 
         return {"status": "ok", "data": data}
     except requests.exceptions.HTTPError as err:
-        # Section 3: Extract Dataplex backend error details and raise to stop agent
+        # Section 3: Extract Dataplex backend error details and return structured error
         err_msg = ""
         try:
             err_json = response.json()
             err_msg = err_json.get("error", {}).get("message", response.text)
         except Exception:
-            err_msg = response.text or str(err)
+            err_msg = getattr(response, "text", "") or str(err)
 
         sys.stderr.write(f"\n[DATAPLEX API ERROR {response.status_code}] {err_msg}\n")
         sys.stderr.flush()
         logger.error("HTTP Error %s: %s", response.status_code, err_msg)
-        raise RuntimeError(f"Dataplex API Error ({response.status_code}): {err_msg}")
+        return {
+            "status": "error",
+            "http_status": response.status_code,
+            "message": f"Dataplex API Error ({response.status_code}): {err_msg}",
+        }
     except Exception as err:
-        if isinstance(err, (RuntimeError, TimeoutError)):
-            raise
         sys.stderr.write(f"\n[DATAPLEX UNEXPECTED ERROR] {err}\n")
         sys.stderr.flush()
         logger.error("Unexpected error: %s", str(err))
-        raise RuntimeError(f"Dataplex Unexpected Error: {err}")
+        return {
+            "status": "error",
+            "message": f"Dataplex Unexpected Error: {err}",
+        }
 
 
 def validate_param(param_name: str, value: Any, prompt: str) -> Optional[Dict[str, Any]]:
@@ -189,7 +245,7 @@ def list_domains(project_id: str, location: str) -> Dict[str, Any]:
 
     Args:
         project_id: The Google Cloud project ID.
-        location: The region identifier (e.g. 'us-central1' or 'global').
+        location: The region or multi-region identifier (e.g. 'us', 'eu', 'us-central1').
 
     Returns:
         JSON response containing list of domains or error message.
@@ -198,18 +254,23 @@ def list_domains(project_id: str, location: str) -> Dict[str, Any]:
     err = validate_param("project_id", project_id, "Please provide the GCP Project ID.")
     if err:
         return err
-    err = validate_param("location", location, "Please provide the GCP location/region (e.g. 'us-central1').")
+    err = validate_param("location", location, "Please provide the GCP location/region (e.g. 'us' or 'us-central1').")
     if err:
         return err
 
-    # Section 1: Construct endpoint and authorization headers
-    creds = get_credentials()
-    url = f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{location}/dataDomains"
-    headers = {"Authorization": f"Bearer {creds.token}"}
+    loc = normalize_location(location)
 
-    # Section 2: Execute GET request
-    response = requests.get(url, headers=headers, timeout=TIMEOUT_SECONDS)
-    return handle_response(response)
+    # Section 1: Construct endpoint and authorization headers
+    try:
+        creds = get_credentials()
+        url = f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{loc}/dataDomains"
+        headers = build_headers(creds, project_id=project_id)
+
+        # Section 2: Execute GET request
+        response = requests.get(url, headers=headers, timeout=TIMEOUT_SECONDS)
+        return handle_response(response, project_id=project_id)
+    except Exception as exc:
+        return {"status": "error", "message": f"Failed to list domains: {exc}"}
 
 
 def create_domain(
@@ -224,10 +285,11 @@ def create_domain(
 ) -> Dict[str, Any]:
     """
     Creates a new top-level Dataplex Data Domain.
+    If the domain already exists (HTTP 409), returns the existing domain metadata idempotently.
 
     Args:
         project_id: Google Cloud project ID.
-        location: Target region (e.g. 'us-central1').
+        location: Target region or multi-region matching BigQuery datasets (e.g. 'us', 'us-central1').
         domain_id: kebab-case unique identifier for the domain (e.g. 'customer-experience').
         display_name: Human-readable domain name.
         description: Concise 1-2 sentence plain-text functional description and scope.
@@ -242,41 +304,50 @@ def create_domain(
     err = validate_param("project_id", project_id, "Please provide the GCP Project ID.")
     if err:
         return err
-    err = validate_param("location", location, "Please provide the GCP location/region (e.g. 'us-central1').")
+    err = validate_param("location", location, "Please provide the GCP location/region (e.g. 'us' or 'us-central1').")
     if err:
         return err
     err = validate_param("domain_id", domain_id, "Please provide the domain identifier (kebab-case).")
     if err:
         return err
+
+    loc = normalize_location(location)
+
     # Section 1: Set up request URL and credentials
-    creds = get_credentials()
-    url = (
-        f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{location}"
-        f"/dataDomains?dataDomainId={domain_id}"
-    )
-    headers = {
-        "Authorization": f"Bearer {creds.token}",
-        "Content-Type": "application/json",
-    }
+    try:
+        creds = get_credentials()
+        url = (
+            f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{loc}"
+            f"/dataDomains?dataDomainId={domain_id}"
+        )
+        headers = build_headers(creds, project_id=project_id, json_content=True)
 
-    # Section 2: Build domain payload with plain-text description and required contacts
-    payload: Dict[str, Any] = {
-        "displayName": display_name,
-        "description": description,
-        "contacts": {
-            "identities": [
-                {
-                    "contactName": contact_name or "Data Domain Owner",
-                    "contactRole": contact_role or "owner",
-                    "contactId": contact_email or "owner@example.com",
-                }
-            ]
-        },
-    }
+        # Section 2: Build domain payload with plain-text description and required contacts
+        payload: Dict[str, Any] = {
+            "displayName": display_name,
+            "description": description,
+            "contacts": {
+                "identities": [
+                    {
+                        "contactName": contact_name or "Data Domain Owner",
+                        "contactRole": contact_role or "owner",
+                        "contactId": contact_email or "owner@example.com",
+                    }
+                ]
+            },
+        }
 
-    # Section 3: Dispatch creation call and await LRO completion
-    response = requests.post(url, headers=headers, json=payload, timeout=TIMEOUT_SECONDS)
-    return handle_response(response, creds=creds, wait_lro=True)
+        # Section 3: Dispatch creation call and handle idempotent 409 conflicts
+        response = requests.post(url, headers=headers, json=payload, timeout=TIMEOUT_SECONDS)
+        if response.status_code == 409:
+            existing = get_domain(project_id, loc, domain_id)
+            if existing.get("status") == "ok":
+                existing["already_existed"] = True
+                existing["message"] = f"Domain '{domain_id}' already exists in location '{loc}'."
+                return existing
+        return handle_response(response, creds=creds, wait_lro=True, project_id=project_id)
+    except Exception as exc:
+        return {"status": "error", "message": f"Failed to create domain '{domain_id}': {exc}"}
 
 
 def create_subdomain(
@@ -292,10 +363,11 @@ def create_subdomain(
 ) -> Dict[str, Any]:
     """
     Creates a Dataplex Data Subdomain nested under an existing parent domain.
+    If the subdomain already exists (HTTP 409), returns the existing subdomain metadata idempotently.
 
     Args:
         project_id: Google Cloud project ID.
-        location: Region identifier (e.g. 'us-central1').
+        location: Region or multi-region identifier matching BigQuery datasets (e.g. 'us', 'us-central1').
         domain_id: kebab-case unique identifier for the subdomain.
         parent_domain_id: Parent domain ID or full resource path.
         display_name: Subdomain display name.
@@ -311,7 +383,7 @@ def create_subdomain(
     err = validate_param("project_id", project_id, "Please provide the GCP Project ID.")
     if err:
         return err
-    err = validate_param("location", location, "Please provide the GCP location/region (e.g. 'us-central1').")
+    err = validate_param("location", location, "Please provide the GCP location/region (e.g. 'us' or 'us-central1').")
     if err:
         return err
     err = validate_param("domain_id", domain_id, "Please provide the subdomain identifier (kebab-case).")
@@ -321,44 +393,52 @@ def create_subdomain(
     if err:
         return err
 
+    loc = normalize_location(location)
+
     # Section 1: Set up endpoint and authorization headers
-    creds = get_credentials()
-    url = (
-        f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{location}"
-        f"/dataDomains?dataDomainId={domain_id}"
-    )
-    headers = {
-        "Authorization": f"Bearer {creds.token}",
-        "Content-Type": "application/json",
-    }
-
-    # Section 2: Normalize parent resource path if simple ID provided
-    if not parent_domain_id.startswith("projects/"):
-        parent_path = (
-            f"projects/{project_id}/locations/{location}/dataDomains/{parent_domain_id}"
+    try:
+        creds = get_credentials()
+        url = (
+            f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{loc}"
+            f"/dataDomains?dataDomainId={domain_id}"
         )
-    else:
-        parent_path = parent_domain_id
+        headers = build_headers(creds, project_id=project_id, json_content=True)
 
-    # Section 3: Build subdomain payload with required contacts and parent reference
-    payload: Dict[str, Any] = {
-        "displayName": display_name,
-        "description": description,
-        "parentDataDomain": parent_path,
-        "contacts": {
-            "identities": [
-                {
-                    "contactName": contact_name or "Data Subdomain Owner",
-                    "contactRole": contact_role or "owner",
-                    "contactId": contact_email or "owner@example.com",
-                }
-            ]
-        },
-    }
+        # Section 2: Normalize parent resource path if simple ID provided
+        if not parent_domain_id.startswith("projects/"):
+            parent_path = (
+                f"projects/{project_id}/locations/{loc}/dataDomains/{parent_domain_id}"
+            )
+        else:
+            parent_path = parent_domain_id
 
-    # Section 4: Dispatch subdomain creation request and await LRO completion
-    response = requests.post(url, headers=headers, json=payload, timeout=TIMEOUT_SECONDS)
-    return handle_response(response, creds=creds, wait_lro=True)
+        # Section 3: Build subdomain payload with required contacts and parent reference
+        payload: Dict[str, Any] = {
+            "displayName": display_name,
+            "description": description,
+            "parentDataDomain": parent_path,
+            "contacts": {
+                "identities": [
+                    {
+                        "contactName": contact_name or "Data Subdomain Owner",
+                        "contactRole": contact_role or "owner",
+                        "contactId": contact_email or "owner@example.com",
+                    }
+                ]
+            },
+        }
+
+        # Section 4: Dispatch subdomain creation request and handle idempotent 409 conflicts
+        response = requests.post(url, headers=headers, json=payload, timeout=TIMEOUT_SECONDS)
+        if response.status_code == 409:
+            existing = get_domain(project_id, loc, domain_id)
+            if existing.get("status") == "ok":
+                existing["already_existed"] = True
+                existing["message"] = f"Subdomain '{domain_id}' already exists in location '{loc}'."
+                return existing
+        return handle_response(response, creds=creds, wait_lro=True, project_id=project_id)
+    except Exception as exc:
+        return {"status": "error", "message": f"Failed to create subdomain '{domain_id}': {exc}"}
 
 
 def get_domain(project_id: str, location: str, domain_id: str) -> Dict[str, Any]:
@@ -367,7 +447,7 @@ def get_domain(project_id: str, location: str, domain_id: str) -> Dict[str, Any]
 
     Args:
         project_id: Google Cloud project ID.
-        location: Region identifier.
+        location: Region or multi-region identifier.
         domain_id: Identifier of the target domain.
 
     Returns:
@@ -384,17 +464,22 @@ def get_domain(project_id: str, location: str, domain_id: str) -> Dict[str, Any]
     if err:
         return err
 
-    # Section 1: Prepare request endpoint and credentials
-    creds = get_credentials()
-    url = (
-        f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{location}"
-        f"/dataDomains/{domain_id}"
-    )
-    headers = {"Authorization": f"Bearer {creds.token}"}
+    loc = normalize_location(location)
 
-    # Section 2: Query domain metadata
-    response = requests.get(url, headers=headers, timeout=TIMEOUT_SECONDS)
-    return handle_response(response)
+    # Section 1: Prepare request endpoint and credentials
+    try:
+        creds = get_credentials()
+        url = (
+            f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{loc}"
+            f"/dataDomains/{domain_id}"
+        )
+        headers = build_headers(creds, project_id=project_id)
+
+        # Section 2: Query domain metadata
+        response = requests.get(url, headers=headers, timeout=TIMEOUT_SECONDS)
+        return handle_response(response, project_id=project_id)
+    except Exception as exc:
+        return {"status": "error", "message": f"Failed to get domain '{domain_id}': {exc}"}
 
 
 def list_subdomains(
@@ -407,7 +492,7 @@ def list_subdomains(
 
     Args:
         project_id: Google Cloud project ID.
-        location: Region identifier.
+        location: Region or multi-region identifier.
         parent_domain_id: Parent domain identifier.
 
     Returns:
@@ -424,23 +509,30 @@ def list_subdomains(
     if err:
         return err
 
+    loc = normalize_location(location)
+
     # Section 1: Query all domains in region
-    all_domains_resp = list_domains(project_id, location)
+    all_domains_resp = list_domains(project_id, loc)
     if all_domains_resp.get("status") != "ok":
         return all_domains_resp
 
-    # Section 2: Normalize parent path for matching
-    expected_parent = (
-        parent_domain_id
-        if parent_domain_id.startswith("projects/")
-        else f"projects/{project_id}/locations/{location}/dataDomains/{parent_domain_id}"
-    )
+    # Section 2: Match parent domain ID regardless of whether Dataplex returned
+    # the project ID string or numeric project number in `parentDataDomain`
+    short_parent_id = parent_domain_id.split("/")[-1] if "/" in parent_domain_id else parent_domain_id
+    expected_suffix = f"/locations/{loc}/dataDomains/{short_parent_id}"
 
-    # Section 3: Filter domains where parent_data_domain matches
+    # Section 3: Filter domains where parentDataDomain matches
     domains = all_domains_resp.get("data", {}).get("dataDomains", [])
-    matching_subdomains = [
-        d for d in domains if d.get("parentDataDomain") == expected_parent or d.get("parent_data_domain") == expected_parent
-    ]
+    matching_subdomains = []
+    for d in domains:
+        parent_ref = d.get("parentDataDomain") or d.get("parent_data_domain") or ""
+        if (
+            parent_ref == parent_domain_id
+            or parent_ref.endswith(expected_suffix)
+            or (parent_ref and parent_ref.split("/")[-1] == short_parent_id)
+        ):
+            matching_subdomains.append(d)
+
     return {"status": "ok", "data": {"subdomains": matching_subdomains}}
 
 
@@ -456,7 +548,7 @@ def update_domain(
 
     Args:
         project_id: Google Cloud project ID.
-        location: Region identifier.
+        location: Region or multi-region identifier.
         domain_id: Identifier of the domain to update.
         display_name: Optional new display name.
         description: Optional new plain-text description.
@@ -475,8 +567,9 @@ def update_domain(
     if err:
         return err
 
+    loc = normalize_location(location)
+
     # Section 1: Validate update fields and compute update mask
-    creds = get_credentials()
     update_mask = []
     payload: Dict[str, Any] = {}
 
@@ -491,16 +584,17 @@ def update_domain(
         return {"status": "error", "message": "No update fields specified (display_name or description required)."}
 
     # Section 2: Send PATCH request with update mask
-    url = (
-        f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{location}"
-        f"/dataDomains/{domain_id}?updateMask={','.join(update_mask)}"
-    )
-    headers = {
-        "Authorization": f"Bearer {creds.token}",
-        "Content-Type": "application/json",
-    }
-    response = requests.patch(url, headers=headers, json=payload, timeout=TIMEOUT_SECONDS)
-    return handle_response(response, creds=creds, wait_lro=True)
+    try:
+        creds = get_credentials()
+        url = (
+            f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{loc}"
+            f"/dataDomains/{domain_id}?updateMask={','.join(update_mask)}"
+        )
+        headers = build_headers(creds, project_id=project_id, json_content=True)
+        response = requests.patch(url, headers=headers, json=payload, timeout=TIMEOUT_SECONDS)
+        return handle_response(response, creds=creds, wait_lro=True, project_id=project_id)
+    except Exception as exc:
+        return {"status": "error", "message": f"Failed to update domain '{domain_id}': {exc}"}
 
 
 def delete_domain(project_id: str, location: str, domain_id: str) -> Dict[str, Any]:
@@ -513,7 +607,7 @@ def delete_domain(project_id: str, location: str, domain_id: str) -> Dict[str, A
 
     Args:
         project_id: Google Cloud project ID.
-        location: Region identifier.
+        location: Region or multi-region identifier.
         domain_id: Identifier of the domain to delete.
 
     Returns:
@@ -530,17 +624,22 @@ def delete_domain(project_id: str, location: str, domain_id: str) -> Dict[str, A
     if err:
         return err
 
-    # Section 1: Set up DELETE request
-    creds = get_credentials()
-    url = (
-        f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{location}"
-        f"/dataDomains/{domain_id}"
-    )
-    headers = {"Authorization": f"Bearer {creds.token}"}
+    loc = normalize_location(location)
 
-    # Section 2: Execute DELETE call and await LRO completion
-    response = requests.delete(url, headers=headers, timeout=TIMEOUT_SECONDS)
-    return handle_response(response, creds=creds, wait_lro=True)
+    # Section 1: Set up DELETE request
+    try:
+        creds = get_credentials()
+        url = (
+            f"{DATAPLEX_API_BASE}/projects/{project_id}/locations/{loc}"
+            f"/dataDomains/{domain_id}"
+        )
+        headers = build_headers(creds, project_id=project_id)
+
+        # Section 2: Execute DELETE call and await LRO completion
+        response = requests.delete(url, headers=headers, timeout=TIMEOUT_SECONDS)
+        return handle_response(response, creds=creds, wait_lro=True, project_id=project_id)
+    except Exception as exc:
+        return {"status": "error", "message": f"Failed to delete domain '{domain_id}': {exc}"}
 
 
 def get_domain_principal(
@@ -556,7 +655,7 @@ def get_domain_principal(
 
     Args:
         project_id: Google Cloud project ID.
-        location: Region identifier.
+        location: Region or multi-region identifier.
         domain_id: Target domain identifier.
 
     Returns:
@@ -573,8 +672,10 @@ def get_domain_principal(
     if err:
         return err
 
+    loc = normalize_location(location)
+
     # Section 1: Fetch domain details
-    domain_resp = get_domain(project_id, location, domain_id)
+    domain_resp = get_domain(project_id, loc, domain_id)
     if domain_resp.get("status") != "ok":
         return domain_resp
 
@@ -583,7 +684,10 @@ def get_domain_principal(
     policy_member = data.get("policyMember") or data.get("policy_member")
 
     if not policy_member:
-        raise RuntimeError(f"Domain '{domain_id}' does not contain an active 'policyMember' principal.")
+        return {
+            "status": "error",
+            "message": f"Domain '{domain_id}' does not contain an active 'policyMember' principal.",
+        }
 
     # Section 3: Handle both string format and nested dict format
     if isinstance(policy_member, dict):
@@ -599,6 +703,6 @@ def get_domain_principal(
         "status": "ok",
         "principal": principal,
         "domain_id": domain_id,
+        "location": loc,
         "raw_policy_member": policy_member,
     }
-
