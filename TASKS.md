@@ -55,49 +55,49 @@
 | [**TASK-141**](#task-141) | v1.0.11 | Webview / Perf | [MAJOR] Fix Canvas Re-Render Storms & Document Serialization Thrash | **Completed** | TASK-103, TASK-112 |
 | [**TASK-142**](#task-142) | v1.0.12 | Architecture | [MAJOR] Decompose God Classes (Runner, Deployer, EditorProvider, App.tsx) | **Completed** | TASK-132 to TASK-141 |
 | [**TASK-143**](#task-143) | v1.0.12 | Architecture / Quality | [MAJOR] Unify Duplicated Domain Types, Extract Drawer Primitives & Remove Dead Code | **Completed** | TASK-142 |
-| [**TASK-144**](#task-144) | v1.2.0 | Samples / Research | Reverse Engineer `academic-research` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-145**](#task-145) | v1.2.0 | Samples / Patterns | Reverse Engineer `adk-ae-oauth` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-146**](#task-146) | v1.2.0 | Samples / Patterns | Reverse Engineer `agent-skills-tutorial` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-147**](#task-147) | v1.2.0 | Samples / Creative | Reverse Engineer `brand-aligned-presentations` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-148**](#task-148) | v1.2.0 | Samples / Retail | Reverse Engineer `brand-search-optimization` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-149**](#task-149) | v1.2.0 | Samples / Finance | Reverse Engineer `currency-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-150**](#task-150) | v1.2.0 | Samples / Retail | Reverse Engineer `customer-service` (Cymbal) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-151**](#task-151) | v1.2.0 | Samples / Operations | Reverse Engineer `cyber-guardian-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-152**](#task-152) | v1.2.0 | Samples / Data | Reverse Engineer `data-engineering` (BigQuery/Dataform) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-153**](#task-153) | v1.2.0 | Samples / Data | Reverse Engineer `data-science` (NL2SQL/Python) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-154**](#task-154) | v1.2.0 | Samples / Research | Reverse Engineer `deep-search` (Multi-Agent Research) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-155**](#task-155) | v1.2.0 | Samples / Finance | Reverse Engineer `financial-advisor` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-156**](#task-156) | v1.2.0 | Samples / Finance | Reverse Engineer `fomc-research` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-157**](#task-157) | v1.2.0 | Samples / Retail | Reverse Engineer `gemma-food-tour-guide` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-158**](#task-158) | v1.2.0 | Samples / Research | Reverse Engineer `high-volume-document-analyzer` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-159**](#task-159) | v1.2.0 | Samples / Patterns | Reverse Engineer `llm-auditor` (Critic-Reviser) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-160**](#task-160) | v1.2.0 | Samples / Creative | Reverse Engineer `marketing-agency` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-161**](#task-161) | v1.2.0 | Samples / Operations | Reverse Engineer `medical-pre-authorization` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-162**](#task-162) | v1.2.0 | Samples / Patterns | Reverse Engineer `memory-bank` (Persistent Memory) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-163**](#task-163) | v1.2.0 | Samples / Creative | Reverse Engineer `on-brand-genmedia` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-164**](#task-164) | v1.2.0 | Samples / Retail | Reverse Engineer `personalized-shopping` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-165**](#task-165) | v1.2.0 | Samples / Patterns | Reverse Engineer `rag-agent` (Vertex AI RAG) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-166**](#task-166) | v1.2.0 | Samples / Patterns | Reverse Engineer `safety-plugins` (Guardrails/Armor) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-167**](#task-167) | v1.2.0 | Samples / SDLC | Reverse Engineer `sdlc-task-planner` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-168**](#task-168) | v1.2.0 | Samples / SDLC | Reverse Engineer `sdlc-technical-designer` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-169**](#task-169) | v1.2.0 | Samples / SDLC | Reverse Engineer `sdlc-user-story-refiner` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-170**](#task-170) | v1.2.0 | Samples / Creative | Reverse Engineer `short-movie-agents` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-171**](#task-171) | v1.2.0 | Samples / Finance | Reverse Engineer `small-business-loan-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-172**](#task-172) | v1.2.0 | Samples / SDLC | Reverse Engineer `software-bug-assistant` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-144**](#task-144) | v1.3.0 | Samples / Research | Reverse Engineer `academic-research` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-145**](#task-145) | v1.3.0 | Samples / Patterns | Reverse Engineer `adk-ae-oauth` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-146**](#task-146) | v1.3.0 | Samples / Patterns | Reverse Engineer `agent-skills-tutorial` Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-223 |
+| [**TASK-147**](#task-147) | v1.3.0 | Samples / Creative | Reverse Engineer `brand-aligned-presentations` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-148**](#task-148) | v1.3.0 | Samples / Retail | Reverse Engineer `brand-search-optimization` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-149**](#task-149) | v1.3.0 | Samples / Finance | Reverse Engineer `currency-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-150**](#task-150) | v1.3.0 | Samples / Retail | Reverse Engineer `customer-service` (Cymbal) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-151**](#task-151) | v1.3.0 | Samples / Operations | Reverse Engineer `cyber-guardian-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-152**](#task-152) | v1.3.0 | Samples / Data | Reverse Engineer `data-engineering` (BigQuery/Dataform) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-153**](#task-153) | v1.3.0 | Samples / Data | Reverse Engineer `data-science` (NL2SQL/Python) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-154**](#task-154) | v1.3.0 | Samples / Research | Reverse Engineer `deep-search` (Multi-Agent Research) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-155**](#task-155) | v1.3.0 | Samples / Finance | Reverse Engineer `financial-advisor` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-156**](#task-156) | v1.3.0 | Samples / Finance | Reverse Engineer `fomc-research` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-157**](#task-157) | v1.3.0 | Samples / Retail | Reverse Engineer `gemma-food-tour-guide` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-158**](#task-158) | v1.3.0 | Samples / Research | Reverse Engineer `high-volume-document-analyzer` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-159**](#task-159) | v1.3.0 | Samples / Patterns | Reverse Engineer `llm-auditor` (Critic-Reviser) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-160**](#task-160) | v1.3.0 | Samples / Creative | Reverse Engineer `marketing-agency` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-161**](#task-161) | v1.3.0 | Samples / Operations | Reverse Engineer `medical-pre-authorization` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-162**](#task-162) | v1.3.0 | Samples / Patterns | Reverse Engineer `memory-bank` (Persistent Memory) Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-236 |
+| [**TASK-163**](#task-163) | v1.3.0 | Samples / Creative | Reverse Engineer `on-brand-genmedia` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-164**](#task-164) | v1.3.0 | Samples / Retail | Reverse Engineer `personalized-shopping` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-165**](#task-165) | v1.3.0 | Samples / Patterns | Reverse Engineer `rag-agent` (Vertex AI RAG) Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-229 |
+| [**TASK-166**](#task-166) | v1.3.0 | Samples / Patterns | Reverse Engineer `safety-plugins` (Guardrails/Armor) Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-239, TASK-240 |
+| [**TASK-167**](#task-167) | v1.3.0 | Samples / SDLC | Reverse Engineer `sdlc-task-planner` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-168**](#task-168) | v1.3.0 | Samples / SDLC | Reverse Engineer `sdlc-technical-designer` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-169**](#task-169) | v1.3.0 | Samples / SDLC | Reverse Engineer `sdlc-user-story-refiner` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-170**](#task-170) | v1.3.0 | Samples / Creative | Reverse Engineer `short-movie-agents` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-171**](#task-171) | v1.3.0 | Samples / Finance | Reverse Engineer `small-business-loan-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-172**](#task-172) | v1.3.0 | Samples / SDLC | Reverse Engineer `software-bug-assistant` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
 | [**TASK-173**](#task-173) | v1.2.0 | Samples / Retail | Reverse Engineer `travel-concierge` Sample to `.agent` & Tools | **Complete** | TASK-128 |
-| [**TASK-174**](#task-174) | v1.2.0 | Samples / Research | Reverse Engineer `youtube-analyst` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-175**](#task-175) | v1.2.0 | Samples / Retail | Reverse Engineer `attenu-guard-customer-service` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-176**](#task-176) | v1.2.0 | Samples / Operations | Reverse Engineer `clause-agent` (Legal Contracts) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-177**](#task-177) | v1.2.0 | Samples / Operations | Reverse Engineer `cross-border-data-router` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-178**](#task-178) | v1.2.0 | Samples / Research | Reverse Engineer `market-research-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-179**](#task-179) | v1.2.0 | Samples / Patterns | Reverse Engineer `multiformat-hybrid-rag` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-180**](#task-180) | v1.2.0 | Samples / Retail | Reverse Engineer `staged-ui-widgets` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-181**](#task-181) | v1.2.0 | Samples / Finance | Reverse Engineer `ambient-expense-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-182**](#task-182) | v1.2.0 | Samples / Patterns | Reverse Engineer `cross-session-memory` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-183**](#task-183) | v1.2.0 | Samples / SDLC | Reverse Engineer `long-horizon-harness` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-184**](#task-184) | v1.2.0 | Samples / Patterns | Reverse Engineer `oauth-user-consent-flow` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-185**](#task-185) | v1.2.0 | Samples / Patterns | Reverse Engineer `rag-agent-search` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-186**](#task-186) | v1.2.0 | Samples / Patterns | Reverse Engineer `rag-vector-search` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-174**](#task-174) | v1.3.0 | Samples / Research | Reverse Engineer `youtube-analyst` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-175**](#task-175) | v1.3.0 | Samples / Retail | Reverse Engineer `attenu-guard-customer-service` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-176**](#task-176) | v1.3.0 | Samples / Operations | Reverse Engineer `clause-agent` (Legal Contracts) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-177**](#task-177) | v1.3.0 | Samples / Operations | Reverse Engineer `cross-border-data-router` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-178**](#task-178) | v1.3.0 | Samples / Research | Reverse Engineer `market-research-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-179**](#task-179) | v1.3.0 | Samples / Patterns | Reverse Engineer `multiformat-hybrid-rag` Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-229 |
+| [**TASK-180**](#task-180) | v1.3.0 | Samples / Retail | Reverse Engineer `staged-ui-widgets` Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-221 |
+| [**TASK-181**](#task-181) | v1.3.0 | Samples / Finance | Reverse Engineer `ambient-expense-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-182**](#task-182) | v1.3.0 | Samples / Patterns | Reverse Engineer `cross-session-memory` Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-236 |
+| [**TASK-183**](#task-183) | v1.3.0 | Samples / SDLC | Reverse Engineer `long-horizon-harness` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-184**](#task-184) | v1.3.0 | Samples / Patterns | Reverse Engineer `oauth-user-consent-flow` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-185**](#task-185) | v1.3.0 | Samples / Patterns | Reverse Engineer `rag-agent-search` Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-229 |
+| [**TASK-186**](#task-186) | v1.3.0 | Samples / Patterns | Reverse Engineer `rag-vector-search` Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-229 |
 | [**TASK-187**](#task-187) | v1.1.2 | Agent Types | Synthesizer Agent Type (Basic Agent Node & Schema Reducer) | **Complete** | TASK-103, TASK-119 |
 | [**TASK-188**](#task-188) | v1.1.2 | Agent Types | Human-in-the-Loop (HITL / Approval Gate) Agent Type | **Complete** | TASK-103, TASK-115 |
 | [**TASK-189**](#task-189) | v1.1.2 | Agent Types | Fallback & Circuit Breaker Agent Type (Resilience & Quota Safety) | **Complete** | TASK-103, TASK-117 |
@@ -117,16 +117,16 @@
 | [**TASK-200**](#task-200) | v1.0.3 | Memory / Redis | Cloud Memorystore (Redis/Valkey) Checkpointer & Session TTL Expiration | **Complete** | TASK-115 |
 | [**TASK-201**](#task-201) | v1.2.0 | Quality / Integration | Animal Expert Multi-Agent System (Parallel Fan-Out + Search Grounding) | **Complete** | TASK-106, TASK-113 |
 | [**TASK-202**](#task-202) | v1.2.0 | Quality / Integration | CyberGuardian SecOps Multi-Agent System (Coordinator + Eventarc Trigger) | **Complete** | TASK-106, TASK-121 |
-| [**TASK-203**](#task-203) | v1.2.0 | Quality / Integration | Financial Fraud & Services Router (Intent Classifier + State Expressions + SQLite) | **Not Started** | TASK-117, TASK-196, TASK-197 |
-| [**TASK-204**](#task-204) | v1.2.0 | Quality / Integration | Market Research Synthesizer Reducer (Parallel Fan-Out + Multi-Tool + Firestore) | **Not Started** | TASK-113, TASK-114, TASK-187 |
-| [**TASK-205**](#task-205) | v1.2.0 | Quality / Integration | Commercial Loan HITL Approval Gate (Human-in-the-Loop + Cloud SQL PostgreSQL) | **Not Started** | TASK-188, TASK-198 |
-| [**TASK-206**](#task-206) | v1.2.0 | Quality / Integration | Resilient Weather & Outage Fallback (Circuit Breaker + Memorystore Redis + Cron) | **Not Started** | TASK-189, TASK-200 |
-| [**TASK-207**](#task-207) | v1.2.0 | Quality / Integration | Healthcare Diagnostic Guardrail Shield (Bi-directional PII Gate + Cloud Spanner) | **Not Started** | TASK-190, TASK-199 |
-| [**TASK-208**](#task-208) | v1.2.0 | Quality / Integration | Procurement B2B A2A Protocol Agent (JSON-RPC 2.0 + Google Cloud IAM OIDC) | **Not Started** | TASK-116, TASK-121 |
-| [**TASK-209**](#task-209) | v1.2.0 | Quality / Integration | Autonomous Code Optimizer Loop (Evaluator-Optimizer + Thinking Budget + Sandbox) | **Not Started** | TASK-192A, TASK-192B |
-| [**TASK-210**](#task-210) | v1.2.0 | Quality / Integration | Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus) | **Not Started** | TASK-193A, TASK-193B |
-| [**TASK-211**](#task-211) | v1.2.0 | Quality / Integration | Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL) | **Not Started** | TASK-195A, TASK-195B, TASK-198 |
-| [**TASK-212**](#task-212) | v1.2.0 | Quality / Integration | Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner) | **Not Started** | TASK-129, TASK-130, TASK-199 |
+| [**TASK-203**](#task-203) | v1.2.1 | Quality / Integration | Financial Fraud & Services Router (Intent Classifier + State Expressions + SQLite) | **Not Started** | TASK-117, TASK-196, TASK-197 |
+| [**TASK-204**](#task-204) | v1.2.1 | Quality / Integration | Market Research Synthesizer Reducer (Parallel Fan-Out + Multi-Tool + Firestore) | **Not Started** | TASK-113, TASK-114, TASK-187 |
+| [**TASK-205**](#task-205) | v1.2.1 | Quality / Integration | Commercial Loan HITL Approval Gate (Human-in-the-Loop + Cloud SQL PostgreSQL) | **Not Started** | TASK-188, TASK-198 |
+| [**TASK-206**](#task-206) | v1.2.1 | Quality / Integration | Resilient Weather & Outage Fallback (Circuit Breaker + Memorystore Redis + Cron) | **Not Started** | TASK-189, TASK-200 |
+| [**TASK-207**](#task-207) | v1.2.1 | Quality / Integration | Healthcare Diagnostic Guardrail Shield (Bi-directional PII Gate + Cloud Spanner) | **Not Started** | TASK-190, TASK-199 |
+| [**TASK-208**](#task-208) | v1.2.1 | Quality / Integration | Procurement B2B A2A Protocol Agent (JSON-RPC 2.0 + Google Cloud IAM OIDC) | **Not Started** | TASK-116, TASK-121 |
+| [**TASK-209**](#task-209) | v1.2.1 | Quality / Integration | Autonomous Code Optimizer Loop (Evaluator-Optimizer + Thinking Budget + Sandbox) | **Not Started** | TASK-192A, TASK-192B |
+| [**TASK-210**](#task-210) | v1.2.1 | Quality / Integration | Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus) | **Not Started** | TASK-193A, TASK-193B |
+| [**TASK-211**](#task-211) | v1.2.1 | Quality / Integration | Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL) | **Not Started** | TASK-195A, TASK-195B, TASK-198 |
+| [**TASK-212**](#task-212) | v1.2.1 | Quality / Integration | Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner) | **Not Started** | TASK-129, TASK-130, TASK-199 |
 | [**TASK-213**](#task-213) | v1.2.0 | Quality / Evaluators | Multi-Agent Evaluator Optimization & Hardening (Gemini 3.8 Flash Cyber, RTM, False-Positive Veto Fix, AST Checks) | **Complete** | TASK-201, TASK-202 |
 | [**TASK-214**](#task-214) | v1.2.0 | Samples / SDLC | Autonomous Multi-Agent Code Reviewer Blueprint (resource/samples/code_reviewer/) | **Complete** | TASK-128, TASK-213 |
 | [**TASK-215**](#task-215) | v1.2.0 | Samples / Retail | Reverse Engineer `retail-data-and-ai-demo` (Agentic Data Cloud for Retail) with Dual-Mode `data/<target>/` Pre-Loading & Asset Sync | **Not Started** | TASK-128 |
@@ -151,10 +151,12 @@
 | [**TASK-234**](#task-234) | v1.2.0 | Tools / Control Flow | ADK Built-in Control Flow & Memory Tools (`exit_loop`, `transfer_to_agent`, `load_memory`, `load_artifacts`) | **Not Started** | TASK-129, TASK-192A |
 | [**TASK-235**](#task-235) | v1.2.0 | Streaming / Live | ADK Live Bidirectional Streaming (`Runner.run_live()`, `LiveRequestQueue` & Voice/Video WebRTC/WS Mode) | **Not Started** | TASK-107, TASK-110 |
 | [**TASK-236**](#task-236) | v1.2.0 | Memory / Long-Term | ADK Cross-Session Long-Term Memory Services (`VertexAiMemoryBankService` & `VertexAiRagMemoryService`) | **Not Started** | TASK-115, TASK-125 |
-| [**TASK-237**](#task-237) | v1.2.0 | Deployment / GKE | Google Kubernetes Engine (GKE Autopilot) Deployment Target, Terraform & Agent Registry Workload Sync | **Not Started** | TASK-216, TASK-217 |
-| [**TASK-238**](#task-238) | v1.2.0 | Runtime / Multi-Lang | Multi-Language ADK Code Generation Targets (`Go` & `Java` ADK SDK Support) | **Not Started** | TASK-106, TASK-123 |
+| [**TASK-237**](#task-237) | v1.4.0 | Deployment / GKE | Google Kubernetes Engine (GKE Autopilot) Deployment Target, Terraform & Agent Registry Workload Sync | **Not Started** | TASK-216, TASK-217 |
+| [**TASK-238**](#task-238) | v1.4.0 | Runtime / Multi-Lang | Multi-Language ADK Code Generation Targets (`Go` & `Java` ADK SDK Support) | **Not Started** | TASK-106, TASK-123 |
 | [**TASK-239**](#task-239) | v1.2.0 | ADK Callbacks | ADK Agent-Level Lifecycle Callbacks (`before/after_agent`, `before/after_model`, `before/after_tool` with Declarative Presets, Workspace `callbacks/*.py` & AI Prompt Generator) | **Not Started** | TASK-103, TASK-106 |
 | [**TASK-240**](#task-240) | v1.2.0 | ADK Plugins | ADK Runner-Level Plugins (`ReflectAndRetryToolPlugin`, `BigQueryAgentAnalyticsPlugin`, `ContextFilterPlugin`, `SaveFilesAsArtifactsPlugin` & Custom `BasePlugin`) | **Not Started** | TASK-106, TASK-239 |
+| [**TASK-241**](#task-241) | v1.2.0 | MCP / Workspace | Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom) | **Not Started** | TASK-120, TASK-130, TASK-135 |
+| [**TASK-242**](#task-242) | v1.2.0 | MCP / GitHub | Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth) | **Not Started** | TASK-120, TASK-130, TASK-135 |
 
 ---
 
@@ -5660,5 +5662,142 @@ Each task specifies reverse-engineering the sample Python code into a production
   - Implements ADK's cross-cutting `BasePlugin` architecture (`https://adk.dev/plugins/`), allowing users to enable first-party plugins (`ReflectAndRetryToolPlugin` for automatic tool self-correction, `BigQueryAgentAnalyticsPlugin` for streaming operational analytics to BigQuery, `ContextFilterPlugin` for context window bounding, and `SaveFilesAsArtifactsPlugin` for automatic chat attachment persistence) at the `Runner`/`App` level.
 * **Verification**:
   - Execute `npx vitest run tests/unit/webview/adkRunnerPlugins.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-241"></a>
+
+### [TASK-241] Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: MCP / Google Workspace Tools (`developers.google.com/workspace/guides/configure-mcp-servers`)
+* **Dependencies**: `TASK-120`, `TASK-130`, `TASK-135`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `'google_workspace'` to `GoogleCloudMcpDomain` or `GoogleWorkspaceMcpServerDefinition` with `companionRestApi`, `mcpServiceName`, `readOnlyScopes`, and `readWriteScopes` on `GoogleCloudMcpServerDefinition` / `McpToolConfig`)
+  - `src/webview/data/googleWorkspaceMcpServers.ts` & `src/webview/data/googleCloudMcpServers.ts` (New dedicated **Google Workspace MCP Servers** catalog and domain accordion in the Tools sidebar covering all official Workspace MCP servers from `https://developers.google.com/workspace/guides/configure-mcp-servers`)
+  - `src/webview/data/defaultTools.ts` & `src/webview/data/builtinTools.ts` (Expose the dedicated **Google Workspace MCP Servers** category in the Tools Tab sidebar with search/filter support)
+  - `src/webview/components/inspector/tools/McpToolDrawer.tsx` (Add a **Google Workspace MCP Setup & OAuth Scope Helper** section displaying required companion APIs `gcloud services enable <rest_api> <mcp_api>`, **Read-Only vs. Read/Write Scope Preset** toggles, `X-Goog-User-Project` header configuration, and OAuth 2.0 Client ID / ADC login helper)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit ADK `McpToolset` + `StreamableHTTPConnectionParams` with Google Workspace OAuth 2.0 user credentials / ADC scopes, `X-Goog-User-Project` header, and Terraform `google_project_service` resources enabling both the Workspace REST API and companion `*mcp.googleapis.com` service)
+  - `tests/unit/webview/googleWorkspaceMcpServers.test.ts` (New unit test suite)
+* **Context**:
+  - **Reference Documentation**: [`https://developers.google.com/workspace/guides/configure-mcp-servers`](https://developers.google.com/workspace/guides/configure-mcp-servers)
+  - **Dedicated Google Workspace MCP Servers Catalog in the Tools Sidebar**:
+    1. **Gmail MCP (`workspace_mcp_gmail`)**:
+       - **Endpoint**: `https://gmailmcp.googleapis.com/mcp/v1` (or `/mcp`)
+       - **APIs to Enable**: `gmail.googleapis.com` + `gmailmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/gmail.readonly`, `https://www.googleapis.com/auth/gmail.compose`, `https://www.googleapis.com/auth/gmail.modify`
+       - **Capabilities**: Search threads, read messages, create drafts, send replies, and manage labels.
+    2. **Google Drive MCP (`workspace_mcp_drive`)**:
+       - **Endpoint**: `https://drivemcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `drive.googleapis.com` + `drivemcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/drive.readonly`, `https://www.googleapis.com/auth/drive.file`, `https://www.googleapis.com/auth/drive`
+       - **Capabilities**: Search files/folders, inspect metadata and permissions, read file contents, and create/copy files.
+    3. **Google Docs MCP (`workspace_mcp_docs`)**:
+       - **Endpoint**: `https://docsmcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `docs.googleapis.com` + `docsmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/documents.readonly`, `https://www.googleapis.com/auth/documents`
+       - **Capabilities**: Read document structure/tabs (`read_doc`), insert/replace text, and format Google Docs (`update_doc`).
+    4. **Google Sheets MCP (`workspace_mcp_sheets`)**:
+       - **Endpoint**: `https://sheetsmcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `sheets.googleapis.com` + `sheetsmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/spreadsheets.readonly`, `https://www.googleapis.com/auth/spreadsheets`
+       - **Capabilities**: Read/write cell ranges, append rows, create sheets, and inspect formulas/pivots.
+    5. **Google Slides MCP (`workspace_mcp_slides`)**:
+       - **Endpoint**: `https://slidesmcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `slides.googleapis.com` + `slidesmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/presentations.readonly`, `https://www.googleapis.com/auth/presentations`
+       - **Capabilities**: Inspect presentation decks, create slides, and populate text/shapes/speaker notes.
+    6. **Google Calendar MCP (`workspace_mcp_calendar`)**:
+       - **Endpoint**: `https://calendarmcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `calendar-json.googleapis.com` + `calendarmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/calendar.calendarlist.readonly`, `https://www.googleapis.com/auth/calendar.events.freebusy`, `https://www.googleapis.com/auth/calendar.events.readonly`, `https://www.googleapis.com/auth/calendar.events`
+       - **Capabilities**: Query free/busy availability, list calendars, inspect events, and schedule/update meetings.
+    7. **Google Chat MCP (`workspace_mcp_chat`)**:
+       - **Endpoint**: `https://chatmcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `chat.googleapis.com` + `chatmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/chat.spaces.readonly`, `https://www.googleapis.com/auth/chat.messages.readonly`, `https://www.googleapis.com/auth/chat.messages`
+       - **Capabilities**: List spaces, read thread history, and post messages/cards to Google Chat spaces.
+    8. **Google Meet MCP (`workspace_mcp_meet`)**:
+       - **Endpoint**: `https://meetmcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `meet.googleapis.com` + `meetmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/meetings.space.readonly`, `https://www.googleapis.com/auth/meetings.space.created`
+       - **Capabilities**: Create meeting spaces, retrieve conference records, and inspect meeting transcripts/recordings.
+    9. **Google Tasks MCP (`workspace_mcp_tasks`)**:
+       - **Endpoint**: `https://tasksmcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `tasks.googleapis.com` + `tasksmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/tasks.readonly`, `https://www.googleapis.com/auth/tasks`
+       - **Capabilities**: List task lists, read to-do items, and create/complete user tasks.
+    10. **Google People & Contacts MCP (`workspace_mcp_people`)**:
+        - **Endpoint**: `https://people.googleapis.com/mcp/v1`
+        - **APIs to Enable**: `people.googleapis.com`
+        - **OAuth Scopes**: `https://www.googleapis.com/auth/contacts.readonly`, `https://www.googleapis.com/auth/directory.readonly`
+        - **Capabilities**: Search Workspace directory profiles, user contacts, emails, and reporting hierarchy.
+    11. **Google Forms MCP (`workspace_mcp_forms`)**:
+        - **Endpoint**: `https://formsmcp.googleapis.com/mcp/v1`
+        - **APIs to Enable**: `forms.googleapis.com` + `formsmcp.googleapis.com`
+        - **OAuth Scopes**: `https://www.googleapis.com/auth/forms.body.readonly`, `https://www.googleapis.com/auth/forms.body`, `https://www.googleapis.com/auth/forms.responses.readonly`
+        - **Capabilities**: Create surveys/forms, add questions, and read form responses.
+    12. **Google Keep MCP (`workspace_mcp_keep`)**:
+        - **Endpoint**: `https://keepmcp.googleapis.com/mcp/v1`
+        - **APIs to Enable**: `keep.googleapis.com` + `keepmcp.googleapis.com`
+        - **OAuth Scopes**: `https://www.googleapis.com/auth/keep.readonly`, `https://www.googleapis.com/auth/keep`
+        - **Capabilities**: List, read, and create notes and checklists in Google Keep.
+    13. **Google Classroom MCP (`workspace_mcp_classroom`)**:
+        - **Endpoint**: `https://classroommcp.googleapis.com/mcp/v1`
+        - **APIs to Enable**: `classroom.googleapis.com` + `classroommcp.googleapis.com`
+        - **OAuth Scopes**: `https://www.googleapis.com/auth/classroom.courses.readonly`, `https://www.googleapis.com/auth/classroom.coursework.students`
+        - **Capabilities**: List courses, inspect rosters, and manage coursework/assignments.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/googleWorkspaceMcpServers.test.ts` with 100% pass rate, validating all 13 Workspace MCP server definitions, dual-API metadata (`companionRestApi` + `mcpServiceName`), Read-Only vs. Read/Write OAuth scope presets, and `createToolDefinitionFromWorkspaceMcpServer()`.
+
+---
+
+<a id="task-242"></a>
+
+### [TASK-242] Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: MCP / Developer & Source Control Tools (`github.com/github/github-mcp-server`)
+* **Dependencies**: `TASK-120`, `TASK-130`, `TASK-135`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `GitHubMcpToolsetId`, `GitHubMcpDeploymentMode`: `'remote_http' | 'local_docker_stdio'`, `GitHubMcpConfig`, and optional `githubConfig?: GitHubMcpConfig` on `McpToolConfig`)
+  - `src/shared/types.ts` (Re-export GitHub MCP types)
+  - `src/webview/data/githubMcpServers.ts` (New catalog of official GitHub MCP Server presets—Full Server, Repositories & Code, Issues & PRs, GitHub Actions CI/CD, and Code & Secret Security—and `createToolDefinitionFromGitHubMcpServer()` builder)
+  - `src/webview/data/defaultTools.ts` & `src/webview/data/builtinTools.ts` (Include `GITHUB_MCP_DEFAULT_TOOLS` in `AVAILABLE_TOOLS` and route into the `MCP Servers` sidebar category)
+  - `src/webview/components/inspector/tools/McpToolDrawer.tsx` (Add a dedicated **GitHub MCP Server Configuration** panel supporting Remote Hosted HTTP `https://api.githubcopilot.com/mcp/` vs. Local Docker/Binary `stdio`, multi-select **GitHub Toolsets (`X-MCP-Toolsets` / `--toolsets`)**, **Read-Only Mode (`X-MCP-Readonly` / `--read-only`)**, **Dynamic Toolsets (`--dynamic-toolsets`)**, GitHub Enterprise Server hostname override `GITHUB_HOST`, and GitHub PAT / OAuth 2.0 `SecretStorage` integration)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit ADK `McpToolset` with `StreamableHTTPConnectionParams(url="https://api.githubcopilot.com/mcp/", headers={"Authorization": f"Bearer {os.environ['GITHUB_PERSONAL_ACCESS_TOKEN']}", "X-MCP-Toolsets": "...", "X-MCP-Readonly": "..."})` or `StdioConnectionParams` for `ghcr.io/github/github-mcp-server`, plus `google_secret_manager_secret` for `GITHUB_PERSONAL_ACCESS_TOKEN` in `main.tf`)
+  - `tests/unit/webview/githubMcpServers.test.ts` (New unit test suite)
+* **Context**:
+  - **Reference Repository**: [`https://github.com/github/github-mcp-server`](https://github.com/github/github-mcp-server)
+  - **Two Supported Connection Modes**:
+    1. **Remote Hosted GitHub MCP Server (`remote_http` — Default Recommended)**:
+       - **Default Endpoint**: `https://api.githubcopilot.com/mcp/`
+       - **Toolset-Scoped URL Shortcuts**: `https://api.githubcopilot.com/mcp/x/{toolset}` (e.g., `/mcp/x/repos`, `/mcp/x/issues`, `/mcp/x/pull_requests`, `/mcp/x/actions`, `/mcp/x/code_security`) and read-only path suffix `/readonly` (e.g., `https://api.githubcopilot.com/mcp/readonly`).
+       - **Customization Headers**:
+         - `Authorization: Bearer <GITHUB_PERSONAL_ACCESS_TOKEN>` (or OAuth 2.0 token)
+         - `X-MCP-Toolsets`: Comma-separated list of enabled toolsets to keep LLM context lean (e.g., `repos,issues,pull_requests,actions`).
+         - `X-MCP-Readonly`: `"true"` or `"false"` to strictly enforce read-only operations.
+    2. **Local Docker / Binary Server (`local_docker_stdio`)**:
+       - Runs `docker run -i --rm -e GITHUB_PERSONAL_ACCESS_TOKEN -e GITHUB_TOOLSETS=... -e GITHUB_READ_ONLY=... -e GITHUB_DYNAMIC_TOOLSETS=... -e GITHUB_HOST=... ghcr.io/github/github-mcp-server` (or `github-mcp-server stdio`).
+       - Supports **GitHub Enterprise Server / GitHub Enterprise Cloud with data residency (`*.ghe.com`)** via `GITHUB_HOST`.
+  - **Supported Official GitHub MCP Toolsets (`GitHubMcpToolsetId`)**:
+    - `context`: Current authenticated user and GitHub context metadata (strongly recommended default).
+    - `repos`: Repository browsing, file read/write, code search, branches, commits, and tags.
+    - `issues`: Issue creation, reading, updating, labeling, comments, and sub-issues.
+    - `pull_requests`: PR creation, diff inspection, code review comments, status checks, and merging.
+    - `actions`: GitHub Actions workflows, run logs, artifacts, and job re-runs.
+    - `code_security`: CodeQL / code scanning alerts and security advisories.
+    - `secret_protection`: Secret scanning alerts and push protection triage.
+    - `dependabot`: Dependabot vulnerability alerts and dependency updates.
+    - `notifications`: User notification inbox, mark-as-read, and thread subscriptions.
+    - `discussions`: GitHub Discussions categories, threads, and answers.
+    - `projects`: GitHub Projects (v2) boards, items, and status field updates.
+    - `gists`: Creating, updating, and listing GitHub Gists.
+    - `users` & `orgs`: User profile lookup and organization membership/team queries.
+  - **Authentication & Secret Storage**:
+    - Pre-populates `secretConfig` with `secretName: 'github-personal-access-token'` and `envVar: 'GITHUB_PERSONAL_ACCESS_TOKEN'`, stored locally in VS Code `SecretStorage` / `.env` and provisioned in production via Google Cloud Secret Manager (`google_secret_manager_secret` in `main.tf`).
+    - Also supports GitHub OAuth 2.0 (`https://github.com/login/oauth/authorize` and `https://github.com/login/oauth/access_token`).
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/githubMcpServers.test.ts` with 100% pass rate, validating Remote HTTP header/URL assembly (`X-MCP-Toolsets`, `X-MCP-Readonly`), Local Docker `stdio` args/env generation, toolset multi-select filtering, and `createToolDefinitionFromGitHubMcpServer()`.
 
 
