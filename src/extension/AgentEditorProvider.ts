@@ -450,14 +450,28 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
 
       for (const relSource of uniqueSources) {
         let sourcePath = path.isAbsolute(relSource) ? relSource : path.resolve(baseDir, relSource);
-        if (!fs.existsSync(sourcePath)) {
-          // Fall back to searching discovered sample directories if relative to document not found
-          const samples = this.discoverResourceSamples();
-          for (const s of samples) {
-            if (s.sourceFilePath) {
-              const candidate = path.resolve(path.dirname(s.sourceFilePath), relSource);
-              if (fs.existsSync(candidate)) {
+        const samples = this.discoverResourceSamples();
+        const docBaseName = path.basename(document.uri.fsPath, '.agent').replace(/-/g, '_');
+        const workflowName = (agentDoc.name || '').replace(/-/g, '_');
+
+        // Prefer the canonical bundled sample tool file if this workflow matches a bundled sample
+        // or if the relative file does not exist or is older than the bundled sample tool file.
+        for (const s of samples) {
+          if (s.sourceFilePath) {
+            const candidate = path.resolve(path.dirname(s.sourceFilePath), relSource);
+            if (fs.existsSync(candidate)) {
+              const isMatchingSample = s.id === docBaseName || s.id === workflowName;
+              if (!fs.existsSync(sourcePath)) {
                 sourcePath = candidate;
+                break;
+              } else if (isMatchingSample) {
+                try {
+                  const srcStat = fs.statSync(sourcePath);
+                  const candStat = fs.statSync(candidate);
+                  if (candStat.mtimeMs > srcStat.mtimeMs) {
+                    sourcePath = candidate;
+                  }
+                } catch {}
                 break;
               }
             }

@@ -155,8 +155,9 @@
 | [**TASK-238**](#task-238) | v1.4.0 | Runtime / Multi-Lang | Multi-Language ADK Code Generation Targets (`Go` & `Java` ADK SDK Support) | **Not Started** | TASK-106, TASK-123 |
 | [**TASK-239**](#task-239) | v1.2.0 | ADK Callbacks | ADK Agent-Level Lifecycle Callbacks (`before/after_agent`, `before/after_model`, `before/after_tool` with Declarative Presets, Workspace `callbacks/*.py` & AI Prompt Generator) | **Not Started** | TASK-103, TASK-106 |
 | [**TASK-240**](#task-240) | v1.2.0 | ADK Plugins | ADK Runner-Level Plugins (`ReflectAndRetryToolPlugin`, `BigQueryAgentAnalyticsPlugin`, `ContextFilterPlugin`, `SaveFilesAsArtifactsPlugin` & Custom `BasePlugin`) | **Not Started** | TASK-106, TASK-239 |
-| [**TASK-241**](#task-241) | v1.2.0 | MCP / Workspace | Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom) | **Not Started** | TASK-120, TASK-130, TASK-135 |
-| [**TASK-242**](#task-242) | v1.2.0 | MCP / GitHub | Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth) | **Not Started** | TASK-120, TASK-130, TASK-135 |
+| [**TASK-241**](#task-241) | v1.2.0 | Interactive Chat | Interactive Chat GFM Markdown Table Rendering Support (`ChatMessageRenderer.tsx`) | **Complete** | TASK-110 |
+| [**TASK-242**](#task-242) | v1.2.0 | MCP / Workspace | Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom) | **Not Started** | TASK-120, TASK-130, TASK-135 |
+| [**TASK-243**](#task-243) | v1.2.0 | MCP / GitHub | Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth) | **Not Started** | TASK-120, TASK-130, TASK-135 |
 
 ---
 
@@ -5668,7 +5669,26 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 <a id="task-241"></a>
 
-### [TASK-241] Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom)
+### [TASK-241] Interactive Chat GFM Markdown Table Rendering Support (`ChatMessageRenderer.tsx`)
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Category / Group**: Interactive Chat / Markdown Rendering
+* **Dependencies**: `TASK-110`
+* **Target Package/Files**:
+  - `src/webview/components/chat/ChatMessageRenderer.tsx`
+  - `src/webview/components/chat/ChatRunnerTab.tsx`
+  - `tests/unit/webview/ChatMessageRenderer.test.ts`
+* **Context**:
+  - Adds GitHub Flavored Markdown (GFM) table parsing and rendering to `ChatMessageRenderer.tsx` for the Interactive Chat panel (such as the Data Domain Builder sample agent's DDD bounded-context proposals and BigQuery schema tables).
+  - Supports standard pipe tables, borderless outer-pipe tables, column alignments (`:---`, `:---:`, `---:`), inline formatting (`**bold**`, `*italic*`, `` `code` ``, `[links](url)`, `<br>` / `<br/>` line breaks), escaped pipes (`\|`), pipes inside inline code spans, snake_case identifier preservation (`retail_dw`, `customer_orders`), and live streaming partial table rows.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/ChatMessageRenderer.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-242"></a>
+
+### [TASK-242] Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom)
 * **Status**: **Not Started**
 * **Release**: `v1.2.0`
 * **Category / Group**: MCP / Google Workspace Tools (`developers.google.com/workspace/guides/configure-mcp-servers`)
@@ -5753,9 +5773,9 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ---
 
-<a id="task-242"></a>
+<a id="task-243"></a>
 
-### [TASK-242] Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth)
+### [TASK-243] Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth)
 * **Status**: **Not Started**
 * **Release**: `v1.2.0`
 * **Category / Group**: MCP / Developer & Source Control Tools (`github.com/github/github-mcp-server`)

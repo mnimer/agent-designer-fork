@@ -7,9 +7,12 @@ Validates full functional coverage of `dataplex_toolset.py`, `bigquery_toolset.p
 simple conditions, extreme conditions, and failure/fallback conditions.
 
 Architectural Decisions:
-- Author: Steve Thill <stevethill@google.com>
+- Author: Mike Nimer <mikenimer@google.com>
 - Uses unittest.mock to mock Google Cloud ADC credentials and requests REST calls.
-- Validates payload construction, URL formats, HTTP error translation, and cascading logic.
+- Validates payload construction, URL formats, `x-goog-user-project` ADC quota headers,
+  location normalization ('US' -> 'us'), structured error return dictionaries (preventing
+  ADK HTTP 500 crashes), idempotent 409 handling, `@dataplex` catalog entry sync retries,
+  cross-location binding diagnostics, and cascading teardown logic.
 """
 
 import sys
@@ -70,16 +73,20 @@ class TestDataplexToolset(BaseToolTestCase):
     """Tests for Dataplex lifecycle operations and principal extraction."""
 
     @patch("requests.get")
-    def test_list_domains_success(self, mock_get):
-        """Simple condition: List domains successfully."""
+    def test_list_domains_success_and_quota_header(self, mock_get):
+        """Simple condition: List domains successfully with normalized location and x-goog-user-project."""
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"dataDomains": [{"name": "dom1"}]}
         mock_get.return_value = mock_resp
 
-        res = list_domains("test-proj", "us-central1")
+        res = list_domains("test-proj", "US")
         self.assertEqual(res["status"], "ok")
         self.assertEqual(len(res["data"]["dataDomains"]), 1)
+        called_url = mock_get.call_args[0][0]
+        called_headers = mock_get.call_args[1]["headers"]
+        self.assertIn("/locations/us/dataDomains", called_url)
+        self.assertEqual(called_headers.get("x-goog-user-project"), "test-proj")
 
     @patch("requests.post")
     def test_create_domain_with_contacts(self, mock_post):
@@ -104,6 +111,23 @@ class TestDataplexToolset(BaseToolTestCase):
         self.assertEqual(call_json["displayName"], "Orders Domain")
         self.assertEqual(call_json["contacts"]["identities"][0]["contactId"], "alice@example.com")
 
+    @patch("requests.get")
+    @patch("requests.post")
+    def test_create_domain_idempotent_on_409(self, mock_post, mock_get):
+        """Extreme condition: Create domain returns existing domain when HTTP 409 Already Exists occurs."""
+        mock_409 = MagicMock()
+        mock_409.status_code = 409
+        mock_post.return_value = mock_409
+
+        mock_existing = MagicMock()
+        mock_existing.status_code = 200
+        mock_existing.json.return_value = {"name": "projects/test-proj/locations/us/dataDomains/orders"}
+        mock_get.return_value = mock_existing
+
+        res = create_domain("test-proj", "US", "orders", "Orders", "Desc")
+        self.assertEqual(res["status"], "ok")
+        self.assertTrue(res.get("already_existed"))
+
     @patch("requests.post")
     def test_create_subdomain_nested(self, mock_post):
         """Simple condition: Create subdomain nested under parent."""
@@ -125,19 +149,25 @@ class TestDataplexToolset(BaseToolTestCase):
         self.assertTrue(call_json["parentDataDomain"].endswith("/dataDomains/orders"))
 
     @patch("requests.get")
-    def test_list_subdomains_filtered(self, mock_get):
-        """Extreme condition: Filtering subdomains from multiple domains."""
+    def test_list_subdomains_filtered_with_numeric_project_number(self, mock_get):
+        """Extreme condition: Filtering subdomains when parentDataDomain uses numeric project number."""
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
             "dataDomains": [
-                {"name": "projects/p/locations/l/dataDomains/sub1", "parentDataDomain": "projects/p/locations/l/dataDomains/parent1"},
-                {"name": "projects/p/locations/l/dataDomains/sub2", "parentDataDomain": "projects/p/locations/l/dataDomains/parent2"},
+                {
+                    "name": "projects/argolis-playground/locations/us/dataDomains/sub1",
+                    "parentDataDomain": "projects/717498696647/locations/us/dataDomains/parent1",
+                },
+                {
+                    "name": "projects/argolis-playground/locations/us/dataDomains/sub2",
+                    "parentDataDomain": "projects/717498696647/locations/us/dataDomains/parent2",
+                },
             ]
         }
         mock_get.return_value = mock_resp
 
-        res = list_subdomains("p", "l", "parent1")
+        res = list_subdomains("argolis-playground", "US", "parent1")
         self.assertEqual(res["status"], "ok")
         self.assertEqual(len(res["data"]["subdomains"]), 1)
         self.assertEqual(res["data"]["subdomains"][0]["name"].split("/")[-1], "sub1")
@@ -145,11 +175,9 @@ class TestDataplexToolset(BaseToolTestCase):
     @patch("requests.patch")
     def test_update_domain_validation_and_success(self, mock_patch):
         """Extreme condition: Empty update mask vs valid update mask."""
-        # Empty fields
         res_empty = update_domain("p", "l", "dom1")
         self.assertEqual(res_empty["status"], "error")
 
-        # Valid update
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"name": "dom1", "displayName": "New Name"}
@@ -160,29 +188,27 @@ class TestDataplexToolset(BaseToolTestCase):
 
     @patch("requests.delete")
     def test_delete_domain_success_and_error(self, mock_delete):
-        """Failure condition: 204 success vs 409 conflict error."""
-        # Success (204 No Content)
+        """Failure condition: 204 success vs 409 conflict structured error."""
         mock_204 = MagicMock()
         mock_204.status_code = 204
         mock_delete.return_value = mock_204
         res_ok = delete_domain("p", "l", "dom1")
         self.assertEqual(res_ok["status"], "ok")
 
-        # Failure (409 Conflict)
         mock_409 = MagicMock()
         mock_409.status_code = 409
         mock_409.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_409)
         mock_409.json.return_value = {"error": {"message": "Domain contains bindings"}}
         mock_delete.return_value = mock_409
 
-        with self.assertRaises(RuntimeError) as ctx:
-            delete_domain("p", "l", "dom1")
-        self.assertIn("contains bindings", str(ctx.exception))
+        res_err = delete_domain("p", "l", "dom1")
+        self.assertEqual(res_err["status"], "error")
+        self.assertEqual(res_err["http_status"], 409)
+        self.assertIn("contains bindings", res_err["message"])
 
     @patch("requests.get")
     def test_get_domain_principal(self, mock_get):
         """Simple and failure conditions for get_domain_principal."""
-        # Success with dict policyMember
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -196,11 +222,10 @@ class TestDataplexToolset(BaseToolTestCase):
         self.assertEqual(res["status"], "ok")
         self.assertTrue(res["principal"].startswith("principal://"))
 
-        # Missing principal failure
         mock_resp.json.return_value = {}
-        with self.assertRaises(RuntimeError) as ctx:
-            get_domain_principal("p", "us-central1", "dom1")
-        self.assertIn("does not contain an active 'policyMember'", str(ctx.exception))
+        res_missing = get_domain_principal("p", "us-central1", "dom1")
+        self.assertEqual(res_missing["status"], "error")
+        self.assertIn("does not contain an active 'policyMember'", res_missing["message"])
 
 
 class TestBigQueryToolset(BaseToolTestCase):
@@ -208,12 +233,17 @@ class TestBigQueryToolset(BaseToolTestCase):
 
     @patch("requests.get")
     def test_list_datasets_and_tables(self, mock_get):
-        """Simple condition: List datasets and list tables."""
-        # Datasets
+        """Simple condition: List datasets (with dataplex_location) and list tables."""
         mock_ds_resp = MagicMock()
         mock_ds_resp.status_code = 200
         mock_ds_resp.json.return_value = {
-            "datasets": [{"datasetReference": {"datasetId": "ds1", "projectId": "p1"}, "friendlyName": "DS 1"}]
+            "datasets": [
+                {
+                    "datasetReference": {"datasetId": "ds1", "projectId": "p1"},
+                    "friendlyName": "DS 1",
+                    "location": "US",
+                }
+            ]
         }
         mock_get.return_value = mock_ds_resp
 
@@ -221,8 +251,9 @@ class TestBigQueryToolset(BaseToolTestCase):
         self.assertEqual(ds_res["status"], "ok")
         self.assertEqual(ds_res["count"], 1)
         self.assertEqual(ds_res["datasets"][0]["dataset_id"], "ds1")
+        self.assertEqual(ds_res["datasets"][0]["location"], "US")
+        self.assertEqual(ds_res["datasets"][0]["dataplex_location"], "us")
 
-        # Tables
         mock_tbl_resp = MagicMock()
         mock_tbl_resp.status_code = 200
         mock_tbl_resp.json.return_value = {
@@ -242,6 +273,7 @@ class TestBigQueryToolset(BaseToolTestCase):
         mock_resp.json.return_value = {
             "schema": {"fields": [{"name": "order_id", "type": "STRING", "mode": "REQUIRED", "description": "Primary key"}]},
             "description": "Order records",
+            "location": "US",
             "numRows": "5000",
             "numBytes": "120000",
         }
@@ -251,12 +283,12 @@ class TestBigQueryToolset(BaseToolTestCase):
         self.assertEqual(res["status"], "ok")
         self.assertEqual(len(res["columns"]), 1)
         self.assertEqual(res["columns"][0]["name"], "order_id")
+        self.assertEqual(res["dataplex_location"], "us")
 
     @patch("requests.patch")
     @patch("requests.get")
     def test_authorize_dataset(self, mock_get, mock_patch):
         """Simple condition: Authorize principal on dataset."""
-        # First call: principal not present
         mock_get_resp = MagicMock()
         mock_get_resp.status_code = 200
         mock_get_resp.json.return_value = {"access": []}
@@ -271,7 +303,6 @@ class TestBigQueryToolset(BaseToolTestCase):
         self.assertEqual(res["status"], "ok")
         self.assertTrue(mock_patch.called)
 
-        # Second call: principal already present (idempotency check)
         mock_get_resp.json.return_value = {
             "access": [{"role": "roles/bigquery.metadataViewer", "iamMember": "principal://dataplex..."}]
         }
@@ -283,7 +314,6 @@ class TestBigQueryToolset(BaseToolTestCase):
     @patch("requests.post")
     def test_authorize_table(self, mock_post):
         """Simple and idempotent conditions for table-level IAM authorization."""
-        # Call 1: getIamPolicy -> principal not present
         mock_get = MagicMock()
         mock_get.status_code = 200
         mock_get.json.return_value = {"bindings": []}
@@ -300,7 +330,7 @@ class TestBigQueryToolset(BaseToolTestCase):
 
 
 class TestBindingToolset(BaseToolTestCase):
-    """Tests for resource binding and exclusivity verification."""
+    """Tests for resource binding, cross-location diagnostics, and exclusivity verification."""
 
     @patch("requests.post")
     def test_bind_resource_success(self, mock_post):
@@ -314,9 +344,96 @@ class TestBindingToolset(BaseToolTestCase):
         self.assertEqual(res["status"], "ok")
 
     @patch("requests.get")
+    @patch("requests.post")
+    def test_bind_resource_detects_cross_location_mismatch(self, mock_post, mock_get):
+        """Regression condition: Detects when domain in us-central1 tries to bind a BigQuery table in US."""
+        mock_403 = MagicMock()
+        mock_403.status_code = 403
+        mock_403.json.return_value = {
+            "error": {"message": "Data domain is not authorized to bind the resource, or the resource doesn't exist."}
+        }
+        mock_post.return_value = mock_403
+
+        mock_ds_resp = MagicMock()
+        mock_ds_resp.status_code = 200
+        mock_ds_resp.json.return_value = {"location": "US"}
+        mock_get.return_value = mock_ds_resp
+
+        res = bind_resource(
+            project_id="argolis-playground",
+            location="us-central1",
+            domain_id="pipeline-engineering",
+            binding_id="b1",
+            resource="//bigquery.googleapis.com/projects/argolis-playground/datasets/beam_pipeline_designer/tables/pubsub_messages",
+        )
+        self.assertEqual(res["status"], "error")
+        self.assertTrue(res.get("location_mismatch"))
+        self.assertEqual(res.get("domain_location"), "us-central1")
+        self.assertEqual(res.get("dataset_location"), "us")
+        self.assertIn("Dataplex Location Mismatch", res["message"])
+
+    @patch("tools.binding_toolset.time.sleep")
+    @patch("requests.get")
+    @patch("requests.post")
+    def test_bind_resource_retries_on_iam_propagation_403(self, mock_post, mock_get, mock_sleep):
+        """Regression condition: Polls through transient 403 IAM propagation delay when locations match."""
+        mock_403 = MagicMock()
+        mock_403.status_code = 403
+        mock_403.text = "Data domain is not authorized to bind the resource, or the resource doesn't exist."
+        mock_403.json.return_value = {"error": {"message": mock_403.text}}
+
+        mock_200 = MagicMock()
+        mock_200.status_code = 200
+        mock_200.json.return_value = {"name": "projects/p/locations/us/dataDomains/d/bindings/b1"}
+
+        mock_post.side_effect = [mock_403, mock_403, mock_200]
+
+        mock_ds_resp = MagicMock()
+        mock_ds_resp.status_code = 200
+        mock_ds_resp.json.return_value = {"location": "US"}
+        mock_get.return_value = mock_ds_resp
+
+        res = bind_resource(
+            project_id="argolis-playground",
+            location="us",
+            domain_id="pipeline-engineering",
+            binding_id="b1",
+            resource="//bigquery.googleapis.com/projects/argolis-playground/datasets/beam_pipeline_designer/tables/pubsub_messages",
+        )
+        self.assertEqual(res["status"], "ok")
+        self.assertEqual(mock_post.call_count, 3)
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    @patch("tools.binding_toolset.time.sleep")
+    @patch("requests.get")
+    @patch("requests.post")
+    def test_bind_resource_returns_pending_when_iam_propagation_exceeds_window(self, mock_post, mock_get, mock_sleep):
+        """Regression condition: Returns non-fatal pending status and sanitizes binding_id when IAM propagation takes >30s."""
+        mock_403 = MagicMock()
+        mock_403.status_code = 403
+        mock_403.text = "Data domain is not authorized to bind the resource, or the resource doesn't exist."
+        mock_403.json.return_value = {"error": {"message": mock_403.text}}
+        mock_post.return_value = mock_403
+
+        mock_ds_resp = MagicMock()
+        mock_ds_resp.status_code = 200
+        mock_ds_resp.json.return_value = {"location": "US"}
+        mock_get.return_value = mock_ds_resp
+
+        res = bind_resource(
+            project_id="argolis-playground",
+            location="us",
+            domain_id="pipeline-engineering",
+            binding_id="Academy.outdoor_products_binding",
+            resource="//bigquery.googleapis.com/projects/argolis-playground/datasets/Academy/tables/outdoor_products",
+        )
+        self.assertEqual(res["status"], "ok")
+        self.assertEqual(res.get("iam_propagation"), "pending")
+        self.assertEqual(res.get("binding_id"), "academy-outdoor-products-binding")
+
+    @patch("requests.get")
     def test_verify_binding_availability(self, mock_get):
         """Extreme condition: Detect 1:1 binding collision vs available resource."""
-        # 1. Collision scenario
         mock_domains = MagicMock()
         mock_domains.status_code = 200
         mock_domains.json.return_value = {"dataDomains": [{"name": "projects/p/locations/l/dataDomains/dom-existing"}]}
@@ -333,7 +450,6 @@ class TestBindingToolset(BaseToolTestCase):
         self.assertFalse(res_conflict["is_available"])
         self.assertEqual(res_conflict["conflict"]["domain_id"], "dom-existing")
 
-        # 2. Available scenario
         mock_bindings.json.return_value = {"dataDomainBindings": []}
         mock_get.side_effect = [mock_domains, mock_bindings]
         res_avail = verify_binding_availability("p", "l", "//bigquery.googleapis.com/.../new_table")
@@ -342,13 +458,12 @@ class TestBindingToolset(BaseToolTestCase):
 
 
 class TestOverviewToolset(BaseToolTestCase):
-    """Tests for native Overview aspect documentation."""
+    """Tests for native Overview aspect documentation and @dataplex catalog entry sync handling."""
 
     @patch("requests.patch")
     @patch("requests.get")
     def test_set_and_get_overview(self, mock_get, mock_patch):
         """Simple condition: Update and retrieve Markdown overview aspect."""
-        # get_domain mock during set_overview
         mock_dom = MagicMock()
         mock_dom.status_code = 200
         mock_dom.json.return_value = {
@@ -356,7 +471,6 @@ class TestOverviewToolset(BaseToolTestCase):
         }
         mock_get.return_value = mock_dom
 
-        # patch aspect mock
         mock_patch_resp = MagicMock()
         mock_patch_resp.status_code = 200
         mock_patch_resp.json.return_value = {"name": "entry1"}
@@ -365,7 +479,6 @@ class TestOverviewToolset(BaseToolTestCase):
         set_res = set_overview("p1", "us-central1", "dom1", "# Overview Content", "MARKDOWN")
         self.assertEqual(set_res["status"], "ok")
 
-        # get_overview mock
         mock_entry = MagicMock()
         mock_entry.status_code = 200
         mock_entry.json.return_value = {
@@ -380,6 +493,32 @@ class TestOverviewToolset(BaseToolTestCase):
         get_res = get_overview("p1", "us-central1", "dom1")
         self.assertEqual(get_res["status"], "ok")
         self.assertEqual(get_res["overview"], "# Overview Content")
+
+    @patch("tools.overview_toolset.time.sleep")
+    @patch("requests.patch")
+    @patch("requests.get")
+    def test_set_overview_handles_pending_dataplex_catalog_entry_sync(self, mock_get, mock_patch, mock_sleep):
+        """Regression condition: Handles 403 'or it may not exist' when @dataplex entry is syncing in background."""
+        mock_dom = MagicMock()
+        mock_dom.status_code = 200
+        mock_dom.json.return_value = {
+            "policyMember": {"iamPolicyNamePrincipal": "principal://dataplex.googleapis.com/projects/717498696647/..."}
+        }
+        mock_get.return_value = mock_dom
+
+        mock_403 = MagicMock()
+        mock_403.status_code = 403
+        mock_403.json.return_value = {
+            "error": {
+                "message": "Permission denied on resource `projects/717498696647/locations/us/entryGroups/@dataplex/entries/...` (or it may not exist)."
+            }
+        }
+        mock_patch.return_value = mock_403
+
+        res = set_overview("argolis-playground", "us", "data-platform", "# Overview", "MARKDOWN")
+        self.assertEqual(res["status"], "ok")
+        self.assertEqual(res.get("catalog_entry_sync"), "pending")
+        self.assertEqual(mock_patch.call_count, 4)
 
 
 class TestGovernanceToolset(BaseToolTestCase):
@@ -420,17 +559,15 @@ class TestGovernanceToolset(BaseToolTestCase):
     @patch("tools.governance_toolset.list_bindings")
     def test_cascading_teardown_domain(self, mock_lb, mock_ub, mock_ls, mock_dd):
         """Extreme condition: Full cascading teardown of domain with bound resource and child subdomain."""
-        # 1. Parent bindings: 1 binding 'b1'
         mock_lb.return_value = {
             "status": "ok",
             "data": {"dataDomainBindings": [{"name": "projects/p/.../bindings/b1"}]},
         }
         mock_ub.return_value = {"status": "ok"}
 
-        # 2. Subdomains: 1 child 'sub1'
         mock_ls.side_effect = [
             {"status": "ok", "data": {"subdomains": [{"name": "projects/p/.../dataDomains/sub1"}]}},
-            {"status": "ok", "data": {"subdomains": []}},  # sub1 has no further children
+            {"status": "ok", "data": {"subdomains": []}},
         ]
         mock_dd.return_value = {"status": "ok"}
 
@@ -442,7 +579,7 @@ class TestGovernanceToolset(BaseToolTestCase):
 
 
 class TestErrorHandlingAndLRO(BaseToolTestCase):
-    """Tests verifying strict RuntimeError raising and LRO polling across toolsets."""
+    """Tests verifying structured error dictionaries (no uncaught RuntimeError) and LRO polling."""
 
     @patch("tools.dataplex_toolset.time.sleep")
     @patch("requests.get")
@@ -466,8 +603,8 @@ class TestErrorHandlingAndLRO(BaseToolTestCase):
 
     @patch("tools.dataplex_toolset.time.sleep")
     @patch("requests.get")
-    def test_wait_for_lro_failure_raises(self, mock_get, mock_sleep):
-        """Validates LRO raises RuntimeError if operation finishes with an error."""
+    def test_wait_for_lro_failure_returns_structured_error(self, mock_get, mock_sleep):
+        """Validates LRO returns structured error dictionary if operation finishes with an error."""
         from tools.dataplex_toolset import wait_for_lro
         op_initial = {"name": "projects/p/locations/l/operations/op1", "done": False}
 
@@ -480,40 +617,42 @@ class TestErrorHandlingAndLRO(BaseToolTestCase):
         }
         mock_get.return_value = mock_poll_resp
 
-        with self.assertRaises(RuntimeError) as ctx:
-            wait_for_lro(op_initial, self.mock_creds, timeout_seconds=10, poll_interval=0.01)
-        self.assertIn("Permission denied", str(ctx.exception))
+        res = wait_for_lro(op_initial, self.mock_creds, timeout_seconds=10, poll_interval=0.01)
+        self.assertEqual(res.get("status"), "error")
+        self.assertIn("Permission denied", res.get("message", ""))
 
     @patch("requests.post")
-    def test_bind_resource_http_error_raises(self, mock_post):
-        """Validates bind_resource raises RuntimeError when API returns HTTP 400."""
+    def test_bind_resource_http_error_returns_structured_error(self, mock_post):
+        """Validates bind_resource returns structured error dictionary when API returns HTTP 400."""
         mock_resp = MagicMock()
         mock_resp.status_code = 400
         mock_resp.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_resp)
         mock_resp.json.return_value = {"error": {"message": "Invalid resource URI format"}}
         mock_post.return_value = mock_resp
 
-        with self.assertRaises(RuntimeError) as ctx:
-            bind_resource("p", "l", "dom1", "b1", "//invalid/uri")
-        self.assertIn("Invalid resource URI format", str(ctx.exception))
+        res = bind_resource("p", "l", "dom1", "b1", "//invalid/uri")
+        self.assertEqual(res["status"], "error")
+        self.assertEqual(res["http_status"], 400)
+        self.assertIn("Invalid resource URI format", res["message"])
 
     @patch("requests.get")
-    def test_bigquery_http_error_raises(self, mock_get):
-        """Validates list_datasets raises RuntimeError on BigQuery HTTP 403."""
+    def test_bigquery_http_error_returns_structured_error(self, mock_get):
+        """Validates list_datasets returns structured error dictionary on BigQuery HTTP 403."""
         mock_resp = MagicMock()
         mock_resp.status_code = 403
         mock_resp.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_resp)
         mock_resp.json.return_value = {"error": {"message": "Access Denied: Dataset project:ds"}}
         mock_get.return_value = mock_resp
 
-        with self.assertRaises(RuntimeError) as ctx:
-            list_datasets("p")
-        self.assertIn("Access Denied", str(ctx.exception))
+        res = list_datasets("p")
+        self.assertEqual(res["status"], "error")
+        self.assertEqual(res["http_status"], 403)
+        self.assertIn("Access Denied", res["message"])
 
     @patch("requests.get")
     @patch("requests.patch")
-    def test_overview_http_error_raises(self, mock_patch, mock_get):
-        """Validates set_overview raises RuntimeError when catalog PATCH fails."""
+    def test_overview_http_error_returns_structured_error(self, mock_patch, mock_get):
+        """Validates set_overview returns structured error dictionary when catalog PATCH fails with 404."""
         mock_dom = MagicMock()
         mock_dom.status_code = 200
         mock_dom.json.return_value = {"policyMember": {"iamPolicyNamePrincipal": "principal://..."}}
@@ -525,9 +664,10 @@ class TestErrorHandlingAndLRO(BaseToolTestCase):
         mock_patch_resp.json.return_value = {"error": {"message": "Entry not found in catalog"}}
         mock_patch.return_value = mock_patch_resp
 
-        with self.assertRaises(RuntimeError) as ctx:
-            set_overview("p", "us-central1", "dom1", "# Test")
-        self.assertIn("Entry not found", str(ctx.exception))
+        res = set_overview("p", "us-central1", "dom1", "# Test")
+        self.assertEqual(res["status"], "error")
+        self.assertEqual(res["http_status"], 404)
+        self.assertIn("Entry not found", res["message"])
 
 
 class TestParameterValidation(BaseToolTestCase):
@@ -588,5 +728,3 @@ class TestParameterValidation(BaseToolTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
