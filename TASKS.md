@@ -55,49 +55,49 @@
 | [**TASK-141**](#task-141) | v1.0.11 | Webview / Perf | [MAJOR] Fix Canvas Re-Render Storms & Document Serialization Thrash | **Completed** | TASK-103, TASK-112 |
 | [**TASK-142**](#task-142) | v1.0.12 | Architecture | [MAJOR] Decompose God Classes (Runner, Deployer, EditorProvider, App.tsx) | **Completed** | TASK-132 to TASK-141 |
 | [**TASK-143**](#task-143) | v1.0.12 | Architecture / Quality | [MAJOR] Unify Duplicated Domain Types, Extract Drawer Primitives & Remove Dead Code | **Completed** | TASK-142 |
-| [**TASK-144**](#task-144) | v1.3.0 | Samples / Research | Reverse Engineer `academic-research` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-145**](#task-145) | v1.3.0 | Samples / Patterns | Reverse Engineer `adk-ae-oauth` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-146**](#task-146) | v1.3.0 | Samples / Patterns | Reverse Engineer `agent-skills-tutorial` Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-223 |
-| [**TASK-147**](#task-147) | v1.3.0 | Samples / Creative | Reverse Engineer `brand-aligned-presentations` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-148**](#task-148) | v1.3.0 | Samples / Retail | Reverse Engineer `brand-search-optimization` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-149**](#task-149) | v1.3.0 | Samples / Finance | Reverse Engineer `currency-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-150**](#task-150) | v1.3.0 | Samples / Retail | Reverse Engineer `customer-service` (Cymbal) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-151**](#task-151) | v1.3.0 | Samples / Operations | Reverse Engineer `cyber-guardian-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-152**](#task-152) | v1.3.0 | Samples / Data | Reverse Engineer `data-engineering` (BigQuery/Dataform) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-153**](#task-153) | v1.3.0 | Samples / Data | Reverse Engineer `data-science` (NL2SQL/Python) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-154**](#task-154) | v1.3.0 | Samples / Research | Reverse Engineer `deep-search` (Multi-Agent Research) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-155**](#task-155) | v1.3.0 | Samples / Finance | Reverse Engineer `financial-advisor` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-156**](#task-156) | v1.3.0 | Samples / Finance | Reverse Engineer `fomc-research` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-157**](#task-157) | v1.3.0 | Samples / Retail | Reverse Engineer `gemma-food-tour-guide` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-158**](#task-158) | v1.3.0 | Samples / Research | Reverse Engineer `high-volume-document-analyzer` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-159**](#task-159) | v1.3.0 | Samples / Patterns | Reverse Engineer `llm-auditor` (Critic-Reviser) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-160**](#task-160) | v1.3.0 | Samples / Creative | Reverse Engineer `marketing-agency` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-161**](#task-161) | v1.3.0 | Samples / Operations | Reverse Engineer `medical-pre-authorization` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-162**](#task-162) | v1.3.0 | Samples / Patterns | Reverse Engineer `memory-bank` (Persistent Memory) Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-236 |
-| [**TASK-163**](#task-163) | v1.3.0 | Samples / Creative | Reverse Engineer `on-brand-genmedia` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-164**](#task-164) | v1.3.0 | Samples / Retail | Reverse Engineer `personalized-shopping` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-165**](#task-165) | v1.3.0 | Samples / Patterns | Reverse Engineer `rag-agent` (Vertex AI RAG) Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-229 |
-| [**TASK-166**](#task-166) | v1.3.0 | Samples / Patterns | Reverse Engineer `safety-plugins` (Guardrails/Armor) Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-239, TASK-240 |
-| [**TASK-167**](#task-167) | v1.3.0 | Samples / SDLC | Reverse Engineer `sdlc-task-planner` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-168**](#task-168) | v1.3.0 | Samples / SDLC | Reverse Engineer `sdlc-technical-designer` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-169**](#task-169) | v1.3.0 | Samples / SDLC | Reverse Engineer `sdlc-user-story-refiner` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-170**](#task-170) | v1.3.0 | Samples / Creative | Reverse Engineer `short-movie-agents` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-171**](#task-171) | v1.3.0 | Samples / Finance | Reverse Engineer `small-business-loan-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-172**](#task-172) | v1.3.0 | Samples / SDLC | Reverse Engineer `software-bug-assistant` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-144**](#task-144) | v1.2.0 | Samples / Research | Reverse Engineer `academic-research` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-145**](#task-145) | v1.2.0 | Samples / Patterns | Reverse Engineer `adk-ae-oauth` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-146**](#task-146) | v1.2.0 | Samples / Patterns | Reverse Engineer `agent-skills-tutorial` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-147**](#task-147) | v1.2.0 | Samples / Creative | Reverse Engineer `brand-aligned-presentations` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-148**](#task-148) | v1.2.0 | Samples / Retail | Reverse Engineer `brand-search-optimization` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-149**](#task-149) | v1.2.0 | Samples / Finance | Reverse Engineer `currency-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-150**](#task-150) | v1.2.0 | Samples / Retail | Reverse Engineer `customer-service` (Cymbal) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-151**](#task-151) | v1.2.0 | Samples / Operations | Reverse Engineer `cyber-guardian-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-152**](#task-152) | v1.2.0 | Samples / Data | Reverse Engineer `data-engineering` (BigQuery/Dataform) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-153**](#task-153) | v1.2.0 | Samples / Data | Reverse Engineer `data-science` (NL2SQL/Python) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-154**](#task-154) | v1.2.0 | Samples / Research | Reverse Engineer `deep-search` (Multi-Agent Research) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-155**](#task-155) | v1.2.0 | Samples / Finance | Reverse Engineer `financial-advisor` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-156**](#task-156) | v1.2.0 | Samples / Finance | Reverse Engineer `fomc-research` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-157**](#task-157) | v1.2.0 | Samples / Retail | Reverse Engineer `gemma-food-tour-guide` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-158**](#task-158) | v1.2.0 | Samples / Research | Reverse Engineer `high-volume-document-analyzer` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-159**](#task-159) | v1.2.0 | Samples / Patterns | Reverse Engineer `llm-auditor` (Critic-Reviser) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-160**](#task-160) | v1.2.0 | Samples / Creative | Reverse Engineer `marketing-agency` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-161**](#task-161) | v1.2.0 | Samples / Operations | Reverse Engineer `medical-pre-authorization` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-162**](#task-162) | v1.2.0 | Samples / Patterns | Reverse Engineer `memory-bank` (Persistent Memory) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-163**](#task-163) | v1.2.0 | Samples / Creative | Reverse Engineer `on-brand-genmedia` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-164**](#task-164) | v1.2.0 | Samples / Retail | Reverse Engineer `personalized-shopping` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-165**](#task-165) | v1.2.0 | Samples / Patterns | Reverse Engineer `rag-agent` (Vertex AI RAG) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-166**](#task-166) | v1.2.0 | Samples / Patterns | Reverse Engineer `safety-plugins` (Guardrails/Armor) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-167**](#task-167) | v1.2.0 | Samples / SDLC | Reverse Engineer `sdlc-task-planner` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-168**](#task-168) | v1.2.0 | Samples / SDLC | Reverse Engineer `sdlc-technical-designer` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-169**](#task-169) | v1.2.0 | Samples / SDLC | Reverse Engineer `sdlc-user-story-refiner` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-170**](#task-170) | v1.2.0 | Samples / Creative | Reverse Engineer `short-movie-agents` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-171**](#task-171) | v1.2.0 | Samples / Finance | Reverse Engineer `small-business-loan-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-172**](#task-172) | v1.2.0 | Samples / SDLC | Reverse Engineer `software-bug-assistant` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
 | [**TASK-173**](#task-173) | v1.2.0 | Samples / Retail | Reverse Engineer `travel-concierge` Sample to `.agent` & Tools | **Complete** | TASK-128 |
-| [**TASK-174**](#task-174) | v1.3.0 | Samples / Research | Reverse Engineer `youtube-analyst` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-175**](#task-175) | v1.3.0 | Samples / Retail | Reverse Engineer `attenu-guard-customer-service` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-176**](#task-176) | v1.3.0 | Samples / Operations | Reverse Engineer `clause-agent` (Legal Contracts) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-177**](#task-177) | v1.3.0 | Samples / Operations | Reverse Engineer `cross-border-data-router` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-178**](#task-178) | v1.3.0 | Samples / Research | Reverse Engineer `market-research-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-179**](#task-179) | v1.3.0 | Samples / Patterns | Reverse Engineer `multiformat-hybrid-rag` Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-229 |
-| [**TASK-180**](#task-180) | v1.3.0 | Samples / Retail | Reverse Engineer `staged-ui-widgets` Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-221 |
-| [**TASK-181**](#task-181) | v1.3.0 | Samples / Finance | Reverse Engineer `ambient-expense-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-182**](#task-182) | v1.3.0 | Samples / Patterns | Reverse Engineer `cross-session-memory` Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-236 |
-| [**TASK-183**](#task-183) | v1.3.0 | Samples / SDLC | Reverse Engineer `long-horizon-harness` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-184**](#task-184) | v1.3.0 | Samples / Patterns | Reverse Engineer `oauth-user-consent-flow` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
-| [**TASK-185**](#task-185) | v1.3.0 | Samples / Patterns | Reverse Engineer `rag-agent-search` Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-229 |
-| [**TASK-186**](#task-186) | v1.3.0 | Samples / Patterns | Reverse Engineer `rag-vector-search` Sample to `.agent` & Tools | **Not Started** | TASK-128, TASK-229 |
+| [**TASK-174**](#task-174) | v1.2.0 | Samples / Research | Reverse Engineer `youtube-analyst` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-175**](#task-175) | v1.2.0 | Samples / Retail | Reverse Engineer `attenu-guard-customer-service` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-176**](#task-176) | v1.2.0 | Samples / Operations | Reverse Engineer `clause-agent` (Legal Contracts) Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-177**](#task-177) | v1.2.0 | Samples / Operations | Reverse Engineer `cross-border-data-router` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-178**](#task-178) | v1.2.0 | Samples / Research | Reverse Engineer `market-research-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-179**](#task-179) | v1.2.0 | Samples / Patterns | Reverse Engineer `multiformat-hybrid-rag` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-180**](#task-180) | v1.2.0 | Samples / Retail | Reverse Engineer `staged-ui-widgets` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-181**](#task-181) | v1.2.0 | Samples / Finance | Reverse Engineer `ambient-expense-agent` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-182**](#task-182) | v1.2.0 | Samples / Patterns | Reverse Engineer `cross-session-memory` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-183**](#task-183) | v1.2.0 | Samples / SDLC | Reverse Engineer `long-horizon-harness` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-184**](#task-184) | v1.2.0 | Samples / Patterns | Reverse Engineer `oauth-user-consent-flow` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-185**](#task-185) | v1.2.0 | Samples / Patterns | Reverse Engineer `rag-agent-search` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
+| [**TASK-186**](#task-186) | v1.2.0 | Samples / Patterns | Reverse Engineer `rag-vector-search` Sample to `.agent` & Tools | **Not Started** | TASK-128 |
 | [**TASK-187**](#task-187) | v1.1.2 | Agent Types | Synthesizer Agent Type (Basic Agent Node & Schema Reducer) | **Complete** | TASK-103, TASK-119 |
 | [**TASK-188**](#task-188) | v1.1.2 | Agent Types | Human-in-the-Loop (HITL / Approval Gate) Agent Type | **Complete** | TASK-103, TASK-115 |
 | [**TASK-189**](#task-189) | v1.1.2 | Agent Types | Fallback & Circuit Breaker Agent Type (Resilience & Quota Safety) | **Complete** | TASK-103, TASK-117 |
@@ -117,47 +117,56 @@
 | [**TASK-200**](#task-200) | v1.0.3 | Memory / Redis | Cloud Memorystore (Redis/Valkey) Checkpointer & Session TTL Expiration | **Complete** | TASK-115 |
 | [**TASK-201**](#task-201) | v1.2.0 | Quality / Integration | Animal Expert Multi-Agent System (Parallel Fan-Out + Search Grounding) | **Complete** | TASK-106, TASK-113 |
 | [**TASK-202**](#task-202) | v1.2.0 | Quality / Integration | CyberGuardian SecOps Multi-Agent System (Coordinator + Eventarc Trigger) | **Complete** | TASK-106, TASK-121 |
-| [**TASK-203**](#task-203) | v1.2.1 | Quality / Integration | Financial Fraud & Services Router (Intent Classifier + State Expressions + SQLite) | **Not Started** | TASK-117, TASK-196, TASK-197 |
-| [**TASK-204**](#task-204) | v1.2.1 | Quality / Integration | Market Research Synthesizer Reducer (Parallel Fan-Out + Multi-Tool + Firestore) | **Not Started** | TASK-113, TASK-114, TASK-187 |
-| [**TASK-205**](#task-205) | v1.2.1 | Quality / Integration | Commercial Loan HITL Approval Gate (Human-in-the-Loop + Cloud SQL PostgreSQL) | **Not Started** | TASK-188, TASK-198 |
-| [**TASK-206**](#task-206) | v1.2.1 | Quality / Integration | Resilient Weather & Outage Fallback (Circuit Breaker + Memorystore Redis + Cron) | **Not Started** | TASK-189, TASK-200 |
-| [**TASK-207**](#task-207) | v1.2.1 | Quality / Integration | Healthcare Diagnostic Guardrail Shield (Bi-directional PII Gate + Cloud Spanner) | **Not Started** | TASK-190, TASK-199 |
-| [**TASK-208**](#task-208) | v1.2.1 | Quality / Integration | Procurement B2B A2A Protocol Agent (JSON-RPC 2.0 + Google Cloud IAM OIDC) | **Not Started** | TASK-116, TASK-121 |
-| [**TASK-209**](#task-209) | v1.2.1 | Quality / Integration | Autonomous Code Optimizer Loop (Evaluator-Optimizer + Thinking Budget + Sandbox) | **Not Started** | TASK-192A, TASK-192B |
-| [**TASK-210**](#task-210) | v1.2.1 | Quality / Integration | Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus) | **Not Started** | TASK-193A, TASK-193B |
-| [**TASK-211**](#task-211) | v1.2.1 | Quality / Integration | Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL) | **Not Started** | TASK-195A, TASK-195B, TASK-198 |
-| [**TASK-212**](#task-212) | v1.2.1 | Quality / Integration | Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner) | **Not Started** | TASK-129, TASK-130, TASK-199 |
+| [**TASK-203**](#task-203) | v1.2.0 | Quality / Integration | Financial Fraud & Services Router (Intent Classifier + State Expressions + SQLite) | **Not Started** | TASK-117, TASK-196, TASK-197 |
+| [**TASK-204**](#task-204) | v1.2.0 | Quality / Integration | Market Research Synthesizer Reducer (Parallel Fan-Out + Multi-Tool + Firestore) | **Not Started** | TASK-113, TASK-114, TASK-187 |
+| [**TASK-205**](#task-205) | v1.2.0 | Quality / Integration | Commercial Loan HITL Approval Gate (Human-in-the-Loop + Cloud SQL PostgreSQL) | **Not Started** | TASK-188, TASK-198 |
+| [**TASK-206**](#task-206) | v1.2.0 | Quality / Integration | Resilient Weather & Outage Fallback (Circuit Breaker + Memorystore Redis + Cron) | **Not Started** | TASK-189, TASK-200 |
+| [**TASK-207**](#task-207) | v1.2.0 | Quality / Integration | Healthcare Diagnostic Guardrail Shield (Bi-directional PII Gate + Cloud Spanner) | **Not Started** | TASK-190, TASK-199 |
+| [**TASK-208**](#task-208) | v1.2.0 | Quality / Integration | Procurement B2B A2A Protocol Agent (JSON-RPC 2.0 + Google Cloud IAM OIDC) | **Not Started** | TASK-116, TASK-121 |
+| [**TASK-209**](#task-209) | v1.2.0 | Quality / Integration | Autonomous Code Optimizer Loop (Evaluator-Optimizer + Thinking Budget + Sandbox) | **Not Started** | TASK-192A, TASK-192B |
+| [**TASK-210**](#task-210) | v1.2.0 | Quality / Integration | Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus) | **Not Started** | TASK-193A, TASK-193B |
+| [**TASK-211**](#task-211) | v1.2.0 | Quality / Integration | Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL) | **Not Started** | TASK-195A, TASK-195B, TASK-198 |
+| [**TASK-212**](#task-212) | v1.2.0 | Quality / Integration | Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner) | **Not Started** | TASK-129, TASK-130, TASK-199 |
 | [**TASK-213**](#task-213) | v1.2.0 | Quality / Evaluators | Multi-Agent Evaluator Optimization & Hardening (Gemini 3.8 Flash Cyber, RTM, False-Positive Veto Fix, AST Checks) | **Complete** | TASK-201, TASK-202 |
 | [**TASK-214**](#task-214) | v1.2.0 | Samples / SDLC | Autonomous Multi-Agent Code Reviewer Blueprint (resource/samples/code_reviewer/) | **Complete** | TASK-128, TASK-213 |
-| [**TASK-215**](#task-215) | v1.2.0 | Samples / Retail | Reverse Engineer `retail-data-and-ai-demo` (Agentic Data Cloud for Retail) with Dual-Mode `data/<target>/` Pre-Loading & Asset Sync | **Not Started** | TASK-128 |
+| [**TASK-215**](#task-215) | v1.2.0 | Samples / Retail | Reverse Engineer `retail-data-and-ai-demo` (Unified 3-Sub-Agent Architecture + Dual-Mode Local SQLite & Asset Sync — [ADR-001](docs/adr/001-retail-data-and-ai-demo-architecture.md)) | **Deferred (See ADR-001)** | TASK-128 |
 | [**TASK-216**](#task-216) | v1.2.0 | Deployment | Unified Self-Contained CLI & CI/CD Deployment Architecture (`Makefile`, Terraform & Cloud Build) | **Complete** | TASK-111, TASK-125, TASK-142 |
 | [**TASK-217**](#task-217) | v1.2.0 | Governance & Security | Enterprise Agent Governance Pipeline (Agent Registry, Agent Gateway + Model Armor, Security Policies & Vertex AI `EvalTask` Registration) | **Complete** | TASK-216 |
 | [**TASK-218**](#task-218) | v1.2.0 | Deployment / Gemini Enterprise | Automated Gemini Enterprise App Publishing & Discovery (`discoveryengine.googleapis.com` Integration on Deployment Tab) | **Complete** | TASK-216, TASK-217 |
-| [**TASK-219**](#task-219) | v1.2.0 | MCP / Tools | Databricks Managed MCP Servers Integration (Genie, Vector Search, Unity Catalog Functions & Databricks SQL) | **Not Started** | TASK-120, TASK-130, TASK-135 |
-| [**TASK-220**](#task-220) | v1.2.0 | MCP / Tools | Snowflake Managed & Cortex MCP Servers Integration (Cortex Analyst, Cortex Search, Cortex Agent, SQL & Custom Procedures) | **Not Started** | TASK-120, TASK-130, TASK-135 |
-| [**TASK-221**](#task-221) | v1.2.0 | A2UI / Agent UI | A2UI (Agent-to-User Interface v0.9.1) Protocol Support, Agent Drawer Configuration, A2A Adaptor Codegen & Chat Renderer | **Not Started** | TASK-103, TASK-110, TASK-116, TASK-218 |
-| [**TASK-222**](#task-222) | v1.2.0 | Samples / Retail A2UI | Retail Merchandising Workbench A2UI Agent Sample (`cloud-gtm/retail-data-and-ai-demo` / Demospace 1876) | **Not Started** | TASK-128, TASK-215, TASK-221 |
-| [**TASK-223**](#task-223) | v1.2.0 | ADK Skills | ADK Agent Skills (`SkillToolset`, Progressive Disclosure L1/L2/L3 & Dynamic Skill Factory) | **Not Started** | TASK-103, TASK-106 |
-| [**TASK-224**](#task-224) | v1.2.0 | ADK Artifacts | ADK Artifact Service (`InMemoryArtifactService` & `GcsArtifactService`), Multimodal Versioning & Chat File I/O | **Not Started** | TASK-103, TASK-110, TASK-115 |
-| [**TASK-225**](#task-225) | v1.2.0 | ADK Context | ADK Context Management (`ContextCacheConfig`, `EventsCompactionConfig` Auto-Summarization & `include_contents`) | **Not Started** | TASK-103, TASK-106 |
-| [**TASK-226**](#task-226) | v1.2.0 | ADK Planners | ADK Planners Configuration (`BuiltInPlanner` & `PlanReActPlanner` Multi-Step Reasoning Loop) | **Not Started** | TASK-103, TASK-106 |
-| [**TASK-227**](#task-227) | v1.2.0 | Tools / OpenAPI | ADK `OpenAPIToolset` Integration (OpenAPI v3 Spec Import, Endpoint Discovery & Auth) | **Not Started** | TASK-118, TASK-129 |
-| [**TASK-228**](#task-228) | v1.2.0 | Tools / Enterprise | ADK `ApplicationIntegrationToolset` (`IntegrationConnectorTool` for GCP Application Integration & Connectors) | **Not Started** | TASK-129, TASK-135 |
-| [**TASK-229**](#task-229) | v1.2.0 | Tools / RAG | ADK `VertexAiRagRetrieval` Tool (Managed Vertex AI RAG Engine Corpora Grounding) | **Not Started** | TASK-104, TASK-129 |
-| [**TASK-230**](#task-230) | v1.2.0 | Tools / BigQuery | ADK Native `BigQueryToolset` Integration (`WriteMode`, SQL Execution, Forecasting & Contribution Analysis) | **Not Started** | TASK-129 |
-| [**TASK-231**](#task-231) | v1.2.0 | Tools / Spanner | ADK Native `SpannerToolset` Integration (Parameterized SQL, Schema Inspection & Vector Similarity Search) | **Not Started** | TASK-129, TASK-199 |
-| [**TASK-232**](#task-232) | v1.2.0 | Tools / Computer Use | ADK `ComputerUseToolset` Integration (Gemini Computer Use Browser/Playwright & Desktop GUI Automation) | **Not Started** | TASK-129 |
-| [**TASK-233**](#task-233) | v1.2.0 | Tools / DB Toolbox | ADK `MCPToolboxForDatabases` (`ToolboxToolset` for AlloyDB, Cloud SQL, Spanner & Neo4j) | **Not Started** | TASK-120, TASK-129 |
-| [**TASK-234**](#task-234) | v1.2.0 | Tools / Control Flow | ADK Built-in Control Flow & Memory Tools (`exit_loop`, `transfer_to_agent`, `load_memory`, `load_artifacts`) | **Not Started** | TASK-129, TASK-192A |
-| [**TASK-235**](#task-235) | v1.2.0 | Streaming / Live | ADK Live Bidirectional Streaming (`Runner.run_live()`, `LiveRequestQueue` & Voice/Video WebRTC/WS Mode) | **Not Started** | TASK-107, TASK-110 |
-| [**TASK-236**](#task-236) | v1.2.0 | Memory / Long-Term | ADK Cross-Session Long-Term Memory Services (`VertexAiMemoryBankService` & `VertexAiRagMemoryService`) | **Not Started** | TASK-115, TASK-125 |
-| [**TASK-237**](#task-237) | v1.4.0 | Deployment / GKE | Google Kubernetes Engine (GKE Autopilot) Deployment Target, Terraform & Agent Registry Workload Sync | **Not Started** | TASK-216, TASK-217 |
-| [**TASK-238**](#task-238) | v1.4.0 | Runtime / Multi-Lang | Multi-Language ADK Code Generation Targets (`Go` & `Java` ADK SDK Support) | **Not Started** | TASK-106, TASK-123 |
-| [**TASK-239**](#task-239) | v1.2.0 | ADK Callbacks | ADK Agent-Level Lifecycle Callbacks (`before/after_agent`, `before/after_model`, `before/after_tool` with Declarative Presets, Workspace `callbacks/*.py` & AI Prompt Generator) | **Not Started** | TASK-103, TASK-106 |
-| [**TASK-240**](#task-240) | v1.2.0 | ADK Plugins | ADK Runner-Level Plugins (`ReflectAndRetryToolPlugin`, `BigQueryAgentAnalyticsPlugin`, `ContextFilterPlugin`, `SaveFilesAsArtifactsPlugin` & Custom `BasePlugin`) | **Not Started** | TASK-106, TASK-239 |
-| [**TASK-241**](#task-241) | v1.2.0 | Interactive Chat | Interactive Chat GFM Markdown Table Rendering Support (`ChatMessageRenderer.tsx`) | **Complete** | TASK-110 |
-| [**TASK-242**](#task-242) | v1.2.0 | MCP / Workspace | Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom) | **Not Started** | TASK-120, TASK-130, TASK-135 |
-| [**TASK-243**](#task-243) | v1.2.0 | MCP / GitHub | Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth) | **Not Started** | TASK-120, TASK-130, TASK-135 |
+| [**TASK-219**](#task-219) | v1.2.0 | MCP / Tools | Databricks Managed MCP Servers Integration (Genie, Vector Search, Unity Catalog Functions & Databricks SQL) | **Complete** | TASK-120, TASK-130, TASK-135 |
+| [**TASK-220**](#task-220) | v1.2.0 | MCP / Tools | Snowflake Managed & Cortex MCP Servers Integration (Cortex Analyst, Cortex Search, Cortex Agent, SQL & Custom Procedures) | **Complete** | TASK-120, TASK-130, TASK-135 |
+| [**TASK-221**](#task-221) | v1.2.0 | A2UI / Agent UI | A2UI (Agent-to-User Interface v0.9.1) Protocol Support, Agent Drawer Configuration, A2A Adaptor Codegen & Chat Renderer | **Complete** | TASK-103, TASK-110, TASK-116, TASK-218 |
+| [**TASK-222**](#task-222) | v1.2.0 | Samples / Retail A2UI | Retail Merchandising Workbench A2UI Agent Sample (`cloud-gtm/retail-data-and-ai-demo` / Demospace 1876) | **Complete** | TASK-128, TASK-215, TASK-221 |
+| [**TASK-223**](#task-223) | v1.2.0 | ADK Skills | ADK Agent Skills (`SkillToolset`, Progressive Disclosure L1/L2/L3 & Dynamic Skill Factory) | **Complete** | TASK-103, TASK-106 |
+| [**TASK-224**](#task-224) | v1.2.0 | ADK Artifacts | ADK Artifact Service (`InMemoryArtifactService` & `GcsArtifactService`), Multimodal Versioning & Chat File I/O | **Complete** | TASK-103, TASK-110, TASK-115 |
+| [**TASK-225**](#task-225) | v1.2.0 | ADK Context | ADK Context Management (`ContextCacheConfig`, `EventsCompactionConfig` Auto-Summarization & `include_contents`) | **Complete** | TASK-103, TASK-106 |
+| [**TASK-226**](#task-226) | v1.2.0 | ADK Planners | ADK Planners Configuration (`BuiltInPlanner` & `PlanReActPlanner` Multi-Step Reasoning Loop) | **Complete** | TASK-103, TASK-106 |
+| [**TASK-227**](#task-227) | v1.2.0 | Tools / OpenAPI | ADK `OpenAPIToolset` Integration (OpenAPI v3 Spec Import, Endpoint Discovery & Auth) | **Complete** | TASK-118, TASK-129 |
+| [**TASK-228**](#task-228) | v1.2.0 | Tools / Enterprise | ADK `ApplicationIntegrationToolset` (`IntegrationConnectorTool` for GCP Application Integration & Connectors) | **Complete** | TASK-129, TASK-135 |
+| [**TASK-229**](#task-229) | v1.2.0 | Tools / RAG | ADK `VertexAiRagRetrieval` Tool (Managed Vertex AI RAG Engine Corpora Grounding) | **Complete** | TASK-104, TASK-129 |
+| [**TASK-230**](#task-230) | v1.2.0 | Tools / BigQuery | ADK Native `BigQueryToolset` Integration (`WriteMode`, SQL Execution, Forecasting & Contribution Analysis) | **Complete** | TASK-129 |
+| [**TASK-231**](#task-231) | v1.2.0 | Tools / Spanner | ADK Native `SpannerToolset` Integration (Parameterized SQL, Schema Inspection & Vector Similarity Search) | **Complete** | TASK-129, TASK-199 |
+| [**TASK-232**](#task-232) | v1.2.0 | Tools / Computer Use | ADK `ComputerUseToolset` Integration (Gemini Computer Use Browser/Playwright & Desktop GUI Automation) | **Complete** | TASK-129 |
+| [**TASK-233**](#task-233) | v1.2.0 | Tools / DB Toolbox | ADK `MCPToolboxForDatabases` (`ToolboxToolset` for AlloyDB, Cloud SQL, Spanner & Neo4j) | **Complete** | TASK-120, TASK-129 |
+| [**TASK-234**](#task-234) | v1.2.0 | Tools / Control Flow | ADK Built-in Control Flow & Memory Tools (`exit_loop`, `transfer_to_agent`, `load_memory`, `load_artifacts`) | **Complete** | TASK-129, TASK-192A |
+| [**TASK-235**](#task-235) | v1.2.0 | Streaming / Live | ADK Live Bidirectional Streaming (`Runner.run_live()`, `LiveRequestQueue` & Voice/Video WebRTC/WS Mode) | **Complete** | TASK-107, TASK-110 |
+| [**TASK-236**](#task-236) | v1.2.0 | Memory / Long-Term | ADK Cross-Session Long-Term Memory Services (`VertexAiMemoryBankService` & `VertexAiRagMemoryService`) | **Complete** | TASK-115, TASK-125 |
+| [**TASK-237**](#task-237) | v1.2.0 | Deployment / GKE | Google Kubernetes Engine (GKE Autopilot) Deployment Target, Terraform & Agent Registry Workload Sync | **Skipped (Deferred)** | TASK-216, TASK-217 |
+| [**TASK-238**](#task-238) | v1.2.0 | Runtime / Multi-Lang | Multi-Language ADK Code Generation Targets (`Go` & `Java` ADK SDK Support) | **Skipped (Deferred)** | TASK-106, TASK-123 |
+| [**TASK-239**](#task-239) | v1.2.0 | ADK Callbacks | ADK Agent-Level Lifecycle Callbacks (`before/after_agent`, `before/after_model`, `before/after_tool` with Declarative Presets, Workspace `callbacks/*.py` & AI Prompt Generator) | **Complete** | TASK-103, TASK-106 |
+| [**TASK-240**](#task-240) | v1.2.0 | ADK Plugins | ADK Runner-Level Plugins (`ReflectAndRetryToolPlugin`, `BigQueryAgentAnalyticsPlugin`, `ContextFilterPlugin`, `SaveFilesAsArtifactsPlugin` & Custom `BasePlugin`) | **Complete** | TASK-106, TASK-239 |
+| [**TASK-241**](#task-241) | v1.2.0 | Samples / A2UI Kitchen Sink | A2UI v0.9.1 Kitchen Sink Component Gallery, Multi-Step Form Wizard & Session State Inspector (`resource/samples/a2ui_kitchen_sink/`) | **Complete** | TASK-221, TASK-222 |
+| [**TASK-242**](#task-242) | v1.2.0 | Samples / Aviation A2UI | Airline Irregular Operations (IROPS) & Flight Recovery Command Center A2UI Sample (`resource/samples/airline_irops_a2ui/`) | **Complete** | TASK-221, TASK-222 |
+| [**TASK-243**](#task-243) | v1.2.0 | Samples / FinServ A2UI | Wealth & Portfolio Tax-Loss Harvesting / Rebalancing Workbench A2UI Sample (`resource/samples/wealth_rebalancing_a2ui/`) | **Complete** | TASK-221, TASK-222 |
+| [**TASK-244**](#task-244) | v1.2.0 | Samples / Healthcare A2UI | Clinical Trial Patient-Matching & Care Pathway Board A2UI Sample (`resource/samples/clinical_trial_matching_a2ui/`) | **Complete** | TASK-221, TASK-222 |
+| [**TASK-245**](#task-245) | v1.2.0 | Samples / Cloud Ops A2UI | Cloud FinOps & Security Incident War Room ("Blast Radius & Remediation Studio") A2UI Sample (`resource/samples/cloud_finops_security_a2ui/`) | **Complete** | TASK-221, TASK-222 |
+| [**TASK-246**](#task-246) | v1.2.0 | Samples / Retail Marketing A2UI | Retail Marketing Campaign, Promo & Audience Builder Studio A2UI Sample (`resource/samples/retail_marketing_promo_a2ui/`) | **Complete** | TASK-215, TASK-221, TASK-222 |
+| [**TASK-247**](#task-247) | v1.2.0 | Samples / Retail Supply Chain A2UI | Retail Omnichannel New Product Launch & Store Allocation Planner A2UI Sample (`resource/samples/retail_allocation_planner_a2ui/`) | **Complete** | TASK-215, TASK-221, TASK-222 |
+| [**TASK-248**](#task-248) | v1.2.0 | Samples / Retail Merchandising A2UI | Retail Vendor Onboarding & Trade Promotion Deal Desk A2UI Sample (`resource/samples/retail_vendor_deal_desk_a2ui/`) | **Complete** | TASK-215, TASK-221, TASK-222 |
+| [**TASK-249**](#task-249) | v1.2.0 | Interactive Chat | Interactive Chat GFM Markdown Table Rendering Support (`ChatMessageRenderer.tsx`) | **Complete** | TASK-110 |
+| [**TASK-250**](#task-250) | v1.2.0 | Samples & A2UI | Standardize Default A2UI Configuration Across A2UI Samples & Sub-Agents (`A2UIConfigSection`, `A2UISurfaceRenderer`, `LocalRunnerScriptProvider`) | **Complete** | TASK-221, TASK-222, TASK-241 |
+| [**TASK-251**](#task-251) | v1.2.0 | MCP / Workspace | Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom) | **Not Started** | TASK-120, TASK-130, TASK-135 |
+| [**TASK-252**](#task-252) | v1.2.0 | MCP / GitHub | Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth) | **Not Started** | TASK-120, TASK-130, TASK-135 |
 
 ---
 
@@ -4783,97 +4792,75 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 <a id="task-215"></a>
 
-### [TASK-215] Reverse Engineer `retail-data-and-ai-demo` (Agentic Data Cloud for Retail) Sample with Dual-Mode Data Pre-Loading & Asset Sync
-* **Status**: **Not Started**
+### [TASK-215] Reverse Engineer `retail-data-and-ai-demo` (Agentic Data Cloud for Retail) with Unified 3-Sub-Agent Coordinator, Ordered Demo Prompts & Dual-Mode Local SQLite Execution
+* **Status**: **Deferred (Sample Deferred to Backlog; Extension Host `data/` & `tools/` Asset Sync Complete)**
+* **Architecture Decision Record**: **[`docs/adr/001-retail-data-and-ai-demo-architecture.md`](docs/adr/001-retail-data-and-ai-demo-architecture.md)**
 * **Release**: `v1.2.0`
 * **Category / Group**: Customer Experience & Retail
 * **Target Package/Files**:
-  - **Sample Blueprint & Documentation**:
-    - `resource/samples/retail-data-and-ai-demo/retail-data-and-ai-demo.agent`
-    - `resource/samples/retail-data-and-ai-demo/README.md`
-  - **Target-Scoped Dual-Mode Seed Data & Cloud Seeding Scripts (`data/<target>/`)**:
-    - `resource/samples/retail-data-and-ai-demo/data/initial_session_state.json` (Default ADK `session.state` merchant persona, active region, and alert thresholds)
-    - `resource/samples/retail-data-and-ai-demo/data/bigquery/weather_and_trends.json` (Regional weather anomalies, heat wave alerts, & social sentiment velocity scores)
-    - `resource/samples/retail-data-and-ai-demo/data/bigquery/lakehouse_catalog.json` (Borderless Lakehouse SKU catalog & historical sales velocity)
-    - `resource/samples/retail-data-and-ai-demo/data/bigquery/seed_bigquery.py` (Target-specific script that creates BigQuery dataset/tables and loads `data/bigquery/*.json` into live BigQuery)
-    - `resource/samples/retail-data-and-ai-demo/data/alloydb/regional_inventory.json` (Real-time SKU stock levels, safety stock thresholds, and warehouse allocations)
-    - `resource/samples/retail-data-and-ai-demo/data/alloydb/margin_elasticity.json` (Columnar price elasticity curves, expedited freight surcharges, and VIP CLV benchmarks)
-    - `resource/samples/retail-data-and-ai-demo/data/alloydb/seed_alloydb.py` (Target-specific script that provisions AlloyDB tables and seeds `data/alloydb/*.json`)
-    - `resource/samples/retail-data-and-ai-demo/data/spanner/supply_chain_graph.json` (Spanner Graph nodes: `Suppliers`, `DistributionCenters`, `RetailStores`; edges: `ShippingLanes`, `SupplierContracts` with transit times and bottleneck flags)
-    - `resource/samples/retail-data-and-ai-demo/data/spanner/seed_spanner.py` (Target-specific script that applies Spanner Graph DDL `CREATE PROPERTY GRAPH` and seeds `data/spanner/supply_chain_graph.json`)
-  - **Executable Dual-Mode Python Toolsets & Tests**:
-    - `resource/samples/retail-data-and-ai-demo/tools/__init__.py`
-    - `resource/samples/retail-data-and-ai-demo/tools/merchandising_tools.py` (Weather/Social Trend Signals, Inventory Audit, Margin Elasticity, and SEO Enrichment tools)
-    - `resource/samples/retail-data-and-ai-demo/tools/supply_chain_graph_tools.py` (Spanner Graph multi-hop route pathfinding & automated supplier PO execution tools)
-    - `resource/samples/retail-data-and-ai-demo/tests/test_tools.py` (Python `unittest` suite validating local seed loading, graph pathfinding, margin calculations, and `seed_*.py` dry-run/schema generation)
-  - **Extension Host Sample Asset Sync (`tools/` & `data/<target>/`)**:
-    - `src/extension/AgentEditorProvider.ts` (Add recursive `copySampleDataFiles()` alongside `copyLocalToolFiles()` to copy sibling `data/` subfolders into `<targetDir>/data/`)
-    - `src/extension/editor/WebviewMessageRouter.ts` (Update `GENERATE_CODE`, `WRITE_FILES_TO_WORKSPACE`, `EXPORT_CODE`, and `CREATE_FILE_FROM_SAMPLE` to copy sibling `tools/` and `data/` directories so local seed files and `seed_*.py` scripts travel with the workflow)
-    - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Instruct generated ADK runner/agent to pre-load `data/initial_session_state.json` into `session.state` when present)
+  - **Design & Architecture Documentation**:
+    - [`docs/adr/001-retail-data-and-ai-demo-architecture.md`](docs/adr/001-retail-data-and-ai-demo-architecture.md) (Full comparative audit against `/usr/local/google/home/mikenimer/Development/retail-data-and-ai-demo` and the 16-page *Agentic Data Cloud - Retail : Demonstration Guide*)
+  - **Planned Sample Blueprint & Documentation (Deferred)**:
+    - `resource/samples/retail/retail-data-and-ai-demo/retail-data-and-ai-demo.agent`
+    - `resource/samples/retail/retail-data-and-ai-demo/README.md`
+  - **Planned Seed Data Fixtures & Auto-Bootstrapping Local SQLite Engine (`data/seed/*.json`)**:
+    - `resource/samples/retail/retail-data-and-ai-demo/data/initial_session_state.json`
+    - `resource/samples/retail/retail-data-and-ai-demo/data/seed/customers.json` (AuraGlobal GCP customer profiles)
+    - `resource/samples/retail/retail-data-and-ai-demo/data/seed/aws_customers.json` (ModaEco AWS S3 Iceberg customer profiles)
+    - `resource/samples/retail/retail-data-and-ai-demo/data/seed/combined_customers.json` (3,617 unified profiles across AuraGlobal & ModaEco with 992 cross-brand overlap and 507 loyalty tier upgrades)
+    - `resource/samples/retail/retail-data-and-ai-demo/data/seed/synthetic_persons.json` (Customer identity lookup table)
+    - `resource/samples/retail/retail-data-and-ai-demo/data/seed/carts.json` (AlloyDB CDC replicated cart sessions with `ABANDONED` and `ACTIVE >= $500` checkouts)
+    - `resource/samples/retail/retail-data-and-ai-demo/data/seed/promotions.json` (Knowledge Catalog rules extracted from `Q3_Strategy_Shift_LTV_Targeting.pdf`)
+    - `resource/samples/retail/retail-data-and-ai-demo/data/seed/merchandising_alerts.json` (`alert-1725` LA Heatwave Portable AC low stock, `alert-1833` SoCal competitor pricing gap, `alert-1911` `ACME-452` wearable AC 1-star review spike)
+    - `resource/samples/retail/retail-data-and-ai-demo/data/seed/transit_alerts.json` (`alert-2042` Floriston wildfire near Reno closing I-80 and delaying Union Pacific rail shipment to LA)
+    - `resource/samples/retail/retail-data-and-ai-demo/data/seed/items.json`, `stores.json`, `suppliers.json`, `store_inventory.json`
+  - **Planned Executable Python Toolsets & Models**:
+    - `resource/samples/retail/retail-data-and-ai-demo/tools/__init__.py`
+    - `resource/samples/retail/retail-data-and-ai-demo/tools/models.py` (Pydantic schemas from `retail-shared`: `MerchandisingAlert`, `TransitAlert`, `Item`, `Store`, `Supplier`, `InventoryItem`, `SupplierItem`, `SupplierMetrics`, `PurchaseOrder`, `StoreTransferOrder`, `ForecastResponse`)
+    - `resource/samples/retail/retail-data-and-ai-demo/tools/bigquery_tools.py` (Dual-Mode SQLite `sqlite3` local backend + Cloud BigQuery client routing via `execute_query(query)` and `get_single_row_from_query(query)`)
+    - `resource/samples/retail/retail-data-and-ai-demo/tools/retail_tools.py` (All 16 operational tools from `merchandising-agent` and `inventory-agent`)
+    - `resource/samples/retail/retail-data-and-ai-demo/tools/analytics_tools.py` (4 Conversational Analytics tools covering Modules 1–4 of the Demonstration Guide)
+    - `resource/samples/retail/retail-data-and-ai-demo/tests/test_tools.py`
+  - **Completed Extension Host Sample Asset Sync (`tools/` & `data/<target>/`)**:
+    - `src/extension/AgentEditorProvider.ts` (Recursive `copySampleDataFiles()` alongside `copyLocalToolFiles()` copying sibling `data/` subfolders into `<targetDir>/data/`)
+    - `src/extension/editor/WebviewMessageRouter.ts` (`GENERATE_CODE`, `WRITE_FILES_TO_WORKSPACE`, `EXPORT_CODE`, and `CREATE_FILE_FROM_SAMPLE` copy sibling `tools/` and `data/` directories into the workflow's target directory)
+    - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Pre-loads `data/initial_session_state.json` into `session.state` when present)
     - `tests/unit/extension/sampleDataSync.test.ts` (Unit tests for recursive `data/<target>/` and `tools/` asset copying)
-* **Context**:
-  - **Source Repository**: `https://github.com/cloud-gtm/retail-data-and-ai-demo` (*Agentic Data Cloud for Retail* — Google Cloud GTM Reference Demo `go/demos/demo/1876`)
-  - **Overview**: Enterprise multi-agent retail merchandising and autonomous supply chain mitigation workbench built on Google ADK and Model Context Protocol (MCP), unifying a BigQuery Borderless Lakehouse (BigLake/Omni across AWS & Azure), AlloyDB operational ledger (with columnar engine), and Cloud Spanner Graph.
-  - **Core Workflows**:
-    1. **Agentic Merchandising (Proactive Assortment & Pricing)**: Correlates regional weather anomalies (e.g., localized heat waves) and viral social sentiment spikes with live multi-cloud inventory to identify stock gaps, simulate localized pricing elasticity, and generate trend-aligned product catalog/SEO updates.
-    2. **Autonomous Supply Chain Mitigation (Predictive Stock Intelligence)**: Detects transit bottlenecks (e.g., rail/freight delays), traverses multi-hop supplier and warehouse graphs in Cloud Spanner Graph to discover alternate fulfillment routes, runs AlloyDB margin simulations (expedited freight surcharge vs. VIP Customer Lifetime Value protection), and executes automated supplier purchase orders via REST API.
-  - **Dual-Mode Data Pre-Loading Architecture (`data/<target>/` + `seed_<target>.py`)**:
-    - **Mode 1 — Local Zero-Config Seed Mode (Default for In-IDE Test Runner & Local Chat)**:
-      - Tools in `tools/merchandising_tools.py` and `tools/supply_chain_graph_tools.py` resolve `./data/bigquery/*.json`, `./data/alloydb/*.json`, and `./data/spanner/*.json` relative to the package root, providing deterministic relational and graph traversal queries (plus in-memory state updates for PO submission and stock allocation) without requiring cloud credentials.
-    - **Mode 2 — Live Google Cloud Data Mode (`seed_bigquery.py`, `seed_alloydb.py`, `seed_spanner.py`)**:
-      - Each `data/<target>/` subfolder includes its own standalone `seed_<target>.py` CLI script (supporting `--project`, `--dry-run`, and target instance/dataset flags) that reads the local JSON fixtures in that folder, provisions the target schema/DDL, and loads the records into the user's GCP project.
-      - When live environment variables (`BQ_DATASET_ID`, `ALLOYDB_CONNECTION_URI`, `SPANNER_INSTANCE_ID` / `SPANNER_DATABASE_ID`) are configured, the tools query the live cloud databases.
-  - **Architecture / Multi-Agent Mesh Topology**:
-    - **Root Coordinator (`retail_operations_coordinator`, `isStartNode: true`)**: Merchant Workbench & Supply Chain Coordinator orchestrating cooperative task handoffs across 5 specialized sub-agents:
-      1. **`weather_trend_agent` (Weather & Social Trend Signals Agent)**: Monitors regional weather forecasts and social sentiment spikes using Google Search Grounding (`bypass_multi_tools_limit=True`) and BigQuery analytics (`data/bigquery/`).
-      2. **`inventory_audit_agent` (Inventory Audit & Stock Intelligence Agent)**: Audits real-time stock levels, safety stock thresholds, and regional assortment gaps across BigQuery Borderless Lakehouse (`data/bigquery/`) and AlloyDB operational ledgers (`data/alloydb/`).
-      3. **`pricing_optimization_agent` (Pricing & Margin Elasticity Agent)**: Executes AlloyDB columnar margin forecasting and cost-benefit elasticity simulations (`data/alloydb/`).
-      4. **`product_seo_agent` (Product & SEO Content Enrichment Agent)**: Generates trend-aligned catalog updates, localized merchandising copy, and SEO metadata grounded in governed catalog schemas (`data/bigquery/lakehouse_catalog.json`).
-      5. **`procurement_logistics_agent` (Procurement & Supply Chain Logistics Agent)**: Runs low-latency multi-hop pathfinding on Cloud Spanner Graph (`data/spanner/supply_chain_graph.json`) across suppliers, distribution centers, and freight lanes, and dispatches automated REST API purchase orders.
-  - **Model Requirements**: `gemini-3.7-flash` on Vertex AI `global` region (`location="global"`).
-  - **Tools & Connectors**:
-    - `fetch_weather_and_trend_signals`: Queries `data/bigquery/weather_and_trends.json` (or live BigQuery) for regional weather anomalies and social trend velocity scores.
-    - `audit_regional_inventory`: Queries `data/alloydb/regional_inventory.json` and `data/bigquery/lakehouse_catalog.json` (or live AlloyDB/BigQuery) for SKU stock levels, reorder points, and warehouse allocation.
-    - `simulate_margin_elasticity`: Queries `data/alloydb/margin_elasticity.json` (or live AlloyDB columnar engine) to run price elasticity and freight cost vs. VIP CLV impact simulations.
-    - `generate_seo_catalog_update`: Produces structured SEO metadata and localized merchandising copy for trending SKUs.
-    - `find_alternate_supply_chain_routes`: Traverses `data/spanner/supply_chain_graph.json` (or live Spanner Graph via GQL) over suppliers, distribution hubs, and transit lanes to bypass delayed corridors.
-    - `submit_automated_purchase_order`: Dispatches a structured supplier purchase order / stock transfer order payload and records it in session/store state.
-  - **Trigger Test Scenario**: `"A severe heat wave is forecasted in the Southwest next week and our primary rail freight corridor from the Midwest hub is delayed by 72 hours. Audit cooling & hydration SKU inventory in Phoenix and Dallas, simulate margin impact for expedited air/truck rerouting to protect VIP orders, recommend localized pricing, and draft the replenishment purchase order."`
-  - **Canvas Topology & Handle Rules**:
-    - Root Agent: `isStartNode: true`, all node coordinates aligned to the 8pt grid (`x % 8 == 0`, `y % 8 == 0`).
-    - Sub-Agent Delegation Edges: `sourceHandle: "output"` -> `targetHandle: "input"` with solid blue stroke (`#3b82f6`, `strokeWidth: 2`, `animated: true`).
-    - Triggers: Chat trigger AND Test Suite trigger attached to root agent via `sourceHandle: "trigger_out_right"` -> `targetHandle: "input_left"` with dashed amber stroke (`#f59e0b`, `strokeWidth: 2`, `strokeDasharray: "5 5"`, `animated: true`).
-  - **Test Suite Requirement**: Attached Test Suite trigger node (`triggerType: 'tester', triggerKind: 'tester'`) with at least 10 comprehensive test scenarios covering merchandising weather/trend alignment, multi-cloud inventory audits, AlloyDB margin elasticity simulations, SEO catalog enrichment, Spanner Graph supply chain rerouting, and automated PO generation with assertion rules (`contains`, `matches`).
-* **Sub-Agent Prompt**:
-  ```
-  Implement TASK-215: Reverse engineer the 'retail-data-and-ai-demo' (Agentic Data Cloud for Retail) multi-agent sample along with Dual-Mode Data Pre-Loading (data/<target>/ + seed_<target>.py) and Extension Host sample asset sync:
-  1. Create target-scoped seed datasets and target seeding scripts under resource/samples/retail-data-and-ai-demo/data/:
-     - data/initial_session_state.json
-     - data/bigquery/weather_and_trends.json, data/bigquery/lakehouse_catalog.json, and data/bigquery/seed_bigquery.py
-     - data/alloydb/regional_inventory.json, data/alloydb/margin_elasticity.json, and data/alloydb/seed_alloydb.py
-     - data/spanner/supply_chain_graph.json and data/spanner/seed_spanner.py
-     Each seed_<target>.py script must support a --dry-run mode (for unit testing DDL/insert generation without live cloud credentials) as well as live GCP execution when project/instance flags or env vars are provided.
-  2. Implement dual-mode Python toolsets in resource/samples/retail-data-and-ai-demo/tools/merchandising_tools.py and resource/samples/retail-data-and-ai-demo/tools/supply_chain_graph_tools.py that load from ./data/<target>/*.json by default (zero-config local mode) and switch to live BigQuery / AlloyDB / Spanner when live GCP env vars are set. Add comprehensive unit tests in resource/samples/retail-data-and-ai-demo/tests/test_tools.py running cleanly via python3 -m unittest.
-  3. Update Extension Host asset sync in src/extension/AgentEditorProvider.ts and src/extension/editor/WebviewMessageRouter.ts:
-     - Add recursive copySampleDataFiles() in AgentEditorProvider.ts to copy any sibling data/ directory (preserving subfolders like data/bigquery/, data/alloydb/, data/spanner/) into <targetDir>/data/ during GENERATE_CODE, WRITE_FILES_TO_WORKSPACE, and EXPORT_CODE.
-     - Update CREATE_FILE_FROM_SAMPLE in WebviewMessageRouter.ts so creating a workflow from a sample also copies the sample's sibling tools/ and data/ directories alongside the saved .agent file.
-     - Update resource/prompts/python_adk_agent-engine.prompt.txt and resource/prompts/python_adk_cloudrun.prompt.txt to pre-load data/initial_session_state.json into ADK session.state when present.
-     - Add Vitest unit tests in tests/unit/extension/sampleDataSync.test.ts covering recursive data/<target>/ and tools/ copying.
-  4. Create resource/samples/retail-data-and-ai-demo/retail-data-and-ai-demo.agent following the AgentWorkflowDocument schema:
-     - Root Agent ('retail_operations_coordinator'): isStartNode=true, model='gemini-3.7-flash', location="global", with all node coordinates aligned to the 8pt grid (x % 8 == 0, y % 8 == 0).
-     - 5 Sub-Agents ('weather_trend_agent', 'inventory_audit_agent', 'pricing_optimization_agent', 'product_seo_agent', 'procurement_logistics_agent'): Connected from root via sourceHandle="output" -> targetHandle="input" with stroke="#3b82f6" (solid blue, strokeWidth=2, animated=true).
-     - Triggers: Chat trigger AND Test Suite trigger (triggerType='tester', triggerKind='tester') attached to root via trigger_out_right -> input_left with stroke="#f59e0b" (dashed amber, strokeDasharray="5 5", animated=true).
-     - Test Suite: At least 10 comprehensive test scenarios with id, name, prompt, inputQuery, expectedOutput, and assertionType ('contains' / 'matches').
-     - Metadata: Author 'Mike Nimer <mikenimer@google.com>', category 'Customer Experience & Retail', tags ['retail', 'supply-chain', 'merchandising', 'bigquery', 'alloydb', 'spanner-graph', 'mcp', 'multi-agent'], and description.
-  5. Create resource/samples/retail-data-and-ai-demo/README.md documenting the multi-agent architecture, dual-mode data pre-loading (local data/<target>/*.json fixtures vs. cloud seeding with seed_bigquery.py, seed_alloydb.py, and seed_spanner.py), toolsets, and evaluation scenarios.
-  6. ZERO-DUPLICATE ARCHITECTURE: Do NOT create TypeScript duplicate files in src/webview/data/ and do NOT edit sampleWorkflows.ts.
-  7. ANTI-PATTERN RULE: Do NOT add procedural normalization or loader guardrail scripts in workflowSync.ts or canvas components. All .agent files must be 100% correct at rest.
-  ```
+* **Context & Detailed Design (Saved for Future Implementation — See [`ADR-001`](docs/adr/001-retail-data-and-ai-demo-architecture.md))**:
+  - **Why Deferred**: The previous `retail-data-and-ai-demo` sample was removed because it was a synthetic 5-agent re-interpretation that did not match the actual `cloud-gtm/retail-data-and-ai-demo` repo, and the official demo guide primarily highlights BigQuery multi-cloud federation (BigQuery Omni over AWS S3 Iceberg, Datastream CDC, Dataplex Knowledge Catalog) rather than multi-agent autonomy. The full implementation plan below is preserved for when we build the faithful sample later.
+  - **Unified Multi-Agent Topology ("Option B" — 1 Coordinator Over All 3 Repo Agents)**:
+    - **Root Coordinator (`retail_demo_coordinator`, `isStartNode: true`, `subAgentPattern: "coordinator"`, `model: "gemini-3.8-flash"`)**: Routes user and Test Runner prompts across 3 specialized sub-agents representing the entire repository and Demonstration Guide:
+      1. **`conversational_analytics_agent` (*Borderless Lakehouse, Knowledge Catalog Rules & CLTV Churn Analytics*)**:
+         - Implements Modules 1–4 of the Demonstration Guide (`agents/bigquery-data-agent/manage_agent.py` + `frontend/docs/bigquery_schemas.md` + `Q3_Strategy_Shift_LTV_Targeting.pdf`).
+         - **Module 1 (Borderless Lakehouse)**: Unifies AuraGlobal (`retail.customers` on GCP, \$5.50M revenue) and ModaEco (`retail_synthetic.aws_customers` on AWS S3 Apache Iceberg, \$2.88M revenue) into `combined_customers` (collapsing 4,609 accounts into **3,617 unique profiles**, avg CLTV rising from \$1,831 to **\$2,395**, with **992 cross-brand shoppers** and **507 loyalty tier upgrades** — Platinum jumping from 442 to 672).
+         - **Module 2 (Active Lakehouse)**: Evaluates AlloyDB checkout sessions replicated to BigQuery (`retail.carts`) to isolate `ABANDONED` carts and stale high-value `ACTIVE` carts (`total_amount >= $500`).
+         - **Module 3 (Knowledge Catalog Unstructured PDF Rules)**: Extracts `CustomerSegment` rules (**Top VIPs**: `ltv >= 3000` and `recency <= 90 days`; **Frequent Buyers**: `order_count >= 10`, `recency <= 60 days`; **Regular Shoppers**; **New Sign-ups**) and `MarketingStrategy` LTV tiers (**Bronze \$0–\$1k**: 20–30% off; **Silver \$1k–\$2k**: bonus points; **Gold \$2k–\$4k** & **Platinum >= \$4k**: margin-preserving experiential perks like complimentary monogramming, private vault access, and back-in-stock priority reservations instead of blanket discounts).
+         - **Module 4 (Conversational Analytics & Margin Impact)**: Runs the Verified Query for high-CLTV churn risk (`customer31` [\$6,989.03 LTV, active abandoned cart], `customer53` [\$8,592.71 LTV], `customer2754` [\$8,120.73 LTV], `customer17` [\$9,723.89 LTV]) and calculates the 24-hour VIP cart recovery impact (**\$4,200 recovered revenue, 94% net profit margin preserved**).
+      2. **`merchandising_agent` (*Store Merchandising, Competitor Pricing & Review Alert Remediation*)**:
+         - Faithful port of `agents/adk-agents/merchandising-agent/src/merchandising_agent/agent.py`.
+         - Triages `alert-1725` (LA Store Portable AC low stock during SoCal heatwave: 21 on hand vs. 73 forecasted demand over 14 days $\rightarrow$ checks all store inventory and recommends store-to-store transfer or supplier PO), `alert-1833` (SoCal competitor pricing gap: \$229.99 vs. \$255.99/\$219.99/\$262.99/\$259.99 $\rightarrow$ adjusts price to top 90% of competitors rounded to `.99`), and `alert-1911` (`ACME-452` wearable AC 1-star review spike $\rightarrow$ updates product description).
+      3. **`inventory_agent` (*Supply Chain & Transit Disruption Remediation*)**:
+         - Faithful port of `agents/adk-agents/inventory-agent/src/inventory_agent/agent.py`.
+         - Triages `alert-2042` (Floriston wildfire near Reno closing I-80 and delaying Union Pacific rail shipment to LA store $\rightarrow$ finds alternative suppliers excluding the current supplier, compares OTIF `72.3%` and Perfect Order Rate `95%` scorecards, calculates margin impact across 15 VIP customer requests, and executes corrective actions: Cancel PO, Create New PO, Adjust Local Price).
+  - **Ordered Test Runner Demo Prompts (`node-trigger-retail-tester`)**:
+    1. *Act I, Step 1 (Cross-Cloud CLTV Unification)*: `"Compare our AuraGlobal (GCP) and ModaEco (AWS Iceberg) customer datasets. How does unifying them into combined_customers change our total customer count, average CLTV, and Platinum/Gold loyalty tier distribution?"`
+    2. *Act I, Step 2 (Knowledge Catalog PDF Rules)*: `"What are the new Q3 LTV tier criteria, customer segment definitions, and margin-preservation rules extracted by Knowledge Catalog from the Q3_Strategy_Shift_LTV_Targeting.pdf strategy memo?"`
+    3. *Act I, Step 3 (High-CLTV Churn & Abandoned Carts)*: `"Show me high-value loyalty customers currently at risk of churn based on our new abandonment rules."`
+    4. *Act I, Step 4 (VIP Cart Recovery Margin Impact)*: `"What was the net profit margin impact of the VIP cart recovery campaigns over the last 24 hours?"`
+    5. *Act II, Step 5 (Merchandising Alerts Triage)*: `"Are there any current merchandising alerts across our stores?"`
+    6. *Act II, Step 6 (LA Heatwave Forecast & Store Transfer)*: `"Analyze alert-1725 for the Los Angeles store: check the 14-day demand forecast, check inventory across nearby stores, and recommend whether to execute a store-to-store transfer or supplier purchase order."`
+    7. *Act II, Step 7 (Competitor Pricing & Wearable AC Review Fix)*: `"For alert-1833, calculate the new price in the top 90% of competitors rounded to .99 and adjust the price. Then check alert-1911 and update the product description to clarify that ACME-452 is a wearable air conditioner."`
+    8. *Act III, Step 8 (Transit Disruption Alerts)*: `"Check for any current inventory or transit disruption alerts."`
+    9. *Act III, Step 9 (Alternative Supplier Scorecard & VIP Margin Analysis)*: `"For alert-2042, find alternative suppliers for the delayed item (excluding the current supplier), compare their OTIF and Perfect Order Rate scorecards, and calculate the margin impact across the 15 VIP customer requests."`
+    10. *Act III, Step 10 (Execute Supply Chain Corrective Actions)*: `"Execute the recommended corrective actions for alert-2042: cancel the delayed purchase order and create a new purchase order with the top-rated alternative supplier."`
+  - **Local Execution Plan (Dual-Mode SQLite `sqlite3` + JSON Seed Loader in `bigquery_tools.py`)**:
+    - Because 100% of queries in `retail-shared` route through `execute_query(query: str)` and `get_single_row_from_query(query: str)` in `bigquery_tools.py`, local execution uses Python's built-in `sqlite3` standard library auto-seeded from `data/seed/*.json`:
+      - **Zero Tool Signature Changes**: All 20 tool functions keep their exact signatures, docstrings, and Pydantic models (`models.py`).
+      - **Local Mode (`BIGQUERY_RUN_PROJECT_ID` unset)**: Auto-initializes a local SQLite database from `data/seed/*.json`, normalizes BigQuery table qualifiers (e.g., `` `project.retail.customers` `` $\rightarrow$ `customers`), parses nested JSON columns (`competitor_prices`, `available_items`) back into dicts/lists for Pydantic validation, and persists mutations (`create_purchase_order`, `cancel_purchase_order`, `adjust_product_price`, `update_product_description`, `create_store_transfer_order`) across turns.
+      - **Cloud Mode (`BIGQUERY_RUN_PROJECT_ID` set)**: Routes `execute_query()` directly to `google.cloud.bigquery.Client()` and fails fast on missing credentials or tables.
 * **Verification**:
-  - Validate `retail-data-and-ai-demo.agent` JSON loads cleanly in `AgentEditorProvider.discoverResourceSamples()` with valid nodes, 8pt grid coordinates, and handle bindings.
-  - Execute `python3 -m unittest discover -s resource/samples/retail-data-and-ai-demo/tests -v` with 100% pass rate (including tests for `merchandising_tools.py`, `supply_chain_graph_tools.py`, `seed_bigquery.py --dry-run`, `seed_alloydb.py --dry-run`, and `seed_spanner.py --dry-run`).
   - Execute `npx vitest run tests/unit/extension/sampleDataSync.test.ts` with 100% pass rate.
-  - Verify the workflow loads into the React Flow canvas with proper solid blue delegation edges (`#3b82f6`) and dashed amber trigger edges (`#f59e0b`).
+  - When sample is implemented from [`ADR-001`](docs/adr/001-retail-data-and-ai-demo-architecture.md), execute `python3 -m unittest discover -s resource/samples/retail/retail-data-and-ai-demo/tests -v` with 100% pass rate.
 
 ---
 
@@ -5011,7 +4998,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-219"></a>
 
 ### [TASK-219] Databricks Managed MCP Servers Integration (Genie, Vector Search, Unity Catalog Functions & Databricks SQL)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: MCP / Enterprise Data Cloud Tools
 * **Dependencies**: `TASK-120`, `TASK-130`, `TASK-135`
@@ -5078,7 +5065,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-220"></a>
 
 ### [TASK-220] Snowflake Managed & Cortex MCP Servers Integration (Cortex Analyst, Cortex Search, Cortex Agent, SQL & Custom Procedures)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: MCP / Enterprise Data Cloud Tools
 * **Dependencies**: `TASK-120`, `TASK-130`, `TASK-135`
@@ -5141,7 +5128,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-221"></a>
 
 ### [TASK-221] A2UI (Agent-to-User Interface v0.9.1) Protocol Support, Agent Drawer Configuration, A2A Adaptor Codegen & Chat Renderer
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: A2UI / Generative Agent UI & Gemini Enterprise Integration
 * **Dependencies**: `TASK-103`, `TASK-110`, `TASK-116`, `TASK-218`
@@ -5212,7 +5199,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-222"></a>
 
 ### [TASK-222] Retail Merchandising Workbench A2UI Agent Sample (`cloud-gtm/retail-data-and-ai-demo` / Demospace 1876)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: Samples / Customer Experience & Retail (A2UI v0.9.1 Showcase)
 * **Dependencies**: `TASK-128`, `TASK-215`, `TASK-221`
@@ -5304,7 +5291,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-223"></a>
 
 ### [TASK-223] ADK Agent Skills (`SkillToolset`, Progressive Disclosure L1/L2/L3 & Dynamic Skill Factory)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: ADK Core / Agent Skills (`google.adk.tools.skill_toolset`)
 * **Dependencies**: `TASK-103`, `TASK-106`
@@ -5329,7 +5316,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-224"></a>
 
 ### [TASK-224] ADK Artifact Service (`InMemoryArtifactService` & `GcsArtifactService`), Multimodal Versioning & Chat File I/O
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: ADK Core / Artifacts (`google.adk.artifacts`)
 * **Dependencies**: `TASK-103`, `TASK-110`, `TASK-115`
@@ -5349,7 +5336,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-225"></a>
 
 ### [TASK-225] ADK Context Management (`ContextCacheConfig`, `EventsCompactionConfig` Auto-Summarization & `include_contents`)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: ADK Core / Context Optimization (`google.adk.apps`)
 * **Dependencies**: `TASK-103`, `TASK-106`
@@ -5368,7 +5355,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-226"></a>
 
 ### [TASK-226] ADK Planners Configuration (`BuiltInPlanner` & `PlanReActPlanner` Multi-Step Reasoning Loop)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: ADK Core / Planners (`google.adk.planners`)
 * **Dependencies**: `TASK-103`, `TASK-106`
@@ -5388,7 +5375,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-227"></a>
 
 ### [TASK-227] ADK `OpenAPIToolset` Integration (OpenAPI v3 Spec Import, Endpoint Discovery & Auth)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: Tools / OpenAPI (`google.adk.tools.openapi_tool`)
 * **Dependencies**: `TASK-118`, `TASK-129`
@@ -5407,7 +5394,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-228"></a>
 
 ### [TASK-228] ADK `ApplicationIntegrationToolset` (`IntegrationConnectorTool` for GCP Application Integration & Connectors)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: Tools / Enterprise Integration (`google.adk.tools.application_integration_tool`)
 * **Dependencies**: `TASK-129`, `TASK-135`
@@ -5426,7 +5413,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-229"></a>
 
 ### [TASK-229] ADK `VertexAiRagRetrieval` Tool (Managed Vertex AI RAG Engine Corpora Grounding)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: Tools / RAG (`google.adk.tools.retrieval.vertex_ai_rag_retrieval`)
 * **Dependencies**: `TASK-104`, `TASK-129`
@@ -5445,7 +5432,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-230"></a>
 
 ### [TASK-230] ADK Native `BigQueryToolset` Integration (`WriteMode`, SQL Execution, Forecasting & Contribution Analysis)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: Tools / BigQuery (`google.adk.tools.bigquery`)
 * **Dependencies**: `TASK-129`
@@ -5464,7 +5451,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-231"></a>
 
 ### [TASK-231] ADK Native `SpannerToolset` Integration (Parameterized SQL, Schema Inspection & Vector Similarity Search)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: Tools / Spanner (`google.adk.tools.spanner`)
 * **Dependencies**: `TASK-129`, `TASK-199`
@@ -5483,7 +5470,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-232"></a>
 
 ### [TASK-232] ADK `ComputerUseToolset` Integration (Gemini Computer Use Browser/Playwright & Desktop GUI Automation)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: Tools / Computer Use (`google.adk.tools.computer_use`)
 * **Dependencies**: `TASK-129`
@@ -5502,7 +5489,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-233"></a>
 
 ### [TASK-233] ADK `MCPToolboxForDatabases` (`ToolboxToolset` for AlloyDB, Cloud SQL, Spanner & Neo4j)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: Tools / GenAI Toolbox for Databases (`google.adk.tools.toolbox_toolset`)
 * **Dependencies**: `TASK-120`, `TASK-129`
@@ -5521,7 +5508,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-234"></a>
 
 ### [TASK-234] ADK Built-in Control Flow & Memory Tools (`exit_loop`, `transfer_to_agent`, `load_memory`, `load_artifacts`)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: Tools / ADK Built-in Control & Context Tools (`google.adk.tools`)
 * **Dependencies**: `TASK-129`, `TASK-192A`
@@ -5544,7 +5531,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-235"></a>
 
 ### [TASK-235] ADK Live Bidirectional Streaming (`Runner.run_live()`, `LiveRequestQueue` & Voice/Video WebRTC/WS Mode)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: Streaming / Multimodal Live API (`google.adk.agents.live_request_queue`)
 * **Dependencies**: `TASK-107`, `TASK-110`
@@ -5564,7 +5551,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-236"></a>
 
 ### [TASK-236] ADK Cross-Session Long-Term Memory Services (`VertexAiMemoryBankService` & `VertexAiRagMemoryService`)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: Memory / Long-Term Memory (`google.adk.memory`)
 * **Dependencies**: `TASK-115`, `TASK-125`
@@ -5583,8 +5570,8 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-237"></a>
 
 ### [TASK-237] Google Kubernetes Engine (GKE Autopilot) Deployment Target, Terraform & Agent Registry Workload Sync
-* **Status**: **Not Started**
-* **Release**: `v1.2.0`
+* **Status**: **Skipped (Deferred)**
+* **Release**: `v1.2.0` (Deferred to Future Release)
 * **Category / Group**: Deployment / GKE (`adk deploy gke`)
 * **Dependencies**: `TASK-216`, `TASK-217`
 * **Target Package/Files**:
@@ -5603,8 +5590,8 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-238"></a>
 
 ### [TASK-238] Multi-Language ADK Code Generation Targets (`Go` & `Java` ADK SDK Support)
-* **Status**: **Not Started**
-* **Release**: `v1.2.0`
+* **Status**: **Skipped (Deferred)**
+* **Release**: `v1.2.0` (Deferred to Future Release — Python Only for Now)
 * **Category / Group**: Runtime / Multi-Language ADK (`google.golang.org/adk` & `com.google.adk`)
 * **Dependencies**: `TASK-106`, `TASK-123`
 * **Target Package/Files**:
@@ -5623,7 +5610,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-239"></a>
 
 ### [TASK-239] ADK Agent-Level Lifecycle Callbacks (`before/after_agent`, `before/after_model`, `before/after_tool` with Declarative Presets, Workspace `callbacks/*.py` & AI Prompt Generator)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: ADK Core / Lifecycle Callbacks (`google.adk.agents.callback_context`)
 * **Dependencies**: `TASK-103`, `TASK-106`
@@ -5651,7 +5638,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-240"></a>
 
 ### [TASK-240] ADK Runner-Level Plugins (`ReflectAndRetryToolPlugin`, `BigQueryAgentAnalyticsPlugin`, `ContextFilterPlugin`, `SaveFilesAsArtifactsPlugin` & Custom `BasePlugin`)
-* **Status**: **Not Started**
+* **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: ADK Core / Runner Plugins (`google.adk.plugins`)
 * **Dependencies**: `TASK-106`, `TASK-239`
@@ -5669,7 +5656,173 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 <a id="task-241"></a>
 
-### [TASK-241] Interactive Chat GFM Markdown Table Rendering Support (`ChatMessageRenderer.tsx`)
+### [TASK-241] A2UI v0.9.1 Kitchen Sink Component Gallery, Multi-Step Form Wizard & Session State Inspector (`resource/samples/a2ui_kitchen_sink/`)
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Category / Group**: Samples / Developer Diagnostic & A2UI v0.9.1 Showcase
+* **Dependencies**: `TASK-221`, `TASK-222`
+* **Target Package/Files**:
+  - **Sample Blueprint & Documentation**:
+    - `resource/samples/a2ui_kitchen_sink/a2ui_kitchen_sink.agent`
+    - `resource/samples/a2ui_kitchen_sink/README.md`
+  - **A2UI v0.9.1 Surface Builders, Multi-Step Form Wizard & Session State Inspector (`a2ui/`)**:
+    - `resource/samples/a2ui_kitchen_sink/a2ui/__init__.py`
+    - `resource/samples/a2ui_kitchen_sink/a2ui/a2ui_component.py` (Complete fluent Python builder library for all Material 3 & Gemini Enterprise Composite v0.9.1 widgets: `MaterialCard`, `MaterialColumn`, `MaterialRow`, `MaterialGridList`, `MaterialExpansionPanel`, `MaterialDivider`, `MaterialText`, `MaterialBadge`, `MaterialIcon`, `MaterialImage`, `MaterialButton`, `MaterialButtonToggle`, `MaterialInput`, `MaterialSelect`, `MaterialRadioButton`, `MaterialCheckbox`, `MaterialSlideToggle`, `MaterialChips`, `MaterialSlider`, `MaterialDatepicker`, `MaterialTimepicker`, `MaterialProgressBar`, `MaterialDialog`, `MaterialTabs`, `MaterialTable`, `RichTable`, `Stepper`, `VegaChart`, `GoogleMap`, `MosaicCarousel`, `WorkOrderList`)
+    - `resource/samples/a2ui_kitchen_sink/a2ui/widget_gallery_ui.py` (Interactive Component Gallery surface showcasing every Material 3 & Composite widget category with live state badges)
+    - `resource/samples/a2ui_kitchen_sink/a2ui/form_wizard_ui.py` (3-Step Interactive Form Wizard with two-way `/dataModel` bindings across text/email/number inputs, dropdowns, radio buttons, filter chips, range sliders, checkboxes, slide toggles, and date/time pickers)
+    - `resource/samples/a2ui_kitchen_sink/a2ui/final_summary_ui.py` (Final Values & `session.state` Verification Surface rendered upon form submission: displays a side-by-side **Default Value vs. Submitted Value (`session.state`)** `MaterialTable`, a live `VegaChart` visualizing the user's submitted numeric/slider allocations, and an expandable `MaterialExpansionPanel` dumping the raw persisted `session.state["kitchen_sink_submission"]` JSON)
+    - `resource/samples/a2ui_kitchen_sink/a2ui/a2ui_adaptor.py` (MVC Controller `A2uiAdaptor` handling form step transitions `step_1`, `step_2`, `step_3`, `submit_kitchen_sink_form` with `EventActions(state_delta=...)` persistence into `session.state["kitchen_sink_submission"]`, and deterministic utility actions `show_gallery`, `show_wizard`, `show_summary`, `reset_state`, `help`)
+  - **Tools, Initial Session State & Tests**:
+    - `resource/samples/a2ui_kitchen_sink/tools/__init__.py`
+    - `resource/samples/a2ui_kitchen_sink/tools/kitchen_sink_tools.py` (Tools to inspect/query `session.state["kitchen_sink_submission"]`, validate form constraints, and compute allocation metrics from submitted form values)
+    - `resource/samples/a2ui_kitchen_sink/data/initial_session_state.json` (Default form state, widget catalog metadata, and sample preset profiles)
+    - `resource/samples/a2ui_kitchen_sink/tests/test_a2ui_kitchen_sink.py` (Python `unittest` suite verifying all widget builders, multi-step form bindings, `submit_kitchen_sink_form` `UserAction` -> `session.state` persistence, and final summary surface rendering)
+  - **Chat Runner `onUserAction` Wiring**:
+    - `src/webview/components/chat/ChatRunnerTab.tsx` & `src/webview/components/chat/ChatMessageRenderer.tsx` (Ensure clicking any A2UI submit/action button in the in-IDE Chat Runner dispatches the resolved `UserAction` payload back to the active agent session)
+    - `src/webview/components/runner/A2UISurfaceRenderer.tsx` (Support rendering additional kitchen-sink widgets including `Stepper`, `MaterialRadioButton`, `MaterialChips`, `MaterialSlideToggle`, `MaterialDatepicker`, `MaterialTimepicker`, `MaterialProgressBar`, `MaterialTabs`, `GoogleMap`, `MosaicCarousel`, `WorkOrderList`)
+* **Context**:
+  - Provides a comprehensive developer "Kitchen Sink" reference sample that demonstrates every A2UI v0.9.1 component and proves the complete round-trip: **Agent emits Form Surface -> User edits two-way bound fields -> User clicks Submit -> `UserAction` posts resolved values back to Agent -> Values are persisted in `session.state` (Agent Memory) -> Agent renders Final Values Summary Card & can recall submitted values in subsequent chat turns**.
+* **Verification**:
+  - Execute `python3 -m unittest discover -s resource/samples/a2ui_kitchen_sink/tests -v` and `npx vitest run tests/unit/webview/A2UISurfaceRenderer.test.ts` with 100% pass rate.
+
+---
+
+<a id="task-242"></a>
+
+### [TASK-242] Airline Irregular Operations (IROPS) & Flight Recovery Command Center A2UI Sample (`resource/samples/airline_irops_a2ui/`)
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Category / Group**: Samples / Aviation & Transportation (A2UI v0.9.1 Showcase)
+* **Dependencies**: `TASK-221`, `TASK-222`
+* **Target Package/Files**:
+  - `resource/samples/airline_irops_a2ui/airline_irops_a2ui.agent` & `README.md`
+  - `resource/samples/airline_irops_a2ui/a2ui/` (`a2ui_component.py`, `hub_disruption_ui.py`, `recovery_stepper_ui.py`, `swap_simulator_dialog.py`, `a2ui_adaptor.py`)
+  - `resource/samples/airline_irops_a2ui/tools/irops_tools.py` & `data/initial_session_state.json`
+  - `resource/samples/airline_irops_a2ui/tests/test_airline_irops_a2ui.py`
+* **Context**:
+  - Hub thunderstorm disruption recovery command center featuring a live hub map & delay chart (`GoogleMap` + `VegaChart`), 4-stage recovery `Stepper` (*Impact Triage -> Aircraft Tail Swap -> FAR Part 117 Crew Re-pairing -> Passenger Re-accommodation*), interactive swap simulator form (`MaterialSelect`, `MaterialSlider` bound to `/maxVoucherUsd`, `RichTable`), and `commit_recovery_plan` `UserAction` persisted to `session.state`.
+* **Verification**:
+  - Execute `python3 -m unittest discover -s resource/samples/airline_irops_a2ui/tests -v` with 100% pass rate.
+
+---
+
+<a id="task-243"></a>
+
+### [TASK-243] Wealth & Portfolio Tax-Loss Harvesting / Rebalancing Workbench A2UI Sample (`resource/samples/wealth_rebalancing_a2ui/`)
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Category / Group**: Samples / Financial Services & Wealth Management (A2UI v0.9.1 Showcase)
+* **Dependencies**: `TASK-221`, `TASK-222`
+* **Target Package/Files**:
+  - `resource/samples/wealth_rebalancing_a2ui/wealth_rebalancing_a2ui.agent` & `README.md`
+  - `resource/samples/wealth_rebalancing_a2ui/a2ui/` (`a2ui_component.py`, `portfolio_drift_ui.py`, `tax_harvest_form.py`, `trade_execution_summary.py`, `a2ui_adaptor.py`)
+  - `resource/samples/wealth_rebalancing_a2ui/tools/wealth_tools.py` & `data/initial_session_state.json`
+  - `resource/samples/wealth_rebalancing_a2ui/tests/test_wealth_rebalancing_a2ui.py`
+* **Context**:
+  - Interactive portfolio rebalancing and tax-loss harvesting workbench with two-way bound what-if sliders (`/riskTolerance`, `/cashReservePct`, `/taxBracket`), dual `VegaChart` (Efficient Frontier + Sector Drift), and a trade execution ticket (`MaterialCheckbox` lot swaps + HITL `approve_orders` button) committing final trade orders to `session.state`.
+* **Verification**:
+  - Execute `python3 -m unittest discover -s resource/samples/wealth_rebalancing_a2ui/tests -v` with 100% pass rate.
+
+---
+
+<a id="task-244"></a>
+
+### [TASK-244] Clinical Trial Patient-Matching & Care Pathway Board A2UI Sample (`resource/samples/clinical_trial_matching_a2ui/`)
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Category / Group**: Samples / Healthcare & Life Sciences (A2UI v0.9.1 Showcase)
+* **Dependencies**: `TASK-221`, `TASK-222`
+* **Target Package/Files**:
+  - `resource/samples/clinical_trial_matching_a2ui/clinical_trial_matching_a2ui.agent` & `README.md`
+  - `resource/samples/clinical_trial_matching_a2ui/a2ui/` (`a2ui_component.py`, `eligibility_matrix_ui.py`, `biomarker_chart_ui.py`, `enrollment_form_ui.py`, `a2ui_adaptor.py`)
+  - `resource/samples/clinical_trial_matching_a2ui/tools/clinical_trial_tools.py` & `data/initial_session_state.json`
+  - `resource/samples/clinical_trial_matching_a2ui/tests/test_clinical_trial_matching_a2ui.py`
+* **Context**:
+  - Oncology clinical trial patient screening board featuring an inclusion/exclusion criteria `RichTable` with `MET`/`UNMET`/`MISSING LAB` badges, longitudinal lab trend `VegaChart`, and an interactive diagnostic lab order & Principal Investigator waiver form (`MaterialCheckbox`, `MaterialInput`, `MaterialSelect`) persisting enrollment decisions into `session.state`.
+* **Verification**:
+  - Execute `python3 -m unittest discover -s resource/samples/clinical_trial_matching_a2ui/tests -v` with 100% pass rate.
+
+---
+
+<a id="task-245"></a>
+
+### [TASK-245] Cloud FinOps & Security Incident War Room ("Blast Radius & Remediation Studio") A2UI Sample (`resource/samples/cloud_finops_security_a2ui/`)
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Category / Group**: Samples / Cloud Operations, FinOps & Security (A2UI v0.9.1 Showcase)
+* **Dependencies**: `TASK-221`, `TASK-222`
+* **Target Package/Files**:
+  - `resource/samples/cloud_finops_security_a2ui/cloud_finops_security_a2ui.agent` & `README.md`
+  - `resource/samples/cloud_finops_security_a2ui/a2ui/` (`a2ui_component.py`, `anomaly_dashboard_ui.py`, `remediation_checklist_ui.py`, `execution_receipt_ui.py`, `a2ui_adaptor.py`)
+  - `resource/samples/cloud_finops_security_a2ui/tools/finops_security_tools.py` & `data/initial_session_state.json`
+  - `resource/samples/cloud_finops_security_a2ui/tests/test_cloud_finops_security_a2ui.py`
+* **Context**:
+  - SRE & Cloud Security incident war room combining a BigQuery/GKE cost & egress anomaly `VegaChart`, an interactive remediation `WorkOrderList` (`MaterialSlideToggle` for service account quarantine, GKE Autopilot HPA right-sizing, context caching, and Model Armor policy), and one-click remediation execution (`execute_remediation_plan`) stored in `session.state`.
+* **Verification**:
+  - Execute `python3 -m unittest discover -s resource/samples/cloud_finops_security_a2ui/tests -v` with 100% pass rate.
+
+---
+
+<a id="task-246"></a>
+
+### [TASK-246] Retail Marketing Campaign, Promo & Audience Builder Studio A2UI Sample (`resource/samples/retail_marketing_promo_a2ui/`)
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Category / Group**: Samples / Retail Marketing & Customer Growth (A2UI v0.9.1 Showcase)
+* **Dependencies**: `TASK-215`, `TASK-221`, `TASK-222`
+* **Target Package/Files**:
+  - `resource/samples/retail_marketing_promo_a2ui/retail_marketing_promo_a2ui.agent` & `README.md`
+  - `resource/samples/retail_marketing_promo_a2ui/a2ui/` (`a2ui_component.py`, `audience_cohort_ui.py`, `promo_builder_form_ui.py`, `campaign_roas_summary_ui.py`, `a2ui_adaptor.py`)
+  - `resource/samples/retail_marketing_promo_a2ui/tools/marketing_promo_tools.py` & `data/initial_session_state.json`
+  - `resource/samples/retail_marketing_promo_a2ui/tests/test_retail_marketing_promo_a2ui.py`
+* **Context**:
+  - Retail CRM & Growth Marketing studio where a marketing manager explores BigQuery RFM customer cohorts (`VegaChart` + `RichTable`), configures a promotional campaign form (`MaterialSelect` cohort, `MaterialRadioButton` offer type, `MaterialSlider` `/discountPct` & `/maxSpendUsd`, `MaterialCheckbox` channels, `MaterialInput` copy), and submits it to `session.state["active_campaign_draft"]` to generate a Margin & ROAS Simulation Summary Card.
+* **Verification**:
+  - Execute `python3 -m unittest discover -s resource/samples/retail_marketing_promo_a2ui/tests -v` with 100% pass rate.
+
+---
+
+<a id="task-247"></a>
+
+### [TASK-247] Retail Omnichannel New Product Launch & Store Allocation Planner A2UI Sample (`resource/samples/retail_allocation_planner_a2ui/`)
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Category / Group**: Samples / Retail Supply Chain & Inventory Allocation (A2UI v0.9.1 Showcase)
+* **Dependencies**: `TASK-215`, `TASK-221`, `TASK-222`
+* **Target Package/Files**:
+  - `resource/samples/retail_allocation_planner_a2ui/retail_allocation_planner_a2ui.agent` & `README.md`
+  - `resource/samples/retail_allocation_planner_a2ui/a2ui/` (`a2ui_component.py`, `demand_map_ui.py`, `allocation_rules_form_ui.py`, `dc_manifest_summary_ui.py`, `a2ui_adaptor.py`)
+  - `resource/samples/retail_allocation_planner_a2ui/tools/allocation_planner_tools.py` & `data/initial_session_state.json`
+  - `resource/samples/retail_allocation_planner_a2ui/tests/test_retail_allocation_planner_a2ui.py`
+* **Context**:
+  - Omnichannel inventory allocation planner visualizing regional demand vs. DC capacity (`VegaChart` + `GoogleMap`), presenting an interactive allocation parameters form (`MaterialSlider` `/ecomHoldbackPct`, `/flagshipStoreWeight`, `/safetyStockDays`, `MaterialSelect` `/shippingCarrierTier`, `MaterialCheckbox` regional tiers), and persisting the resulting DC-by-DC unit split manifest into `session.state["allocation_plan"]`.
+* **Verification**:
+  - Execute `python3 -m unittest discover -s resource/samples/retail_allocation_planner_a2ui/tests -v` with 100% pass rate.
+
+---
+
+<a id="task-248"></a>
+
+### [TASK-248] Retail Vendor Onboarding & Trade Promotion Deal Desk A2UI Sample (`resource/samples/retail_vendor_deal_desk_a2ui/`)
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Category / Group**: Samples / Retail Merchandising & Supplier Negotiation (A2UI v0.9.1 Showcase)
+* **Dependencies**: `TASK-215`, `TASK-221`, `TASK-222`
+* **Target Package/Files**:
+  - `resource/samples/retail_vendor_deal_desk_a2ui/retail_vendor_deal_desk_a2ui.agent` & `README.md`
+  - `resource/samples/retail_vendor_deal_desk_a2ui/a2ui/` (`a2ui_component.py`, `vendor_intake_form_ui.py`, `deal_terms_simulator_ui.py`, `contract_scorecard_ui.py`, `a2ui_adaptor.py`)
+  - `resource/samples/retail_vendor_deal_desk_a2ui/tools/vendor_deal_tools.py` & `data/initial_session_state.json`
+  - `resource/samples/retail_vendor_deal_desk_a2ui/tests/test_retail_vendor_deal_desk_a2ui.py`
+* **Context**:
+  - Category buyer & supplier deal desk featuring a multi-step vendor intake and trade promotion negotiation form (`MaterialInput` wholesale cost/SKU specs, `MaterialSlider` gross margin target & co-op marketing/slotting fees, `MaterialCheckbox` compliance & sustainability certifications) that commits deal terms to `session.state["vendor_deal_sheet"]` and renders a Vendor Deal Scorecard & Contract Summary Card.
+* **Verification**:
+  - Execute `python3 -m unittest discover -s resource/samples/retail_vendor_deal_desk_a2ui/tests -v` with 100% pass rate.
+
+---
+
+<a id="task-249"></a>
+
+### [TASK-249] Interactive Chat GFM Markdown Table Rendering Support (`ChatMessageRenderer.tsx`)
 * **Status**: **Complete**
 * **Release**: `v1.2.0`
 * **Category / Group**: Interactive Chat / Markdown Rendering
@@ -5686,9 +5839,31 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ---
 
-<a id="task-242"></a>
+<a id="task-250"></a>
 
-### [TASK-242] Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom)
+### [TASK-250] Standardize Default A2UI Configuration Across A2UI Samples & Sub-Agents (`A2UIConfigSection`, `A2UISurfaceRenderer`, `LocalRunnerScriptProvider`)
+* **Status**: **Complete**
+* **Release**: `v1.2.0`
+* **Category / Group**: Samples & A2UI Runtime Parity
+* **Dependencies**: `TASK-221`, `TASK-222`, `TASK-241`
+* **Target Package/Files**:
+  - `resource/samples/retail/retail_allocation_planner_a2ui/retail_allocation_planner_a2ui.agent` & `resource/samples/sdlc/a2ui_kitchen_sink/a2ui_kitchen_sink.agent`
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt`
+  - `src/extension/runner/LocalRunnerScriptProvider.ts`
+  - `src/webview/components/runner/A2UISurfaceRenderer.tsx`
+  - `tests/unit/webview/A2UISurfaceRenderer.test.ts`
+* **Context**:
+  - Standardized A2UI sample `.agent` files (both the root coordinator AND every sub-agent) to use the exact default `a2uiConfig` emitted by the **Rich UI (A2UI)** checkbox in `A2UIConfigSection.tsx`: `{ "enabled": true, "catalog": "gemini_enterprise_composite_v09", "generationMode": "state_adapter", "enableNonLlmUtilityActions": true }`.
+  - Pruned all 8 A2UI-focused vertical demos (`wealth_rebalancing_a2ui`, `clinical_trial_matching_a2ui`, `airline_irops_a2ui`, `cloud_finops_security_a2ui`, `merchandising_agent_a2ui`, `retail_marketing_promo_a2ui`, `retail_vendor_deal_desk_a2ui`, `retail_allocation_planner_a2ui`) plus the unfaithful `retail-data-and-ai-demo` sample (deferred to [`ADR-001`](docs/adr/001-retail-data-and-ai-demo-architecture.md)), retaining `a2ui_kitchen_sink` ("A2UI Kitchen Sink Agent") alongside the core multi-agent samples (`kc-data-domain-builder` ("Data Domain Builder"), `company_verifier` ("Company Verifier & Entity Classifier"), `travel-concierge` ("Travel Concierge"), and `code_reviewer` ("Code Reviewing Agent")).
+  - Updated `A2UISurfaceRenderer.tsx` (`registerComponentNode`, `renderNode`, `handleButtonClick`, `extractA2UIPayloads`, `RenderTable`, `RenderExpansionPanel`) and `LocalRunnerScriptProvider.ts` to support canonical A2UI v0.9.1 widgets, line-anchored fence parsing, and `userAction` routing.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/extension/samplesDiscovery.test.ts tests/unit/webview/PaletteSamples.test.ts tests/unit/extension/sampleDataSync.test.ts` and `npm run build` with 100% pass rate.
+
+---
+
+<a id="task-251"></a>
+
+### [TASK-251] Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom)
 * **Status**: **Not Started**
 * **Release**: `v1.2.0`
 * **Category / Group**: MCP / Google Workspace Tools (`developers.google.com/workspace/guides/configure-mcp-servers`)
@@ -5773,9 +5948,9 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ---
 
-<a id="task-243"></a>
+<a id="task-252"></a>
 
-### [TASK-243] Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth)
+### [TASK-252] Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth)
 * **Status**: **Not Started**
 * **Release**: `v1.2.0`
 * **Category / Group**: MCP / Developer & Source Control Tools (`github.com/github/github-mcp-server`)
@@ -5820,5 +5995,8 @@ Each task specifies reverse-engineering the sample Python code into a production
     - Also supports GitHub OAuth 2.0 (`https://github.com/login/oauth/authorize` and `https://github.com/login/oauth/access_token`).
 * **Verification**:
   - Execute `npx vitest run tests/unit/webview/githubMcpServers.test.ts` with 100% pass rate, validating Remote HTTP header/URL assembly (`X-MCP-Toolsets`, `X-MCP-Readonly`), Local Docker `stdio` args/env generation, toolset multi-select filtering, and `createToolDefinitionFromGitHubMcpServer()`.
+
+
+
 
 

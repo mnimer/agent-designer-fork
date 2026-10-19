@@ -1,4 +1,4 @@
-# Autonomous Multi-Agent Code Reviewer
+# Code Reviewing Agent
 
 This blueprint demonstrates the use of Google Agent Development Kit (ADK) to build a production-grade, multi-agent automated code review system. A team of domain-specialist agents collaborates to inspect code changes, identify security vulnerabilities, evaluate software architecture, and verify test and packaging readiness.
 

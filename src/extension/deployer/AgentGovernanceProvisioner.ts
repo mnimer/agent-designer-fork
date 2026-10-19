@@ -69,7 +69,7 @@ export type HttpJsonRequester = (req: GcpHttpJsonRequest) => Promise<GcpHttpJson
  * Agent Engine Telemetry, and Vertex AI Evaluation Experiments.
  */
 export interface GovernanceProvisionRequest {
-  target: 'agent_engine' | 'cloud_run';
+  target: 'agent_engine' | 'cloud_run' | 'gke';
   targetDirectory?: string;
   projectId: string;
   region: string;
@@ -1745,6 +1745,11 @@ export class AgentGovernanceProvisioner {
       ? [
           `//aiplatform.googleapis.com/${cleanResourcePath}`,
           `//${region}-aiplatform.googleapis.com/${cleanResourcePath}`,
+        ]
+      : deployedResourceUri.includes('/clusters/') || deployedResourceUri.includes('container.googleapis.com')
+      ? [
+          `//container.googleapis.com/${cleanResourcePath}`,
+          `//container.googleapis.com/projects/${projectId}/locations/${region}/clusters/${cleanAgentId}`,
         ]
       : [
           `//run.googleapis.com/projects/${projectId}/locations/${region}/services/${cleanAgentId}`,

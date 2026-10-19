@@ -1,4 +1,4 @@
-# Knowledge Catalog Data Domain Builder (Google ADK Multi-Agent Blueprint)
+# Data Domain Builder (Google ADK Multi-Agent Blueprint)
 
 > **Author**: Steve Thill <stevethill@google.com>  
 > **Framework**: Google Agent Development Kit (`google-adk`)  
@@ -10,7 +10,7 @@
 
 ## 1. Overview & Business Value
 
-The **Knowledge Catalog Data Domain Builder** is an autonomous multi-agent system designed to revolutionize how enterprise organizations design, provision, organize, and govern their data assets in **Google Cloud Dataplex (Knowledge Catalog)**.
+The **Data Domain Builder** is an autonomous multi-agent system designed to revolutionize how enterprise organizations design, provision, organize, and govern their data assets in **Google Cloud Dataplex (Knowledge Catalog)**.
 
 Instead of manual, error-prone console clicks or complex ad-hoc scripts, this system applies **Domain-Driven Design (DDD)** principles to:
 1. Automatically inventory datasets and tables across BigQuery without moving physical data.

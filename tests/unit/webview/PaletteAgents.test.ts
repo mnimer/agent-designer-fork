@@ -12,6 +12,8 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { 
   createSingleAgentNode, 
   CORE_AGENT_TYPES, 
@@ -20,6 +22,7 @@ import {
   PATTERN_DEFINITIONS 
 } from '../../../src/webview/data/patterns';
 import { AgentKind } from '../../../src/webview/types';
+import { computeCanonicalDocumentHash } from '../../../src/webview/hooks/useExtensionSync';
 
 describe('Basic Agent Types Palette & Node Creation', () => {
   it('should partition basic agent types into Core and Flow & Control groups', () => {
@@ -237,6 +240,151 @@ describe('Basic Agent Types Palette & Node Creation', () => {
       assert.ok(pattern.colorTheme, `Pattern ${pattern.id} must have a colorTheme defined`);
       assert.ok(pattern.badge, `Pattern ${pattern.id} must have a badge defined`);
     }
+  });
+
+  it('should bound PaletteCard with equal top-3 and bottom-3 padding, 100% height, and internal scrolling', () => {
+    const palettePath = path.resolve(__dirname, '../../../src/webview/components/Canvas/PaletteCard.tsx');
+    const source = fs.readFileSync(palettePath, 'utf8');
+
+    // Outer container must use both top-3 and bottom-3 so top and bottom padding are equal and resize with CanvasTab
+    assert.ok(
+      source.includes('absolute top-3 bottom-3 left-0 z-20 flex items-start select-none group/palette pointer-events-none'),
+      'PaletteCard outer wrapper must use top-3 bottom-3 and pointer-events-none'
+    );
+
+    // Open Tab Panel must take 100% of bounded height (h-full max-h-full) and never use fixed 66vh calc
+    assert.ok(
+      source.includes('pointer-events-auto w-80 h-full max-h-full'),
+      'PaletteCard open tab panel must use pointer-events-auto w-80 h-full max-h-full'
+    );
+    assert.ok(
+      !source.includes('max-h-[calc(66vh-24px)]'),
+      'PaletteCard must not use hardcoded max-h-[calc(66vh-24px)]'
+    );
+    assert.ok(
+      !source.includes('max-h-[calc(66vh-240px)]'),
+      'PaletteCard triggers list must not use nested max-h-[calc(66vh-240px)]'
+    );
+
+    // All 4 tab content containers must use overflow-y-auto flex-1 min-h-0 for internal scrolling
+    const internalScrollMatches = source.match(/overflow-y-auto flex-1 min-h-0/g) || [];
+    assert.equal(
+      internalScrollMatches.length,
+      4,
+      'All 4 PaletteCard tabs (Agents, Tools, Triggers, Samples) must have overflow-y-auto flex-1 min-h-0'
+    );
+  });
+
+  it('should close open property panels when clicking anywhere on the bottom tab panel in FlowCanvas', () => {
+    const flowCanvasPath = path.resolve(__dirname, '../../../src/webview/components/FlowCanvas.tsx');
+    const source = fs.readFileSync(flowCanvasPath, 'utf8');
+
+    assert.ok(
+      source.includes('const handleClosePropertyPanels = useCallback('),
+      'FlowCanvas must define handleClosePropertyPanels'
+    );
+    assert.ok(
+      source.includes('data-testid="bottom-panel-container"'),
+      'FlowCanvas must render bottom-panel-container'
+    );
+    assert.ok(
+      source.includes('onMouseDownCapture={handleClosePropertyPanels}'),
+      'Bottom panel container must attach onMouseDownCapture={handleClosePropertyPanels}'
+    );
+    assert.ok(
+      source.includes('onClick={handleClosePropertyPanels}'),
+      'Bottom panel container must attach onClick={handleClosePropertyPanels}'
+    );
+  });
+
+  it('should compute canonical document hash ignoring metadata.updatedAt to prevent dirty re-triggering after save', () => {
+    const baseDoc: any = {
+      version: '1.0.0',
+      name: 'kitchen_sink',
+      description: 'Test doc',
+      framework: 'google-adk',
+      language: 'python',
+      nodes: [{ id: 'n1', type: 'agent', position: { x: 100, y: 200 }, data: { label: 'Root' } }],
+      edges: [],
+      metadata: {
+        createdAt: '2026-10-01T00:00:00.000Z',
+        updatedAt: '2026-10-15T01:00:00.000Z',
+      },
+      deployment: {
+        target: 'agent_engine',
+        deploymentTarget: 'agent_engine',
+        outputFolder: './kitchen_sink/',
+      },
+    };
+
+    const laterTimestampDoc: any = {
+      ...baseDoc,
+      metadata: {
+        ...baseDoc.metadata,
+        updatedAt: '2026-10-15T02:55:00.000Z',
+      },
+    };
+
+    assert.equal(
+      computeCanonicalDocumentHash(baseDoc),
+      computeCanonicalDocumentHash(laterTimestampDoc),
+      'Canonical hash must remain identical when only metadata.updatedAt changes'
+    );
+
+    const modifiedNodeDoc: any = {
+      ...laterTimestampDoc,
+      nodes: [{ id: 'n1', type: 'agent', position: { x: 150, y: 200 }, data: { label: 'Root' } }],
+    };
+
+    assert.notEqual(
+      computeCanonicalDocumentHash(baseDoc),
+      computeCanonicalDocumentHash(modifiedNodeDoc),
+      'Canonical hash must change when node position or data changes'
+    );
+  });
+
+  it('should render Sub-Agents pattern dropdown to the right of the Sub-Agents label in AgentNode and wire pattern callbacks in FlowCanvas', () => {
+    const agentNodePath = path.resolve(__dirname, '../../../src/webview/components/Canvas/nodes/AgentNode.tsx');
+    const agentNodeSource = fs.readFileSync(agentNodePath, 'utf8');
+
+    // Dropdown must always render in the Sub-Agents header when subAgents.length > 0 (not gated behind undefined data.onPatternChange)
+    assert.ok(
+      agentNodeSource.includes('<span>Sub-Agents ({subAgents.length})</span>'),
+      'AgentNode must render Sub-Agents header label'
+    );
+    assert.ok(
+      agentNodeSource.includes('data-testid={`subagent-pattern-select-${id}`}'),
+      'AgentNode must render the Sub-Agents pattern select dropdown in the header'
+    );
+    assert.ok(
+      !agentNodeSource.includes('{data.onPatternChange && ('),
+      'AgentNode must not hide the Sub-Agents pattern select dropdown behind a data.onPatternChange conditional'
+    );
+    assert.ok(
+      agentNodeSource.includes('data.onUpdateSubAgentPattern(id, nextPattern)'),
+      'AgentNode pattern select must invoke data.onUpdateSubAgentPattern'
+    );
+
+    const flowCanvasPath = path.resolve(__dirname, '../../../src/webview/components/FlowCanvas.tsx');
+    const flowCanvasSource = fs.readFileSync(flowCanvasPath, 'utf8');
+    assert.ok(
+      flowCanvasSource.includes('onUpdateSubAgentPattern: handleUpdateSubAgentPattern,') &&
+        flowCanvasSource.includes('onPatternChange: handleUpdateSubAgentPattern,'),
+      'FlowCanvas enrichedNodes must wire both onUpdateSubAgentPattern and onPatternChange'
+    );
+
+    // Ensure AgentNode and StandardAgentDrawer resolve currentPattern with identical logic so their dropdown selections always match
+    const standardDrawerPath = path.resolve(__dirname, '../../../src/webview/components/inspector/StandardAgentDrawer.tsx');
+    const standardDrawerSource = fs.readFileSync(standardDrawerPath, 'utf8');
+    const expectedResolution = `const currentPattern: DelegationPattern = PATTERN_OPTIONS.some((opt) => opt.id === rawPattern)\n    ? rawPattern\n    : PATTERN_OPTIONS[0].id;`;
+    assert.ok(
+      agentNodeSource.includes(expectedResolution),
+      'AgentNode must resolve currentPattern using PATTERN_OPTIONS[0].id fallback instead of forcing coordinator'
+    );
+    assert.ok(
+      standardDrawerSource.includes(expectedResolution),
+      'StandardAgentDrawer must resolve currentPattern using identical logic to AgentNode'
+    );
   });
 });
 

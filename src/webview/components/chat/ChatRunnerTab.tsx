@@ -48,6 +48,15 @@ import { VisualAgentDocument } from '../../../shared/types';
 import { AgentData, GenerationConfig } from '../../types';
 import { AgentWorkflowDocument } from '../../../shared/types';
 import { useWebviewBridge } from '../../hooks/useWebviewBridge';
+import {
+  ChatPanel,
+  AttachedFile,
+  VersionedArtifact,
+  LiveVoiceSessionState,
+} from '../runner/ChatPanel';
+
+export { ChatPanel };
+export type { AttachedFile, VersionedArtifact, LiveVoiceSessionState };
 
 export interface ChatMessageTurn {
   id: string;
@@ -73,6 +82,7 @@ export interface ChatRunnerTabProps {
   };
   agents?: AgentData[];
   onNavigateToDeployment?: () => void;
+  externalPrompt?: { text: string; timestamp: number } | string | null;
 }
 
 export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
@@ -81,6 +91,7 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
   chatConfig,
   agents = [],
   onNavigateToDeployment,
+  externalPrompt,
 }) => {
   const bridge = useWebviewBridge();
   const sessionIdRef = useRef<string>(`session-${Date.now()}`);
@@ -92,6 +103,80 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
   const [inputPrompt, setInputPrompt] = useState<string>('Hello, what can you do?');
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Multimodal File Attachments (TASK-224)
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+
+  // Versioned Artifacts emitted by agent (TASK-224)
+  const [artifacts, setArtifacts] = useState<VersionedArtifact[]>([]);
+
+  // Live Bidirectional Voice Streaming State (TASK-235)
+  const liveStreamingConfig =
+    (chatConfig as any)?.liveStreamingConfig ||
+    (propDocument as any)?.triggerConfig?.liveStreamingConfig ||
+    (propDocument as any)?.triggers?.[0]?.config?.liveStreamingConfig;
+  const isLiveConfigEnabled = Boolean(liveStreamingConfig?.enabled);
+  const activeVoiceName = liveStreamingConfig?.voiceName || 'Puck';
+
+  const [liveVoiceState, setLiveVoiceState] = useState<LiveVoiceSessionState>('idle');
+  const [inputTranscription, setInputTranscription] = useState<string>('');
+  const [outputTranscription, setOutputTranscription] = useState<string>('');
+
+  const handleAddAttachment = useCallback((file: AttachedFile) => {
+    setAttachedFiles((prev) => [...prev, file]);
+  }, []);
+
+  const handleRemoveAttachment = useCallback((fileId: string) => {
+    setAttachedFiles((prev) => prev.filter((f) => f.id !== fileId));
+  }, []);
+
+  const handleClearAttachments = useCallback(() => {
+    setAttachedFiles([]);
+  }, []);
+
+  const handleDownloadArtifact = useCallback(
+    (artifact: VersionedArtifact) => {
+      bridge.postMessage({
+        type: 'DOWNLOAD_ARTIFACT',
+        payload: {
+          artifactId: artifact.id,
+          filename: artifact.filename,
+          scope: artifact.scope,
+        },
+      });
+    },
+    [bridge]
+  );
+
+  const handleStartLiveVoice = useCallback(() => {
+    setLiveVoiceState('connecting');
+    bridge.postMessage({
+      type: 'START_LIVE_VOICE',
+      payload: {
+        voice: activeVoiceName,
+        sessionId: sessionIdRef.current,
+      },
+    });
+    setTimeout(() => {
+      setLiveVoiceState((current) => (current === 'connecting' ? 'active' : current));
+    }, 600);
+  }, [bridge, activeVoiceName]);
+
+  const handleMuteLiveVoice = useCallback(() => {
+    setLiveVoiceState((prev) => (prev === 'muted' ? 'active' : 'muted'));
+  }, []);
+
+  const handleEndLiveVoice = useCallback(() => {
+    setLiveVoiceState('idle');
+    setInputTranscription('');
+    setOutputTranscription('');
+    bridge.postMessage({
+      type: 'END_LIVE_VOICE',
+      payload: {
+        sessionId: sessionIdRef.current,
+      },
+    });
+  }, [bridge]);
 
   // NOTE: Local Runner lifecycle tracking matching TestRunnerTab
   const [localRunnerStatus, setLocalRunnerStatus] = useState<
@@ -169,6 +254,25 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const activeTurnIdRef = useRef<string | null>(null);
+
+  // Populate inputPrompt and focus textarea when an external prompt is sent from Test Runner
+  useEffect(() => {
+    if (!externalPrompt) return;
+    const nextText = typeof externalPrompt === 'string' ? externalPrompt : externalPrompt.text;
+    if (typeof nextText === 'string') {
+      setInputPrompt(nextText);
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+        }
+      }, 0);
+    }
+  }, [externalPrompt]);
 
   /**
    * Automatically scrolls the chat container to the bottom as tokens or turns arrive.
@@ -264,6 +368,52 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
     };
   }, [bridge]);
 
+  // NOTE: Listen for emitted artifacts and live voice transcriptions (TASK-224 & TASK-235)
+  useEffect(() => {
+    const unsubArtifact = bridge.subscribe('ARTIFACT_SAVED', (payload) => {
+      if (payload?.filename) {
+        setArtifacts((prev) => {
+          const exists = prev.findIndex(
+            (a) => a.filename === payload.filename && a.scope === payload.scope
+          );
+          const newArt: VersionedArtifact = {
+            id: payload.id || `art-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            filename: payload.filename,
+            version: payload.version || (exists >= 0 ? 'v2' : 'v1'),
+            scope: payload.scope || 'session',
+            mimeType: payload.mimeType,
+            size: payload.size,
+            downloadUrl: payload.downloadUrl,
+          };
+          if (exists >= 0) {
+            const updated = [...prev];
+            updated[exists] = newArt;
+            return updated;
+          }
+          return [...prev, newArt];
+        });
+      }
+    });
+
+    const unsubInputTranscript = bridge.subscribe('LIVE_INPUT_TRANSCRIPTION', (payload) => {
+      if (payload?.text) {
+        setInputTranscription(payload.text);
+      }
+    });
+
+    const unsubOutputTranscript = bridge.subscribe('LIVE_OUTPUT_TRANSCRIPTION', (payload) => {
+      if (payload?.text) {
+        setOutputTranscription(payload.text);
+      }
+    });
+
+    return () => {
+      unsubArtifact();
+      unsubInputTranscript();
+      unsubOutputTranscript();
+    };
+  }, [bridge]);
+
   /**
    * Handles sending a new user message turn to the running agent (Local or Remote).
    * Strictly enforces that the target runtime must be ready before dispatching.
@@ -319,6 +469,13 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
       setMessages(newHistory);
       setIsStreaming(true);
 
+      // Section: Multimodal attachments (TASK-224)
+      const inlineData = attachedFiles.map((att) => ({
+        mimeType: att.mimeType,
+        data: att.base64Data,
+        name: att.name,
+      }));
+
       // NOTE: Dispatch to VS Code extension host over RPC (no fake fallback responses)
       bridge.postMessage({
         type: 'SEND_CHAT_MESSAGE',
@@ -326,6 +483,8 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
           sessionId: sessionIdRef.current,
           message: text,
           streaming: chatConfig?.streaming !== false,
+          inlineData: inlineData.length > 0 ? inlineData : undefined,
+          attachments: inlineData.length > 0 ? inlineData : undefined,
           history: messages
             .filter((m) => m.role === 'user' || m.role === 'assistant')
             .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
@@ -336,8 +495,13 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
           deployedResourceId: executionTarget === 'remote' ? deployedResourceId : undefined,
         },
       });
+
+      // Clear pending attachments after dispatch
+      if (attachedFiles.length > 0) {
+        setAttachedFiles([]);
+      }
     },
-    [isTargetReady, inputPrompt, messages, bridge, chatConfig, propDocument, config, localRunnerPort, executionTarget, deployedResourceId]
+    [isTargetReady, inputPrompt, messages, attachedFiles, bridge, chatConfig, propDocument, config, localRunnerPort, executionTarget, deployedResourceId]
   );
 
   /**
@@ -436,14 +600,14 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
       {/* Top Header Bar (8pt spacing grid: px-4 py-2 = 16px horizontal, 8px vertical) */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-[#30363d] bg-[#161b22] shrink-0">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-md bg-emerald-950/40 border border-emerald-500/30 text-emerald-400">
+          <div className="p-2 rounded-md bg-emerald-950/40 border border-emerald-500/30 text-emerald-400">
             <MessageSquare className="w-4 h-4" />
           </div>
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-xs text-white truncate max-w-[140px]">
+            <span className="font-semibold text-sm text-white truncate max-w-[160px]">
               {rootAgentName}
             </span>
-            <span className="text-[10px] px-2 py-0.5 rounded font-mono font-medium bg-[#21262d] text-gray-300 border border-[#30363d]">
+            <span className="text-xs px-2 py-0.5 rounded font-mono font-medium bg-[#21262d] text-gray-300 border border-[#30363d]">
               {activeModel}
             </span>
           </div>
@@ -593,8 +757,8 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-6 text-gray-500">
             <MessageSquare className="w-8 h-8 text-gray-600 mb-2" />
-            <p className="text-sm font-medium text-gray-400">No active conversation</p>
-            <p className="text-xs text-gray-500 mt-1 max-w-xs">
+            <p className="text-base font-medium text-gray-400">No active conversation</p>
+            <p className="text-sm text-gray-500 mt-1 max-w-xs">
               Type a prompt below or click a suggestion to start testing your workflow.
             </p>
           </div>
@@ -605,27 +769,27 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
             return (
               <div
                 key={turn.id}
-                className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'} group`}
+                className={`flex gap-4 ${isUser ? 'justify-end' : 'justify-start'} group`}
               >
                 {!isUser && (
-                  <div className="w-7 h-7 rounded-lg bg-emerald-950/60 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5 shadow-sm">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-950/60 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0 mt-1 shadow-sm">
                     <Bot className="w-4 h-4" />
                   </div>
                 )}
 
                 <div
-                  className={`relative max-w-[85%] min-w-0 rounded-xl p-3 text-xs leading-relaxed shadow-sm transition-all ${
+                  className={`relative max-w-[85%] min-w-0 rounded-xl p-4 text-base leading-6 shadow-sm transition-all ${
                     isUser
                       ? 'bg-blue-600/20 border border-blue-500/30 text-blue-100 rounded-tr-none'
                       : 'bg-[#161b22] border border-[#30363d] text-gray-200 rounded-tl-none group-hover:border-emerald-500/30'
                   }`}
                 >
                   {/* Top metadata */}
-                  <div className="flex items-center justify-between gap-4 mb-1 text-[10px] text-gray-400">
+                  <div className="flex items-center justify-between gap-4 mb-2 text-sm text-gray-400">
                     <span className="font-semibold text-gray-300">
                       {isUser ? 'You' : rootAgentName}
                     </span>
-                    <span className="text-[9px] font-mono opacity-60">{turn.timestamp}</span>
+                    <span className="text-xs font-mono opacity-60">{turn.timestamp}</span>
                   </div>
 
                   {/* Message Content */}
@@ -637,17 +801,24 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
                           isUser={isUser}
                           isStreaming={turn.isStreaming}
                           onActionClick={(actionText) => handleSendMessage(actionText)}
+                          onUserAction={(action) =>
+                            handleSendMessage(
+                              JSON.stringify({
+                                userAction: action,
+                              })
+                            )
+                          }
                         />
                         {/* Blinking streaming cursor */}
                         {turn.isStreaming && (
-                          <span className="inline-block w-1.5 h-3.5 ml-1 bg-emerald-400 animate-pulse align-middle" />
+                          <span className="inline-block w-2 h-4 ml-1 bg-emerald-400 animate-pulse align-middle" />
                         )}
                       </>
                     ) : turn.isStreaming ? (
-                      <span className="flex items-center gap-1 text-emerald-400 font-mono text-[11px]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" />
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce [animation-delay:0.2s]" />
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce [animation-delay:0.4s]" />
+                      <span className="flex items-center gap-1.5 text-emerald-400 font-mono text-sm">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" />
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce [animation-delay:0.2s]" />
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce [animation-delay:0.4s]" />
                         <span className="ml-1 text-gray-400 italic">Thinking...</span>
                       </span>
                     ) : (
@@ -657,8 +828,8 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
 
                   {/* Error banner if turn errored */}
                   {turn.error && (
-                    <div className="mt-2 p-2 rounded bg-rose-950/40 border border-rose-500/40 text-rose-300 text-[11px] flex items-start gap-1.5">
-                      <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+                    <div className="mt-2 p-2 rounded bg-rose-950/40 border border-rose-500/40 text-rose-300 text-sm flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                       <span>{turn.error}</span>
                     </div>
                   )}
@@ -666,14 +837,14 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
                   {/* Subagent reasoning trace pill if present */}
                   {turn.trace && turn.trace.length > 0 && (
                     <div className="mt-2 pt-2 border-t border-[#30363d] space-y-1">
-                      <div className="text-[9px] font-mono text-gray-400 uppercase tracking-wider flex items-center gap-1">
-                        <Zap className="w-2.5 h-2.5 text-amber-400" />
+                      <div className="text-xs font-mono text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                        <Zap className="w-3 h-3 text-amber-400" />
                         <span>Execution Trace</span>
                       </div>
                       {turn.trace.map((step, idx) => (
                         <div
                           key={idx}
-                          className="flex items-center justify-between text-[10px] font-mono text-gray-400 bg-[#0d1117] px-2 py-0.5 rounded border border-[#21262d]"
+                          className="flex items-center justify-between text-xs font-mono text-gray-400 bg-[#0d1117] px-2 py-1 rounded border border-[#21262d]"
                         >
                           <span className="truncate">{step.agentName}: {step.step}</span>
                           <span className="text-gray-500 shrink-0 ml-2">{step.durationMs}ms</span>
@@ -691,16 +862,16 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
                       className="absolute bottom-2 right-2 p-1 rounded bg-[#0d1117] hover:bg-[#21262d] text-gray-400 hover:text-white border border-[#30363d] opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                     >
                       {copiedId === turn.id ? (
-                        <Check className="w-3 h-3 text-emerald-400" />
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
                       ) : (
-                        <Copy className="w-3 h-3" />
+                        <Copy className="w-3.5 h-3.5" />
                       )}
                     </button>
                   )}
                 </div>
 
                 {isUser && (
-                  <div className="w-7 h-7 rounded-lg bg-blue-950/60 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0 mt-0.5 shadow-sm">
+                  <div className="w-8 h-8 rounded-lg bg-blue-950/60 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0 mt-1 shadow-sm">
                     <User className="w-4 h-4" />
                   </div>
                 )}
@@ -714,8 +885,8 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
       {/* Suggested Prompt Chips (Rendered when conversation is just the initial welcome turn) */}
       {messages.length <= 1 && (
         <div className="px-4 py-2 border-t border-[#21262d] bg-[#161b22]/50 flex items-center gap-2 overflow-x-auto shrink-0">
-          <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider flex items-center gap-1 shrink-0">
-            <Sparkles className="w-3 h-3 text-emerald-400" />
+          <span className="text-xs text-gray-400 font-medium uppercase tracking-wider flex items-center gap-1 shrink-0">
+            <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
             Suggestions:
           </span>
           {suggestedPrompts.map((prompt, idx) => (
@@ -731,7 +902,7 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
                     : 'Local agent server is offline. Start the agent in the Deployment tab.'
                   : prompt
               }
-              className="px-2.5 py-1 rounded-full bg-[#21262d] hover:bg-emerald-950/30 hover:border-emerald-500/40 border border-[#30363d] text-xs text-gray-300 hover:text-emerald-300 transition-colors whitespace-nowrap cursor-pointer shrink-0 disabled:opacity-40 disabled:hover:bg-[#21262d] disabled:hover:border-[#30363d] disabled:hover:text-gray-300 disabled:cursor-not-allowed"
+              className="px-3 py-1 rounded-full bg-[#21262d] hover:bg-emerald-950/30 hover:border-emerald-500/40 border border-[#30363d] text-sm text-gray-300 hover:text-emerald-300 transition-colors whitespace-nowrap cursor-pointer shrink-0 disabled:opacity-40 disabled:hover:bg-[#21262d] disabled:hover:border-[#30363d] disabled:hover:text-gray-300 disabled:cursor-not-allowed"
             >
               {prompt}
             </button>
@@ -739,8 +910,26 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
         </div>
       )}
 
-      {/* Input Area (8pt spacing grid: p-3 = 12px / 8pt standard: p-2 + p-1) */}
-      <div className="p-3 border-t border-[#30363d] bg-[#161b22] shrink-0">
+      {/* Input Area (8pt spacing grid: p-4 = 16px) */}
+      <div className="p-4 border-t border-[#30363d] bg-[#161b22] shrink-0 space-y-2">
+        {/* ChatPanel controls: File Attachments, Artifact Chips & Live Voice (TASK-224 & TASK-235) */}
+        <ChatPanel
+          attachedFiles={attachedFiles}
+          onAddAttachment={handleAddAttachment}
+          onRemoveAttachment={handleRemoveAttachment}
+          onClearAttachments={handleClearAttachments}
+          artifacts={artifacts}
+          onDownloadArtifact={handleDownloadArtifact}
+          liveStreamingEnabled={isLiveConfigEnabled}
+          liveVoiceState={liveVoiceState}
+          activeVoiceName={activeVoiceName}
+          onStartLiveVoice={handleStartLiveVoice}
+          onMuteLiveVoice={handleMuteLiveVoice}
+          onEndLiveVoice={handleEndLiveVoice}
+          inputTranscription={inputTranscription}
+          outputTranscription={outputTranscription}
+        />
+
         <div
           className={`flex items-end gap-2 bg-[#0d1117] rounded-xl border p-2 transition-all shadow-inner ${
             !isTargetReady
@@ -766,7 +955,7 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
                 : 'Type a message (Enter to send, Shift+Enter for newline)...'
             }
             disabled={!isTargetReady}
-            className="flex-1 bg-transparent border-0 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-0 resize-none max-h-28 py-1.5 px-2 font-sans disabled:cursor-not-allowed"
+            className="flex-1 bg-transparent border-0 text-base leading-6 text-white placeholder-gray-500 focus:outline-none focus:ring-0 resize-none max-h-32 py-1 px-2 font-sans disabled:cursor-not-allowed"
           />
 
           {isStreaming && !inputPrompt.trim() ? (
@@ -776,7 +965,7 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
               title="Stop streaming"
               className="p-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white transition-colors cursor-pointer shrink-0 shadow-sm"
             >
-              <Square className="w-3.5 h-3.5 fill-current" />
+              <Square className="w-4 h-4 fill-current" />
             </button>
           ) : (
             <button
@@ -800,16 +989,16 @@ export const ChatRunnerTab: React.FC<ChatRunnerTabProps> = ({
                   : 'bg-[#21262d] text-gray-500 cursor-not-allowed'
               }`}
             >
-              <Send className="w-3.5 h-3.5" />
+              <Send className="w-4 h-4" />
             </button>
           )}
         </div>
 
         {/* Offline / Not Deployed Runner Hint Bar */}
         {!isTargetReady && (
-          <div className="flex items-center justify-between mt-2 px-1 text-[10px] text-gray-400">
+          <div className="flex items-center justify-between mt-2 px-1 text-xs text-gray-400">
             <span className="flex items-center gap-1">
-              <AlertCircle className="w-3 h-3 text-amber-400 shrink-0" />
+              <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span>
                 {executionTarget === 'remote' ? (
                   <>Remote Agent Runtime is currently <strong>not deployed</strong>. Deploy to Agent Runtime on the Deployment tab to enable chat.</>

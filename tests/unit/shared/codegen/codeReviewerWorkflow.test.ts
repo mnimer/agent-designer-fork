@@ -17,7 +17,7 @@ import * as path from 'node:path';
 import { AgentWorkflowDocument } from '../../../../src/shared/types';
 
 describe('Autonomous Multi-Agent Code Reviewer Sample (.agent)', () => {
-  const sampleDir = path.resolve(__dirname, '../../../../resource/samples/code_reviewer');
+  const sampleDir = path.resolve(__dirname, '../../../../resource/samples/sdlc/code_reviewer');
   const samplePath = path.join(sampleDir, 'code_reviewer.agent');
 
   it('should load resource/samples/code_reviewer/code_reviewer.agent successfully as valid JSON', () => {
@@ -26,7 +26,7 @@ describe('Autonomous Multi-Agent Code Reviewer Sample (.agent)', () => {
     const workflow: AgentWorkflowDocument = JSON.parse(rawContent);
 
     assert.equal(workflow.version, '1.0.0');
-    assert.equal(workflow.name, 'Autonomous Multi-Agent Code Reviewer');
+    assert.equal(workflow.name, 'Code Reviewing Agent');
     assert.equal(workflow.framework, 'google-adk');
     assert.equal(workflow.language, 'python');
   });

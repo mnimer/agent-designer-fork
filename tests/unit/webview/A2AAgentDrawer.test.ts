@@ -17,6 +17,8 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { AgentData, A2AConfig } from '../../../src/webview/types';
 import { normalizeA2AConfig } from '../../../src/shared/agentSpec';
 import { parseA2AAgentCard, extractExtensionSlug } from '../../../src/shared/a2aCardParser';
@@ -351,24 +353,56 @@ describe('A2A Agent Inspector Logic & Configuration', () => {
     assert.equal(resolveActiveTab('sub_agents', 2), 'sub_agents');
     assert.equal(resolveActiveTab('card_skills', 0), 'card_skills');
 
-    // Validate that the Agent tab contains fields in identical order to standard agent drawer:
-    // 1. Agent Display Name & Python Identifier
-    // 2. Caller Delegation Prompt & Task Instructions
-    // 3. Structured Output Schema Builder
-    // 4. Underlying LLM Engine
-    // 5. Attached Tools Section
+    // Validate that the Agent & Card tab contains setup-first remote A2A fields:
+    // 1. A2A Agent Display Name (with auto-generated hidden Python ID)
+    // 2. Import Agent Card (JSON Spec)
+    // 3. Caller Delegation Prompt & Task Instructions
     const agentTabFields = [
-      'name_and_id',
+      'name_and_hidden_id',
+      'import_agent_card_json',
       'caller_delegation_prompt',
-      'structured_output_builder',
-      'underlying_llm_engine',
-      'attached_tools',
     ];
-    assert.equal(agentTabFields[0], 'name_and_id');
-    assert.equal(agentTabFields[1], 'caller_delegation_prompt');
-    assert.equal(agentTabFields[2], 'structured_output_builder');
-    assert.equal(agentTabFields[3], 'underlying_llm_engine');
-    assert.equal(agentTabFields[4], 'attached_tools');
+    assert.equal(agentTabFields[0], 'name_and_hidden_id');
+    assert.equal(agentTabFields[1], 'import_agent_card_json');
+    assert.equal(agentTabFields[2], 'caller_delegation_prompt');
+
+    // Verify A2AAgentDrawer.tsx source structure directly
+    const drawerPath = path.resolve(
+      __dirname,
+      '../../../src/webview/components/inspector/A2AAgentDrawer.tsx'
+    );
+    const source = fs.readFileSync(drawerPath, 'utf-8');
+
+    // Tab labels & data-testids
+    assert.ok(source.includes('data-testid="a2a-agent-drawer-tabs"'));
+    assert.ok(source.includes('<span>Agent & Card</span>'));
+    assert.ok(source.includes('<span>Skills & Capabilities</span>'));
+    assert.ok(source.includes('<span>Endpoint & Auth</span>'));
+    assert.ok(source.includes('<span>Sub-Agents</span>'));
+
+    // Field ordering on Tab 1: A2A Agent Display Name (1st), Import Agent Card (2nd), Caller Delegation Prompt (3rd)
+    const agentTabStartIdx = source.indexOf("{activeTab === 'agent' && (");
+    const displayNameIdx = source.indexOf('A2A Agent Display Name', agentTabStartIdx);
+    const importCardIdx = source.indexOf('<span>Import Agent Card (JSON Spec)</span>', agentTabStartIdx);
+    const delegationPromptIdx = source.indexOf('<span>Caller Delegation Prompt & Task Instructions</span>', agentTabStartIdx);
+    const skillsTabIdx = source.indexOf("{activeTab === 'card_skills' && (", agentTabStartIdx);
+    assert.ok(displayNameIdx > 0 && displayNameIdx < importCardIdx, 'Display Name must be the 1st field before Import Agent Card on Tab 1');
+    assert.ok(importCardIdx < delegationPromptIdx, 'Import Agent Card must appear before Caller Delegation Prompt on Tab 1');
+    assert.ok(delegationPromptIdx < skillsTabIdx, 'All Tab 1 fields must appear before Tab 2');
+
+    // Auto-generated hidden Python ID input and absence of local LLM/Tools/Schema controls
+    assert.ok(source.includes('data-testid="a2a-agent-identifier-hidden"'));
+    assert.ok(!source.includes('Agent Identifier (Python ID)'), 'Visible Python ID input should be replaced by hidden field');
+    assert.ok(!source.includes('<ModelSelector'), 'Remote A2A drawer must not render local ModelSelector');
+    assert.ok(!source.includes('<StructuredOutputBuilder'), 'Remote A2A drawer must not render local StructuredOutputBuilder');
+    assert.ok(!source.includes('Attached Tools ('), 'Remote A2A drawer must not render local Attached Tools section');
+
+    // Section header counts inside tabs (not on main tab buttons)
+    assert.ok(source.includes('Published Agent Skills ({a2aConfig.skills.length})'));
+    assert.ok(source.includes('Published Agent Skills (0)'));
+    assert.ok(source.includes('Detected Capabilities ({(a2aConfig.capabilities || []).length})'));
+    assert.ok(source.includes('Custom HTTP Headers ({Object.keys(a2aConfig.customHeaders || {}).length})'));
+    assert.ok(source.includes('Connected Sub-Agents ({subAgents.length})'));
 
     // Validate that the Canvas Agent Node Card has field ordering aligned with standard agent node:
     // 1. Header Subtitle: Model (Cpu icon) with A2A Client indicator

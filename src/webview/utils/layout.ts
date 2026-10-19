@@ -39,7 +39,12 @@ export function getNodeDimensions(node: Node<any>): { width: number; height: num
     const triggerType = (node.data as any)?.triggerType || (node.data as any)?.triggerKind;
     const isTester = triggerType === 'tester' || triggerType === 'test';
     if (isTester) {
-      const promptCount = (node.data as any)?.config?.testPrompts?.length || (node.data as any)?.config?.testScenarios?.length || 3;
+      const rawPromptCount =
+        (node.data as any)?.config?.testPrompts?.length ||
+        (node.data as any)?.config?.testScenarios?.length ||
+        3;
+      // TriggerNode.tsx renders at most 3 preview prompts (testPrompts.slice(0, 3))
+      const promptCount = Math.min(3, rawPromptCount);
       // Header: ~70px, QA Suite Prompts container: ~50px, each prompt item: ~85px, padding/margin: ~30px
       const height = Math.max(420, 150 + promptCount * 90);
       return { width: 340, height };

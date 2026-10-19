@@ -168,14 +168,21 @@ export class RunnerEnvironment {
         }
       } else {
         try {
-          // -sTCP:LISTEN ensures we ONLY target listening server sockets, NEVER client/outbound sockets from VS Code
-          const { stdout } = await execFileAsync('lsof', ['-ti', '-sTCP:LISTEN', '-P', `-i:${port}`], { timeoutMs: 3000 });
+          // Use -t (terse), -sTCP:LISTEN (only listening sockets), -P (numeric ports), -n (no DNS lookup), -iTCP:<port>
+          const { stdout } = await execFileAsync(
+            'lsof',
+            ['-t', '-sTCP:LISTEN', '-P', '-n', `-iTCP:${port}`],
+            { timeoutMs: 3000 }
+          );
           const lsofOut = stdout.trim();
           if (lsofOut) {
             const pids = lsofOut.split(/\s+/).filter(Boolean);
             for (const pidStr of pids) {
               const pid = parseInt(pidStr, 10);
               if (!isNaN(pid) && pid > 1 && pid !== currentPid && pid !== parentPid) {
+                try {
+                  process.kill(-pid, 'SIGKILL');
+                } catch {}
                 try {
                   process.kill(pid, 'SIGKILL');
                 } catch {
@@ -191,9 +198,15 @@ export class RunnerEnvironment {
             }
           }
         } catch (lsofErr: any) {
-          // If lsof is missing or fails, log or ignore gracefully
-          if (logCallback) {
-            logCallback(`[Local Runner] lsof failed or not found: ${lsofErr?.message}`);
+          // If lsof is missing or returns non-zero (no process found), fallback to fuser on Linux
+          if (process.platform === 'linux') {
+            try {
+              await execFileAsync('fuser', ['-k', '-n', 'tcp', String(port)], { timeoutMs: 2000 });
+            } catch {
+              // Ignore when no process is bound to the port
+            }
+          } else if (logCallback) {
+            logCallback(`[Local Runner] lsof check completed: ${lsofErr?.message}`);
           }
         }
       }

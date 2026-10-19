@@ -334,7 +334,10 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
   const [isToolDragOver, setIsToolDragOver] = useState(false);
 
   const subAgents = data.subAgents || [];
-  const currentPattern: DelegationPattern = data.subAgentPattern || 'parallel';
+  const rawPattern: DelegationPattern = data.subAgentPattern || data.delegationPattern || subAgents[0]?.delegationType || 'parallel';
+  const currentPattern: DelegationPattern = PATTERN_OPTIONS.some((opt) => opt.id === rawPattern)
+    ? rawPattern
+    : PATTERN_OPTIONS[0].id;
 
   const handleNodeDragOver = (e: React.DragEvent) => {
     // Check if dragging a tool
@@ -581,6 +584,56 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
 
       {/* Node Body */}
       <div className="p-3 space-y-2.5 text-xs text-gray-300">
+        {/* Capability Badges: A2UI, Skills, Planner, Callbacks, Plugins */}
+        {(data.a2uiConfig?.enabled ||
+          (Array.isArray(data.skills) && data.skills.length > 0) ||
+          (data.plannerConfig?.type && data.plannerConfig.type !== 'none') ||
+          (Array.isArray(data.callbacks) && data.callbacks.length > 0) ||
+          (Array.isArray(data.plugins) && data.plugins.some((p) => p.enabled !== false))) && (
+          <div className="flex flex-wrap items-center gap-1 pb-1" data-testid="agent-capabilities-badges">
+            {data.a2uiConfig?.enabled && (
+              <span
+                data-testid="agent-a2ui-badge"
+                className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1"
+              >
+                A2UI
+              </span>
+            )}
+            {Array.isArray(data.skills) && data.skills.length > 0 && (
+              <span
+                data-testid="agent-skills-badge"
+                className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1"
+              >
+                Skills ({data.skills.length})
+              </span>
+            )}
+            {data.plannerConfig?.type && data.plannerConfig.type !== 'none' && (
+              <span
+                data-testid="agent-planner-badge"
+                className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1"
+              >
+                {data.plannerConfig.type === 'built_in' ? 'BuiltInPlanner' : 'PlanReAct'}
+              </span>
+            )}
+            {Array.isArray(data.callbacks) && data.callbacks.length > 0 && (
+              <span
+                data-testid="agent-callbacks-badge"
+                className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1"
+              >
+                Callbacks ({data.callbacks.length})
+              </span>
+            )}
+            {Array.isArray(data.plugins) && data.plugins.some((p) => p.enabled !== false) && (
+              <span
+                data-testid="agent-plugins-badge"
+                className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1"
+              >
+                Plugins ({data.plugins.filter((p) => p.enabled !== false).length})
+              </span>
+            )}
+          </div>
+        )}
+
         {isRouter ? (
           /* Router-Specific Visual Body */
           <div className="space-y-2.5">
@@ -1240,29 +1293,34 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                     <Users className="w-3 h-3 text-purple-400" />
                     <span>Sub-Agents ({subAgents.length})</span>
                   </div>
-                  
-                  {/* Pattern dropdown directly in header */}
-                  {data.onPatternChange && (
-                    <div className="relative group/pat shrink-0">
-                      <select
-                        value={currentPattern}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          data.onPatternChange?.(id, e.target.value as DelegationPattern);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-[9px] bg-[#0d1117] text-purple-300 hover:text-purple-200 border border-purple-500/30 hover:border-purple-500/60 rounded px-1.5 py-0.5 pr-4 appearance-none cursor-pointer focus:outline-hidden font-mono"
-                        title="Change multi-agent coordination pattern"
-                      >
-                        {PATTERN_OPTIONS.map((opt) => (
-                          <option key={opt.id} value={opt.id} className="bg-[#161b22] text-gray-200 text-xs">
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-2.5 h-2.5 text-purple-400 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
-                  )}
+
+                  {/* Pattern dropdown directly in header to the right of the Sub-Agents label */}
+                  <div className="relative group/pat shrink-0 nodrag">
+                    <select
+                      data-testid={`subagent-pattern-select-${id}`}
+                      value={currentPattern}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        const nextPattern = e.target.value as DelegationPattern;
+                        if (data.onUpdateSubAgentPattern) {
+                          data.onUpdateSubAgentPattern(id, nextPattern);
+                        } else if (data.onPatternChange) {
+                          data.onPatternChange(id, nextPattern);
+                        }
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                      className="nodrag text-[9px] bg-[#0d1117] text-purple-300 hover:text-purple-200 border border-purple-500/30 hover:border-purple-500/60 rounded px-1.5 py-0.5 pr-4 appearance-none cursor-pointer focus:outline-hidden font-mono"
+                      title="Change multi-agent coordination pattern"
+                    >
+                      {PATTERN_OPTIONS.map((opt) => (
+                        <option key={opt.id} value={opt.id} className="bg-[#161b22] text-gray-200 text-xs">
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-2.5 h-2.5 text-purple-400 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
                 </div>
 
                 {/* When Loop pattern is selected, show Max Iterations number input (default 3) */}

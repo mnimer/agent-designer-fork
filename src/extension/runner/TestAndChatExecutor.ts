@@ -842,7 +842,11 @@ export class TestAndChatExecutor {
         }
 
         if (!streamedTokens && finalReply) {
-          if (streaming && finalReply.length > 50) {
+          const hasA2UISurface =
+            finalReply.includes('```a2ui') ||
+            finalReply.includes('"createSurface"') ||
+            finalReply.includes('"updateComponents"');
+          if (streaming && finalReply.length > 50 && !hasA2UISurface) {
             const words = finalReply.split(' ');
             for (let i = 0; i < words.length; i++) {
               const token = words[i] + (i < words.length - 1 ? ' ' : '');
@@ -1067,7 +1071,11 @@ export class TestAndChatExecutor {
 
           assistantReply = replyContent;
 
-          if (streaming && replyContent.length > 50) {
+          const hasA2UISurface =
+            replyContent.includes('```a2ui') ||
+            replyContent.includes('"createSurface"') ||
+            replyContent.includes('"updateComponents"');
+          if (streaming && replyContent.length > 50 && !hasA2UISurface) {
             const words = replyContent.split(' ');
             for (let i = 0; i < words.length; i++) {
               const token = words[i] + (i < words.length - 1 ? ' ' : '');

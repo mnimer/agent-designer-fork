@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "name": "Autonomous Multi-Agent Code Reviewer",
+  "name": "Code Reviewing Agent",
   "description": "Multi-agent code review system for Git pull request diffs and local repository folders. Coordinates specialized architecture, security, and packaging reviewers to produce a unified, actionable review report delivered directly in chat.",
   "framework": "google-adk",
   "language": "python",
@@ -24,7 +24,7 @@
       "id": "trigger_code_review_chat",
       "type": "triggerNode",
       "position": {
-        "x": 320,
+        "x": 496,
         "y": 48
       },
       "data": {
@@ -45,8 +45,8 @@
       "id": "trigger_code_review_tester",
       "type": "triggerNode",
       "position": {
-        "x": 720,
-        "y": 48
+        "x": 48,
+        "y": 360
       },
       "data": {
         "id": "trigger_code_review_tester",
@@ -119,8 +119,8 @@
       "id": "agent_code_review_coordinator",
       "type": "agentNode",
       "position": {
-        "x": 480,
-        "y": 240
+        "x": 464,
+        "y": 328
       },
       "data": {
         "id": "agent_code_review_coordinator",
@@ -196,8 +196,8 @@
       "id": "agent_architecture_reviewer",
       "type": "agentNode",
       "position": {
-        "x": 160,
-        "y": 520
+        "x": 48,
+        "y": 952
       },
       "data": {
         "id": "agent_architecture_reviewer",
@@ -220,8 +220,8 @@
       "id": "agent_security_reviewer",
       "type": "agentNode",
       "position": {
-        "x": 480,
-        "y": 520
+        "x": 464,
+        "y": 952
       },
       "data": {
         "id": "agent_security_reviewer",
@@ -244,8 +244,8 @@
       "id": "agent_packaging_reviewer",
       "type": "agentNode",
       "position": {
-        "x": 800,
-        "y": 520
+        "x": 880,
+        "y": 952
       },
       "data": {
         "id": "agent_packaging_reviewer",
@@ -269,32 +269,47 @@
     {
       "id": "edge_chat_to_coordinator",
       "source": "trigger_code_review_chat",
+      "sourceHandle": "trigger_out_bottom",
       "target": "agent_code_review_coordinator",
-      "animated": true
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#f59e0b", "strokeWidth": 2, "strokeDasharray": "5 5" }
     },
     {
       "id": "edge_tester_to_coordinator",
       "source": "trigger_code_review_tester",
+      "sourceHandle": "trigger_out_right",
       "target": "agent_code_review_coordinator",
-      "animated": true
+      "targetHandle": "input_left",
+      "animated": true,
+      "style": { "stroke": "#f59e0b", "strokeWidth": 2, "strokeDasharray": "5 5" }
     },
     {
       "id": "edge_coordinator_to_arch",
       "source": "agent_code_review_coordinator",
+      "sourceHandle": "output",
       "target": "agent_architecture_reviewer",
-      "animated": true
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2 }
     },
     {
       "id": "edge_coordinator_to_sec",
       "source": "agent_code_review_coordinator",
+      "sourceHandle": "output",
       "target": "agent_security_reviewer",
-      "animated": true
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2 }
     },
     {
       "id": "edge_coordinator_to_pkg",
       "source": "agent_code_review_coordinator",
+      "sourceHandle": "output",
       "target": "agent_packaging_reviewer",
-      "animated": true
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2 }
     }
   ],
   "deployment": {

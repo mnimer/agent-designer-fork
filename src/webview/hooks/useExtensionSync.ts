@@ -27,6 +27,61 @@ import { AgentFileTab, GenerationConfig, GeneratedFile, SampleWorkflowDefinition
 import { WorkflowNode, WorkflowEdge, AgentWorkflowDocument } from '../../shared/types';
 import { fnv1a } from '../utils/hashUtils';
 
+/**
+ * Computes a deterministic FNV-1a hash of an AgentWorkflowDocument excluding volatile timestamps
+ * (`metadata.updatedAt`) so that clock ticks do not trigger false-positive dirty buffer updates.
+ */
+export function computeCanonicalDocumentHash(doc: AgentWorkflowDocument): string {
+  const {
+    updatedAt: _ignoreUpdatedAt,
+    outputFolder: _ignoreOut,
+    deploymentTarget: _ignoreTarget,
+    ...stableMetadata
+  } = (doc.metadata as Record<string, any>) || {};
+  const canonical = {
+    version: doc.version || '1.0.0',
+    name: doc.name || 'agent_workflow',
+    description: doc.description || 'Agent Workflow Document',
+    framework: doc.framework === 'google_adk' ? 'google-adk' : doc.framework || 'google-adk',
+    language: doc.language || 'python',
+    nodes: (doc.nodes || []).map((n) => ({
+      id: n.id,
+      type: n.type,
+      position: { x: Math.round(n.position.x), y: Math.round(n.position.y) },
+      data: { ...n.data },
+    })),
+    edges: (doc.edges || []).map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle || undefined,
+      targetHandle: e.targetHandle || undefined,
+      type: e.type,
+      animated: e.animated,
+      data: e.data ? { ...e.data } : undefined,
+    })),
+    metadata: stableMetadata,
+    deployment: {
+      target: doc.deployment?.target || doc.deployment?.deploymentTarget || 'agent_engine',
+      deploymentTarget: doc.deployment?.deploymentTarget || doc.deployment?.target || 'agent_engine',
+      outputFolder: doc.deployment?.outputFolder,
+      framework:
+        doc.deployment?.framework === 'google_adk'
+          ? 'google-adk'
+          : doc.deployment?.framework || doc.framework || 'google-adk',
+      language: doc.deployment?.language || doc.language || 'python',
+      includeTests: typeof doc.deployment?.includeTests === 'boolean' ? doc.deployment.includeTests : true,
+      includeDocker: typeof doc.deployment?.includeDocker === 'boolean' ? doc.deployment.includeDocker : true,
+      useStreaming: typeof doc.deployment?.useStreaming === 'boolean' ? doc.deployment.useStreaming : true,
+      deployedResourceId: doc.deployment?.deployedResourceId,
+      serviceUrl: doc.deployment?.serviceUrl,
+      consoleUrl: doc.deployment?.consoleUrl,
+      deployedAt: doc.deployment?.deployedAt,
+    },
+  };
+  return fnv1a(JSON.stringify(canonical));
+}
+
 export interface UseExtensionSyncOptions {
   bridge: WebviewBridge;
   nodes: Node<any>[];
@@ -113,8 +168,7 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
 
       // Discard echo payloads matching what we recently sent to avoid clobbering in-flight UI state
       if (isLoadedRef.current) {
-        const incomingJson = JSON.stringify(doc);
-        const incomingHash = fnv1a(incomingJson);
+        const incomingHash = computeCanonicalDocumentHash(doc);
         if (incomingHash === lastSentHashRef.current) {
           return;
         }
@@ -163,12 +217,19 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
         setEdges(normEdges);
         recordSnapshot(normNodes, normEdges, { description: 'Loaded document from disk' });
 
-        const loadedDeployment = doc.deployment || {
+        const loadedDeployment = {
           target: restoredTarget,
           deploymentTarget: restoredTarget,
           outputFolder: targetFolder,
           framework: restoredFramework === 'google_adk' ? 'google-adk' : restoredFramework,
           language: restoredLanguage,
+          includeTests: typeof deploymentCfg.includeTests === 'boolean' ? deploymentCfg.includeTests : config.includeTests,
+          includeDocker: typeof deploymentCfg.includeDocker === 'boolean' ? deploymentCfg.includeDocker : config.includeDocker,
+          useStreaming: typeof deploymentCfg.useStreaming === 'boolean' ? deploymentCfg.useStreaming : config.useStreaming,
+          deployedResourceId: deploymentCfg.deployedResourceId ?? config.deployedResourceId,
+          serviceUrl: deploymentCfg.serviceUrl ?? config.serviceUrl,
+          consoleUrl: deploymentCfg.consoleUrl ?? config.consoleUrl,
+          deployedAt: deploymentCfg.deployedAt ?? config.deployedAt,
         };
 
         // Update active file tab with loaded document metadata
@@ -204,16 +265,16 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
           fitView?.({ padding: 0.2, duration: 400 });
         }, 50);
 
-        // Record initial loaded JSON to avoid immediately echoing a duplicate back
-        const loadedJson = JSON.stringify({
+        // Record initial loaded canonical hash to avoid immediately echoing a duplicate back
+        const loadedCanonicalDoc: AgentWorkflowDocument = {
           version: doc.version || '1.0.0',
           name: doc.name || 'agent_workflow',
           description: doc.description || 'Agent Workflow Document',
-          framework: doc.framework || 'google-adk',
-          language: doc.language || 'python',
+          framework: (restoredFramework === 'google_adk' ? 'google-adk' : restoredFramework) as any,
+          language: restoredLanguage as any,
           nodes: normNodes.map((n) => ({
             id: n.id,
-            type: n.type,
+            type: n.type as any,
             position: { x: Math.round(n.position.x), y: Math.round(n.position.y) },
             data: { ...n.data },
           })),
@@ -221,17 +282,17 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
             id: e.id,
             source: e.source,
             target: e.target,
-            sourceHandle: e.sourceHandle,
-            targetHandle: e.targetHandle,
+            sourceHandle: e.sourceHandle || undefined,
+            targetHandle: e.targetHandle || undefined,
             type: e.type,
             animated: e.animated,
-            data: e.data,
+            data: e.data ? { ...e.data } : undefined,
           })),
-          metadata: doc.metadata || {},
-          deployment: loadedDeployment,
-        });
-        lastSentJsonRef.current = loadedJson;
-        lastSentHashRef.current = fnv1a(loadedJson);
+          metadata: docMetadataRef.current,
+          deployment: loadedDeployment as any,
+        };
+        lastSentJsonRef.current = JSON.stringify(loadedCanonicalDoc);
+        lastSentHashRef.current = computeCanonicalDocumentHash(loadedCanonicalDoc);
       }
 
       setConfig((prev) => ({
@@ -420,11 +481,15 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
           includeTests: config.includeTests,
           includeDocker: config.includeDocker,
           useStreaming: config.useStreaming,
+          deployedResourceId: config.deployedResourceId,
+          serviceUrl: config.serviceUrl,
+          consoleUrl: config.consoleUrl,
+          deployedAt: config.deployedAt,
         },
       };
 
       const jsonString = JSON.stringify(updatedDoc);
-      const currentHash = fnv1a(jsonString);
+      const currentHash = computeCanonicalDocumentHash(updatedDoc);
       if (currentHash === lastSentHashRef.current) {
         return;
       }

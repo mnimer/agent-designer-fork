@@ -410,8 +410,8 @@ To ensure fast iteration, robust test coverage, and strict quality gates, engine
   3. **Track 1C — Enterprise MCP & Native ADK Toolsets (100% Independent & Parallelizable)**:
      - **`TASK-219`**: Databricks Managed MCP Servers Integration (Genie, Vector Search, Unity Catalog Functions & Databricks SQL).
      - **`TASK-220`**: Snowflake Managed & Cortex MCP Servers Integration (Cortex Analyst, Cortex Search, Cortex Agent, SQL & Custom Procedures).
-     - **`TASK-242`**: Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom with Dual-API enablement & OAuth scope presets).
-     - **`TASK-243`**: Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth).
+     - **`TASK-251`**: Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom with Dual-API enablement & OAuth scope presets).
+     - **`TASK-252`**: Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth).
      - **`TASK-227`**: ADK `OpenAPIToolset` Integration (OpenAPI v3 Spec Import, Endpoint Discovery & Auth).
      - **`TASK-228`**: ADK `ApplicationIntegrationToolset` (`IntegrationConnectorTool` for GCP Application Integration & 100+ Enterprise Connectors).
      - **`TASK-229`**: ADK `VertexAiRagRetrieval` Tool (Managed Vertex AI RAG Engine Corpora Grounding).

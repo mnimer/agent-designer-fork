@@ -125,4 +125,120 @@ describe('Bottom Tab Bar Locking Specifications (Test Runner & Interactive Chat)
     assert.strictEqual(chat.iconColor, 'text-emerald-400');
     assert.strictEqual(chat.tooltip, '');
   });
+
+  describe('Bottom Panel Collapsed Tab Bar, 2/3 Tab Click Expansion, Toggle & Free Resize', () => {
+    it('should start collapsed at just the 40px tab bar and expand to 2/3 (66.667%) on tab click or expand toggle', async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const {
+        BOTTOM_PANEL_HEADER_HEIGHT,
+        BOTTOM_PANEL_EXPANDED_RATIO,
+        PANEL_DIVIDER_HEIGHT,
+      } = await import('../../../src/webview/hooks/useResizablePanel');
+
+      assert.strictEqual(BOTTOM_PANEL_HEADER_HEIGHT, 40);
+      assert.strictEqual(PANEL_DIVIDER_HEIGHT, 8);
+      assert.ok(Math.abs(BOTTOM_PANEL_EXPANDED_RATIO - 2 / 3) < 0.0001);
+
+      const flowCanvasSource = fs.readFileSync(
+        path.resolve(__dirname, '../../../src/webview/components/FlowCanvas.tsx'),
+        'utf-8'
+      );
+      const codeGenPanelSource = fs.readFileSync(
+        path.resolve(__dirname, '../../../src/webview/components/codegen/CodeGenerationPanel.tsx'),
+        'utf-8'
+      );
+      const dividerSource = fs.readFileSync(
+        path.resolve(__dirname, '../../../src/webview/components/Canvas/PanelDivider.tsx'),
+        'utf-8'
+      );
+      const canvasTabSource = fs.readFileSync(
+        path.resolve(__dirname, '../../../src/webview/components/tabs/CanvasTab.tsx'),
+        'utf-8'
+      );
+
+      // Default collapsed height uses BOTTOM_PANEL_HEADER_HEIGHT (40px) and expanded uses 66.667% (2/3)
+      assert.ok(flowCanvasSource.includes("'66.667%'"));
+      assert.ok(flowCanvasSource.includes('${BOTTOM_PANEL_HEADER_HEIGHT}px'));
+      assert.ok(flowCanvasSource.includes('min-h-[40px]'));
+      assert.ok(flowCanvasSource.includes('onExpandPanel={handleExpandPanel}'));
+
+      // Clicking any tab calls handleSelectTab which invokes onExpandPanel
+      assert.ok(codeGenPanelSource.includes("handleSelectTab('codegen')"));
+      assert.ok(codeGenPanelSource.includes("handleSelectTab('deployment')"));
+      assert.ok(codeGenPanelSource.includes("handleSelectTab('test_runner')"));
+      assert.ok(codeGenPanelSource.includes("handleSelectTab('chat')"));
+      assert.ok(codeGenPanelSource.includes('onExpandPanel?.()'));
+
+      // PanelDivider remains visible (flex, never hidden) and CanvasTab allows shrinking to 0 (flex-1 min-h-0)
+      assert.ok(!dividerSource.includes("isPanelMaximized ? 'hidden'"));
+      assert.ok(canvasTabSource.includes('flex-1 min-h-0'));
+    });
+
+    it('should clamp free drag resizing between 40px tab bar and 100% available space and jump between 2/3 and 40px on toggle', async () => {
+      const {
+        BOTTOM_PANEL_HEADER_HEIGHT,
+        PANEL_DIVIDER_HEIGHT,
+      } = await import('../../../src/webview/hooks/useResizablePanel');
+
+      let bottomPanelHeight: number | null = null;
+      let isPanelMaximized = false;
+
+      const getRenderedHeight = () =>
+        bottomPanelHeight !== null
+          ? `${bottomPanelHeight}px`
+          : isPanelMaximized
+          ? '66.667%'
+          : `${BOTTOM_PANEL_HEADER_HEIGHT}px`;
+
+      const handleExpandPanel = () => {
+        bottomPanelHeight = null;
+        isPanelMaximized = true;
+      };
+
+      const handleToggleMaximizePanel = () => {
+        const isCurrentlyExpanded =
+          isPanelMaximized ||
+          (bottomPanelHeight !== null && bottomPanelHeight > BOTTOM_PANEL_HEADER_HEIGHT);
+        bottomPanelHeight = null;
+        isPanelMaximized = !isCurrentlyExpanded;
+      };
+
+      const simulateDragMove = (containerHeight: number, requestedHeight: number) => {
+        const minHeight = BOTTOM_PANEL_HEADER_HEIGHT;
+        const maxHeight = Math.max(minHeight, containerHeight - PANEL_DIVIDER_HEIGHT);
+        bottomPanelHeight = Math.max(minHeight, Math.min(maxHeight, requestedHeight));
+        isPanelMaximized = bottomPanelHeight > BOTTOM_PANEL_HEADER_HEIGHT;
+      };
+
+      // 1. Starts collapsed at 40px tab bar
+      assert.strictEqual(getRenderedHeight(), '40px');
+
+      // 2. Clicking a tab opens to 2/3 (66.667%)
+      handleExpandPanel();
+      assert.strictEqual(getRenderedHeight(), '66.667%');
+
+      // 3. Toggling the expand icon collapses back to 40px tab bar
+      handleToggleMaximizePanel();
+      assert.strictEqual(getRenderedHeight(), '40px');
+
+      // 4. Toggling the expand icon again jumps to 2/3 (66.667%)
+      handleToggleMaximizePanel();
+      assert.strictEqual(getRenderedHeight(), '66.667%');
+
+      // 5. Dragging the handle up to 100% of a 900px container
+      simulateDragMove(900, 1200);
+      assert.strictEqual(bottomPanelHeight, 892);
+      assert.strictEqual(isPanelMaximized, true);
+
+      // 6. Toggling from a custom dragged height collapses back to 40px tab bar
+      handleToggleMaximizePanel();
+      assert.strictEqual(getRenderedHeight(), '40px');
+
+      // 7. Dragging down below 40px clamps at 40px
+      simulateDragMove(900, 10);
+      assert.strictEqual(bottomPanelHeight, 40);
+      assert.strictEqual(isPanelMaximized, false);
+    });
+  });
 });

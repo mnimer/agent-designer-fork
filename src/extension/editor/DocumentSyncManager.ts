@@ -412,6 +412,9 @@ export class DocumentSyncManager {
     const errors: string[] = [];
 
     const preservedNames = new Set([
+      '.venv',
+      'venv',
+      'env',
       '.git',
       '.vscode',
       '.idea',

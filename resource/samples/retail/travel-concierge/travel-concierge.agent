@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "name": "TravelConcierge",
+  "name": "Travel Concierge",
   "description": "Multi-agent flight, hotel, and itinerary coordination system building unified travel plans from dates and preferences across pre-booking and post-booking stages.",
   "framework": "google-adk",
   "language": "python",
@@ -23,7 +23,7 @@
     {
       "id": "node-trigger-travel-chat",
       "type": "triggerNode",
-      "position": { "x": 260, "y": 40 },
+      "position": { "x": 1128, "y": 48 },
       "data": {
         "id": "node-trigger-travel-chat",
         "label": "Traveler Conversational Chat",
@@ -41,7 +41,7 @@
     {
       "id": "node-trigger-travel-tester",
       "type": "triggerNode",
-      "position": { "x": 260, "y": 240 },
+      "position": { "x": 680, "y": 368 },
       "data": {
         "id": "node-trigger-travel-tester",
         "label": "Travel Concierge Test Suite (13 Cases)",
@@ -294,7 +294,7 @@
     {
       "id": "node-agent-travel-root",
       "type": "agentNode",
-      "position": { "x": 680, "y": 120 },
+      "position": { "x": 1096, "y": 328 },
       "data": {
         "id": "node-agent-travel-root",
         "name": "root_agent",
@@ -326,7 +326,7 @@
     {
       "id": "node-agent-inspiration",
       "type": "agentNode",
-      "position": { "x": 80, "y": 480 },
+      "position": { "x": 48, "y": 992 },
       "data": {
         "id": "node-agent-inspiration",
         "name": "inspiration_agent",
@@ -378,7 +378,7 @@
     {
       "id": "node-agent-planning",
       "type": "agentNode",
-      "position": { "x": 380, "y": 480 },
+      "position": { "x": 464, "y": 992 },
       "data": {
         "id": "node-agent-planning",
         "name": "planning_agent",
@@ -457,7 +457,7 @@
     {
       "id": "node-agent-booking",
       "type": "agentNode",
-      "position": { "x": 680, "y": 480 },
+      "position": { "x": 880, "y": 992 },
       "data": {
         "id": "node-agent-booking",
         "name": "booking_agent",
@@ -509,7 +509,7 @@
     {
       "id": "node-agent-pretrip",
       "type": "agentNode",
-      "position": { "x": 980, "y": 480 },
+      "position": { "x": 1296, "y": 992 },
       "data": {
         "id": "node-agent-pretrip",
         "name": "pre_trip_agent",
@@ -549,7 +549,7 @@
     {
       "id": "node-agent-intrip",
       "type": "agentNode",
-      "position": { "x": 1280, "y": 480 },
+      "position": { "x": 1712, "y": 992 },
       "data": {
         "id": "node-agent-intrip",
         "name": "in_trip_agent",
@@ -619,7 +619,7 @@
     {
       "id": "node-agent-posttrip",
       "type": "agentNode",
-      "position": { "x": 1580, "y": 480 },
+      "position": { "x": 2128, "y": 992 },
       "data": {
         "id": "node-agent-posttrip",
         "name": "post_trip_agent",
@@ -655,9 +655,9 @@
     {
       "id": "edge-chat-to-root",
       "source": "node-trigger-travel-chat",
-      "sourceHandle": "trigger_out_right",
+      "sourceHandle": "trigger_out_bottom",
       "target": "node-agent-travel-root",
-      "targetHandle": "input_left",
+      "targetHandle": "input",
       "animated": true,
       "style": { "stroke": "#f59e0b", "strokeWidth": 2, "strokeDasharray": "5 5" }
     },

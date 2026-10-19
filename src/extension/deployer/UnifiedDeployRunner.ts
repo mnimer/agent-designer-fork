@@ -38,7 +38,7 @@ import {
  * Options for executing the post-deploy Enterprise Governance & Gemini Enterprise pipeline.
  */
 export interface PostDeployGovernanceOptions {
-  target?: 'agent_engine' | 'cloud_run';
+  target?: 'agent_engine' | 'cloud_run' | 'gke';
   targetDirectory: string;
   projectId: string;
   region: string;
@@ -67,7 +67,7 @@ export interface PostDeployGovernanceOptions {
  * Unified deployment command configuration across Agent Engine and Cloud Run targets.
  */
 export interface UnifiedDeployCommandOptions {
-  target: 'agent_engine' | 'cloud_run';
+  target: 'agent_engine' | 'cloud_run' | 'gke';
   targetDirectory: string;
   projectId: string;
   region?: string;
@@ -84,6 +84,13 @@ export interface UnifiedDeployCommandOptions {
   maxInstances?: number;
   allowUnauthenticated?: boolean;
   envVars?: Record<string, string>;
+  clusterName?: string;
+  gkeClusterName?: string;
+  gkeNamespace?: string;
+  gkeLocation?: string;
+  gkeReplicas?: number;
+  enableWorkloadIdentity?: boolean;
+  gkeServiceAccountName?: string;
   governance?: AgentGovernanceConfig;
 }
 
@@ -246,6 +253,19 @@ export class UnifiedDeployRunner {
       if (options.maxInstances !== undefined) {
         args.push(`MAX_INSTANCES=${options.maxInstances}`);
       }
+    } else if (options.target === 'gke') {
+      const clusterName = options.gkeClusterName || options.clusterName || 'agent-autopilot-cluster';
+      const namespace = options.gkeNamespace || 'default';
+      const serviceName = options.serviceName?.trim() || 'agent-service';
+      args.push(`CLUSTER_NAME=${clusterName}`);
+      args.push(`NAMESPACE=${namespace}`);
+      args.push(`SERVICE_NAME=${serviceName}`);
+      if (options.gkeReplicas !== undefined) {
+        args.push(`REPLICAS=${options.gkeReplicas}`);
+      }
+      if (options.enableWorkloadIdentity !== undefined) {
+        args.push(`ENABLE_WORKLOAD_IDENTITY=${options.enableWorkloadIdentity}`);
+      }
     } else {
       const serviceName = options.serviceName?.trim() || 'agent-service';
       args.push(`SERVICE_NAME=${serviceName}`);
@@ -375,6 +395,11 @@ export class UnifiedDeployRunner {
     if (options.target === 'cloud_run') {
       const serviceName = options.serviceName?.trim() || 'agent-service';
       args.push(`-var=service_name=${serviceName}`);
+    } else if (options.target === 'gke') {
+      const clusterName = options.gkeClusterName || options.clusterName || 'agent-autopilot-cluster';
+      const namespace = options.gkeNamespace || 'default';
+      args.push(`-var=cluster_name=${clusterName}`);
+      args.push(`-var=namespace=${namespace}`);
     } else {
       const agentName =
         options.agentName ||
@@ -389,6 +414,62 @@ export class UnifiedDeployRunner {
       executable: 'terraform',
       args,
       commandString: `terraform ${args.join(' ')}`,
+    };
+  }
+
+  /**
+   * Constructs the GKE deployment command using `adk deploy gke` or `kubectl apply -f k8s/`.
+   */
+  public buildGkeDeployCommand(options: {
+    projectId: string;
+    clusterName: string;
+    region: string;
+    namespace?: string;
+    serviceName?: string;
+  }): {
+    executable: string;
+    args: string[];
+    commandString: string;
+  } {
+    const namespace = options.namespace?.trim() || 'default';
+    const clusterName = options.clusterName.trim();
+    const region = options.region.trim();
+    const args = [
+      'deploy',
+      'gke',
+      `--project=${options.projectId}`,
+      `--cluster=${clusterName}`,
+      `--location=${region}`,
+      `--namespace=${namespace}`,
+    ];
+    if (options.serviceName) {
+      args.push(`--service=${options.serviceName}`);
+    }
+    return {
+      executable: 'adk',
+      args,
+      commandString: `adk ${args.join(' ')}`,
+    };
+  }
+
+  /**
+   * Constructs a `kubectl apply -f k8s/` command for native Kubernetes resource synchronization.
+   */
+  public buildKubectlApplyCommand(options: {
+    namespace?: string;
+    k8sDir?: string;
+  }): {
+    executable: string;
+    args: string[];
+    commandString: string;
+  } {
+    const namespace = options.namespace?.trim() || 'default';
+    const k8sDir = options.k8sDir?.trim() || 'k8s/';
+    const args = ['apply', '-n', namespace, '-f', k8sDir];
+    return {
+      executable: 'kubectl',
+      args,
+      commandString: `kubectl ${args.join(' ')}`,
     };
   }
 

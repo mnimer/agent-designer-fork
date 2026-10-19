@@ -6,7 +6,6 @@
  * success metrics, performance logs, and feedback loops.
  *
  * Architectural Decisions:
- * - Author: Mike Nimer <mikenimer@google.com>
  * - Decoupled wrapper forwarding control APIs to underlying runner.
  * - Spacing layout complies with 8pt grid system.
  *
@@ -24,6 +23,8 @@ interface EvaluationTabProps {
   config: GenerationConfig;
   document?: AgentWorkflowDocument;
   onNavigateToDeployment?: () => void;
+  hasChatTrigger?: boolean;
+  onOpenPromptInChat?: (promptText: string) => void;
 }
 
 export const EvaluationTab: React.FC<EvaluationTabProps> = (props) => {

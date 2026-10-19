@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "name": "Knowledge Catalog Data Domain Builder",
+  "name": "Data Domain Builder",
   "description": "Multi-agent architecture applying Domain-Driven Design (DDD) to discover BigQuery assets, propose bounded contexts, provision Dataplex domains/subdomains, enforce leaf binding rules, and manage data governance.",
   "framework": "google-adk",
   "language": "python",
@@ -22,7 +22,7 @@
     {
       "id": "node-trigger-kc-chat",
       "type": "triggerNode",
-      "position": { "x": 100, "y": 80 },
+      "position": { "x": 712, "y": 48 },
       "data": {
         "id": "node-trigger-kc-chat",
         "name": "chat_trigger",
@@ -50,7 +50,7 @@
     {
       "id": "node-trigger-kc-tester",
       "type": "triggerNode",
-      "position": { "x": 100, "y": 260 },
+      "position": { "x": 256, "y": 360 },
       "data": {
         "id": "node-trigger-kc-tester",
         "name": "eval_tester",
@@ -531,7 +531,7 @@
     {
       "id": "node-agent-kc-orchestrator",
       "type": "agentNode",
-      "position": { "x": 560, "y": 140 },
+      "position": { "x": 680, "y": 328 },
       "data": {
         "id": "node-agent-kc-orchestrator",
         "name": "root_agent",
@@ -561,7 +561,7 @@
     {
       "id": "node-agent-kc-discovery",
       "type": "agentNode",
-      "position": { "x": 80, "y": 480 },
+      "position": { "x": 48, "y": 960 },
       "data": {
         "id": "node-agent-kc-discovery",
         "name": "discovery_agent",
@@ -610,7 +610,7 @@
     {
       "id": "node-agent-kc-architect",
       "type": "agentNode",
-      "position": { "x": 400, "y": 480 },
+      "position": { "x": 464, "y": 960 },
       "data": {
         "id": "node-agent-kc-architect",
         "name": "architect_agent",
@@ -631,7 +631,7 @@
     {
       "id": "node-agent-kc-provisioner",
       "type": "agentNode",
-      "position": { "x": 720, "y": 480 },
+      "position": { "x": 880, "y": 960 },
       "data": {
         "id": "node-agent-kc-provisioner",
         "name": "provisioner_agent",
@@ -734,7 +734,7 @@
     {
       "id": "node-agent-kc-governance",
       "type": "agentNode",
-      "position": { "x": 1040, "y": 480 },
+      "position": { "x": 1296, "y": 960 },
       "data": {
         "id": "node-agent-kc-governance",
         "name": "governance_agent",

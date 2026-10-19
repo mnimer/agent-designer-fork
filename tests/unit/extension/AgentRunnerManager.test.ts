@@ -1136,6 +1136,40 @@ describe('AgentRunnerManager', () => {
     assert.equal(invalidJsonResult.valid, false);
     assert.ok(invalidJsonResult.errors.some((e) => e.includes('not valid JSON')));
   });
+
+  it('should cleanly stop tracked runner processes and kill all tracked ports when stopLocalRunner is called', async () => {
+    const { EventEmitter } = await import('node:events');
+    const manager = new AgentRunnerManager('/mock/extension/path');
+    const killedPorts: number[] = [];
+    let processTreeKilled = false;
+
+    const mockChild: any = Object.assign(new EventEmitter(), {
+      pid: 999999,
+      killed: false,
+      kill: () => {
+        mockChild.killed = true;
+        return true;
+      },
+    });
+
+    (manager as any).processManager.registerProcess('runner-1', mockChild, 8012);
+    (manager as any).lastRunningPort = 8000;
+    (manager as any).processManager.killProcessTree = async () => {
+      processTreeKilled = true;
+    };
+    (manager as any).killPort = async (p?: number) => {
+      if (p) killedPorts.push(p);
+    };
+
+    await manager.stopLocalRunner();
+
+    assert.equal(processTreeKilled, true, 'Should kill the tracked process tree');
+    assert.equal((manager as any).processManager.activeLocalRunners.size, 0);
+    assert.equal((manager as any).processManager.activeRunnerPortMap.size, 0);
+    assert.ok(killedPorts.includes(8000), 'Should free lastRunningPort');
+    assert.ok(killedPorts.includes(8012), 'Should free port tracked in activeRunnerPortMap');
+    assert.equal(manager.getRunnerStatus(), 'stopped');
+  });
 });
 
 

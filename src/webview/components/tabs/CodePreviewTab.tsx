@@ -324,33 +324,12 @@ export const CodePreviewTab: React.FC<CodePreviewTabProps> = ({
             </div>
           </div>
 
-          {/* Target Language Toggle */}
+          {/* Target Language (Python Only) */}
           <div className="space-y-1">
             <p className="text-[11px] text-gray-400 font-bold uppercase tracking-tight flex items-center justify-between">
               <span>Language</span>
-              <span className="text-[10px] text-gray-400 font-mono">{config.language.toUpperCase()}</span>
+              <span className="text-[10px] text-gray-400 font-mono">PYTHON</span>
             </p>
-            <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#0d1117] rounded-lg border border-[#30363d]">
-              <button
-                type="button"
-                onClick={() => onChangeConfig({ language: 'python' })}
-                className={`py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
-                  config.language === 'python'
-                    ? 'bg-[#21262d] text-white border border-[#30363d] shadow'
-                    : 'text-gray-400 hover:text-gray-200'
-                }`}
-              >
-                🐍 Python
-              </button>
-              <button
-                type="button"
-                disabled={true}
-                title="TypeScript option is currently disabled"
-                className="py-1 text-xs font-medium rounded transition-colors opacity-50 cursor-not-allowed text-gray-500 bg-[#0d1117]"
-              >
-                🔷 TypeScript
-              </button>
-            </div>
           </div>
 
           {/* Folder Selector for Generated Code */}
@@ -458,7 +437,7 @@ export const CodePreviewTab: React.FC<CodePreviewTabProps> = ({
               </span>
             </label>
             <select
-              value={config.deploymentTarget || 'agent_engine'}
+              value={config.deploymentTarget === 'cloud_run' ? 'cloud_run' : 'agent_engine'}
               onChange={(e) => onChangeConfig({ deploymentTarget: e.target.value as any })}
               className="w-full bg-[#0d1117] border border-[#30363d] text-xs text-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 cursor-pointer font-medium"
             >

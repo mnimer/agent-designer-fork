@@ -80,6 +80,8 @@ import { PATTERN_DEFINITIONS, BASIC_AGENT_TYPES, CORE_AGENT_TYPES, FLOW_CONTROL_
 import { TRIGGER_CATALOG, TriggerCatalogItem } from '../../data/triggerDefinitions';
 import { categorizeTools, isNativeAdkTool } from '../../data/builtinTools';
 import { GOOGLE_CLOUD_MCP_DOMAINS, GOOGLE_CLOUD_MCP_SERVERS, GoogleCloudDomainMeta } from '../../data/googleCloudMcpServers';
+import { isDatabricksMcpTool } from '../../data/databricksMcpServers';
+import { isSnowflakeMcpTool } from '../../data/snowflakeMcpServers';
 import { PatternType, AgentKind, ToolDefinition, AgentData, TriggerType, SampleWorkflowDefinition, GoogleCloudLaunchStage } from '../../types';
 import { SampleInfoModal } from './SampleInfoModal';
 
@@ -316,6 +318,24 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
     if (tool.builtinType === 'code_execution' || tool.id === 'tool_code_interpreter' || tool.type === 'code') {
       return <Terminal className="w-3.5 h-3.5 text-emerald-400" />;
     }
+    if (isDatabricksMcpTool(tool)) {
+      switch (tool.icon) {
+        case 'Sparkles': return <Sparkles className="w-3.5 h-3.5 text-orange-400" />;
+        case 'Database': return <Database className="w-3.5 h-3.5 text-orange-400" />;
+        case 'Code': return <Code className="w-3.5 h-3.5 text-orange-400" />;
+        case 'Terminal': return <Terminal className="w-3.5 h-3.5 text-orange-400" />;
+        default: return <Server className="w-3.5 h-3.5 text-orange-400" />;
+      }
+    }
+    if (isSnowflakeMcpTool(tool)) {
+      switch (tool.icon) {
+        case 'Sparkles': return <Sparkles className="w-3.5 h-3.5 text-cyan-400" />;
+        case 'Database': return <Database className="w-3.5 h-3.5 text-cyan-400" />;
+        case 'Bot': return <Bot className="w-3.5 h-3.5 text-cyan-400" />;
+        case 'Terminal': return <Terminal className="w-3.5 h-3.5 text-cyan-400" />;
+        default: return <Server className="w-3.5 h-3.5 text-cyan-400" />;
+      }
+    }
     switch (tool.type) {
       case 'mcp':
         return <Server className="w-3.5 h-3.5 text-purple-400" />;
@@ -519,10 +539,10 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   const mcpToolsCount = tools.filter((t) => t.type === 'mcp').length;
 
   return (
-    <div className="absolute top-3 left-0 z-20 flex items-start select-none group/palette">
+    <div className="absolute top-3 bottom-3 left-0 z-20 flex items-start select-none group/palette pointer-events-none">
       {/* VERTICAL MENU TABS FIXED TO LEFT EDGE (Blender-style) */}
       <div
-        className={`flex flex-col gap-0.5 p-0.5 bg-[#161b22]/95 backdrop-blur-xl border border-l-0 border-[#30363d] shadow-2xl transition-all duration-150 z-30 ${
+        className={`pointer-events-auto max-h-full overflow-y-auto flex flex-col gap-0.5 p-0.5 bg-[#161b22]/95 backdrop-blur-xl border border-l-0 border-[#30363d] shadow-2xl transition-all duration-150 z-30 ${
           isOpen ? 'rounded-none border-r-0' : 'rounded-r-lg hover:border-gray-500'
         }`}
       >
@@ -622,7 +642,10 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
 
       {/* FLOATING CARD / SIDEBAR BODY (Visible when isOpen) */}
       {isOpen && (
-        <div className="w-80 backdrop-blur-xl bg-[#161b22]/95 rounded-r-xl border border-[#30363d] shadow-2xl overflow-hidden transition-all duration-150 flex flex-col max-h-[calc(66vh-24px)] text-[#c9d1d9]">
+        <div
+          data-testid="palette-tab-panel"
+          className="pointer-events-auto w-80 h-full max-h-full backdrop-blur-xl bg-[#161b22]/95 rounded-r-xl border border-[#30363d] shadow-2xl overflow-hidden transition-all duration-150 flex flex-col text-[#c9d1d9]"
+        >
           {/* Palette Header */}
           <div className="flex items-center justify-between px-3.5 py-2.5 bg-[#161b22] border-b border-[#30363d] shrink-0">
             <div className="flex items-center gap-2">
@@ -650,7 +673,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
 
       {/* TAB 1: AGENTS & PATTERNS */}
       {activeTab === 'agents' && (
-        <div className="p-3 space-y-2 overflow-y-auto flex-1">
+        <div className="p-3 space-y-2 overflow-y-auto flex-1 min-h-0">
           {/* 1. Core Agent Types Section */}
           <div className="space-y-2 bg-[#0d1117]/40 rounded-lg border border-[#30363d]/60 p-2">
             <button
@@ -859,7 +882,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
 
       {/* TAB 2: TOOLS CATALOG */}
       {activeTab === 'tools' && (
-        <div className="p-4 space-y-4 overflow-y-auto flex-1">
+        <div className="p-4 space-y-4 overflow-y-auto flex-1 min-h-0">
           {/* Header & Quick Action Buttons */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -1134,13 +1157,21 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                           <div className="space-y-2 pt-1 border-t border-[#30363d]/40">
                             {section.tools.map((t) => {
                               const isAttached = selectedAgent?.tools?.some((at) => at.id === t.id);
+                              const isDatabricks = isDatabricksMcpTool(t);
+                              const isSnowflake = isSnowflakeMcpTool(t);
+                              const hoverBorderClass = isDatabricks
+                                ? 'hover:border-orange-500/50'
+                                : isSnowflake
+                                ? 'hover:border-cyan-500/50'
+                                : 'hover:border-purple-500/50';
 
                               return (
                                 <div
                                   key={t.id}
                                   draggable
                                   onDragStart={(e) => handleDragStartTool(e, t)}
-                                  className="group relative flex items-start gap-2 p-2 bg-[#0d1117] hover:bg-[#161b22] border border-[#30363d] hover:border-purple-500/50 rounded-lg transition-all cursor-grab active:cursor-grabbing shadow-xs"
+                                  className={`group relative flex items-start gap-2 p-2 bg-[#0d1117] hover:bg-[#161b22] border border-[#30363d] ${hoverBorderClass} rounded-lg transition-all cursor-grab active:cursor-grabbing shadow-xs`}
+                                  data-testid={`tool-item-${t.id}`}
                                 >
                                   <div className="mt-0.5 text-gray-500 group-hover:text-gray-300">
                                     <GripVertical className="w-3 h-3" />
@@ -1155,12 +1186,31 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                       <span className="text-[11px] font-bold text-gray-200 group-hover:text-white truncate">
                                         {t.name}
                                       </span>
-                                      {isAttached && (
-                                        <span className="text-[8px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold shrink-0">
-                                          Attached
-                                        </span>
-                                      )}
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        {isDatabricks && (
+                                          <span className="text-[8px] px-1 py-0.5 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30 font-semibold shrink-0">
+                                            Databricks
+                                          </span>
+                                        )}
+                                        {isSnowflake && (
+                                          <span className="text-[8px] px-1 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-semibold shrink-0">
+                                            Snowflake
+                                          </span>
+                                        )}
+                                        {isAttached && (
+                                          <span className="text-[8px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold shrink-0">
+                                            Attached
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
+                                    {t.mcpConfig?.serverUrl && (
+                                      <div className={`text-[9px] font-mono truncate mt-0.5 ${
+                                        isDatabricks ? 'text-orange-400/80' : isSnowflake ? 'text-cyan-400/80' : 'text-purple-400/70'
+                                      }`}>
+                                        {t.mcpConfig.serverUrl}
+                                      </div>
+                                    )}
                                     <p className="text-[10px] text-gray-400 line-clamp-2 leading-tight mt-0.5">
                                       {t.description}
                                     </p>
@@ -1194,7 +1244,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
 
       {/* TAB 3: TRIGGERS CATALOG */}
       {activeTab === 'triggers' && (
-        <div className="p-3 space-y-3.5 overflow-y-auto flex-1">
+        <div className="p-3 space-y-3.5 overflow-y-auto flex-1 min-h-0">
           {(() => {
             const chatTrigger = TRIGGER_CATALOG.find((t) => t.type === 'chat');
             const testSuiteTrigger = TRIGGER_CATALOG.find((t) => t.type === 'tester');
@@ -1300,7 +1350,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                           )}
 
                           {section.triggers && (
-                            <div className="space-y-1.5 max-h-[calc(66vh-240px)] overflow-y-auto pr-1">
+                            <div className="space-y-1.5 pr-1">
                               {section.triggers.map((trigger) => (
                                 <div
                                   key={trigger.id}
@@ -1360,7 +1410,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
         const categoryNames = Object.keys(sampleGroups).sort((a, b) => a.localeCompare(b));
 
         return (
-          <div className="p-3 space-y-3 overflow-y-auto flex-1">
+          <div className="p-3 space-y-3 overflow-y-auto flex-1 min-h-0">
             <div className="text-[11px] font-semibold text-purple-400 uppercase tracking-wide flex items-center justify-between">
               <span>Ready-to-Use Workflows ({sampleList.length})</span>
             </div>
@@ -1410,6 +1460,8 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                             <div
                               key={sample.id}
                               draggable={true}
+                              title={sample.name}
+                              data-testid={`sample-card-${sample.id}`}
                               onDragStart={(e) => {
                                 e.dataTransfer.setData('application/reactflow/type', 'sample');
                                 e.dataTransfer.setData('application/reactflow/sample', JSON.stringify(sample));
@@ -1424,7 +1476,10 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                   <GripVertical className="w-3.5 h-3.5 text-gray-500 group-hover:text-purple-400 shrink-0 mt-0.5 opacity-60 group-hover:opacity-100 transition-opacity" />
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="font-semibold text-xs text-white truncate max-w-[150px]">
+                                      <span
+                                        className="font-semibold text-xs text-white truncate max-w-[150px]"
+                                        title={sample.name}
+                                      >
                                         {sample.name}
                                       </span>
                                       <span className="text-[8px] uppercase font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">

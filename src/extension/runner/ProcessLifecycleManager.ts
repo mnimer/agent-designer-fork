@@ -83,7 +83,7 @@ export class ProcessLifecycleManager {
         proc.kill('SIGKILL');
       }
     } else {
-      // Non-Windows: Send SIGTERM to the process group (negative pid)
+      // Non-Windows: Send SIGTERM to the process group (negative pid) and direct process
       try {
         process.kill(-pid, 'SIGTERM');
       } catch {
@@ -92,26 +92,45 @@ export class ProcessLifecycleManager {
         } catch {}
       }
 
-      // 2-second grace period before force killing with SIGKILL
-      await new Promise<void>((resolve) => {
-        const checkAndKillTimer = setTimeout(() => {
+      const isProcessAlive = (): boolean => {
+        try {
+          process.kill(-pid, 0);
+          return true;
+        } catch {
           try {
-            // Check if process group is still alive
-            process.kill(-pid, 0);
-            process.kill(-pid, 'SIGKILL');
+            process.kill(pid, 0);
+            return true;
           } catch {
-            try {
-              if (!proc.killed) {
-                proc.kill('SIGKILL');
-              }
-            } catch {}
+            return false;
           }
-          resolve();
-        }, 2000);
-        
-        // Unref so the timer doesn't block the Node.js event loop
-        checkAndKillTimer.unref();
-      });
+        }
+      };
+
+      // Poll every 50ms up to 400ms for graceful exit, then escalate to SIGKILL immediately
+      const maxGraceMs = 400;
+      const pollIntervalMs = 50;
+      let elapsed = 0;
+
+      while (elapsed < maxGraceMs && isProcessAlive()) {
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, pollIntervalMs);
+          t.unref();
+        });
+        elapsed += pollIntervalMs;
+      }
+
+      if (isProcessAlive()) {
+        try {
+          process.kill(-pid, 'SIGKILL');
+        } catch {}
+        try {
+          proc.kill('SIGKILL');
+        } catch {}
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, 50);
+          t.unref();
+        });
+      }
     }
   }
 }

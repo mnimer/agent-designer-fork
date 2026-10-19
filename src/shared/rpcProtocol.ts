@@ -33,6 +33,13 @@ export type WebviewToExtensionMessage =
       };
     }
   | {
+      type: 'SAVE_DOCUMENT';
+      payload?: {
+        document?: AgentWorkflowDocument;
+        docVersion?: number;
+      };
+    }
+  | {
       type: 'GENERATE_CODE';
       payload: {
         document: AgentWorkflowDocument;

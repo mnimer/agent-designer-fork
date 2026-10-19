@@ -209,9 +209,7 @@ export const CanvasTab: React.FC<CanvasTabProps> = ({
 
   return (
     <div
-      className={`relative w-full bg-[#181818] overflow-hidden transition-all ${
-        isPanelMaximized ? 'h-0 min-h-0 hidden' : 'flex-1 min-h-[120px]'
-      }`}
+      className="relative w-full bg-[#181818] overflow-hidden transition-all flex-1 min-h-0"
       ref={reactFlowWrapper}
     >
       <ReactFlow

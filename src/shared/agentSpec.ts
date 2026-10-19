@@ -21,8 +21,8 @@
 export type FrameworkType = 'google_adk' | 'langgraph';
 export type FrameworkTarget = 'google-adk' | 'langgraph' | 'google_adk';
 
-export type LanguageType = 'python' | 'typescript';
-export type LanguageTarget = 'python' | 'typescript';
+export type LanguageType = 'python' | 'typescript' | 'go' | 'java';
+export type LanguageTarget = 'python' | 'typescript' | 'go' | 'java';
 
 export type AgentKind = 'standard' | 'a2a' | 'router' | 'synthesizer' | 'hitl' | 'fallback' | 'guardrail';
 
@@ -53,13 +53,35 @@ export const ADK_DELEGATION_PATTERNS: DelegationPatternOption[] = [
 ];
 
 // ============================================================================
-// 2. Model & Execution Configurations
+// 2. Model, Planner & Context Optimization Configurations (TASK-225 & TASK-226)
 // ============================================================================
+
+export type AdkPlannerType = 'none' | 'built_in' | 'plan_re_act';
+
+export interface PlannerConfig {
+  type: AdkPlannerType;
+  includeThoughts?: boolean;
+  thinkingBudget?: number;
+}
+
+export interface ContextCacheConfig {
+  enabled: boolean;
+  minTokens?: number;
+  ttlSeconds?: number;
+  cacheIntervals?: number;
+}
+
+export interface EventsCompactionConfig {
+  enabled: boolean;
+  compactionInterval?: number;
+  overlapSize?: number;
+  summarizerModel?: string;
+}
+
+export type IncludeContentsMode = 'default' | 'none';
 
 /**
  * ModelConfig - Defines parameters for model execution and adaptive reasoning
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 export interface ModelConfig {
   model: string;
@@ -67,6 +89,7 @@ export interface ModelConfig {
   topP?: number;
   maxOutputTokens?: number;
   thinkingBudget?: number; // Thinking budget for next-gen reasoning models (e.g. Gemini 3.7 Flash)
+  plannerConfig?: PlannerConfig;
 }
 
 // ============================================================================
@@ -106,9 +129,22 @@ export interface TestSuiteTriggerConfig {
   testPrompts?: TestPrompt[];
 }
 
+export type LiveVoiceName = 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Aoede';
+
+export interface LiveStreamingConfig {
+  enabled: boolean;
+  responseModalities: ('AUDIO' | 'TEXT')[];
+  voiceName?: LiveVoiceName;
+  enableInputAudioTranscription?: boolean;
+  enableOutputAudioTranscription?: boolean;
+  enableAffectiveDialog?: boolean;
+  proactivity?: boolean;
+}
+
 export interface ChatTriggerConfig {
   welcomeMessage: string;
   suggestedPrompts: string[];
+  liveStreamingConfig?: LiveStreamingConfig;
 }
 
 export interface PubSubTriggerConfig {
@@ -148,8 +184,6 @@ export interface EventarcTriggerConfig {
 
 /**
  * TriggerConfig - Unified trigger properties container
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 export interface TriggerConfig {
   // Chat
@@ -158,6 +192,7 @@ export interface TriggerConfig {
   suggestedPrompts?: string[];
   streaming?: boolean;
   sessionMemory?: 'in_memory' | 'firestore' | 'redis';
+  liveStreamingConfig?: LiveStreamingConfig;
   
   // PubSub
   topic?: string;
@@ -235,6 +270,7 @@ export interface McpOAuthConfig {
 }
 
 export interface McpSecretConfig {
+  secretSource?: string;
   secretName?: string;
   envVar?: string;
   authUrl?: string;
@@ -250,6 +286,7 @@ export interface McpSecretConfig {
 export interface McpToolConfig {
   serverName: string;
   transport: McpTransportType;
+  transportType?: McpTransportType;
   command?: string;
   args?: string[];
   cwd?: string;
@@ -259,6 +296,7 @@ export interface McpToolConfig {
   exposedTools?: string[];
   autoApproveTools?: string[];
   timeoutSeconds?: number;
+  timeout?: number;
   authProviderType?: McpAuthProviderType;
   oauthConfig?: McpOAuthConfig;
   secretConfig?: McpSecretConfig;
@@ -266,6 +304,8 @@ export interface McpToolConfig {
   region?: string;
   selectedToolset?: string;
   launchStage?: GoogleCloudLaunchStage;
+  databricksConfig?: DatabricksMcpConfig;
+  snowflakeConfig?: SnowflakeMcpConfig;
 }
 
 export type GoogleCloudMcpDomain =
@@ -295,6 +335,77 @@ export interface GoogleCloudMcpServerDefinition {
 }
 
 // ============================================================================
+// 4b. Databricks Managed MCP Integrations (TASK-219)
+// ============================================================================
+
+export type DatabricksMcpServiceType = 'genie' | 'vector_search' | 'uc_functions' | 'dbsql';
+
+export interface DatabricksMcpConfig {
+  workspaceHostname: string;
+  serviceType: DatabricksMcpServiceType;
+  genieSpaceId?: string;
+  catalog?: string;
+  schema?: string;
+  indexName?: string;
+  functionName?: string;
+  warehouseId?: string;
+}
+
+export interface DatabricksMcpServerDefinition {
+  id: string;
+  name: string;
+  serviceName: string;
+  serviceType: DatabricksMcpServiceType;
+  unityGatewayName?: string;
+  endpointTemplate: string;
+  oauthScope: string;
+  description: string;
+  icon: string;
+  defaultConfig: DatabricksMcpConfig;
+  sampleTools?: string[];
+}
+
+// ============================================================================
+// 4c. Snowflake Managed & Cortex MCP Integrations (TASK-220)
+// ============================================================================
+
+export type SnowflakeMcpDeploymentMode = 'managed_http' | 'stdio_labs';
+
+export type SnowflakeMcpToolType =
+  | 'CORTEX_ANALYST_MESSAGE'
+  | 'CORTEX_SEARCH_SERVICE_QUERY'
+  | 'CORTEX_AGENT_RUN'
+  | 'SYSTEM_EXECUTE_SQL'
+  | 'GENERIC';
+
+export interface SnowflakeMcpConfig {
+  deploymentMode?: SnowflakeMcpDeploymentMode;
+  accountUrl: string;
+  database: string;
+  schema: string;
+  mcpServerName: string;
+  toolType: SnowflakeMcpToolType;
+  semanticView?: string;
+  searchServiceName?: string;
+  cortexAgentName?: string;
+  procedureName?: string;
+  warehouse?: string;
+  role?: string;
+}
+
+export interface SnowflakeMcpServerDefinition {
+  id: string;
+  name: string;
+  serviceName: string;
+  toolType: SnowflakeMcpToolType;
+  endpointTemplate: string;
+  description: string;
+  icon: string;
+  defaultConfig: SnowflakeMcpConfig;
+  sampleTools?: string[];
+}
+
+// ============================================================================
 // 5. Tool Configurations
 // ============================================================================
 
@@ -318,7 +429,18 @@ export type AdkBuiltinToolType =
   | 'request_input' 
   | 'preload_memory' 
   | 'code_execution' 
-  | 'agent_as_tool';
+  | 'agent_as_tool'
+  | 'openapi_toolset'
+  | 'application_integration'
+  | 'vertex_ai_rag_retrieval'
+  | 'bigquery_toolset'
+  | 'spanner_toolset'
+  | 'computer_use'
+  | 'toolbox_databases'
+  | 'exit_loop'
+  | 'transfer_to_agent'
+  | 'load_memory'
+  | 'load_artifacts';
 
 export interface VertexAiSearchConfig {
   dataStoreId?: string;
@@ -344,10 +466,103 @@ export interface AgentAsToolConfig {
   subAgentDescription?: string;
 }
 
+export interface OpenApiToolsetConfig {
+  specSource: 'inline' | 'file' | 'url';
+  specContentOrUri: string;
+  specType: 'json' | 'yaml';
+  authSchemeType: 'none' | 'api_key' | 'bearer' | 'oauth2' | 'service_account';
+  secretName?: string;
+  envVar?: string;
+  headerName?: string;
+  selectedOperations?: string[];
+}
+
+export interface ApplicationIntegrationConfig {
+  mode: 'integration_trigger' | 'connector';
+  project: string;
+  location: string;
+  integration?: string;
+  triggers?: string[];
+  connection?: string;
+  entityOperations?: Record<string, ('LIST' | 'GET' | 'CREATE' | 'UPDATE' | 'DELETE')[]>;
+  actions?: string[];
+  serviceAccountJsonSecret?: string;
+}
+
+export interface VertexAiRagRetrievalConfig {
+  ragCorpora: string[];
+  similarityTopK?: number;
+  vectorDistanceThreshold?: number;
+  location?: string;
+  project?: string;
+}
+
+export type BigQueryToolsetWriteMode = 'BLOCKED' | 'ALLOWED' | 'PROTECTED';
+
+export type BigQueryToolsetToolName =
+  | 'list_dataset_ids'
+  | 'get_dataset_info'
+  | 'list_table_ids'
+  | 'get_table_info'
+  | 'execute_sql'
+  | 'forecast'
+  | 'analyze_contribution'
+  | 'ask_data_insights';
+
+export interface BigQueryToolsetConfig {
+  projectId?: string;
+  location?: string;
+  writeMode: BigQueryToolsetWriteMode;
+  enabledTools?: BigQueryToolsetToolName[];
+  maxQueryResultRows?: number;
+}
+
+export type SpannerToolsetToolName =
+  | 'execute_sql'
+  | 'list_table_names'
+  | 'get_table_schema'
+  | 'similarity_search';
+
+export interface SpannerToolsetConfig {
+  projectId: string;
+  instanceId: string;
+  databaseId: string;
+  readOnly?: boolean;
+  vectorSearchTable?: string;
+  embeddingModel?: string;
+  enabledTools?: SpannerToolsetToolName[];
+}
+
+export type ComputerUseEnvironmentType = 'playwright_chromium' | 'browserbase' | 'custom_desktop';
+
+export interface ComputerUseConfig {
+  environment: ComputerUseEnvironmentType;
+  screenWidth?: number;
+  screenHeight?: number;
+  headless?: boolean;
+  allowedDomains?: string[];
+  requireConfirmationOnPurchases?: boolean;
+}
+
+export type ToolboxDatabaseKind =
+  | 'alloydb'
+  | 'cloud_sql_pg'
+  | 'cloud_sql_mysql'
+  | 'spanner'
+  | 'neo4j'
+  | 'bigquery';
+
+export interface ToolboxDatabaseConfig {
+  serverUrl: string;
+  toolsetName?: string;
+  toolNames?: string[];
+  toolsYamlContent?: string;
+  dbKind?: ToolboxDatabaseKind;
+  authTokenEnvVar?: string;
+}
+
 /**
  * ToolDefinition - Complete canonical descriptor of standard or custom tool parameters
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 export interface ToolDefinition {
   id: string;
@@ -358,6 +573,10 @@ export interface ToolDefinition {
   description: string;
   codePrompt?: string; 
   endpointUrl?: string;
+  endpoint?: string;
+  authType?: string;
+  secretName?: string;
+  transport?: string;
   httpMethod?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   authKeyEnv?: string;
   secretManagerKey?: string;
@@ -373,14 +592,19 @@ export interface ToolDefinition {
   googleSearchConfig?: GoogleSearchConfig;
   requestInputConfig?: RequestInputConfig;
   agentAsToolConfig?: AgentAsToolConfig;
+  openApiToolsetConfig?: OpenApiToolsetConfig;
+  applicationIntegrationConfig?: ApplicationIntegrationConfig;
+  vertexAiRagRetrievalConfig?: VertexAiRagRetrievalConfig;
+  bigQueryToolsetConfig?: BigQueryToolsetConfig;
+  spannerToolsetConfig?: SpannerToolsetConfig;
+  computerUseConfig?: ComputerUseConfig;
+  toolboxDatabaseConfig?: ToolboxDatabaseConfig;
 }
 
 export type AgentToolConfig = ToolDefinition;
 
 /**
  * ToolBinding - Describes a tool and its execution overrides bound to a specific agent
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 export interface ToolBinding {
   toolId: string;
@@ -389,8 +613,29 @@ export interface ToolBinding {
 }
 
 // ============================================================================
-// 6. Memory & Checkpointing Configurations
+// 6. Memory, Checkpointing, Long-Term Memory & Artifact Configurations (TASK-224 & TASK-236)
 // ============================================================================
+
+export type ArtifactServiceType = 'none' | 'in_memory' | 'gcs';
+
+export interface ArtifactServiceConfig {
+  type: ArtifactServiceType;
+  gcsBucketName?: string;
+  defaultScope?: 'session' | 'user';
+  allowedMimeTypes?: string[];
+  enableVersioning?: boolean;
+}
+
+export type LongTermMemoryServiceType = 'none' | 'in_memory' | 'vertex_ai_memory_bank' | 'vertex_ai_rag';
+
+export interface LongTermMemoryConfig {
+  serviceType: LongTermMemoryServiceType;
+  agentEngineId?: string;
+  ragCorpusId?: string;
+  similarityTopK?: number;
+  vectorDistanceThreshold?: number;
+  autoSaveSessionToMemory?: boolean;
+}
 
 export type AgentMemoryType = 
   | 'none'
@@ -456,6 +701,9 @@ export interface AgentMemoryConfig {
   // Entity / Knowledge Fact settings
   userIdKey?: string;
   extractUserFacts?: boolean;
+  // Cross-Session Long-Term Memory (TASK-236) & Artifact Storage (TASK-224)
+  longTermMemory?: LongTermMemoryConfig;
+  artifactConfig?: ArtifactServiceConfig;
   [key: string]: any;
 }
 
@@ -716,10 +964,138 @@ export interface GuardrailConfig {
   blockTargetAgentId?: string;
 }
 
+// ============================================================================
+// 11b. A2UI v0.9.1 Protocol, Agent Skills, Callbacks & Runner Plugins (TASK-221, TASK-223, TASK-239, TASK-240)
+// ============================================================================
+
+export type A2UICatalogType =
+  | 'material_v09'
+  | 'gemini_enterprise_composite_v09'
+  | 'basic_v09';
+
+export type A2UIGenerationMode = 'state_adapter' | 'dsl_template' | 'llm_toolset';
+
+export type A2UIActionHandlerType = 'deterministic_tool' | 'state_delta' | 'templated_prompt';
+
+export interface A2UIActionHandlerRule {
+  id?: string;
+  actionName: string;
+  handlerType: A2UIActionHandlerType;
+  target: string;
+  description?: string;
+}
+
+export interface A2UISurfaceTemplate {
+  id: string;
+  name: string;
+  description: string;
+  catalog: A2UICatalogType;
+  defaultWidgets: string[];
+  stateKey?: string;
+  customJsonTemplate?: string;
+}
+
+export interface A2UIWidgetDefinition {
+  id: string;
+  name: string;
+  category: 'layout' | 'content' | 'actions' | 'inputs' | 'feedback' | 'data_display' | 'composite';
+  catalog: A2UICatalogType;
+  description: string;
+  properties: string[];
+  supportsTwoWayBinding?: boolean;
+}
+
+export interface A2UIConfig {
+  enabled: boolean;
+  catalog: A2UICatalogType;
+  generationMode: A2UIGenerationMode;
+  allowedWidgets?: string[];
+  surfaceTemplates?: string[];
+  customSurfaceJson?: string;
+  actionHandlers?: A2UIActionHandlerRule[];
+  enableNonLlmUtilityActions?: boolean;
+  autoConfirmTools?: boolean;
+}
+
+export type SkillSourceType = 'inline' | 'workspace_dir' | 'external_repo';
+
+export interface SkillFactoryConfig {
+  enabled: boolean;
+  outputDirectory?: string;
+  allowRuntimePersist?: boolean;
+}
+
+export interface AgentSkillDefinition {
+  id: string;
+  name: string;
+  description: string;
+  sourceType: SkillSourceType;
+  instructionsMarkdown?: string;
+  workspacePath?: string;
+  repoUrl?: string;
+  references?: string[];
+  scripts?: string[];
+  assets?: string[];
+  enabled?: boolean;
+}
+
+export type AdkCallbackHookType =
+  | 'before_agent'
+  | 'after_agent'
+  | 'before_model'
+  | 'after_model'
+  | 'before_tool'
+  | 'after_tool';
+
+export type AdkCallbackDefinitionMode = 'preset' | 'workspace_function' | 'ai_prompt';
+
+export type AdkCallbackPresetType =
+  | 'tool_arg_guardrail'
+  | 'tool_response_cache'
+  | 'pii_secret_redaction'
+  | 'turn_rate_limiter'
+  | 'state_initializer_audit';
+
+export interface AdkCallbackRule {
+  id: string;
+  name: string;
+  hookType: AdkCallbackHookType;
+  mode: AdkCallbackDefinitionMode;
+  presetType?: AdkCallbackPresetType;
+  presetConfig?: Record<string, any>;
+  workspaceFile?: string;
+  functionName?: string;
+  aiPrompt?: string;
+  enabled?: boolean;
+  description?: string;
+}
+
+export type AdkBuiltinPluginType =
+  | 'reflect_and_retry_tool'
+  | 'bigquery_agent_analytics'
+  | 'context_filter'
+  | 'save_files_as_artifacts'
+  | 'debug_logging'
+  | 'custom_plugin';
+
+export interface AdkRunnerPluginConfig {
+  id: string;
+  pluginType: AdkBuiltinPluginType;
+  name: string;
+  enabled: boolean;
+  maxRetries?: number;
+  bqProjectId?: string;
+  bqDatasetId?: string;
+  bqTableId?: string;
+  maxContextMessages?: number;
+  maxContextTokens?: number;
+  customClassName?: string;
+  customModulePath?: string;
+  description?: string;
+}
+
 /**
  * SubAgentRef - Reference to a child delegated agent
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 export interface SubAgentRef {
   agentId: string;
@@ -730,8 +1106,6 @@ export interface SubAgentRef {
 
 /**
  * SubAgentConfig - Standard configuration representing a delegated sub-agent
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 export interface SubAgentConfig {
   agentId: string;
@@ -742,8 +1116,6 @@ export interface SubAgentConfig {
 
 /**
  * AgentNodeData - The canonical data format for an Agent Node on the react-flow canvas
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 export interface AgentNodeData {
   label: string;
@@ -757,6 +1129,7 @@ export interface AgentNodeData {
   maxIterations?: number;
   agentKind?: AgentKind;
   a2aConfig?: A2AConfig;
+  a2uiConfig?: A2UIConfig;
   routerConfig?: RouterConfig;
   debateConfig?: DebateConfig;
   synthesizerConfig?: SynthesizerConfig;
@@ -772,6 +1145,16 @@ export interface AgentNodeData {
   subAgentPattern?: DelegationPattern;
   memoryType?: AgentMemoryType | MemoryType;
   memoryConfig?: AgentMemoryConfig;
+  longTermMemory?: LongTermMemoryConfig;
+  artifactConfig?: ArtifactServiceConfig;
+  skills?: AgentSkillDefinition[];
+  skillFactoryConfig?: SkillFactoryConfig;
+  contextCacheConfig?: ContextCacheConfig;
+  eventsCompactionConfig?: EventsCompactionConfig;
+  includeContents?: IncludeContentsMode;
+  plannerConfig?: PlannerConfig;
+  callbacks?: AdkCallbackRule[];
+  plugins?: AdkRunnerPluginConfig[];
   outputFormat?: 'text' | 'json_schema' | 'structured';
   isStartNode?: boolean;
   isOrchestrator?: boolean;
@@ -867,14 +1250,15 @@ export interface GenerationConfig {
   includeTests: boolean;
   includeDocker: boolean;
   useStreaming: boolean;
-  deploymentTarget?: 'cloud_run' | 'agent_engine';
+  deploymentTarget?: 'cloud_run' | 'agent_engine' | 'gke' | 'local';
   deployedResourceId?: string;
   serviceUrl?: string;
   consoleUrl?: string;
   deployedAt?: string;
+  plugins?: AdkRunnerPluginConfig[];
 }
 
-export type DeploymentTarget = 'local' | 'agent_engine' | 'cloud_run';
+export type DeploymentTarget = 'local' | 'agent_engine' | 'cloud_run' | 'gke';
 
 export interface ModelArmorTemplateItem {
   id?: string;
@@ -948,13 +1332,21 @@ export interface DeploymentConfig {
   cpu?: string;
   memory?: string;
   allowUnauthenticated?: boolean;
+  gkeClusterName?: string;
+  gkeNamespace?: string;
+  gkeLocation?: string;
+  gkeReplicas?: number;
+  enableWorkloadIdentity?: boolean;
+  gkeServiceAccountName?: string;
   governance?: AgentGovernanceConfig;
+  artifactConfig?: ArtifactServiceConfig;
+  plugins?: AdkRunnerPluginConfig[];
   [key: string]: any;
 }
 
 export interface WorkflowDeploymentConfig {
-  target: 'agent_engine' | 'cloud_run' | string;
-  deploymentTarget?: 'agent_engine' | 'cloud_run' | string;
+  target: 'agent_engine' | 'cloud_run' | 'gke' | string;
+  deploymentTarget?: 'agent_engine' | 'cloud_run' | 'gke' | string;
   outputFolder: string;
   framework: FrameworkTarget | string;
   language: LanguageTarget | string;
@@ -962,6 +1354,8 @@ export interface WorkflowDeploymentConfig {
   includeDocker?: boolean;
   useStreaming?: boolean;
   governance?: AgentGovernanceConfig;
+  artifactConfig?: ArtifactServiceConfig;
+  plugins?: AdkRunnerPluginConfig[];
   [key: string]: any;
 }
 
@@ -1007,7 +1401,6 @@ export interface AgentFileTab {
  * displayed in the Samples gallery and instantiated onto the canvas.
  *
  * Architectural Decisions:
- * - Author: Mike Nimer <mikenimer@google.com>
  * - Added optional `readmeContent` property so sample cards in the palette can
  *   open an Information dialog displaying the full README description.
  */

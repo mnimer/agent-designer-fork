@@ -107,12 +107,12 @@ describe('Agent Specification Evaluator', () => {
         });
 
         it('should accurately parse code_reviewer.agent sample workflow with dual triggers and 6 test scenarios', () => {
-            const codeReviewerPath = path.resolve(__dirname, '../../../resource/samples/code_reviewer/code_reviewer.agent');
+            const codeReviewerPath = path.resolve(__dirname, '../../../resource/samples/sdlc/code_reviewer/code_reviewer.agent');
             expect(fs.existsSync(codeReviewerPath)).toBe(true);
             const content = fs.readFileSync(codeReviewerPath, 'utf-8');
             const spec = parseAgentWorkflowSpec(content);
 
-            expect(spec.name).toBe('Autonomous Multi-Agent Code Reviewer');
+            expect(spec.name).toBe('Code Reviewing Agent');
             expect(spec.framework).toBe('google-adk');
             expect(spec.language).toBe('python');
             expect(spec.agents.length).toBe(4);

@@ -64,6 +64,8 @@ interface TestRunnerTabProps {
   document?: AgentWorkflowDocument;
   onOpenTriggerSettings?: () => void;
   onNavigateToDeployment?: () => void;
+  hasChatTrigger?: boolean;
+  onOpenPromptInChat?: (promptText: string) => void;
 }
 
 interface ExecutionLogEntry {
@@ -82,7 +84,15 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
   document: propDocument,
   onOpenTriggerSettings,
   onNavigateToDeployment,
+  hasChatTrigger = false,
+  onOpenPromptInChat,
 }) => {
+  const effectiveHasChatTrigger = Boolean(
+    hasChatTrigger ||
+      propDocument?.nodes?.some(
+        (n: any) => n.type === 'trigger' && n.data?.triggerType === 'chat'
+      )
+  );
   const bridge = useWebviewBridge();
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
   const [isRunningAll, setIsRunningAll] = useState<boolean>(false);
@@ -104,8 +114,6 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
   /**
    * Handles mouse drag to resize the execution logs drawer.
    * Allows dragging up or down with bounded heights between 80px and 600px.
-   *
-   * @author Mike Nimer <mikenimer@google.com>
    */
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -926,17 +934,32 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                         <Terminal className="w-3 h-3 text-pink-400" />
                         Input Prompt
                       </span>
-                      <button
-                        onClick={() => handleCopy(tp.prompt || (tp as any).inputQuery || '', `prompt_${tp.id}`)}
-                        className="text-[10px] text-gray-400 hover:text-white flex items-center gap-0.5 cursor-pointer"
-                        title="Copy prompt"
-                      >
-                        {copiedId === `prompt_${tp.id}` ? (
-                          <Check className="w-2.5 h-2.5 text-emerald-400" />
-                        ) : (
-                          <Copy className="w-2.5 h-2.5" />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(tp.prompt || (tp as any).inputQuery || '', `prompt_${tp.id}`)}
+                          className="text-[10px] text-gray-400 hover:text-white flex items-center gap-0.5 cursor-pointer"
+                          title="Copy prompt"
+                        >
+                          {copiedId === `prompt_${tp.id}` ? (
+                            <Check className="w-2.5 h-2.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-2.5 h-2.5" />
+                          )}
+                        </button>
+                        {effectiveHasChatTrigger && onOpenPromptInChat && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenPromptInChat(tp.prompt || (tp as any).inputQuery || '')}
+                            className="text-[10px] text-gray-400 hover:text-emerald-400 flex items-center gap-0.5 cursor-pointer transition-colors"
+                            title="Open in Interactive Chat"
+                            aria-label="Open in Interactive Chat"
+                            data-testid={`open-in-chat-${tp.id}`}
+                          >
+                            <ArrowRight className="w-2.5 h-2.5" />
+                          </button>
                         )}
-                      </button>
+                      </div>
                     </div>
                     <div className="flex-1 p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d] font-mono text-[11px] text-gray-200 leading-relaxed overflow-y-auto max-h-[140px] select-text cursor-text" style={{ userSelect: 'text' }}>
                       {tp.prompt || (tp as any).inputQuery || ''}

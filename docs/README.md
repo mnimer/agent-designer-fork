@@ -14,7 +14,15 @@ The canonical, living specifications and task trackers for this project reside a
 | **[`DESIGN_DOC.md`](../DESIGN_DOC.md)** | Master technical design document detailing extension architecture, RPC protocols, React Flow canvas topologies, prompt-driven code generation, and test execution engines. |
 | **[`REQUIREMENTS.md`](../REQUIREMENTS.md)** | Master functional requirements specification covering canvas interactions, node cards, inspector drawers, code generator options, and quality invariants. |
 | **[`RELEASE_PLAN.md`](../RELEASE_PLAN.md)** | 13-release master roadmap spanning single-agent MVPs (v1.0.0) through multi-agent delegation, A2A protocols, dynamic routers, MCP tool integration, and LangGraph/TypeScript support. |
-| **[`TASKS.md`](../TASKS.md)** | Actionable task breakdown and sub-agent instructions matrix (TASK-100 through TASK-124). |
+| **[`TASKS.md`](../TASKS.md)** | Actionable task breakdown and sub-agent instructions matrix (TASK-100 through TASK-250). |
+
+---
+
+## 🧭 Architecture Decision Records (`docs/adr/`)
+
+The `docs/adr/` directory stores detailed architectural reviews, deferred sample designs, and technical trade-off records:
+
+- **[`001-retail-data-and-ai-demo-architecture.md`](./adr/001-retail-data-and-ai-demo-architecture.md)**: Full architectural blueprint for the unified 3-sub-agent `cloud-gtm/retail-data-and-ai-demo` sample (*Conversational Analytics + Merchandising + Inventory*), 10 ordered Test Runner demo prompts, and Dual-Mode Local SQLite (`sqlite3`) / BigQuery execution plan.
 
 ---
 

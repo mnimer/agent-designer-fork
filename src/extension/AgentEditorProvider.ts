@@ -310,13 +310,48 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           })
         : { dispose: () => {} };
 
-      webviewPanel.onDidDispose(async () => {
-        await this.runnerManager.stopLocalRunner(undefined, undefined, bridge);
+      const stopRunnerForClosedDocument = async (reason: string) => {
+        this.outputChannel?.appendLine(
+          `[AgentEditorProvider] ${reason} (${document.uri.fsPath}); stopping active local runner.`
+        );
+        try {
+          await this.runnerManager.stopLocalRunner(undefined, undefined, bridge);
+        } catch {}
         this.runnerManager.cancelAll();
+        this.runnerManager.resetChatSession();
+        this.runnerManager.clearRunnerLogs();
+      };
+
+      const docCloseSub = typeof vscode.workspace.onDidCloseTextDocument === 'function'
+        ? vscode.workspace.onDidCloseTextDocument(async (closedDoc) => {
+            if (closedDoc.uri.toString() === document.uri.toString()) {
+              await stopRunnerForClosedDocument('Document closed');
+            }
+          })
+        : { dispose: () => {} };
+
+      const tabCloseSub =
+        typeof (vscode.window as any).tabGroups?.onDidChangeTabs === 'function'
+          ? (vscode.window as any).tabGroups.onDidChangeTabs(async (e: any) => {
+              const closedTabs = Array.isArray(e?.closed) ? e.closed : [];
+              for (const tab of closedTabs) {
+                const tabUri = tab?.input?.uri?.toString?.();
+                if (tabUri && tabUri === document.uri.toString()) {
+                  await stopRunnerForClosedDocument('Editor tab closed');
+                  break;
+                }
+              }
+            })
+          : { dispose: () => {} };
+
+      webviewPanel.onDidDispose(async () => {
+        await stopRunnerForClosedDocument('Webview panel disposed');
         themeChangeSub.dispose();
         docChangeSub.dispose();
         docSaveSub.dispose();
         fileRenameSub.dispose();
+        docCloseSub.dispose();
+        tabCloseSub.dispose();
         bridge.dispose();
       });
     } catch (err: any) {
@@ -412,13 +447,13 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   ): Promise<string[]> {
     if (!agentDoc) return [];
     const copiedFiles: string[] = [];
-    const baseDir = path.dirname(document.uri.fsPath);
     const targetToolsDir = path.join(targetDirPath, 'tools');
 
     const tools: any[] = [];
-    if (agentDoc.tools) tools.push(...agentDoc.tools);
-    if (agentDoc.agents) {
-      for (const ag of agentDoc.agents) {
+    const rawDoc = agentDoc as any;
+    if (rawDoc.tools) tools.push(...rawDoc.tools);
+    if (rawDoc.agents) {
+      for (const ag of rawDoc.agents) {
         if (ag.tools) tools.push(...ag.tools);
       }
     }
@@ -432,10 +467,18 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       }
     }
 
+    const requiredFunctionsBySource = new Map<string, Set<string>>();
     const uniqueSources = new Set<string>();
     for (const t of tools) {
       if (t && t.sourceFile) {
         uniqueSources.add(t.sourceFile);
+        const fnName = t.functionName || t.name;
+        if (fnName) {
+          if (!requiredFunctionsBySource.has(t.sourceFile)) {
+            requiredFunctionsBySource.set(t.sourceFile, new Set());
+          }
+          requiredFunctionsBySource.get(t.sourceFile)!.add(fnName);
+        }
       }
     }
 
@@ -448,36 +491,65 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         fs.writeFileSync(initPy, '"""Tools package for agent pipeline."""\n', 'utf-8');
       }
 
-      for (const relSource of uniqueSources) {
-        let sourcePath = path.isAbsolute(relSource) ? relSource : path.resolve(baseDir, relSource);
-        const samples = this.discoverResourceSamples();
-        const docBaseName = path.basename(document.uri.fsPath, '.agent').replace(/-/g, '_');
-        const workflowName = (agentDoc.name || '').replace(/-/g, '_');
+      const canonicalSampleDir = this.resolveCanonicalSampleDir(agentDoc, document);
 
-        // Prefer the canonical bundled sample tool file if this workflow matches a bundled sample
-        // or if the relative file does not exist or is older than the bundled sample tool file.
-        for (const s of samples) {
-          if (s.sourceFilePath) {
+      for (const relSource of uniqueSources) {
+        let sourcePath: string | undefined;
+
+        // 1. Always prefer the canonical bundled sample tool file from resource/samples/*
+        if (canonicalSampleDir) {
+          const canonicalCandidate = path.resolve(canonicalSampleDir, relSource);
+          if (fs.existsSync(canonicalCandidate)) {
+            sourcePath = canonicalCandidate;
+          }
+        }
+
+        // 2. If not matched by canonical sample name, locate a bundled sample in resource/samples/*
+        //    that defines the required tool function(s) for this sourceFile.
+        if (!sourcePath || !fs.existsSync(sourcePath)) {
+          const samples = this.discoverResourceSamples();
+          const requiredFns = Array.from(requiredFunctionsBySource.get(relSource) || []);
+          let fallbackCandidate: string | undefined;
+
+          for (const s of samples) {
+            if (!s.sourceFilePath) continue;
             const candidate = path.resolve(path.dirname(s.sourceFilePath), relSource);
-            if (fs.existsSync(candidate)) {
-              const isMatchingSample = s.id === docBaseName || s.id === workflowName;
-              if (!fs.existsSync(sourcePath)) {
-                sourcePath = candidate;
-                break;
-              } else if (isMatchingSample) {
-                try {
-                  const srcStat = fs.statSync(sourcePath);
-                  const candStat = fs.statSync(candidate);
-                  if (candStat.mtimeMs > srcStat.mtimeMs) {
-                    sourcePath = candidate;
-                  }
-                } catch {}
-                break;
+            if (!fs.existsSync(candidate)) continue;
+
+            if (!fallbackCandidate) {
+              fallbackCandidate = candidate;
+            }
+
+            if (requiredFns.length > 0) {
+              try {
+                const candidateContent = fs.readFileSync(candidate, 'utf-8');
+                const definesAllRequired = requiredFns.every((fn) =>
+                  new RegExp(`\\bdef\\s+${fn}\\b`).test(candidateContent)
+                );
+                if (definesAllRequired) {
+                  sourcePath = candidate;
+                  break;
+                }
+              } catch {
+                // Ignore read error
               }
             }
           }
+
+          if ((!sourcePath || !fs.existsSync(sourcePath)) && fallbackCandidate) {
+            sourcePath = fallbackCandidate;
+          }
         }
-        if (fs.existsSync(sourcePath)) {
+
+        // 3. For non-sample custom tools, only resolve inside the generated target directory (or explicit absolute path).
+        //    Never look outside the generated target folder in path.dirname(document.uri.fsPath).
+        if (!sourcePath || !fs.existsSync(sourcePath)) {
+          sourcePath = path.isAbsolute(relSource)
+            ? relSource
+            : path.resolve(targetDirPath, relSource);
+        }
+
+        if (sourcePath && fs.existsSync(sourcePath)) {
           const destPath = path.join(targetToolsDir, path.basename(sourcePath));
           if (path.resolve(sourcePath) !== path.resolve(destPath)) {
             fs.copyFileSync(sourcePath, destPath);
@@ -490,6 +562,294 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   }
 
   /**
+   * Resolves the canonical bundled sample directory if `workflowDoc` or `sourceDocument`
+   * matches a sample in `resource/samples/`. Prevents shared workspace parent folders
+   * (where multiple `.agent` files are saved side-by-side) from cross-contaminating
+   * companion `tools/`, `data/`, `skills/`, or `callbacks/` directories across samples.
+   */
+  public resolveCanonicalSampleDir(
+    workflowDoc: AgentWorkflowDocument | undefined,
+    sourceDocument: vscode.TextDocument | undefined
+  ): string | undefined {
+    const samples = this.discoverResourceSamples();
+    const docBaseName = sourceDocument?.uri?.fsPath
+      ? path.basename(sourceDocument.uri.fsPath, '.agent').toLowerCase().replace(/[^a-z0-9]/g, '')
+      : '';
+    const normName = (workflowDoc?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const rawOutputFolder =
+      (workflowDoc as any)?.deployment?.outputFolder ||
+      (workflowDoc as any)?.deploymentConfig?.outputFolder ||
+      workflowDoc?.metadata?.outputFolder ||
+      '';
+    const normOutputFolder = path
+      .basename(String(rawOutputFolder).replace(/\/+$/, ''))
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+
+    for (const s of samples) {
+      if (!s.sourceFilePath) continue;
+      const sNormId = s.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const sNormName = s.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const sFileBase = path
+        .basename(s.sourceFilePath, '.agent')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
+      if (
+        (normName && (sNormId === normName || sNormName === normName || sFileBase === normName)) ||
+        (docBaseName && (sNormId === docBaseName || sNormName === docBaseName || sFileBase === docBaseName)) ||
+        (normOutputFolder &&
+          (sNormId === normOutputFolder || sNormName === normOutputFolder || sFileBase === normOutputFolder))
+      ) {
+        return path.dirname(s.sourceFilePath);
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Recursively copies sample dataset files (under `data/`) and any optional
+   * companion directories (such as `skills/`, `callbacks/`) from the workflow's
+   * source location into the output target directory.
+   *
+   * Architectural Decisions:
+   * - Prefers canonical bundled sample directory when workflow matches a discovered sample so
+   *   saving multiple `.agent` files in one folder never cross-contaminates `data/`.
+   * - Traverses target-scoped directories (e.g. data/bigquery/, data/alloydb/, data/spanner/) recursively.
+   * - Preserves directory structure while skipping Python compilation artifacts (__pycache__, .pyc, .pyo).
+   */
+  public async copySampleDataFiles(
+    workflowDoc: AgentWorkflowDocument | undefined,
+    sourceDocument: vscode.TextDocument | undefined,
+    targetDirPath: string
+  ): Promise<string[]> {
+    // Section 1: Resolve candidate source data directory (preferring canonical bundled sample first)
+    const copiedFiles: string[] = [];
+    let candidateDataDir: string | undefined;
+
+    const canonicalSampleDir = this.resolveCanonicalSampleDir(workflowDoc, sourceDocument);
+    if (canonicalSampleDir) {
+      const canonicalData = path.join(canonicalSampleDir, 'data');
+      if (fs.existsSync(canonicalData) && fs.statSync(canonicalData).isDirectory()) {
+        candidateDataDir = canonicalData;
+      }
+    } else if (sourceDocument?.uri?.fsPath) {
+      const siblingData = path.join(path.dirname(sourceDocument.uri.fsPath), 'data');
+      if (fs.existsSync(siblingData) && fs.statSync(siblingData).isDirectory()) {
+        candidateDataDir = siblingData;
+      }
+    }
+
+    // NOTE: If no data directory exists, return early with empty copied files array
+    if (!candidateDataDir || !fs.existsSync(candidateDataDir)) {
+      return [];
+    }
+
+    // Section 2: Recursive copy preserving nested subfolders and skipping cache artifacts
+    if (candidateDataDir && fs.existsSync(candidateDataDir)) {
+      const targetDataDir = path.join(targetDirPath, 'data');
+
+      const copyDirRecursive = (srcDir: string, destDir: string, relPrefix: string) => {
+        if (!fs.existsSync(destDir)) {
+          fs.mkdirSync(destDir, { recursive: true });
+        }
+
+        const entries = fs.readdirSync(srcDir, { withFileTypes: true });
+        for (const entry of entries) {
+          // Skip Python bytecode cache directories and compiled files
+          if (entry.name === '__pycache__' || entry.name.endsWith('.pyc') || entry.name.endsWith('.pyo')) {
+            continue;
+          }
+
+          const srcPath = path.join(srcDir, entry.name);
+          const destPath = path.join(destDir, entry.name);
+          const relPath = path.join(relPrefix, entry.name);
+
+          if (entry.isDirectory()) {
+            copyDirRecursive(srcPath, destPath, relPath);
+          } else if (entry.isFile()) {
+            fs.copyFileSync(srcPath, destPath);
+            copiedFiles.push(relPath);
+          }
+        }
+      };
+
+      copyDirRecursive(candidateDataDir, targetDataDir, 'data');
+    }
+
+    // Section 3: Also sync companion skills and callbacks folders and inline skills
+    const skillsFiles = await this.copySampleSkillsFiles(workflowDoc, sourceDocument, targetDirPath);
+    const callbacksFiles = await this.copySampleCallbacksFiles(workflowDoc, sourceDocument, targetDirPath);
+    copiedFiles.push(...skillsFiles, ...callbacksFiles);
+
+    return copiedFiles;
+  }
+
+  /**
+   * Recursively copies sample skills files (under `skills/`) from the workflow's
+   * source location into the output target directory, and synthesizes SKILL.md for inline skills.
+   *
+   * Architectural Decisions:
+   * - Preserves directory structure while skipping Python compilation artifacts (__pycache__, .pyc, .pyo).
+   * - Generates inline `skills/<skill.name>/SKILL.md` when workflow nodes have inline skills.
+   *
+   * @param workflowDoc Parsed workflow document
+   * @param sourceDocument Active editor text document
+   * @param targetDirPath Target directory path for file output
+   * @returns Array of relative file paths copied or created
+   */
+  public async copySampleSkillsFiles(
+    workflowDoc: AgentWorkflowDocument | undefined,
+    sourceDocument: vscode.TextDocument | undefined,
+    targetDirPath: string
+  ): Promise<string[]> {
+    const copiedFiles: string[] = [];
+    let candidateSkillsDir: string | undefined;
+
+    const canonicalSampleDir = this.resolveCanonicalSampleDir(workflowDoc, sourceDocument);
+    if (canonicalSampleDir) {
+      const canonicalSkills = path.join(canonicalSampleDir, 'skills');
+      if (fs.existsSync(canonicalSkills) && fs.statSync(canonicalSkills).isDirectory()) {
+        candidateSkillsDir = canonicalSkills;
+      }
+    } else if (sourceDocument?.uri?.fsPath) {
+      const siblingSkills = path.join(path.dirname(sourceDocument.uri.fsPath), 'skills');
+      if (fs.existsSync(siblingSkills) && fs.statSync(siblingSkills).isDirectory()) {
+        candidateSkillsDir = siblingSkills;
+      }
+    }
+
+    const targetSkillsDir = path.join(targetDirPath, 'skills');
+
+    // Section 1: Copy existing skills folder if present
+    if (candidateSkillsDir && fs.existsSync(candidateSkillsDir)) {
+      const copyDirRecursive = (srcDir: string, destDir: string, relPrefix: string) => {
+        if (!fs.existsSync(destDir)) {
+          fs.mkdirSync(destDir, { recursive: true });
+        }
+
+        const entries = fs.readdirSync(srcDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.name === '__pycache__' || entry.name.endsWith('.pyc') || entry.name.endsWith('.pyo')) {
+            continue;
+          }
+
+          const srcPath = path.join(srcDir, entry.name);
+          const destPath = path.join(destDir, entry.name);
+          const relPath = path.join(relPrefix, entry.name);
+
+          if (entry.isDirectory()) {
+            copyDirRecursive(srcPath, destPath, relPath);
+          } else if (entry.isFile()) {
+            fs.copyFileSync(srcPath, destPath);
+            copiedFiles.push(relPath);
+          }
+        }
+      };
+
+      copyDirRecursive(candidateSkillsDir, targetSkillsDir, 'skills');
+    }
+
+    // Section 2: Synthesize inline skills into skills/<skill.name>/SKILL.md
+    if (workflowDoc && Array.isArray(workflowDoc.nodes)) {
+      for (const node of workflowDoc.nodes) {
+        const nodeData = (node.data || {}) as any;
+        const skills: any[] = nodeData.skills || [];
+        for (const skill of skills) {
+          if (skill && skill.sourceType === 'inline' && skill.name) {
+            const skillDir = path.join(targetSkillsDir, skill.name);
+            const skillMdPath = path.join(skillDir, 'SKILL.md');
+            if (!fs.existsSync(skillDir)) {
+              fs.mkdirSync(skillDir, { recursive: true });
+            }
+            if (!fs.existsSync(skillMdPath)) {
+              const name = skill.name.trim();
+              const desc = (skill.description || '').trim();
+              const instructions = (skill.instructionsMarkdown || '').trim();
+              const skillMdContent = `---
+name: ${name}
+description: ${desc}
+---
+
+${instructions}`.trim();
+              fs.writeFileSync(skillMdPath, skillMdContent, 'utf-8');
+              copiedFiles.push(path.join('skills', skill.name, 'SKILL.md'));
+            }
+          }
+        }
+      }
+    }
+
+    return copiedFiles;
+  }
+
+  /**
+   * Recursively copies sample callbacks files (under `callbacks/`) from the workflow's
+   * source location into the output target directory.
+   *
+   * Architectural Decisions:
+   * - Preserves directory structure while skipping Python compilation artifacts (__pycache__, .pyc, .pyo).
+   *
+   * @param workflowDoc Parsed workflow document
+   * @param sourceDocument Active editor text document
+   * @param targetDirPath Target directory path for file output
+   * @returns Array of relative file paths copied
+   */
+  public async copySampleCallbacksFiles(
+    workflowDoc: AgentWorkflowDocument | undefined,
+    sourceDocument: vscode.TextDocument | undefined,
+    targetDirPath: string
+  ): Promise<string[]> {
+    const copiedFiles: string[] = [];
+    let candidateCallbacksDir: string | undefined;
+
+    const canonicalSampleDir = this.resolveCanonicalSampleDir(workflowDoc, sourceDocument);
+    if (canonicalSampleDir) {
+      const canonicalCallbacks = path.join(canonicalSampleDir, 'callbacks');
+      if (fs.existsSync(canonicalCallbacks) && fs.statSync(canonicalCallbacks).isDirectory()) {
+        candidateCallbacksDir = canonicalCallbacks;
+      }
+    } else if (sourceDocument?.uri?.fsPath) {
+      const siblingCallbacks = path.join(path.dirname(sourceDocument.uri.fsPath), 'callbacks');
+      if (fs.existsSync(siblingCallbacks) && fs.statSync(siblingCallbacks).isDirectory()) {
+        candidateCallbacksDir = siblingCallbacks;
+      }
+    }
+
+    if (!candidateCallbacksDir || !fs.existsSync(candidateCallbacksDir)) {
+      return [];
+    }
+
+    const targetCallbacksDir = path.join(targetDirPath, 'callbacks');
+
+    const copyDirRecursive = (srcDir: string, destDir: string, relPrefix: string) => {
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+      }
+
+      const entries = fs.readdirSync(srcDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.name === '__pycache__' || entry.name.endsWith('.pyc') || entry.name.endsWith('.pyo')) {
+          continue;
+        }
+
+        const srcPath = path.join(srcDir, entry.name);
+        const destPath = path.join(destDir, entry.name);
+        const relPath = path.join(relPrefix, entry.name);
+
+        if (entry.isDirectory()) {
+          copyDirRecursive(srcPath, destPath, relPath);
+        } else if (entry.isFile()) {
+          fs.copyFileSync(srcPath, destPath);
+          copiedFiles.push(relPath);
+        }
+      }
+    };
+
+    copyDirRecursive(candidateCallbacksDir, targetCallbacksDir, 'callbacks');
+    return copiedFiles;
+  }
+
+  /**
    * Discovers and parses pre-configured .agent workflow samples located in resource/sample/
    * or resource/samples/ within the extension bundle and open workspace folders.
    *
@@ -497,9 +857,9 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
    * - Scans both extension installation root and open workspaces to support both bundled
    *   blueprints and user-defined workspace sample repositories.
    * - Normalizes file paths and generates rich SampleWorkflowDefinition payloads for the webview.
-   * - Recursively discovers .agent files in nested sub-directories.
+   * - Recursively discovers .agent files in nested category sub-directories
+   *   (e.g. resource/samples/retail/<sample>/<sample>.agent, resource/samples/dataanalytics/<sample>/<sample>.agent).
    *
-   * @author Mike Nimer <mikenimer@google.com>
    * @returns Array of loaded SampleWorkflowDefinition objects
    */
   public discoverResourceSamples(): SampleWorkflowDefinition[] {
@@ -532,12 +892,30 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
         const parsed = JSON.parse(fileContent);
         if (!parsed || !Array.isArray(parsed.nodes)) continue;
 
-        // Determine unique ID and display metadata
+        // Determine category and unique sample ID from directory structure
         const parentDirName = path.basename(path.dirname(filePath));
         const baseFileName = path.basename(filePath, '.agent');
-        const rawSampleId = (parentDirName !== 'samples')
-          ? parentDirName
-          : baseFileName;
+        let subfolderCategory: string | undefined;
+        let rawSampleId = parentDirName !== 'samples' ? parentDirName : baseFileName;
+
+        for (const baseDir of candidateDirs) {
+          if (filePath.startsWith(baseDir)) {
+            const rel = path.relative(baseDir, filePath);
+            const segments = rel.split(path.sep);
+            // e.g. ["retail", "travel-concierge", "travel-concierge.agent"] (segments.length >= 3)
+            if (segments.length >= 3) {
+              const rawCat = segments[0];
+              subfolderCategory = this.formatSampleCategory(rawCat);
+              rawSampleId = segments[segments.length - 2] || baseFileName;
+            } else if (segments.length === 2 && this.isKnownCategoryFolder(segments[0])) {
+              // e.g. ["retail", "travel-concierge.agent"] directly inside category folder
+              subfolderCategory = this.formatSampleCategory(segments[0]);
+              rawSampleId = baseFileName;
+            }
+            break;
+          }
+        }
+
         // NOTE: Normalize hyphens to underscores so folder names like travel-concierge match catalog IDs
         const sampleId = rawSampleId.replace(/-/g, '_');
 
@@ -580,26 +958,14 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           }
         }
 
-        // Determine category from directory structure or metadata
-        let subfolderCategory: string | undefined;
-        for (const baseDir of candidateDirs) {
-          if (filePath.startsWith(baseDir)) {
-            const rel = path.relative(baseDir, filePath);
-            const segments = rel.split(path.sep);
-            // e.g. ["retail", "travel-concierge", "travel-concierge.agent"] (segments.length >= 3)
-            if (segments.length >= 3) {
-              const rawCat = segments[0];
-              subfolderCategory = this.formatSampleCategory(rawCat);
-            }
-            break;
-          }
-        }
-
+        // Subfolder category takes precedence so physical directory organization under resource/samples/<category>/
+        // directly drives the category groups displayed in the Samples panel.
         const explicitCategory = parsed.metadata?.category;
-        const resolvedCategory = 
-          explicitCategory && explicitCategory !== 'Ready-to-Use Workflows'
+        const resolvedCategory = subfolderCategory
+          ? subfolderCategory
+          : explicitCategory && explicitCategory !== 'Ready-to-Use Workflows'
             ? (explicitCategory.toLowerCase().includes('retail') ? 'Retail' : explicitCategory)
-            : (subfolderCategory || 'Retail');
+            : 'Retail';
 
         const sampleDef: SampleWorkflowDefinition = {
           id: sampleId,
@@ -642,7 +1008,6 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   /**
    * Recursively scans a directory for files ending in .agent
    *
-   * @author Mike Nimer <mikenimer@google.com>
    * @param dirPath Directory to scan
    * @returns Array of absolute file paths to .agent documents
    */
@@ -665,25 +1030,48 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   }
 
   /**
-   * Normalizes a directory name or raw category string to standard title-case category.
+   * Checks whether a directory segment corresponds to a known sample category folder.
    *
-   * @author Mike Nimer <mikenimer@google.com>
-   * @param raw Raw category name or subfolder name
-   * @returns Formatted category display name
+   * @param raw Raw folder name
+   * @returns True if the folder is a known category container
    */
-  public formatSampleCategory(raw: string): string {
+  private isKnownCategoryFolder(raw: string): boolean {
     const normalized = raw.trim().toLowerCase();
-    const knownCategories: Record<string, string> = {
+    return Boolean(this.getKnownCategoriesMap()[normalized]);
+  }
+
+  /**
+   * Returns the canonical mapping of lowercase category folder slugs to display group labels.
+   */
+  private getKnownCategoriesMap(): Record<string, string> {
+    return {
       retail: 'Retail',
       sdlc: 'SDLC',
+      devtools: 'Developer Tools',
+      'developer-tools': 'Developer Tools',
+      developer_tools: 'Developer Tools',
       finance: 'Finance',
       research: 'Research',
       operations: 'Operations',
       creative: 'Creative',
       data: 'Data',
+      dataanalytics: 'Data Analytics',
+      'data-analytics': 'Data Analytics',
+      data_analytics: 'Data Analytics',
       patterns: 'Patterns',
       healthcare: 'Healthcare',
     };
+  }
+
+  /**
+   * Normalizes a directory name or raw category string to standard title-case category.
+   *
+   * @param raw Raw category name or subfolder name
+   * @returns Formatted category display name
+   */
+  public formatSampleCategory(raw: string): string {
+    const normalized = raw.trim().toLowerCase();
+    const knownCategories = this.getKnownCategoriesMap();
     if (knownCategories[normalized]) {
       return knownCategories[normalized];
     }

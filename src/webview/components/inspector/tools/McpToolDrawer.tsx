@@ -26,10 +26,31 @@ import {
   ShieldCheck,
   Cloud,
   ExternalLink,
-  Lock
+  Lock,
+  Copy,
+  Database
 } from 'lucide-react';
 import { ToolDefinition, AgentData, McpToolConfig, McpTransportType } from '../../../types';
+import {
+  DatabricksMcpConfig,
+  DatabricksMcpServiceType,
+  SnowflakeMcpConfig,
+  SnowflakeMcpDeploymentMode,
+  SnowflakeMcpToolType,
+} from '../../../../shared/types';
 import { GOOGLE_CLOUD_MCP_SERVERS } from '../../../data/googleCloudMcpServers';
+import {
+  isDatabricksMcpTool,
+  buildDatabricksMcpEndpoint,
+  buildDatabricksOAuthUrls,
+} from '../../../data/databricksMcpServers';
+import {
+  isSnowflakeMcpTool,
+  buildSnowflakeMcpEndpoint,
+  buildSnowflakeOAuthUrls,
+  generateSnowflakeMcpServerDdl,
+  normalizeSnowflakeAccountUrl,
+} from '../../../data/snowflakeMcpServers';
 import { ToolDrawerShell } from './ToolDrawerShell';
 
 export interface McpHandshakeResult {
@@ -123,11 +144,33 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
   const [isSavingSecret, setIsSavingSecret] = useState(false);
   const [secretSaveMessage, setSecretSaveMessage] = useState<string | null>(null);
 
+  // Snowflake DDL state
+  const [copiedDdl, setCopiedDdl] = useState(false);
+  const [isDdlExpanded, setIsDdlExpanded] = useState(false);
+
+  const handleCopyDdl = async (ddl: string) => {
+    try {
+      await navigator.clipboard.writeText(ddl);
+      setCopiedDdl(true);
+      setTimeout(() => setCopiedDdl(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy DDL', err);
+    }
+  };
+
   useEffect(() => {
     if (tool) {
       const serverName = tool.mcpConfig?.serverName || tool.name || 'mcp-server';
-      const defaultSecretName = serverName.toLowerCase().replace(/[^a-z0-9-]/g, '-') + '-token';
-      const defaultEnvVar = serverName.toUpperCase().replace(/[^A-Z0-9_]/g, '_') + '_TOKEN';
+      const isDatabricks = isDatabricksMcpTool(tool);
+      const isSnowflake = isSnowflakeMcpTool(tool);
+      const defaultSecretName = tool.secretName || (
+        isDatabricks ? 'databricks-mcp-token' : isSnowflake ? 'snowflake-mcp-token' : (serverName.toLowerCase().replace(/[^a-z0-9-]/g, '-') + '-token')
+      );
+      const defaultEnvVar = isDatabricks
+        ? 'DATABRICKS_TOKEN'
+        : isSnowflake
+        ? 'SNOWFLAKE_MCP_TOKEN'
+        : (serverName.toUpperCase().replace(/[^A-Z0-9_]/g, '_') + '_TOKEN');
 
       setFormData({
         ...tool,
@@ -144,13 +187,13 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
           timeoutSeconds: tool.mcpConfig?.timeoutSeconds || 30,
           exposedTools: tool.mcpConfig?.exposedTools || ['*'],
           autoApproveTools: tool.mcpConfig?.autoApproveTools || [],
-          authProviderType: tool.mcpConfig?.authProviderType || 'google_credentials',
-          oauthConfig: {
-            scopes: tool.mcpConfig?.oauthConfig?.scopes || [
+          authProviderType: tool.mcpConfig?.authProviderType || (isDatabricks || isSnowflake ? 'bearer_token' : 'google_credentials'),
+          oauthConfig: tool.mcpConfig?.oauthConfig || {
+            scopes: [
               'https://www.googleapis.com/auth/cloud-platform',
               'https://www.googleapis.com/auth/bigquery',
             ],
-            projectId: tool.mcpConfig?.oauthConfig?.projectId || '',
+            projectId: '',
           },
           secretConfig: {
             secretName: tool.mcpConfig?.secretConfig?.secretName || defaultSecretName,
@@ -165,6 +208,11 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
             bearerToken: tool.mcpConfig?.secretConfig?.bearerToken,
           },
           discoveredTools: tool.mcpConfig?.discoveredTools || [],
+          databricksConfig: tool.mcpConfig?.databricksConfig,
+          snowflakeConfig: tool.mcpConfig?.snowflakeConfig,
+          region: tool.mcpConfig?.region,
+          selectedToolset: tool.mcpConfig?.selectedToolset,
+          launchStage: tool.mcpConfig?.launchStage,
         },
       });
 
@@ -239,13 +287,16 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
   const handleUpdateMcpConfig = (updates: Partial<McpToolConfig>) => {
     setFormData((prev) => {
       if (!prev) return null;
+      const baseMcp = prev.mcpConfig || mcpConfig;
+      const nextMcp: McpToolConfig = {
+        ...baseMcp,
+        serverName: updates.serverName ?? baseMcp.serverName ?? prev.name ?? 'mcp-server',
+        transport: updates.transport ?? baseMcp.transport ?? 'http',
+        ...updates,
+      };
       const next: ToolDefinition = {
         ...prev,
-        mcpConfig: {
-          ...prev.mcpConfig,
-          transport: 'http',
-          ...updates,
-        },
+        mcpConfig: nextMcp,
       };
       (onUpdateTool || onSaveTool)?.(next);
       return next;
@@ -455,31 +506,84 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
   const isAlreadyAttached = selectedAgent?.tools?.some((t) => t.id === formData.id);
   const gcpServerDef = GOOGLE_CLOUD_MCP_SERVERS.find((s) => s.id === formData.id);
   const isGcpMcp = Boolean(gcpServerDef || formData.category === 'google_cloud_mcp' || formData.id.startsWith('gcp_mcp_'));
+  const isDatabricks = Boolean(isDatabricksMcpTool(formData) || mcpConfig.databricksConfig);
+  const isSnowflake = Boolean(isSnowflakeMcpTool(formData) || mcpConfig.snowflakeConfig);
   const launchStage = gcpServerDef?.launchStage || mcpConfig.launchStage || 'GA';
+
+  // Resolved Databricks & Snowflake configurations with safe defaults
+  const databricksConfig: DatabricksMcpConfig = mcpConfig.databricksConfig || {
+    workspaceHostname: '',
+    serviceType: 'genie',
+    genieSpaceId: '',
+  };
+
+  const snowflakeConfig: SnowflakeMcpConfig = mcpConfig.snowflakeConfig || {
+    deploymentMode: 'managed_http',
+    accountUrl: '',
+    database: '',
+    schema: '',
+    mcpServerName: 'mcp_server',
+    toolType: 'CORTEX_ANALYST_MESSAGE',
+    semanticView: '',
+    warehouse: 'COMPUTE_WH',
+    role: 'ANALYST',
+  };
+
+  let typeBadge = {
+    label: 'MCP Server',
+    subLabel: 'Streamable HTTP',
+    color: 'text-purple-400',
+    bg: 'bg-purple-500/20',
+    border: 'border-purple-500/40',
+  };
+
+  if (isGcpMcp) {
+    typeBadge = {
+      label: 'Google Cloud MCP',
+      subLabel: launchStage,
+      color: 'text-sky-400',
+      bg: 'bg-sky-500/20',
+      border: 'border-sky-500/40',
+    };
+  } else if (isDatabricks) {
+    typeBadge = {
+      label: 'Databricks MCP',
+      subLabel: databricksConfig.serviceType || 'Managed',
+      color: 'text-orange-400',
+      bg: 'bg-orange-500/20',
+      border: 'border-orange-500/40',
+    };
+  } else if (isSnowflake) {
+    typeBadge = {
+      label: 'Snowflake MCP',
+      subLabel: snowflakeConfig.deploymentMode === 'stdio_labs' ? 'Local CLI (stdio)' : 'Managed HTTP',
+      color: 'text-cyan-400',
+      bg: 'bg-cyan-500/20',
+      border: 'border-cyan-500/40',
+    };
+  }
+
+  const toolIcon = isGcpMcp ? (
+    <Cloud className="w-4 h-4 text-sky-400" />
+  ) : isDatabricks ? (
+    <Sparkles className="w-4 h-4 text-orange-400" />
+  ) : isSnowflake ? (
+    <Database className="w-4 h-4 text-cyan-400" />
+  ) : (
+    <Server className="w-4 h-4 text-purple-400" />
+  );
 
   return (
     <ToolDrawerShell
       isOpen={isOpen}
       onClose={onClose}
       toolName={formData.name}
-      onChangeName={(name) => handleUpdate({ name, mcpConfig: { ...mcpConfig, serverName: name, transport: 'http' } })}
+      onChangeName={(name) => handleUpdate({ name, mcpConfig: { ...mcpConfig, serverName: name } })}
       namePlaceholder="e.g. BigQuery MCP Server"
       description={formData.description || ''}
       onChangeDescription={(description) => handleUpdate({ description })}
-      typeBadge={isGcpMcp ? {
-        label: 'Google Cloud MCP',
-        subLabel: launchStage,
-        color: 'text-sky-400',
-        bg: 'bg-sky-500/20',
-        border: 'border-sky-500/40',
-      } : {
-        label: 'MCP Server',
-        subLabel: 'Streamable HTTP',
-        color: 'text-purple-400',
-        bg: 'bg-purple-500/20',
-        border: 'border-purple-500/40',
-      }}
-      toolIcon={isGcpMcp ? <Cloud className="w-4 h-4 text-sky-400" /> : <Server className="w-4 h-4 text-purple-400" />}
+      typeBadge={typeBadge}
+      toolIcon={toolIcon}
       scope={scope}
       agentName={agentName}
       selectedAgent={selectedAgent}
@@ -492,17 +596,53 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
       onDelete={onDeleteTool ? () => onDeleteTool(formData.id) : undefined}
     >
       {/* MCP SERVER DEDICATED CONFIGURATION */}
-      <div className="space-y-4 bg-[#0d1117] p-4 rounded-lg border border-purple-500/40 shadow-sm">
+      <div className={`space-y-4 bg-[#0d1117] p-4 rounded-lg border shadow-sm ${
+        isDatabricks
+          ? 'border-orange-500/40'
+          : isSnowflake
+          ? 'border-cyan-500/40'
+          : isGcpMcp
+          ? 'border-sky-500/40'
+          : 'border-purple-500/40'
+      }`}>
         {/* Panel Header */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-purple-300 font-bold text-xs">
-            {isGcpMcp ? <Cloud className="w-4 h-4 text-sky-400" /> : <Server className="w-4 h-4 text-purple-400" />}
-            <span>{isGcpMcp ? 'Google Cloud Remote MCP Server' : 'MCP Server Specification (2024-11-05)'}</span>
+          <div className={`flex items-center gap-1.5 font-bold text-xs ${
+            isDatabricks
+              ? 'text-orange-300'
+              : isSnowflake
+              ? 'text-cyan-300'
+              : isGcpMcp
+              ? 'text-sky-300'
+              : 'text-purple-300'
+          }`}>
+            {toolIcon}
+            <span>
+              {isGcpMcp
+                ? 'Google Cloud Remote MCP Server'
+                : isDatabricks
+                ? 'Databricks Managed MCP Server'
+                : isSnowflake
+                ? 'Snowflake Managed & Cortex MCP Server'
+                : 'MCP Server Specification (2024-11-05)'}
+            </span>
           </div>
           <span className={`text-[9px] px-2 py-0.5 rounded border font-mono font-bold ${
-            isGcpMcp ? 'bg-sky-500/20 text-sky-300 border-sky-500/30' : 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+            isGcpMcp
+              ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
+              : isDatabricks
+              ? 'bg-orange-500/20 text-orange-300 border-orange-500/30'
+              : isSnowflake
+              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
+              : 'bg-purple-500/20 text-purple-300 border-purple-500/30'
           }`}>
-            {isGcpMcp ? `Remote (${launchStage})` : 'Streamable HTTP'}
+            {isGcpMcp
+              ? `Remote (${launchStage})`
+              : isDatabricks
+              ? 'Managed HTTP'
+              : isSnowflake
+              ? (snowflakeConfig.deploymentMode === 'stdio_labs' ? 'Local CLI (stdio)' : 'Streamable HTTP')
+              : 'Streamable HTTP'}
           </span>
         </div>
 
@@ -542,6 +682,46 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
           </div>
         )}
 
+        {/* Databricks MCP Info Banner */}
+        {isDatabricks && (
+          <div className="bg-orange-950/30 border border-orange-500/30 rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-orange-400 shrink-0" />
+                <span className="text-xs font-semibold text-orange-200">
+                  {formData.name}
+                </span>
+              </div>
+              <span className="text-[8.5px] px-1.5 py-0.5 rounded border font-semibold bg-orange-500/20 text-orange-300 border-orange-500/30">
+                Databricks Managed
+              </span>
+            </div>
+            <p className="text-[11px] text-gray-300 leading-relaxed">
+              {formData.description}
+            </p>
+          </div>
+        )}
+
+        {/* Snowflake MCP Info Banner */}
+        {isSnowflake && (
+          <div className="bg-cyan-950/30 border border-cyan-500/30 rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span className="text-xs font-semibold text-cyan-200">
+                  {formData.name}
+                </span>
+              </div>
+              <span className="text-[8.5px] px-1.5 py-0.5 rounded border font-semibold bg-cyan-500/20 text-cyan-300 border-cyan-500/30">
+                Snowflake Cortex
+              </span>
+            </div>
+            <p className="text-[11px] text-gray-300 leading-relaxed">
+              {formData.description}
+            </p>
+          </div>
+        )}
+
         {/* 1. Server Identifier */}
         <div className="space-y-1">
           <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
@@ -555,6 +735,665 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
             className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-purple-400 rounded text-[11px] font-mono text-purple-200 focus:outline-none"
           />
         </div>
+
+        {/* Databricks Managed MCP Configuration Panel */}
+        {isDatabricks && (
+          <div className="space-y-3 bg-[#161b22] border border-orange-500/30 rounded-lg p-3" data-testid="databricks-mcp-panel">
+            <div className="flex items-center gap-1.5 text-orange-300 font-bold text-xs pb-1 border-b border-[#30363d]">
+              <Sparkles className="w-3.5 h-3.5 text-orange-400" />
+              <span>Databricks Managed MCP Configuration</span>
+            </div>
+
+            {/* Workspace Hostname */}
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                Workspace Hostname
+              </label>
+              <input
+                type="text"
+                data-testid="databricks-workspace-hostname"
+                value={databricksConfig.workspaceHostname || ''}
+                onChange={(e) => {
+                  const workspaceHostname = e.target.value;
+                  const updatedDbConfig: DatabricksMcpConfig = {
+                    ...databricksConfig,
+                    workspaceHostname,
+                  };
+                  const serverUrl = buildDatabricksMcpEndpoint(updatedDbConfig);
+                  const oauthUrls = buildDatabricksOAuthUrls(workspaceHostname);
+                  handleUpdateMcpConfig({
+                    serverUrl,
+                    databricksConfig: updatedDbConfig,
+                    oauthConfig: {
+                      ...mcpConfig.oauthConfig,
+                      ...oauthUrls,
+                    },
+                    secretConfig: {
+                      ...mcpConfig.secretConfig,
+                      authUrl: oauthUrls.authUrl,
+                      tokenUrl: oauthUrls.tokenUrl,
+                    },
+                  });
+                }}
+                placeholder="e.g. dbc-abc12345-1234.cloud.databricks.com"
+                className="w-full px-2.5 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-orange-400 rounded text-[11px] font-mono text-orange-200 focus:outline-none"
+              />
+            </div>
+
+            {/* Managed Service Type */}
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                Managed Service Type
+              </label>
+              <select
+                data-testid="databricks-service-type"
+                value={databricksConfig.serviceType || 'genie'}
+                onChange={(e) => {
+                  const serviceType = e.target.value as DatabricksMcpServiceType;
+                  const updatedDbConfig: DatabricksMcpConfig = {
+                    ...databricksConfig,
+                    serviceType,
+                  };
+                  const serverUrl = buildDatabricksMcpEndpoint(updatedDbConfig);
+                  handleUpdateMcpConfig({
+                    serverUrl,
+                    databricksConfig: updatedDbConfig,
+                  });
+                }}
+                className="w-full px-2.5 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-orange-400 rounded text-[11px] text-gray-200 focus:outline-none"
+              >
+                <option value="genie">Databricks Genie Space (AI/BI natural language)</option>
+                <option value="vector_search">Databricks Vector Search (Hybrid & similarity)</option>
+                <option value="uc_functions">Unity Catalog Functions (SQL/Python UDF tools)</option>
+                <option value="dbsql">Databricks SQL Warehouse (ANSI SQL)</option>
+              </select>
+            </div>
+
+            {/* Contextual Fields */}
+            {databricksConfig.serviceType === 'genie' && (
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                  Genie Space ID
+                </label>
+                <input
+                  type="text"
+                  data-testid="databricks-genie-space-id"
+                  value={databricksConfig.genieSpaceId || ''}
+                  onChange={(e) => {
+                    const genieSpaceId = e.target.value;
+                    const updatedDbConfig: DatabricksMcpConfig = {
+                      ...databricksConfig,
+                      genieSpaceId,
+                    };
+                    handleUpdateMcpConfig({
+                      serverUrl: buildDatabricksMcpEndpoint(updatedDbConfig),
+                      databricksConfig: updatedDbConfig,
+                    });
+                  }}
+                  placeholder="e.g. 01ef4b159b321a9499adba44703a1234"
+                  className="w-full px-2.5 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-orange-400 rounded text-[11px] font-mono text-orange-200 focus:outline-none"
+                />
+              </div>
+            )}
+
+            {databricksConfig.serviceType === 'vector_search' && (
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                    Catalog
+                  </label>
+                  <input
+                    type="text"
+                    data-testid="databricks-catalog"
+                    value={databricksConfig.catalog || ''}
+                    onChange={(e) => {
+                      const catalog = e.target.value;
+                      const updatedDbConfig: DatabricksMcpConfig = {
+                        ...databricksConfig,
+                        catalog,
+                      };
+                      handleUpdateMcpConfig({
+                        serverUrl: buildDatabricksMcpEndpoint(updatedDbConfig),
+                        databricksConfig: updatedDbConfig,
+                      });
+                    }}
+                    placeholder="main"
+                    className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-orange-400 rounded text-[11px] font-mono text-orange-200 focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                    Schema
+                  </label>
+                  <input
+                    type="text"
+                    data-testid="databricks-schema"
+                    value={databricksConfig.schema || ''}
+                    onChange={(e) => {
+                      const schema = e.target.value;
+                      const updatedDbConfig: DatabricksMcpConfig = {
+                        ...databricksConfig,
+                        schema,
+                      };
+                      handleUpdateMcpConfig({
+                        serverUrl: buildDatabricksMcpEndpoint(updatedDbConfig),
+                        databricksConfig: updatedDbConfig,
+                      });
+                    }}
+                    placeholder="default"
+                    className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-orange-400 rounded text-[11px] font-mono text-orange-200 focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                    Index Name
+                  </label>
+                  <input
+                    type="text"
+                    data-testid="databricks-index-name"
+                    value={databricksConfig.indexName || ''}
+                    onChange={(e) => {
+                      const indexName = e.target.value;
+                      const updatedDbConfig: DatabricksMcpConfig = {
+                        ...databricksConfig,
+                        indexName,
+                      };
+                      handleUpdateMcpConfig({
+                        serverUrl: buildDatabricksMcpEndpoint(updatedDbConfig),
+                        databricksConfig: updatedDbConfig,
+                      });
+                    }}
+                    placeholder="docs_index"
+                    className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-orange-400 rounded text-[11px] font-mono text-orange-200 focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {databricksConfig.serviceType === 'uc_functions' && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                      Catalog
+                    </label>
+                    <input
+                      type="text"
+                      data-testid="databricks-catalog"
+                      value={databricksConfig.catalog || ''}
+                      onChange={(e) => {
+                        const catalog = e.target.value;
+                        const updatedDbConfig: DatabricksMcpConfig = {
+                          ...databricksConfig,
+                          catalog,
+                        };
+                        handleUpdateMcpConfig({
+                          serverUrl: buildDatabricksMcpEndpoint(updatedDbConfig),
+                          databricksConfig: updatedDbConfig,
+                        });
+                      }}
+                      placeholder="main"
+                      className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-orange-400 rounded text-[11px] font-mono text-orange-200 focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                      Schema
+                    </label>
+                    <input
+                      type="text"
+                      data-testid="databricks-schema"
+                      value={databricksConfig.schema || ''}
+                      onChange={(e) => {
+                        const schema = e.target.value;
+                        const updatedDbConfig: DatabricksMcpConfig = {
+                          ...databricksConfig,
+                          schema,
+                        };
+                        handleUpdateMcpConfig({
+                          serverUrl: buildDatabricksMcpEndpoint(updatedDbConfig),
+                          databricksConfig: updatedDbConfig,
+                        });
+                      }}
+                      placeholder="default"
+                      className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-orange-400 rounded text-[11px] font-mono text-orange-200 focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center justify-between">
+                    <span>Function Name</span>
+                    <span className="text-[9px] text-gray-500 lowercase">(optional - leave blank for all)</span>
+                  </label>
+                  <input
+                    type="text"
+                    data-testid="databricks-function-name"
+                    value={databricksConfig.functionName || ''}
+                    onChange={(e) => {
+                      const functionName = e.target.value;
+                      const updatedDbConfig: DatabricksMcpConfig = {
+                        ...databricksConfig,
+                        functionName,
+                      };
+                      handleUpdateMcpConfig({
+                        serverUrl: buildDatabricksMcpEndpoint(updatedDbConfig),
+                        databricksConfig: updatedDbConfig,
+                      });
+                    }}
+                    placeholder="e.g. calculate_tax (optional)"
+                    className="w-full px-2.5 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-orange-400 rounded text-[11px] font-mono text-orange-200 focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {databricksConfig.serviceType === 'dbsql' && (
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                  SQL Warehouse ID
+                </label>
+                <input
+                  type="text"
+                  data-testid="databricks-warehouse-id"
+                  value={databricksConfig.warehouseId || ''}
+                  onChange={(e) => {
+                    const warehouseId = e.target.value;
+                    const updatedDbConfig: DatabricksMcpConfig = {
+                      ...databricksConfig,
+                      warehouseId,
+                    };
+                    handleUpdateMcpConfig({
+                      serverUrl: buildDatabricksMcpEndpoint(updatedDbConfig),
+                      databricksConfig: updatedDbConfig,
+                    });
+                  }}
+                  placeholder="e.g. a1b2c3d4e5f60789"
+                  className="w-full px-2.5 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-orange-400 rounded text-[11px] font-mono text-orange-200 focus:outline-none"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Snowflake Managed & Cortex MCP Configuration Panel */}
+        {isSnowflake && (
+          <div className="space-y-3 bg-[#161b22] border border-cyan-500/30 rounded-lg p-3" data-testid="snowflake-mcp-panel">
+            <div className="flex items-center gap-1.5 text-cyan-300 font-bold text-xs pb-1 border-b border-[#30363d]">
+              <Database className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Snowflake Managed & Cortex MCP Configuration</span>
+            </div>
+
+            {/* Deployment Mode */}
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                Deployment Mode
+              </label>
+              <select
+                data-testid="snowflake-deployment-mode"
+                value={snowflakeConfig.deploymentMode || 'managed_http'}
+                onChange={(e) => {
+                  const mode = e.target.value as SnowflakeMcpDeploymentMode;
+                  const updatedSfConfig: SnowflakeMcpConfig = {
+                    ...snowflakeConfig,
+                    deploymentMode: mode,
+                  };
+                  const isStdio = mode === 'stdio_labs';
+                  handleUpdateMcpConfig({
+                    transport: isStdio ? 'stdio' : 'http',
+                    command: isStdio ? 'uvx' : undefined,
+                    args: isStdio ? ['snowflake-labs-mcp', '--service-config-file', 'tools_config.yaml'] : undefined,
+                    serverUrl: isStdio ? undefined : buildSnowflakeMcpEndpoint(updatedSfConfig),
+                    snowflakeConfig: updatedSfConfig,
+                  });
+                }}
+                className="w-full px-2.5 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] text-gray-200 focus:outline-none"
+              >
+                <option value="managed_http">Managed Streamable HTTP (Native Snowflake MCP Object)</option>
+                <option value="stdio_labs">Local CLI Adapter (Snowflake Labs uvx, stdio)</option>
+              </select>
+            </div>
+
+            {/* Account URL / Identifier */}
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center justify-between">
+                <span>Account URL / Identifier</span>
+                <span className="text-[9px] text-cyan-400 font-mono">
+                  {normalizeSnowflakeAccountUrl(snowflakeConfig.accountUrl)}
+                </span>
+              </label>
+              <input
+                type="text"
+                data-testid="snowflake-account-url"
+                value={snowflakeConfig.accountUrl || ''}
+                onChange={(e) => {
+                  const accountUrl = e.target.value;
+                  const updatedSfConfig: SnowflakeMcpConfig = {
+                    ...snowflakeConfig,
+                    accountUrl,
+                  };
+                  const oauthUrls = buildSnowflakeOAuthUrls(accountUrl);
+                  const isStdio = updatedSfConfig.deploymentMode === 'stdio_labs';
+                  handleUpdateMcpConfig({
+                    serverUrl: isStdio ? undefined : buildSnowflakeMcpEndpoint(updatedSfConfig),
+                    snowflakeConfig: updatedSfConfig,
+                    oauthConfig: {
+                      ...mcpConfig.oauthConfig,
+                      ...oauthUrls,
+                    },
+                    secretConfig: {
+                      ...mcpConfig.secretConfig,
+                      authUrl: oauthUrls.authUrl,
+                      tokenUrl: oauthUrls.tokenUrl,
+                    },
+                  });
+                }}
+                placeholder="e.g. myorg-account or myorg_account.snowflakecomputing.com"
+                className="w-full px-2.5 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-200 focus:outline-none"
+              />
+            </div>
+
+            {/* Database, Schema & MCP Server Object Name */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                  Database
+                </label>
+                <input
+                  type="text"
+                  data-testid="snowflake-database"
+                  value={snowflakeConfig.database || ''}
+                  onChange={(e) => {
+                    const database = e.target.value;
+                    const updatedSfConfig: SnowflakeMcpConfig = {
+                      ...snowflakeConfig,
+                      database,
+                    };
+                    const isStdio = updatedSfConfig.deploymentMode === 'stdio_labs';
+                    handleUpdateMcpConfig({
+                      serverUrl: isStdio ? undefined : buildSnowflakeMcpEndpoint(updatedSfConfig),
+                      snowflakeConfig: updatedSfConfig,
+                    });
+                  }}
+                  placeholder="ANALYTICS"
+                  className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-200 focus:outline-none"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                  Schema
+                </label>
+                <input
+                  type="text"
+                  data-testid="snowflake-schema"
+                  value={snowflakeConfig.schema || ''}
+                  onChange={(e) => {
+                    const schema = e.target.value;
+                    const updatedSfConfig: SnowflakeMcpConfig = {
+                      ...snowflakeConfig,
+                      schema,
+                    };
+                    const isStdio = updatedSfConfig.deploymentMode === 'stdio_labs';
+                    handleUpdateMcpConfig({
+                      serverUrl: isStdio ? undefined : buildSnowflakeMcpEndpoint(updatedSfConfig),
+                      snowflakeConfig: updatedSfConfig,
+                    });
+                  }}
+                  placeholder="PUBLIC"
+                  className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-200 focus:outline-none"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                  Server Name
+                </label>
+                <input
+                  type="text"
+                  data-testid="snowflake-server-name"
+                  value={snowflakeConfig.mcpServerName || ''}
+                  onChange={(e) => {
+                    const mcpServerName = e.target.value;
+                    const updatedSfConfig: SnowflakeMcpConfig = {
+                      ...snowflakeConfig,
+                      mcpServerName,
+                    };
+                    const isStdio = updatedSfConfig.deploymentMode === 'stdio_labs';
+                    handleUpdateMcpConfig({
+                      serverUrl: isStdio ? undefined : buildSnowflakeMcpEndpoint(updatedSfConfig),
+                      snowflakeConfig: updatedSfConfig,
+                    });
+                  }}
+                  placeholder="cortex_server"
+                  className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-200 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Cortex / SQL Tool Type */}
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                Cortex / SQL Tool Type
+              </label>
+              <select
+                data-testid="snowflake-tool-type"
+                value={snowflakeConfig.toolType || 'CORTEX_ANALYST_MESSAGE'}
+                onChange={(e) => {
+                  const toolType = e.target.value as SnowflakeMcpToolType;
+                  const updatedSfConfig: SnowflakeMcpConfig = {
+                    ...snowflakeConfig,
+                    toolType,
+                  };
+                  handleUpdateMcpConfig({
+                    snowflakeConfig: updatedSfConfig,
+                  });
+                }}
+                className="w-full px-2.5 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] text-gray-200 focus:outline-none"
+              >
+                <option value="CORTEX_ANALYST_MESSAGE">CORTEX_ANALYST_MESSAGE (Semantic Model QA)</option>
+                <option value="CORTEX_SEARCH_SERVICE_QUERY">CORTEX_SEARCH_SERVICE_QUERY (Hybrid Vector Search)</option>
+                <option value="CORTEX_AGENT_RUN">CORTEX_AGENT_RUN (Multi-tool agent)</option>
+                <option value="SYSTEM_EXECUTE_SQL">SYSTEM_EXECUTE_SQL (ANSI SQL Warehouse)</option>
+                <option value="GENERIC">GENERIC (Custom UDF / Stored Procedure)</option>
+              </select>
+            </div>
+
+            {/* Contextual Target Resource Field */}
+            {snowflakeConfig.toolType === 'CORTEX_ANALYST_MESSAGE' && (
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                  Semantic View
+                </label>
+                <input
+                  type="text"
+                  data-testid="snowflake-semantic-view"
+                  value={snowflakeConfig.semanticView || ''}
+                  onChange={(e) => {
+                    const semanticView = e.target.value;
+                    handleUpdateMcpConfig({
+                      snowflakeConfig: {
+                        ...snowflakeConfig,
+                        semanticView,
+                      },
+                    });
+                  }}
+                  placeholder="e.g. ANALYTICS.PUBLIC.SALES_SEMANTIC_VIEW"
+                  className="w-full px-2.5 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-200 focus:outline-none"
+                />
+              </div>
+            )}
+
+            {snowflakeConfig.toolType === 'CORTEX_SEARCH_SERVICE_QUERY' && (
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                  Cortex Search Service Name
+                </label>
+                <input
+                  type="text"
+                  data-testid="snowflake-search-service"
+                  value={snowflakeConfig.searchServiceName || ''}
+                  onChange={(e) => {
+                    const searchServiceName = e.target.value;
+                    handleUpdateMcpConfig({
+                      snowflakeConfig: {
+                        ...snowflakeConfig,
+                        searchServiceName,
+                      },
+                    });
+                  }}
+                  placeholder="e.g. ANALYTICS.PUBLIC.CORPUS_SEARCH_SERVICE"
+                  className="w-full px-2.5 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-200 focus:outline-none"
+                />
+              </div>
+            )}
+
+            {snowflakeConfig.toolType === 'CORTEX_AGENT_RUN' && (
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                  Cortex Agent Name
+                </label>
+                <input
+                  type="text"
+                  data-testid="snowflake-cortex-agent"
+                  value={snowflakeConfig.cortexAgentName || ''}
+                  onChange={(e) => {
+                    const cortexAgentName = e.target.value;
+                    handleUpdateMcpConfig({
+                      snowflakeConfig: {
+                        ...snowflakeConfig,
+                        cortexAgentName,
+                      },
+                    });
+                  }}
+                  placeholder="e.g. sales_support_agent"
+                  className="w-full px-2.5 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-200 focus:outline-none"
+                />
+              </div>
+            )}
+
+            {snowflakeConfig.toolType === 'GENERIC' && (
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                  Procedure / UDF Identifier
+                </label>
+                <input
+                  type="text"
+                  data-testid="snowflake-procedure-name"
+                  value={snowflakeConfig.procedureName || ''}
+                  onChange={(e) => {
+                    const procedureName = e.target.value;
+                    handleUpdateMcpConfig({
+                      snowflakeConfig: {
+                        ...snowflakeConfig,
+                        procedureName,
+                      },
+                    });
+                  }}
+                  placeholder="e.g. ANALYTICS.PUBLIC.MY_CUSTOM_PROC"
+                  className="w-full px-2.5 py-1.5 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-200 focus:outline-none"
+                />
+              </div>
+            )}
+
+            {/* Warehouse & Role */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                  Warehouse
+                </label>
+                <input
+                  type="text"
+                  data-testid="snowflake-warehouse"
+                  value={snowflakeConfig.warehouse || ''}
+                  onChange={(e) => {
+                    const warehouse = e.target.value;
+                    handleUpdateMcpConfig({
+                      snowflakeConfig: {
+                        ...snowflakeConfig,
+                        warehouse,
+                      },
+                    });
+                  }}
+                  placeholder="COMPUTE_WH"
+                  className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-200 focus:outline-none"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400">
+                  Role
+                </label>
+                <input
+                  type="text"
+                  data-testid="snowflake-role"
+                  value={snowflakeConfig.role || ''}
+                  onChange={(e) => {
+                    const role = e.target.value;
+                    const updatedSfConfig: SnowflakeMcpConfig = {
+                      ...snowflakeConfig,
+                      role,
+                    };
+                    const roleScope = `session:role:${role || 'ANALYST'}`;
+                    handleUpdateMcpConfig({
+                      snowflakeConfig: updatedSfConfig,
+                      oauthConfig: {
+                        ...mcpConfig.oauthConfig,
+                        scopes: [roleScope],
+                      },
+                      secretConfig: {
+                        ...mcpConfig.secretConfig,
+                        scopes: [roleScope],
+                      },
+                    });
+                  }}
+                  placeholder="ANALYST"
+                  className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-cyan-400 rounded text-[11px] font-mono text-cyan-200 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Snowflake SQL DDL Preview (Collapsible & Copyable) */}
+            <div className="pt-2 border-t border-[#30363d] space-y-2">
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  data-testid="snowflake-toggle-ddl-btn"
+                  onClick={() => setIsDdlExpanded(!isDdlExpanded)}
+                  className="flex items-center gap-1.5 text-[10px] font-bold text-cyan-400 hover:text-cyan-200 transition-colors cursor-pointer select-none"
+                >
+                  <span>Snowflake SQL DDL (`CREATE OR REPLACE MCP SERVER`)</span>
+                  <span className="text-[8px] px-1 py-0.2 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-mono">
+                    {isDdlExpanded ? 'Hide' : 'Show'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="snowflake-copy-ddl-btn"
+                  onClick={() => handleCopyDdl(generateSnowflakeMcpServerDdl(snowflakeConfig))}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-[#0d1117] hover:bg-[#30363d] text-gray-300 hover:text-white border border-[#30363d] transition-colors cursor-pointer"
+                >
+                  {copiedDdl ? (
+                    <>
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      <span className="text-emerald-400">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3 text-cyan-400" />
+                      <span>Copy SQL</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {isDdlExpanded && (
+                <pre
+                  data-testid="snowflake-ddl-preview"
+                  className="bg-[#0d1117] p-2.5 rounded border border-[#30363d] text-[10px] font-mono text-cyan-300 overflow-x-auto whitespace-pre leading-relaxed select-all"
+                >
+                  {generateSnowflakeMcpServerDdl(snowflakeConfig)}
+                </pre>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* 2. Endpoint URL */}
         <div className="space-y-1">

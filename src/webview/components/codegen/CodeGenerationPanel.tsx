@@ -7,7 +7,6 @@
  * and Interactive Chat, delegating specific rendering to dedicated sub-components.
  *
  * Architectural Decisions:
- * - Author: Mike Nimer <mikenimer@google.com>
  * - Modular design following "Props In, Events Up" paradigm.
  * - Spacing layout complies with 8pt grid system.
  *
@@ -48,6 +47,7 @@ interface CodeGenerationPanelProps {
   agents?: AgentData[];
   isMaximized?: boolean;
   onToggleMaximize?: () => void;
+  onExpandPanel?: () => void;
   document?: AgentWorkflowDocument;
   hasChatTrigger?: boolean;
   chatConfig?: any;
@@ -67,18 +67,39 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   agents = [],
   isMaximized = false,
   onToggleMaximize,
+  onExpandPanel,
   document: workflowDoc,
   hasChatTrigger = false,
   chatConfig,
 }) => {
   const [activeTab, setActiveTab] = useState<'codegen' | 'deployment' | 'test_runner' | 'chat'>('codegen');
+  const [pendingChatPrompt, setPendingChatPrompt] = useState<{ text: string; timestamp: number } | null>(null);
+
+  /**
+   * Selects a bottom tab and expands the bottom panel to 2/3rd of available space.
+   */
+  const handleSelectTab = (tab: 'codegen' | 'deployment' | 'test_runner' | 'chat') => {
+    setActiveTab(tab);
+    onExpandPanel?.();
+  };
+
+  /**
+   * Switches to the Interactive Chat tab and populates the user input field
+   * with the selected prompt from the Test Runner tab.
+   */
+  const handleOpenPromptInChat = (promptText: string) => {
+    setPendingChatPrompt({ text: promptText, timestamp: Date.now() });
+    setActiveTab('chat');
+    onExpandPanel?.();
+  };
 
   // Auto-switch tabs based on lifecycle events
   useEffect(() => {
     if (isGenerating) {
       setActiveTab('codegen');
+      onExpandPanel?.();
     }
-  }, [isGenerating]);
+  }, [isGenerating, onExpandPanel]);
 
   useEffect(() => {
     if (hasGeneratedCode && activeTab === 'codegen' && !isGenerating && generatedFiles.length > 0) {
@@ -94,9 +115,9 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
           {/* 1st TAB: Code Generation */}
           <button
             type="button"
-            onClick={() => setActiveTab('codegen')}
+            onClick={() => handleSelectTab('codegen')}
             className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'codegen'
+              activeTab === 'codegen' && isMaximized
                 ? 'border-[#f78166] text-[#f78166] bg-[#0d1117]/60'
                 : 'border-transparent text-gray-400 hover:text-gray-200'
             }`}
@@ -111,9 +132,9 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
           {/* 2nd TAB: Deployment */}
           <button
             type="button"
-            onClick={() => setActiveTab('deployment')}
+            onClick={() => handleSelectTab('deployment')}
             className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'deployment'
+              activeTab === 'deployment' && isMaximized
                 ? 'border-emerald-500 text-emerald-400 bg-[#0d1117]/60'
                 : 'border-transparent text-gray-400 hover:text-gray-200'
             }`}
@@ -132,14 +153,14 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                 type="button"
                 onClick={() => {
                   if (hasGeneratedCode && !isGenerating) {
-                    setActiveTab('test_runner');
+                    handleSelectTab('test_runner');
                   }
                 }}
                 disabled={!hasGeneratedCode || isGenerating}
                 className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${
                   !hasGeneratedCode || isGenerating
                     ? 'border-transparent text-gray-500 bg-[#161b22]/40 cursor-not-allowed opacity-60'
-                    : activeTab === 'test_runner'
+                    : activeTab === 'test_runner' && isMaximized
                     ? 'border-pink-500 text-pink-400 bg-[#0d1117]/60 cursor-pointer'
                     : 'border-transparent text-gray-400 hover:text-pink-300 cursor-pointer'
                 }`}
@@ -173,14 +194,14 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
                 type="button"
                 onClick={() => {
                   if (hasGeneratedCode && !isGenerating) {
-                    setActiveTab('chat');
+                    handleSelectTab('chat');
                   }
                 }}
                 disabled={!hasGeneratedCode || isGenerating}
                 className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${
                   !hasGeneratedCode || isGenerating
                     ? 'border-transparent text-gray-500 bg-[#161b22]/40 cursor-not-allowed opacity-60'
-                    : activeTab === 'chat'
+                    : activeTab === 'chat' && isMaximized
                     ? 'border-emerald-500 text-emerald-400 bg-[#0d1117]/60 cursor-pointer'
                     : 'border-transparent text-gray-400 hover:text-emerald-300 cursor-pointer'
                 }`}
@@ -214,7 +235,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
             <button
               type="button"
               onClick={onToggleMaximize}
-              title={isMaximized ? 'Collapse panel' : 'Maximize panel'}
+              title={isMaximized ? 'Collapse to tab bar' : 'Expand panel (2/3)'}
               className="flex items-center justify-center p-1.5 rounded-lg bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-gray-300 hover:text-white transition-colors cursor-pointer"
             >
               {isMaximized ? (
@@ -260,7 +281,9 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
             agents={agents}
             config={config}
             document={workflowDoc}
-            onNavigateToDeployment={() => setActiveTab('deployment')}
+            onNavigateToDeployment={() => handleSelectTab('deployment')}
+            hasChatTrigger={hasChatTrigger}
+            onOpenPromptInChat={handleOpenPromptInChat}
           />
         </div>
 
@@ -271,7 +294,8 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
             config={config}
             chatConfig={chatConfig}
             agents={agents}
-            onNavigateToDeployment={() => setActiveTab('deployment')}
+            onNavigateToDeployment={() => handleSelectTab('deployment')}
+            externalPrompt={pendingChatPrompt}
           />
         </div>
       </div>

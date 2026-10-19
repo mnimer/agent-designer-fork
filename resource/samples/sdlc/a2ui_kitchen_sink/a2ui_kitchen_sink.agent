@@ -1,0 +1,546 @@
+{
+  "version": "1.0.0",
+  "name": "A2UI Kitchen Sink Agent",
+  "description": "A2UI v0.9.1 Kitchen Sink Component Gallery, Multi-Step Form Wizard, and Session State Inspector showcasing reactive Material 3 and Gemini Enterprise Composite UI components with session.state persistence.",
+  "framework": "google-adk",
+  "language": "python",
+  "metadata": {
+    "author": "Mike Nimer <mikenimer@google.com>",
+    "category": "Developer Tools & UI Component Gallery",
+    "tags": [
+      "a2ui",
+      "component-gallery",
+      "form-wizard",
+      "session-state",
+      "material3",
+      "gemini-enterprise-composite",
+      "vega-lite",
+      "stepper"
+    ],
+    "badge": "A2UI Kitchen Sink",
+    "iconName": "Layout",
+    "color": "indigo",
+    "features": [
+      "All-in-One Component Gallery showcasing 25+ Material 3 and Gemini Enterprise Composite widgets",
+      "Interactive 3-Step Agent Configuration & Resource Allocation Form Wizard with Stepper header",
+      "Two-way RFC 6901 JSON pointer bindings across all 12 form fields",
+      "Deterministic non-LLM UserAction routing via A2uiAdaptor with state_delta mutations",
+      "Final Committed Values & session.state Verification Inspector with delta table and Vega-Lite chart",
+      "Attached Test Suite Node with 12 automated evaluation test scenarios"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "node-trigger-kitchen-sink-chat",
+      "type": "triggerNode",
+      "position": { "x": 496, "y": 48 },
+      "data": {
+        "id": "node-trigger-kitchen-sink-chat",
+        "label": "Kitchen Sink Chat Runner",
+        "triggerType": "chat",
+        "triggerKind": "chat",
+        "description": "Interactive chat session for exploring A2UI v0.9.1 components, testing the Form Wizard, and querying persisted session.state across turns.",
+        "targetRootAgentId": "node-agent-kitchen-sink-coordinator",
+        "config": {
+          "initialMessage": "Welcome to the A2UI v0.9.1 Kitchen Sink! Type 'gallery' to inspect all components, 'wizard' to configure an agent, or submit a form to see reactive state persistence.",
+          "streaming": true,
+          "sessionMemory": "in_memory"
+        }
+      }
+    },
+    {
+      "id": "node-trigger-kitchen-sink-tester",
+      "type": "triggerNode",
+      "position": { "x": 48, "y": 360 },
+      "data": {
+        "id": "node-trigger-kitchen-sink-tester",
+        "label": "Kitchen Sink Evaluation Suite (12 Cases)",
+        "triggerType": "tester",
+        "triggerKind": "tester",
+        "description": "Automated evaluation test suite covering Component Gallery rendering, 3-step Form Wizard generation, two-way bindings, form submission persistence, session.state verification, budget charts, and deterministic non-LLM actions.",
+        "targetRootAgentId": "node-agent-kitchen-sink-coordinator",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "test-render-component-gallery",
+              "name": "1. Render All-in-One Component Gallery",
+              "prompt": "Show me the A2UI component gallery",
+              "inputQuery": "Show me the A2UI component gallery",
+              "expectedOutput": "kitchen-sink-gallery",
+              "expectedOutputPattern": "kitchen-sink-gallery",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-render-form-wizard",
+              "name": "2. Render Multi-Step Configuration Form Wizard",
+              "prompt": "Open the agent configuration form wizard",
+              "inputQuery": "Open the agent configuration form wizard",
+              "expectedOutput": "kitchen-sink-form-wizard",
+              "expectedOutputPattern": "kitchen-sink-form-wizard",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-form-wizard-step1-fields",
+              "name": "3. Verify Step 1 Identity & Selectors",
+              "prompt": "What fields are in Step 1 of the wizard?",
+              "inputQuery": "What fields are in Step 1 of the wizard?",
+              "expectedOutput": "agentName",
+              "expectedOutputPattern": "agentName",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-form-wizard-step2-sliders-toggles",
+              "name": "4. Verify Step 2 Sliders, Toggles & Schedule",
+              "prompt": "Show me the sliders and guardrail settings in the wizard",
+              "inputQuery": "Show me the sliders and guardrail settings in the wizard",
+              "expectedOutput": "confidenceThreshold",
+              "expectedOutputPattern": "confidenceThreshold",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-form-wizard-step3-resource-allocation",
+              "name": "5. Verify Step 3 Resource Allocation & Budget",
+              "prompt": "How is the compute budget configured in step 3?",
+              "inputQuery": "How is the compute budget configured in step 3?",
+              "expectedOutput": "computeBudgetUsd",
+              "expectedOutputPattern": "computeBudgetUsd",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-submit-and-persist-form",
+              "name": "6. Submit Form and Persist into session.state",
+              "prompt": "Submit agent configuration with compute budget of 5000",
+              "inputQuery": "Submit agent configuration with compute budget of 5000",
+              "expectedOutput": "kitchen-sink-final-summary",
+              "expectedOutputPattern": "kitchen-sink-final-summary",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-query-persisted-session-state",
+              "name": "7. Query Persisted State on Subsequent Turn",
+              "prompt": "What is the currently committed compute budget in session.state?",
+              "inputQuery": "What is the currently committed compute budget in session.state?",
+              "expectedOutput": "5000",
+              "expectedOutputPattern": "5000",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-inspect-budget-breakdown-chart",
+              "name": "8. Inspect Resource Allocation Vega Chart",
+              "prompt": "Display the resource allocation chart for the current budget",
+              "inputQuery": "Display the resource allocation chart for the current budget",
+              "expectedOutput": "LLM Inference",
+              "expectedOutputPattern": "LLM Inference",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-reset-session-state-action",
+              "name": "9. Reset Session State to Initial Defaults",
+              "prompt": "Reset the configuration state back to defaults",
+              "inputQuery": "Reset the configuration state back to defaults",
+              "expectedOutput": "enterprise-copilot-v1",
+              "expectedOutputPattern": "enterprise-copilot-v1",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-deterministic-help-action",
+              "name": "10. Deterministic Non-LLM Help Surface",
+              "prompt": "help",
+              "inputQuery": "help",
+              "expectedOutput": "Kitchen Sink Documentation",
+              "expectedOutputPattern": "Kitchen Sink Documentation",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-deterministic-about-action",
+              "name": "11. Deterministic Non-LLM About Surface",
+              "prompt": "about",
+              "inputQuery": "about",
+              "expectedOutput": "A2UI v0.9.1 Kitchen Sink",
+              "expectedOutputPattern": "A2UI v0.9.1 Kitchen Sink",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-raw-memory-inspector-accordion",
+              "name": "12. Inspect Raw session.state Memory Inspector",
+              "prompt": "Show raw memory inspector for kitchen sink submission",
+              "inputQuery": "Show raw memory inspector for kitchen sink submission",
+              "expectedOutput": "kitchen_sink_submission",
+              "expectedOutputPattern": "kitchen_sink_submission",
+              "assertionType": "contains"
+            }
+          ],
+          "testPrompts": [
+            {
+              "id": "test-render-component-gallery",
+              "name": "1. Render All-in-One Component Gallery",
+              "prompt": "Show me the A2UI component gallery",
+              "inputQuery": "Show me the A2UI component gallery",
+              "expectedOutput": "kitchen-sink-gallery",
+              "expectedOutputPattern": "kitchen-sink-gallery",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-render-form-wizard",
+              "name": "2. Render Multi-Step Configuration Form Wizard",
+              "prompt": "Open the agent configuration form wizard",
+              "inputQuery": "Open the agent configuration form wizard",
+              "expectedOutput": "kitchen-sink-form-wizard",
+              "expectedOutputPattern": "kitchen-sink-form-wizard",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-form-wizard-step1-fields",
+              "name": "3. Verify Step 1 Identity & Selectors",
+              "prompt": "What fields are in Step 1 of the wizard?",
+              "inputQuery": "What fields are in Step 1 of the wizard?",
+              "expectedOutput": "agentName",
+              "expectedOutputPattern": "agentName",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-form-wizard-step2-sliders-toggles",
+              "name": "4. Verify Step 2 Sliders, Toggles & Schedule",
+              "prompt": "Show me the sliders and guardrail settings in the wizard",
+              "inputQuery": "Show me the sliders and guardrail settings in the wizard",
+              "expectedOutput": "confidenceThreshold",
+              "expectedOutputPattern": "confidenceThreshold",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-form-wizard-step3-resource-allocation",
+              "name": "5. Verify Step 3 Resource Allocation & Budget",
+              "prompt": "How is the compute budget configured in step 3?",
+              "inputQuery": "How is the compute budget configured in step 3?",
+              "expectedOutput": "computeBudgetUsd",
+              "expectedOutputPattern": "computeBudgetUsd",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-submit-and-persist-form",
+              "name": "6. Submit Form and Persist into session.state",
+              "prompt": "Submit agent configuration with compute budget of 5000",
+              "inputQuery": "Submit agent configuration with compute budget of 5000",
+              "expectedOutput": "kitchen-sink-final-summary",
+              "expectedOutputPattern": "kitchen-sink-final-summary",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-query-persisted-session-state",
+              "name": "7. Query Persisted State on Subsequent Turn",
+              "prompt": "What is the currently committed compute budget in session.state?",
+              "inputQuery": "What is the currently committed compute budget in session.state?",
+              "expectedOutput": "5000",
+              "expectedOutputPattern": "5000",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-inspect-budget-breakdown-chart",
+              "name": "8. Inspect Resource Allocation Vega Chart",
+              "prompt": "Display the resource allocation chart for the current budget",
+              "inputQuery": "Display the resource allocation chart for the current budget",
+              "expectedOutput": "LLM Inference",
+              "expectedOutputPattern": "LLM Inference",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-reset-session-state-action",
+              "name": "9. Reset Session State to Initial Defaults",
+              "prompt": "Reset the configuration state back to defaults",
+              "inputQuery": "Reset the configuration state back to defaults",
+              "expectedOutput": "enterprise-copilot-v1",
+              "expectedOutputPattern": "enterprise-copilot-v1",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-deterministic-help-action",
+              "name": "10. Deterministic Non-LLM Help Surface",
+              "prompt": "help",
+              "inputQuery": "help",
+              "expectedOutput": "Kitchen Sink Documentation",
+              "expectedOutputPattern": "Kitchen Sink Documentation",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-deterministic-about-action",
+              "name": "11. Deterministic Non-LLM About Surface",
+              "prompt": "about",
+              "inputQuery": "about",
+              "expectedOutput": "A2UI v0.9.1 Kitchen Sink",
+              "expectedOutputPattern": "A2UI v0.9.1 Kitchen Sink",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-raw-memory-inspector-accordion",
+              "name": "12. Inspect Raw session.state Memory Inspector",
+              "prompt": "Show raw memory inspector for kitchen sink submission",
+              "inputQuery": "Show raw memory inspector for kitchen sink submission",
+              "expectedOutput": "kitchen_sink_submission",
+              "expectedOutputPattern": "kitchen_sink_submission",
+              "assertionType": "contains"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-agent-kitchen-sink-coordinator",
+      "type": "agentNode",
+      "position": { "x": 464, "y": 328 },
+      "data": {
+        "id": "node-agent-kitchen-sink-coordinator",
+        "name": "kitchen_sink_coordinator",
+        "label": "A2UI Kitchen Sink Coordinator (Root)",
+        "role": "Root coordinator orchestrating the A2UI v0.9.1 Component Gallery, Multi-Step Form Wizard, and session.state Inspector.",
+        "description": "Manages A2UI surface dispatch, two-way bound form submissions, and routes requests to specialized gallery, wizard, and state inspector sub-agents.",
+        "model": "gemini-3.8-flash",
+        "temperature": 0.2,
+        "maxIterations": 12,
+        "agentKind": "standard",
+        "isStartNode": true,
+        "systemPrompt": "You are the A2UI Kitchen Sink Coordinator.\nPresent interactive A2UI v0.9.1 visual surfaces directly to the user from a consumer's perspective.\n\nCRITICAL UI RENDERING RULES:\n- Always call `render_kitchen_sink_surface` so the interactive A2UI widget renders directly in the chat.\n- NEVER output raw JSON blocks, code snippets, Python/JSON examples, schema definitions, or text-only descriptions without calling `render_kitchen_sink_surface`.\n- Keep any accompanying text to 1-2 short, friendly consumer-facing sentences.\n\nRouting & Delegation Rules:\n- Full Component Gallery: call `render_kitchen_sink_surface(mode='gallery')`.\n- Geographic Map (`GoogleMap`): call `render_kitchen_sink_surface(mode='map')`.\n- Vega-Lite Charts (`VegaChart`): call `render_kitchen_sink_surface(mode='charts')`.\n- Badges, Icons & Feedback (`Badge`, `ProgressBar`, `ProgressSpinner`, `Icon`): call `render_kitchen_sink_surface(mode='badges')`.\n- Mosaic Carousel (`MosaicCarousel`, `MosaicSlideCard`): call `render_kitchen_sink_surface(mode='carousel')`.\n- Layout & Structural Containers (`Stepper`, `Tabs`, `ExpansionPanel`, `Card`, `Row`, `Column`): call `render_kitchen_sink_surface(mode='layout')`.\n- Data Tables & Work Orders (`RichTable`, `WorkOrderList`): call `render_kitchen_sink_surface(mode='tables')`.\n- Two-Way Form Controls: call `render_kitchen_sink_surface(mode='forms')`.\n- 3-Step Configuration Wizard: call `render_kitchen_sink_surface(mode='wizard')`.\n- Session State Summary & Budget Breakdown: call `get_current_form_state` and `render_kitchen_sink_surface(mode='summary')`.\n- Form Submissions (`submit_kitchen_sink_form`): call `submit_and_persist_form`.",
+        "a2uiConfig": {
+          "enabled": true,
+          "catalog": "gemini_enterprise_composite_v09",
+          "generationMode": "state_adapter",
+          "enableNonLlmUtilityActions": true
+        },
+        "tools": [
+          {
+            "id": "tool-render-surface",
+            "name": "render_kitchen_sink_surface",
+            "type": "custom",
+            "description": "Renders requested A2UI v0.9.1 surface (gallery, wizard, or summary).",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/kitchen_sink_tools.py",
+            "functionName": "render_kitchen_sink_surface"
+          },
+          {
+            "id": "tool-get-form-state",
+            "name": "get_current_form_state",
+            "type": "custom",
+            "description": "Retrieves the active or initial session state configuration and budget breakdown.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/kitchen_sink_tools.py",
+            "functionName": "get_current_form_state"
+          },
+          {
+            "id": "tool-submit-form",
+            "name": "submit_and_persist_form",
+            "type": "custom",
+            "description": "Validates and persists submitted form values into session.state and generates final summary.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/kitchen_sink_tools.py",
+            "functionName": "submit_and_persist_form"
+          }
+        ],
+        "subAgents": [
+          { "agentId": "node-agent-widget-gallery", "name": "widget_gallery_agent" },
+          { "agentId": "node-agent-form-wizard", "name": "form_wizard_agent" },
+          { "agentId": "node-agent-state-inspector", "name": "state_inspector_agent" }
+        ],
+        "subAgentPattern": "coordinator",
+        "memoryType": "in_memory",
+        "memoryConfig": { "type": "in_memory", "windowTurns": 20, "maxTokens": 8192 },
+        "outputFormat": "text",
+        "colorTheme": "indigo"
+      }
+    },
+    {
+      "id": "node-agent-widget-gallery",
+      "type": "agentNode",
+      "position": { "x": 48, "y": 952 },
+      "data": {
+        "id": "node-agent-widget-gallery",
+        "name": "widget_gallery_agent",
+        "label": "Widget Gallery Agent",
+        "role": "Presents and explains the complete A2UI v0.9.1 Material 3 and Gemini Enterprise Composite component catalog.",
+        "description": "Demonstrates layout containers, typography, badges, progress bars, tables, charts, maps, and carousels.",
+        "model": "gemini-3.8-flash",
+        "temperature": 0.2,
+        "maxIterations": 8,
+        "agentKind": "standard",
+        "isStartNode": false,
+        "systemPrompt": "You are the Widget Gallery Agent.\nAlways call `render_kitchen_sink_surface(mode=...)` to display the live interactive A2UI widget in the chat:\n- `mode='gallery'` for the full component gallery\n- `mode='map'` for the Geographic Map (`GoogleMap`)\n- `mode='charts'` for Vega-Lite v5 Bar & Donut charts (`VegaChart`)\n- `mode='badges'` for Badges, Icons, ProgressBar & ProgressSpinner\n- `mode='carousel'` for the Mosaic Carousel (`MosaicCarousel` & `MosaicSlideCard`)\n- `mode='layout'` for Layout containers (`Stepper`, `Tabs`, `ExpansionPanel`, `Card`, `Row`, `Column`)\n- `mode='tables'` for Data Tables & Work Orders (`RichTable`, `WorkOrderList`)\n- `mode='forms'` for two-way bound form controls\nNEVER output raw JSON, code examples, or text-only descriptions without calling `render_kitchen_sink_surface`.",
+        "a2uiConfig": {
+          "enabled": true,
+          "catalog": "gemini_enterprise_composite_v09",
+          "generationMode": "state_adapter",
+          "enableNonLlmUtilityActions": true
+        },
+        "tools": [
+          {
+            "id": "tool-gallery-render",
+            "name": "render_kitchen_sink_surface",
+            "type": "custom",
+            "description": "Renders requested A2UI surface.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/kitchen_sink_tools.py",
+            "functionName": "render_kitchen_sink_surface"
+          }
+        ],
+        "subAgents": [],
+        "subAgentPattern": "parallel",
+        "memoryType": "in_memory",
+        "outputFormat": "text",
+        "colorTheme": "purple"
+      }
+    },
+    {
+      "id": "node-agent-form-wizard",
+      "type": "agentNode",
+      "position": { "x": 464, "y": 952 },
+      "data": {
+        "id": "node-agent-form-wizard",
+        "name": "form_wizard_agent",
+        "label": "Form Wizard Agent",
+        "role": "Guides users through interactive 3-step agent configuration and collects two-way bound form parameters.",
+        "description": "Renders the 3-step configuration form wizard with Stepper and two-way JSON pointer bindings.",
+        "model": "gemini-3.8-flash",
+        "temperature": 0.2,
+        "maxIterations": 8,
+        "agentKind": "standard",
+        "isStartNode": false,
+        "systemPrompt": "You are the Form Wizard Agent.\nWhen requested, immediately call `render_kitchen_sink_surface(mode='wizard')` to display the interactive 3-Step Configuration Form Wizard (`kitchen-sink-form-wizard`) so the user can fill out the fields and click Submit.\nWhen the user submits or updates configuration values, call `submit_and_persist_form`.\nNEVER output code snippets, JSON schemas, or ASCII art—keep text to a brief consumer summary.",
+        "a2uiConfig": {
+          "enabled": true,
+          "catalog": "gemini_enterprise_composite_v09",
+          "generationMode": "state_adapter",
+          "enableNonLlmUtilityActions": true
+        },
+        "tools": [
+          {
+            "id": "tool-wizard-render",
+            "name": "render_kitchen_sink_surface",
+            "type": "custom",
+            "description": "Renders requested A2UI surface.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/kitchen_sink_tools.py",
+            "functionName": "render_kitchen_sink_surface"
+          },
+          {
+            "id": "tool-wizard-submit",
+            "name": "submit_and_persist_form",
+            "type": "custom",
+            "description": "Submits and persists form values into session.state.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/kitchen_sink_tools.py",
+            "functionName": "submit_and_persist_form"
+          }
+        ],
+        "subAgents": [],
+        "subAgentPattern": "parallel",
+        "memoryType": "in_memory",
+        "outputFormat": "text",
+        "colorTheme": "blue"
+      }
+    },
+    {
+      "id": "node-agent-state-inspector",
+      "type": "agentNode",
+      "position": { "x": 880, "y": 952 },
+      "data": {
+        "id": "node-agent-state-inspector",
+        "name": "state_inspector_agent",
+        "label": "Session State Inspector Agent",
+        "role": "Inspects and audits committed configuration values stored in session.state across multi-turn sessions.",
+        "description": "Renders the Final Summary surface with field comparison table, budget breakdown chart, and raw state JSON inspector.",
+        "model": "gemini-3.8-flash",
+        "temperature": 0.2,
+        "maxIterations": 8,
+        "agentKind": "standard",
+        "isStartNode": false,
+        "systemPrompt": "You are the Session State Inspector Agent.\nWhen requested, call `get_current_form_state` and `render_kitchen_sink_surface(mode='summary')` to display the interactive Final Summary & State Inspector widget (`kitchen-sink-final-summary`).\nSummarize the active configuration values from a consumer's perspective in 1-2 concise sentences and NEVER output code dumps or ASCII art.",
+        "a2uiConfig": {
+          "enabled": true,
+          "catalog": "gemini_enterprise_composite_v09",
+          "generationMode": "state_adapter",
+          "enableNonLlmUtilityActions": true
+        },
+        "tools": [
+          {
+            "id": "tool-inspector-get-state",
+            "name": "get_current_form_state",
+            "type": "custom",
+            "description": "Retrieves the active session state configuration.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/kitchen_sink_tools.py",
+            "functionName": "get_current_form_state"
+          },
+          {
+            "id": "tool-inspector-render",
+            "name": "render_kitchen_sink_surface",
+            "type": "custom",
+            "description": "Renders requested A2UI surface.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/kitchen_sink_tools.py",
+            "functionName": "render_kitchen_sink_surface"
+          }
+        ],
+        "subAgents": [],
+        "subAgentPattern": "parallel",
+        "memoryType": "in_memory",
+        "outputFormat": "text",
+        "colorTheme": "emerald"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-chat-to-coordinator",
+      "source": "node-trigger-kitchen-sink-chat",
+      "sourceHandle": "trigger_out_bottom",
+      "target": "node-agent-kitchen-sink-coordinator",
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#f59e0b", "strokeWidth": 2, "strokeDasharray": "5 5" }
+    },
+    {
+      "id": "edge-tester-to-coordinator",
+      "source": "node-trigger-kitchen-sink-tester",
+      "sourceHandle": "trigger_out_right",
+      "target": "node-agent-kitchen-sink-coordinator",
+      "targetHandle": "input_left",
+      "animated": true,
+      "style": { "stroke": "#f59e0b", "strokeWidth": 2, "strokeDasharray": "5 5" }
+    },
+    {
+      "id": "edge-coordinator-to-gallery",
+      "source": "node-agent-kitchen-sink-coordinator",
+      "sourceHandle": "output",
+      "target": "node-agent-widget-gallery",
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge-coordinator-to-wizard",
+      "source": "node-agent-kitchen-sink-coordinator",
+      "sourceHandle": "output",
+      "target": "node-agent-form-wizard",
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge-coordinator-to-inspector",
+      "source": "node-agent-kitchen-sink-coordinator",
+      "sourceHandle": "output",
+      "target": "node-agent-state-inspector",
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2 }
+    }
+  ],
+  "deployment": {
+    "outputFolder": "./a2ui_kitchen_sink_agent/",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true,
+    "deploymentTarget": "agent_engine",
+    "deploymentConfig": {
+      "projectId": "cloud-gtm-demo-sandbox",
+      "location": "global"
+    }
+  }
+}

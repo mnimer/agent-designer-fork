@@ -287,5 +287,32 @@ retail_dw | dim_customers | 84,500`;
       const alignments = parseColumnAlignments(['---', ':---', ':---:', '---:']);
       assert.deepEqual(alignments, ['left', 'left', 'center', 'right']);
     });
+
+    it('should render interactive A2UI surfaces without falling back to raw JSON code block when textWithoutA2UI is empty or collided', () => {
+      const pureA2uiMessage = [
+        '```a2ui',
+        JSON.stringify({
+          surfaceId: 'merchandising-alarms-surface',
+          rootId: 'alarms-card',
+          components: [
+            {
+              id: 'alarms-card',
+              component: 'Card',
+              properties: { title: 'Merchandising Workbench — Active Alarms Queue' },
+            },
+          ],
+        }),
+        '```',
+      ].join('\n');
+
+      const html = renderToStaticMarkup(
+        React.createElement(ChatMessageRenderer, {
+          content: pureA2uiMessage,
+          isUser: false,
+        })
+      );
+      assert.ok(html.includes('Merchandising Workbench — Active Alarms Queue'));
+      assert.ok(!html.includes('<span>a2ui</span>'), 'Should not render raw a2ui CodeBlock header');
+    });
   });
 });

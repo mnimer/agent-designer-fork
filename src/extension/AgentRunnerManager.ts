@@ -165,6 +165,9 @@ export class AgentRunnerManager {
    * @author Mike Nimer <mikenimer@google.com>
    */
   public async sendStatus(bridge: WebviewBridge, targetPort?: number): Promise<void> {
+    if (this.inFlightStopPromise) {
+      await this.inFlightStopPromise.catch(() => {});
+    }
     // Section 1: Resolve target port and probe health (/health and /healthz)
     const port = targetPort || this.lastRunningPort || 8000;
     const isAlive =
@@ -210,9 +213,16 @@ export class AgentRunnerManager {
   }
 
   public startLocalRunner(options: StartLocalRunnerOptions): Promise<string> {
-    if (this.inFlightStopPromise) return Promise.reject(new Error('Operation in progress'));
     if (this.inFlightStartPromise) return this.inFlightStartPromise;
-    this.inFlightStartPromise = this.startLocalRunnerInternal(options).finally(() => { this.inFlightStartPromise = null; });
+    const runStart = async (): Promise<string> => {
+      if (this.inFlightStopPromise) {
+        await this.inFlightStopPromise.catch(() => {});
+      }
+      return this.startLocalRunnerInternal(options);
+    };
+    this.inFlightStartPromise = runStart().finally(() => {
+      this.inFlightStartPromise = null;
+    });
     return this.inFlightStartPromise;
   }
 
@@ -222,8 +232,21 @@ export class AgentRunnerManager {
     const { targetDirectory, port = 8000, envVars = {}, bridge } = options;
     const runnerId = `local-runner-${Date.now()}`;
     const targetDir = targetDirectory || process.cwd();
+    this.clearRunnerLogs();
     this.runnerStatus = 'starting';
     this.lastRunningPort = port;
+
+    // Ensure any previously tracked local runner processes are terminated before starting a new one
+    if (this.processManager.activeLocalRunners.size > 0) {
+      const existingRunners = Array.from(this.processManager.activeLocalRunners.entries());
+      for (const [oldId, oldProc] of existingRunners) {
+        this.processManager.unregisterProcess(oldId);
+        if (oldProc) {
+          oldProc.removeAllListeners();
+          await this.processManager.killProcessTree(oldProc);
+        }
+      }
+    }
 
     const startNotice = `[Local Runner] Preparing environment in ${targetDir}...`;
     this.appendRunnerLog(startNotice);
@@ -342,17 +365,37 @@ export class AgentRunnerManager {
   }
 
   public async stopLocalRunner(runnerId?: string, targetPort?: number, bridge?: WebviewBridge): Promise<void> {
-    if (this.inFlightStartPromise) throw new Error('Operation in progress');
     if (this.inFlightStopPromise) return this.inFlightStopPromise;
-    this.inFlightStopPromise = this.stopLocalRunnerInternal(runnerId, targetPort, bridge).finally(() => { this.inFlightStopPromise = null; });
+    const runStop = async (): Promise<void> => {
+      if (this.inFlightStartPromise) {
+        await this.inFlightStartPromise.catch(() => {});
+      }
+      await this.stopLocalRunnerInternal(runnerId, targetPort, bridge);
+    };
+    this.inFlightStopPromise = runStop().finally(() => {
+      this.inFlightStopPromise = null;
+    });
     return this.inFlightStopPromise;
   }
 
   public async stopRunner(runnerId?: string, targetPort?: number, bridge?: WebviewBridge) { return this.stopLocalRunner(runnerId, targetPort, bridge); }
 
   private async stopLocalRunnerInternal(runnerId?: string, targetPort?: number, bridge?: WebviewBridge): Promise<void> {
-    const portToKill = targetPort || this.lastRunningPort;
+    const portsToKill = new Set<number>();
+    if (targetPort && targetPort > 0) portsToKill.add(targetPort);
+    if (this.lastRunningPort && this.lastRunningPort > 0) portsToKill.add(this.lastRunningPort);
+    for (const trackedPort of this.processManager.activeRunnerPortMap.values()) {
+      if (trackedPort && trackedPort > 0) portsToKill.add(trackedPort);
+    }
+    if (portsToKill.size === 0) {
+      portsToKill.add(8000);
+    }
+
+    const primaryPort = targetPort || this.lastRunningPort || 8000;
+    this.runnerStatus = 'stopped';
     if (this.startupTimeoutTimer) { clearTimeout(this.startupTimeoutTimer); this.startupTimeoutTimer = null; }
+    if (this.healthCheck.healthCheckPollTimer) { clearInterval(this.healthCheck.healthCheckPollTimer); this.healthCheck.healthCheckPollTimer = null; }
+    if (this.healthCheck.healthCheckTimeoutTimer) { clearTimeout(this.healthCheck.healthCheckTimeoutTimer); this.healthCheck.healthCheckTimeoutTimer = null; }
 
     const terminateChild = async (proc: ChildProcess) => {
       proc.removeAllListeners();
@@ -361,24 +404,26 @@ export class AgentRunnerManager {
 
     if (runnerId && this.processManager.activeLocalRunners.has(runnerId)) {
       const proc = this.processManager.activeLocalRunners.get(runnerId);
-      this.processManager.activeLocalRunners.delete(runnerId);
+      this.processManager.unregisterProcess(runnerId);
       if (proc) await terminateChild(proc);
     } else {
       const runnersToTerminate = Array.from(this.processManager.activeLocalRunners.entries());
-      this.processManager.activeLocalRunners.clear();
       for (const [id, proc] of runnersToTerminate) {
+        this.processManager.unregisterProcess(id);
         if (proc) await terminateChild(proc);
       }
     }
 
-    if (portToKill) await this.killPort(portToKill);
+    for (const p of portsToKill) {
+      await this.killPort(p);
+    }
     this.cleanupEphemeralFiles();
 
     this.runnerStatus = 'stopped';
     this.appendRunnerLog('[Local Runner] Process stopped.');
 
     if (bridge) {
-      await bridge.postMessage({ type: 'LOCAL_RUNNER_STATUS', payload: { status: 'stopped', port: portToKill, logs: this.runnerLogs } });
+      await bridge.postMessage({ type: 'LOCAL_RUNNER_STATUS', payload: { status: 'stopped', port: primaryPort, logs: this.runnerLogs } });
     }
   }
 

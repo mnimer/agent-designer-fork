@@ -1,0 +1,23 @@
+{
+  "kitchen_sink_submission": {
+    "agentName": "enterprise-copilot-v1",
+    "ownerEmail": "architect@example.com",
+    "environment": "staging",
+    "reasoningTier": "balanced",
+    "capabilities": [
+      "search",
+      "code_execution",
+      "bigquery",
+      "a2ui"
+    ],
+    "computeBudgetUsd": 2500,
+    "confidenceThreshold": 85,
+    "enableModelArmor": true,
+    "requireHitlApproval": true,
+    "launchDate": "2026-11-01",
+    "maintenanceWindow": "02:00",
+    "notes": "Initial kitchen sink configuration"
+  },
+  "submission_history": [],
+  "last_updated": "2026-10-14T19:30:00Z"
+}

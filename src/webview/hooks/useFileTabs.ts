@@ -39,6 +39,7 @@ export interface UseFileTabsOptions {
   setIsToolDrawerOpen: (open: boolean) => void;
   setToolModalAgentId: (id: string | null) => void;
   setActiveEditorTab: (tab: 'flow' | 'code' | 'settings') => void;
+  onStopLocalRunner?: () => void;
 }
 
 export interface UseFileTabsResult {
@@ -78,6 +79,7 @@ export function useFileTabs(
     setIsToolDrawerOpen,
     setToolModalAgentId,
     setActiveEditorTab,
+    onStopLocalRunner,
   } = options;
 
   // Pre-hydration from injected initial document
@@ -301,12 +303,15 @@ export function useFileTabs(
   ]);
 
   /**
-   * Closes an open tab by ID, switching to the preceding tab or falling back to default.
+   * Closes an open tab by ID, stopping any active local deployment and switching to the preceding tab or default.
    */
   const handleCloseTab = useCallback(
     (tabId: string) => {
       const index = fileTabs.findIndex((t) => t.id === tabId);
       if (index === -1) return;
+
+      // Stop any running local deployment server when closing the file tab
+      onStopLocalRunner?.();
 
       const newTabs = fileTabs.filter((t) => t.id !== tabId);
 
@@ -359,6 +364,7 @@ export function useFileTabs(
       setSelectedAgentId,
       setSelectedTriggerId,
       setGeneratedFiles,
+      onStopLocalRunner,
     ]
   );
 

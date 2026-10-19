@@ -9,13 +9,15 @@
       "id": "trigger_pubsub_company",
       "type": "triggerNode",
       "position": {
-        "x": 80,
+        "x": 496,
         "y": 48
       },
       "data": {
         "id": "trigger_pubsub_company",
         "label": "Pub/Sub: Company Registrations",
         "triggerType": "pubsub",
+        "triggerKind": "pubsub",
+        "targetRootAgentId": "agent_company_verifier",
         "description": "Ingests real-time vendor and merchant registration events from GCP Pub/Sub.",
         "config": {
           "topic": "projects/enterprise-ops/topics/company-registration-events",
@@ -27,11 +29,105 @@
       }
     },
     {
+      "id": "trigger_company_verifier_tester",
+      "type": "triggerNode",
+      "position": {
+        "x": 48,
+        "y": 328
+      },
+      "data": {
+        "id": "trigger_company_verifier_tester",
+        "label": "Company Verifier Test Suite (4 Scenarios)",
+        "triggerType": "tester",
+        "triggerKind": "tester",
+        "targetRootAgentId": "agent_company_verifier",
+        "description": "Automated evaluation suite testing entity legitimacy verification and taxonomy classification across restaurant, machine shop, retail, and suspicious shell registrations.",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "test-verify-restaurant-entity",
+              "name": "1. Verify Legitimate Restaurant Entity",
+              "prompt": "Verify company registration: 'Tartine Bakery & Cafe, 600 Guerrero St, San Francisco, CA 94110'",
+              "inputQuery": "Verify company registration: 'Tartine Bakery & Cafe, 600 Guerrero St, San Francisco, CA 94110'",
+              "expectedOutput": "restaurant",
+              "expectedOutputPattern": "restaurant",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-verify-machine-shop-entity",
+              "name": "2. Verify Industrial CNC Machine Shop",
+              "prompt": "Verify company registration: ' Haas Automation Inc, 2800 Sturgis Rd, Oxnard, CA 93030'",
+              "inputQuery": "Verify company registration: ' Haas Automation Inc, 2800 Sturgis Rd, Oxnard, CA 93030'",
+              "expectedOutput": "machine shop",
+              "expectedOutputPattern": "machine shop",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-verify-retail-entity",
+              "name": "3. Verify Specialty Retail Storefront",
+              "prompt": "Verify company registration: 'REI Seattle Flagship, 222 Yale Ave N, Seattle, WA 98109'",
+              "inputQuery": "Verify company registration: 'REI Seattle Flagship, 222 Yale Ave N, Seattle, WA 98109'",
+              "expectedOutput": "retail",
+              "expectedOutputPattern": "retail",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-flag-suspicious-registration",
+              "name": "4. Flag Unverified Shell Registration",
+              "prompt": "Verify company registration: 'X99 Phantom Global Holdings LLC, 000 Nowhere Blvd, Suite 99999'",
+              "inputQuery": "Verify company registration: 'X99 Phantom Global Holdings LLC, 000 Nowhere Blvd, Suite 99999'",
+              "expectedOutput": "UNVERIFIED",
+              "expectedOutputPattern": "(UNVERIFIED|SUSPICIOUS)",
+              "assertionType": "regex"
+            }
+          ],
+          "testPrompts": [
+            {
+              "id": "test-verify-restaurant-entity",
+              "name": "1. Verify Legitimate Restaurant Entity",
+              "prompt": "Verify company registration: 'Tartine Bakery & Cafe, 600 Guerrero St, San Francisco, CA 94110'",
+              "inputQuery": "Verify company registration: 'Tartine Bakery & Cafe, 600 Guerrero St, San Francisco, CA 94110'",
+              "expectedOutput": "restaurant",
+              "expectedOutputPattern": "restaurant",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-verify-machine-shop-entity",
+              "name": "2. Verify Industrial CNC Machine Shop",
+              "prompt": "Verify company registration: ' Haas Automation Inc, 2800 Sturgis Rd, Oxnard, CA 93030'",
+              "inputQuery": "Verify company registration: ' Haas Automation Inc, 2800 Sturgis Rd, Oxnard, CA 93030'",
+              "expectedOutput": "machine shop",
+              "expectedOutputPattern": "machine shop",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-verify-retail-entity",
+              "name": "3. Verify Specialty Retail Storefront",
+              "prompt": "Verify company registration: 'REI Seattle Flagship, 222 Yale Ave N, Seattle, WA 98109'",
+              "inputQuery": "Verify company registration: 'REI Seattle Flagship, 222 Yale Ave N, Seattle, WA 98109'",
+              "expectedOutput": "retail",
+              "expectedOutputPattern": "retail",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-flag-suspicious-registration",
+              "name": "4. Flag Unverified Shell Registration",
+              "prompt": "Verify company registration: 'X99 Phantom Global Holdings LLC, 000 Nowhere Blvd, Suite 99999'",
+              "inputQuery": "Verify company registration: 'X99 Phantom Global Holdings LLC, 000 Nowhere Blvd, Suite 99999'",
+              "expectedOutput": "UNVERIFIED",
+              "expectedOutputPattern": "(UNVERIFIED|SUSPICIOUS)",
+              "assertionType": "regex"
+            }
+          ]
+        }
+      }
+    },
+    {
       "id": "agent_company_verifier",
       "type": "agentNode",
       "position": {
-        "x": 216,
-        "y": 224
+        "x": 464,
+        "y": 328
       },
       "data": {
         "id": "agent_company_verifier",
@@ -92,8 +188,20 @@
     {
       "id": "edge_pubsub_to_verifier",
       "source": "trigger_pubsub_company",
+      "sourceHandle": "trigger_out_bottom",
       "target": "agent_company_verifier",
-      "animated": true
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#f59e0b", "strokeWidth": 2, "strokeDasharray": "5 5" }
+    },
+    {
+      "id": "edge_tester_to_verifier",
+      "source": "trigger_company_verifier_tester",
+      "sourceHandle": "trigger_out_right",
+      "target": "agent_company_verifier",
+      "targetHandle": "input_left",
+      "animated": true,
+      "style": { "stroke": "#f59e0b", "strokeWidth": 2, "strokeDasharray": "5 5" }
     }
   ],
   "metadata": {

@@ -143,6 +143,12 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
     cloudRunCpu: '1',
     cloudRunMemory: '2Gi',
     cloudRunAllowUnauthenticated: true,
+    gkeClusterName: 'agent-autopilot-cluster',
+    gkeLocation: 'us-central1',
+    gkeNamespace: 'default',
+    gkeReplicas: 2,
+    enableWorkloadIdentity: true,
+    plugins: generationConfig.plugins || [],
   });
 
   // Check if generated code already exists on disk in target folder and query runner status
@@ -177,6 +183,9 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
         }
       } else if (payload.status === 'starting') {
         setDeployStatus('deploying');
+        if (Array.isArray(payload.logs)) {
+          setDeployLogs(payload.logs);
+        }
       } else if (payload.status === 'stopped') {
         setDeployStatus('idle');
         setServiceUrl(null);
@@ -217,6 +226,10 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
 
     if (selectedTarget === 'agent_engine') {
       return `gcloud ai agents deploy --project=${deployConfig.agentEngineProject} --region=${deployConfig.agentEngineRegion} --runtime=${deployConfig.agentEngineRuntime} --source=${generationConfig.outputFolder}`;
+    }
+
+    if (selectedTarget === 'gke') {
+      return `adk deploy gke --project=${sharedProjectId} --cluster=${deployConfig.gkeClusterName || 'agent-autopilot-cluster'} --location=${deployConfig.gkeLocation || 'us-central1'} --namespace=${deployConfig.gkeNamespace || 'default'}`;
     }
 
     return `gcloud run deploy ${deployConfig.cloudRunService} \\
@@ -312,7 +325,7 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
           >
             🖥️ Local Runner
           </button>
-          {cloudTarget === 'agent_engine' ? (
+          {cloudTarget === 'agent_engine' && (
             <button
               onClick={() => {
                 setSelectedTarget('agent_engine');
@@ -323,7 +336,8 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
             >
               🧠 Agent Runtime
             </button>
-          ) : (
+          )}
+          {cloudTarget === 'cloud_run' && (
             <button
               onClick={() => {
                 setSelectedTarget('cloud_run');
@@ -398,9 +412,10 @@ export const DeploymentTab: React.FC<DeploymentTabProps> = ({
                 className="w-full bg-[#0d1117] border border-[#30363d] text-xs text-white rounded-lg px-2.5 py-2 focus:outline-none focus:border-emerald-500 cursor-pointer font-medium"
               >
                 <option value="local">🖥️ Local Runner</option>
-                {cloudTarget === 'agent_engine' ? (
+                {cloudTarget === 'agent_engine' && (
                   <option value="agent_engine">🧠 Agent Runtime</option>
-                ) : (
+                )}
+                {cloudTarget === 'cloud_run' && (
                   <option value="cloud_run">☁️ Google Cloud Run</option>
                 )}
               </select>

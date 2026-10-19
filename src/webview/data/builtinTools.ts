@@ -24,6 +24,46 @@
  */
 
 import { ToolDefinition, ToolCategory } from '../types';
+import { isDatabricksMcpTool } from './databricksMcpServers';
+import { isSnowflakeMcpTool } from './snowflakeMcpServers';
+export {
+  ADK_EXTENDED_TOOLSETS,
+  ADK_CONTROL_FLOW_TOOLS,
+  ADK_CONTROL_FLOW_TOOL_DEFINITIONS,
+  ALL_ADK_BUILTIN_TOOLS,
+  parseOpenApiSpecOperations,
+  createOpenApiToolsetDefinition,
+  generateOpenApiToolsetPythonCode,
+  ENTERPRISE_CONNECTOR_PRESETS,
+  createApplicationIntegrationToolDefinition,
+  generateApplicationIntegrationPythonCode,
+  createVertexAiRagRetrievalToolDefinition,
+  generateVertexAiRagRetrievalPythonCode,
+  BIGQUERY_TOOLSET_TOOLS,
+  createBigQueryToolsetDefinition,
+  generateBigQueryToolsetPythonCode,
+  SPANNER_TOOLSET_TOOLS,
+  createSpannerToolsetDefinition,
+  generateSpannerToolsetPythonCode,
+  createComputerUseToolsetDefinition,
+  generateComputerUseToolsetPythonCode,
+  generateToolboxToolsYaml,
+  createToolboxDatabaseToolDefinition,
+  generateToolboxDatabasePythonCode,
+  generateControlFlowToolsPythonImport,
+} from './builtinToolsRegistry';
+import type {
+  OpenApiParsedOperation,
+  OpenApiParseResult,
+  EnterpriseConnectorPreset,
+  ControlFlowToolDescriptor,
+} from './builtinToolsRegistry';
+export type {
+  OpenApiParsedOperation,
+  OpenApiParseResult,
+  EnterpriseConnectorPreset,
+  ControlFlowToolDescriptor,
+};
 
 export const BUILTIN_ADK_TOOLS: ToolDefinition[] = [
   // 1. Google Search Grounding
@@ -335,7 +375,15 @@ export function categorizeTools(tools: ToolDefinition[]): CategorizedTools {
 
   for (const tool of cleanTools) {
     const isGoogleCloudMcp = tool.category === 'google_cloud_mcp' || tool.id.startsWith('gcp_mcp_');
-    const isMcp = !isGoogleCloudMcp && (tool.type === 'mcp' || tool.mcpConfig !== undefined || tool.id.startsWith('tool_mcp_'));
+    const isDatabricksMcp = isDatabricksMcpTool(tool);
+    const isSnowflakeMcp = isSnowflakeMcpTool(tool);
+    const isMcp = !isGoogleCloudMcp && (
+      isDatabricksMcp ||
+      isSnowflakeMcp ||
+      tool.type === 'mcp' ||
+      tool.mcpConfig !== undefined ||
+      tool.id.startsWith('tool_mcp_')
+    );
     const isAdk = !isGoogleCloudMcp && !isMcp && isNativeAdkTool(tool);
 
     // 1. Group into Native ADK vs Google Cloud MCP vs generic MCP
@@ -367,7 +415,7 @@ export function categorizeTools(tools: ToolDefinition[]): CategorizedTools {
       tool.type === 'code'
     ) {
       categorized.system.push(tool);
-    } else if (!isGoogleCloudMcp) {
+    } else if (!isGoogleCloudMcp && !isDatabricksMcp && !isSnowflakeMcp) {
       categorized.custom.push(tool);
     }
   }

@@ -90,20 +90,16 @@ Your task is to generate a complete, production-ready AI Agent repository. Confi
 
 2. **CRITICAL: LLM MODEL CONSTRAINTS & GLOBAL REGION MANDATE**:
    - Under NO circumstances should any generated code (in `agent.py`, `tools/*.py`, etc.) reference deprecated Gemini models such as `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.0-flash`, `gemini-1.5-flash`, `gemini-1.5-pro`, or `gemini-flash-latest`. Gemini 1.x and 2.x models are deprecated.
-   - ALWAYS use `gemini-3.7-flash` (or `gemini-3.5-flash` or the configured node model, or `gemini-pro-latest` if specified). The global default model across all agent definitions AND all custom tool helper implementations MUST be `gemini-3.7-flash`.
-   - **MANDATORY GLOBAL REGION CONFIGURATION**: In Vertex AI, `gemini-3.7-flash` is hosted under the `global` region (`location="global"`). Regional endpoints (such as `us-central1`) will reject `gemini-3.7-flash` with a `404 NOT_FOUND` publisher model error!
+   - ALWAYS use `gemini-3.8-flash` (or the configured node model). The global default model across all agent definitions AND all custom tool helper implementations MUST be `gemini-3.8-flash`.
+   - **MANDATORY GLOBAL REGION CONFIGURATION**: In Vertex AI, `gemini-3.8-flash` is hosted under the `global` region (`location="global"`). Regional endpoints (such as `us-central1`) will reject `gemini-3.8-flash` with a `404 NOT_FOUND` publisher model error!
      * **CRITICAL RULE**: In containerized Vertex AI Agent Engine environments, the container runtime already has `GOOGLE_CLOUD_LOCATION` set to the regional host (e.g. `us-central1`). NEVER use `os.environ.setdefault(...)` because `setdefault` fails to overwrite existing environment variables and leaves the region as `us-central1`!
      * ALWAYS use direct assignment at the top of `agent.py`:
      ```python
      os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"
      os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
      ```
-     * In addition to environment variables, ALWAYS instantiate the Gemini model explicitly with `client_kwargs={"location": "global"}` so the model endpoint is hardcoded to global and never relies on ambient environment variables:
-     ```python
-     from google.adk.models.google_llm import Gemini
-     model = Gemini(model="gemini-3.7-flash", client_kwargs={"location": "global"})
-     ```
-   - If the node configuration in the workflow JSON specifies a model, use that model (mapping legacy aliases `gemini-flash-latest`, `gemini-1.5-flash`, `gemini-2.5-flash`, etc. to `gemini-3.7-flash`).
+     * Pass the model string directly to `Agent(name="...", model="gemini-3.8-flash", ...)`. Do NOT pass `client_kwargs` to `Gemini(...)` (`Gemini` does not accept `client_kwargs`).
+   - If the node configuration in the workflow JSON specifies a model, use that model (mapping legacy aliases `gemini-flash-latest`, `gemini-1.5-flash`, `gemini-2.5-flash`, `gemini-3.7-flash`, etc. to `gemini-3.8-flash`).
    - **CRITICAL ADK & VERTEX AI SEARCH TOOL CONSTRAINTS**:
      * **Bypass Multi-Tools Limit for Search**: The Gemini API natively restricts combining built-in search grounding with function calling (including agent delegation via `sub_agents=[...]`) unless `bypass_multi_tools_limit=True` is explicitly specified.
        - Whenever an agent uses Google Search:
@@ -494,7 +490,7 @@ agent = Agent(
     # LLM generation parameters
     generate_content_config=genai_types.GenerateContentConfig(
         temperature=0.2,
-        max_output_tokens=1024,
+        max_output_tokens=8192,
     ),
 
     # Save final output to state
@@ -1185,6 +1181,28 @@ McpToolset(
         "Authorization": f"Bearer {fetch_id_token(Request(), MCP_SERVER_URL)}"
     },
 )
+
+# Databricks Managed MCP (Genie Space, Vector Search, Unity Catalog, SQL)
+# When Databricks MCP tools are attached (databricksConfig / databricks_mcp_*),
+# connect over Streamable HTTP with DATABRICKS_TOKEN Bearer auth.
+# Add DATABRICKS_TOKEN to .env.example and provision google_secret_manager_secret (databricks-mcp-token) in main.tf.
+McpToolset(
+    connection_params=StreamableHTTPConnectionParams(
+        url=os.environ.get("DATABRICKS_MCP_URL", "https://<workspace-hostname>/api/2.0/mcp/..."),
+        headers={"Authorization": f"Bearer {os.environ.get('DATABRICKS_TOKEN', '')}"},
+    ),
+)
+
+# Snowflake Managed & Cortex MCP (Analyst, Search, Agent, SQL, Generic)
+# When Snowflake MCP tools are attached (snowflakeConfig / snowflake_mcp_*),
+# connect over Streamable HTTP (or Stdio for snowflake-labs-mcp CLI mode) with SNOWFLAKE_MCP_TOKEN.
+# Add SNOWFLAKE_MCP_TOKEN to .env.example and provision google_secret_manager_secret (snowflake-mcp-token) in main.tf.
+McpToolset(
+    connection_params=StreamableHTTPConnectionParams(
+        url=os.environ.get("SNOWFLAKE_MCP_URL", "https://<account>.snowflakecomputing.com/api/v2/databases/<db>/schemas/<schema>/mcp-servers/<server>"),
+        headers={"Authorization": f"Bearer {os.environ.get('SNOWFLAKE_MCP_TOKEN', '')}"},
+    ),
+)
 ```
 
 **Gotchas:**
@@ -1215,6 +1233,33 @@ state["app:total_queries"] = 1000
 
 # Temporary (current invocation only)
 state["temp:intermediate_result"] = data
+```
+
+### Initial Session State Pre-loading (`data/initial_session_state.json`, TASK-215)
+
+When initializing new sessions or test harness scenarios, check if `data/initial_session_state.json` exists relative to the package root. If present, load its JSON dictionary and pass it as `initial_state` or merge into `session.state`:
+
+```python
+import json
+from pathlib import Path
+
+def load_initial_session_state() -> dict:
+    state_path = Path(__file__).resolve().parent / "data" / "initial_session_state.json"
+    if state_path.is_file():
+        try:
+            with open(state_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logging.getLogger(__name__).warning("Failed to load initial session state: %s", e)
+    return {}
+
+# Pass to session creation:
+session = await session_service.create_session(
+    app_name=APP_NAME,
+    user_id=user_id,
+    session_id=session_id,
+    state=load_initial_session_state(),
+)
 ```
 
 ### Session Service Options
@@ -2420,4 +2465,108 @@ To enable cross-session memory on Agent Runtime, configure `memory_bank_config` 
 ## Networking (PSC Interface)
 
 Agent Runtime cannot reach your VPC by default. To enable private connectivity, create a [network attachment](https://cloud.google.com/vpc/docs/create-manage-network-attachments) and deploy with `--network-attachment`. Add `--dns-peering-domain`, `--dns-peering-project`, and `--dns-peering-network` if you need private DNS resolution. PSC config is immutable after deployment — delete and redeploy to change it. See the [GCP docs](https://cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/private-service-connect-interface) for prerequisites and setup.
+
+---
+
+## v1.2.0 ADK ADVANCED CAPABILITY GUIDELINES
+
+When the workflow JSON includes any of the following advanced configuration fields, you MUST generate the corresponding ADK Python implementation:
+
+### 1. A2UI Integration (`a2uiConfig`, TASK-221)
+- If an agent node (root agent or any sub-agent) defines `a2uiConfig` with `enabled: true`:
+  * Generate root-level `a2ui_components.py` (never create a separate `a2ui/` subfolder) with UI component definitions (`build_a2ui_surface` returning `{"messages": [{"createSurface": {"surfaceId": ..., "catalog": "gemini_enterprise_composite_v09", "title": ...}}, {"updateComponents": {"surfaceId": ..., "rootId": ..., "components": [...]}}, {"updateDataModel": {"surfaceId": ..., "data": {...}}}]}`).
+  * **CANONICAL A2UI v0.9.1 COMPONENT CATALOG & JSON SCHEMA (MANDATORY)**:
+    - Every component in `"components": [...]` MUST use the exact keys `{"id": "...", "component": "<WidgetName>", "properties": {...}, "children": ["child_id_1", ...]}` (use `"properties"`, NOT `"props"`).
+    - **Supported Catalog Widgets**:
+      1. **Layout & Containers**: `MaterialCard` (`title`, `subtitle`, `status`, `children`), `MaterialColumn` (`spacing`, `children`), `MaterialRow` (`spacing`, `children`), `MaterialGridList` (`columns`, `children`), `MaterialExpansionPanel` (`title`, `expanded`, `children`), `MaterialTabs` (`tabs: [{"id", "label"}]`, `children`), `MaterialDivider`, `MaterialDialog` (`title`, `children`).
+      2. **Content & Status**: `MaterialText` (`text`, `variant`: `"h1"|"h2"|"h3"|"subtitle1"|"body1"|"body2"|"caption"|"code"`), `MaterialBadge` (`text`, `color`: `"success"|"warning"|"error"|"info"|"primary"|"neutral"`), `MaterialIcon` (`iconName`, `color`), `MaterialProgressBar` (`label`, `value`, `max`), `MaterialProgressSpinner` (`label`).
+      3. **Data Display & Composite**: `MaterialTable` / `RichTable` (`title`, `columns`: `[{"field": "...", "headerName": "..."}]`, `rows`: `[{...}]`), `Stepper` (`activeStep`, `steps`: `[{"id", "title", "status"}]`), `WorkOrderList` (`title`, `items`: `[{"id", "title", "assignee", "priority"}]`), `VegaChart` (`title`, `description`, `spec`: Vega-Lite v5 JSON spec), `GoogleMap` (`title`, `center`: `{"lat", "lng"}`, `zoom`, `markers`: `[{"id", "title", "lat", "lng", "status"}]`), `MosaicCarousel` (`title`, `items`: `[{"id", "title", "subtitle", "description", "badge", "imageUrl", "actionLabel", "actionName"}]`).
+      4. **Two-Way Bound Form Inputs & Actions**:
+         - `MaterialInput`: `{"label": "...", "inputType": "text"|"number", "placeholder": "...", "value": {"path": "/form/fieldName"}}`
+         - `MaterialSelect`: `{"label": "...", "options": [{"label": "Display Label", "value": "val"}], "value": {"path": "/form/fieldName"}}`
+         - `MaterialSlider`: `{"label": "...", "min": 0, "max": 100, "step": 1, "value": {"path": "/form/fieldName"}}`
+         - `MaterialCheckbox`: `{"label": "...", "checked": {"path": "/form/flagName"}}`
+         - `MaterialSlideToggle`: `{"label": "...", "checked": {"path": "/form/flagName"}}`
+         - `MaterialRadioButton`: `{"label": "...", "options": [{"label": "...", "value": "..."}], "value": {"path": "/form/fieldName"}}`
+         - `MaterialButton`: `{"label": "...", "variant": "contained"|"outlined", "color": "primary"|"success"|"warning"|"error", "action": {"event": {"name": "action_name", "context": {"fieldName": {"path": "/form/fieldName"}}}}}`
+  * **TOOL-LEVEL SURFACE EMISSION**: Whenever a tool function (in `tools/*.py`) supports an A2UI-enabled agent or sub-agent, include `"surface": build_..._surface(...)` in the dictionary returned by the tool function so the runner automatically renders the interactive A2UI surface whenever the tool is called.
+  * **TOKEN BUDGET & SURFACE ATTACHMENT RULE**: Always set `max_output_tokens=8192` on all A2UI-enabled agents and sub-agents (never `1024` or `2048`, which truncate JSON mid-stream). In each agent's `instruction`, instruct the LLM to provide a clear, concise consumer-friendly markdown summary and business rationale, and NOT to manually re-type or dump the raw `"surface"` JSON dictionary from the tool output into its text response (because the runtime automatically extracts and attaches the lossless `"surface"` dict from the tool response).
+  * Generate root-level `a2ui_adaptor.py` importing from `a2ui_components` and implementing UI action handlers (`A2uiAdaptor.route_user_action`) and `session.state` conversions. `A2uiAdaptor.route_user_action` MUST accept `(cls, user_action=None, session_state=None, context=None, **kwargs)` (supporting `action_name`, `action_or_prompt`, `user_action`, `prompt`, `action`, `session_state`, and `state` keyword arguments) and is synchronous. It MUST ONLY return `{"status": "handled", "surface": ..., "message": ...}` for structured `{"userAction": ...}` JSON payloads (e.g. button clicks) or exact single-word utility commands (`"help"`, `"about"`, `"show_skills"`, `"feedback"`, `"bug"`), and return `None` for normal conversational queries so the LLM agent and its tools execute normally.
+  * **CRITICAL CONSUMER UI RENDERING RULE**: The Chat Runner renders interactive A2UI widgets by extracting ```` ```a2ui\n<JSON>\n``` ```` blocks from the tool response or callback response.
+  * **FORBIDDEN**: NEVER instruct or allow the agent to output code tutorials, JSON schema explanations, or ASCII art representations of badges, progress bars, tables, or forms. Always render the real interactive A2UI surface from a consumer's perspective.
+  * Attach `before_model_callback=a2ui_before_model_callback` on the root agent AND on every sub-agent that has `a2uiConfig.enabled == true` so incoming `{"userAction": ...}` payloads and deterministic surface commands are routed via `A2uiAdaptor.route_user_action`:
+    ```python
+    async def a2ui_before_model_callback(
+        callback_context: CallbackContext, llm_request: LlmRequest
+    ) -> Optional[LlmResponse]:
+        user_prompt = ""
+        if llm_request.contents:
+            for part in getattr(llm_request.contents[-1], "parts", []):
+                if getattr(part, "text", None):
+                    user_prompt += part.text + " "
+        user_prompt = user_prompt.strip()
+        routed = A2uiAdaptor.route_user_action(user_prompt, session_state=callback_context.state)
+        if routed and routed.get("status") == "handled" and routed.get("surface"):
+            msg = routed.get("message", "Here is the interactive A2UI surface:")
+            text = f"{msg}\n\n```a2ui\n{json.dumps(routed['surface'])}\n```"
+            return LlmResponse(
+                content=genai_types.Content(role="model", parts=[genai_types.Part.from_text(text=text)])
+            )
+        return None
+    ```
+
+### 2. Agent Skills & Skill Factory (`skills` / `skillFactoryConfig`, TASK-223)
+- When agent nodes contain `skills`:
+  * Generate `skills/<skill_name>/SKILL.md` containing YAML frontmatter (`name`, `description`) and detailed execution instructions.
+  * In `agent.py`, import `from google.adk.tools.skill_toolset import SkillToolset, Skill` and attach `SkillToolset(skills=[...])` to the agent's tools.
+
+### 3. Artifact Service (`artifactConfig`, TASK-224)
+- When `artifactConfig` is configured on nodes or deployment:
+  * For local dev / in-memory: use `from google.adk.artifacts import InMemoryArtifactService; artifact_service = InMemoryArtifactService()`.
+  * For cloud / GCS: use `from google.adk.artifacts import GcsArtifactService; artifact_service = GcsArtifactService(bucket_name=os.getenv("ARTIFACT_BUCKET_NAME", "<bucket>"))`.
+  * Pass `artifact_service=artifact_service` to `Runner(..., artifact_service=artifact_service)`.
+
+### 4. Context Optimization (`contextCacheConfig`, `eventsCompactionConfig`, `includeContents`, TASK-225)
+- If `contextCacheConfig.enabled == true`: configure Gemini context caching (`types.CachedContent`) for prompts exceeding `minTokens`.
+- If `eventsCompactionConfig.enabled == true`: enable event compaction interval and window overlap.
+- If `includeContents == "none"`: set `include_contents="none"` to omit full historical payloads in tool call context.
+
+### 5. Planners & Adaptive Reasoning (`plannerConfig`, TASK-226)
+- If `plannerConfig.type == "built_in"`:
+  * Use `from google.adk.planners import BuiltInPlanner` and configure `planner=BuiltInPlanner(thinking_config=types.ThinkingConfig(include_thoughts=True, thinking_budget=budget))`.
+- If `plannerConfig.type == "plan_re_act"`:
+  * Use `from google.adk.planners import PlanReActPlanner; planner=PlanReActPlanner()`.
+
+### 6. Specialized ADK Toolsets (TASK-227 - TASK-234)
+- `OpenAPIToolset`: `from google.adk.tools.openapi_toolset import OpenAPIToolset`
+- `ApplicationIntegrationToolset`: `from google.adk.tools.application_integration_toolset import ApplicationIntegrationToolset`
+- `VertexAiRagRetrieval`: `from google.adk.tools.vertex_rag_store import VertexAiRagRetrieval`
+- `BigQueryToolset`: `from google.adk.tools.bigquery_toolset import BigQueryToolset, WriteMode`
+- `SpannerToolset`: `from google.adk.tools.spanner_toolset import SpannerToolset`
+- `ComputerUseToolset`: `from google.adk.tools.computer_use_toolset import ComputerUseToolset`
+- `ToolboxToolset`: `from google.adk.tools.toolbox_toolset import ToolboxToolset`
+- Control flow tools: `from google.adk.tools import exit_loop, transfer_to_agent, load_memory, load_artifacts`
+
+### 7. Live Streaming / WebSocket (`liveStreamingConfig`, TASK-235)
+- When enabled, in `server.py` expose FastAPI WebSocket endpoint `GET /ws/live` using `from google.adk.runners import LiveRequestQueue, RunConfig` and `await runner.run_live(...)`.
+
+### 8. Long-Term Memory Banks (`longTermMemory`, TASK-236)
+- When configured, instantiate `from google.adk.memory import VertexAiMemoryBankService, VertexAiRagMemoryService`.
+- Pass `memory_service` to `Runner(..., memory_service=memory_service)`.
+- In `agent.py`, attach `after_agent_callback` to save conversation sessions to memory:
+  ```python
+  async def persist_memory_callback(agent, session, **kwargs):
+      await memory_service.add_session_to_memory(session)
+  ```
+
+### 9. Custom Callbacks (`callbacks`, TASK-239)
+- Generate `callbacks.py` defining lifecycle hooks (`before_agent_callback`, `after_agent_callback`, `before_model_callback`, `after_model_callback`, `before_tool_callback`, `after_tool_callback`).
+- Wire callbacks directly into `Agent(..., before_agent_callback=..., after_tool_callback=...)`.
+
+### 10. Runner-Level Plugins (`plugins`, TASK-240)
+- When plugins are enabled in workflow config:
+  * Import from `google.adk.plugins`:
+    `from google.adk.plugins import ReflectAndRetryToolPlugin, BigQueryAgentAnalyticsPlugin, ContextFilterPlugin, SaveFilesAsArtifactsPlugin, DebugLoggingPlugin, BasePlugin`
+  * Instantiate configured plugins and pass to `Runner(..., plugins=[...])` or `App(..., plugins=[...])`.
+
 
