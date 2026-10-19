@@ -470,12 +470,12 @@ To ensure fast iteration, robust test coverage, and strict quality gates, engine
 **Theme**: Extend deployment to Google Kubernetes Engine (GKE), add LangGraph and multi-language ADK SDK codegen (TypeScript, Go, Java), and localize the VS Code extension UI.
 
 * **Independent Tasks (Ready Now)**:
-  - **`TASK-237` (GKE Autopilot Deployment Target)**: Kubernetes manifests (`k8s/deployment.yaml`, `k8s/service.yaml`), Terraform GKE Autopilot + Workload Identity provisioning, `adk deploy gke` support, and App Hub GKE workload registration.
-  - **`TASK-131` (Internationalization / i18n & l10n)**: VS Code `package.nls.json` and `vscode.l10n` localization across Extension Host and Webview SPA.
-* **Sequential Multi-Framework & Multi-Language Chain**:
-  1. **`TASK-122` (Ready Now)**: LangGraph Framework Support (Python `StateGraph` Target)
-  2. **`TASK-123` (Depends on `TASK-122`)**: TypeScript Runtime Support (`@google/genai` / ADK TypeScript SDK & Vitest)
-  3. **`TASK-238` (Depends on `TASK-123`)**: Multi-Language ADK Code Generation Targets (`Go` `google.golang.org/adk` & `Java` `com.google.adk` SDK Support)
+  - **`TASK-122` (Ready Now)**: LangGraph Framework Support (Python `StateGraph` Target)
+  - **`TASK-131` (Ready Now)**: VS Code `package.nls.json` and `vscode.l10n` localization across Extension Host and Webview SPA.
+* **Skipped / Deferred Multi-Target & Multi-Language Tasks**:
+  - **`TASK-123` (Skipped / Deferred)**: TypeScript Runtime Support (`@google/genai` / ADK TypeScript SDK & Vitest)
+  - **`TASK-237` (Skipped / Deferred)**: Google Kubernetes Engine (GKE Autopilot) Deployment Target
+  - **`TASK-238` (Skipped / Deferred)**: Multi-Language ADK Code Generation Targets (`Go` `google.golang.org/adk` & `Java` `com.google.adk` SDK Support)
 
 ---
 

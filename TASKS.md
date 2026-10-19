@@ -33,7 +33,7 @@
 | [**TASK-120**](#task-120) | v1.0.8 | MCP | Model Context Protocol (MCP) Client & Handshake Test | **Complete** | TASK-104, TASK-107 |
 | [**TASK-121**](#task-121) | v1.0.9 | Triggers & IAM | Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise IAM OIDC Auth | **Complete** | TASK-105, TASK-111, TASK-116 |
 | [**TASK-122**](#task-122) | v1.1.0 | Framework | LangGraph Framework Support (Python StateGraph Target) | **Not Started** | TASK-106, TASK-114 |
-| [**TASK-123**](#task-123) | v1.1.1 | Runtime | TypeScript Runtime Support (@google/genai SDK & Vitest) | **Not Started** | TASK-106, TASK-122 |
+| [**TASK-123**](#task-123) | v1.1.1 | Runtime | TypeScript Runtime Support (@google/genai SDK & Vitest) | **Skipped (Deferred)** | TASK-106, TASK-122 |
 | [**TASK-124**](#task-124) | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Complete** | TASK-113, TASK-117 |
 | [**TASK-124**](#task-124) | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Complete** | TASK-113, TASK-117 |
 | [**TASK-125**](#task-125) | v1.0.1 | Deployment | Native Vertex AI Agent Engine (Agent Runtime) Container Deployment & Lifecycle Management | **Complete** | TASK-106, TASK-110 |
@@ -716,13 +716,14 @@
 <a id="task-123"></a>
 
 ### [TASK-123] TypeScript Runtime Support (@google/genai SDK & Vitest)
+* **Status**: **Skipped (Deferred)**
 * **Release**: `v1.1.1`
 * **Target Package/Files**:
   - `prompts/typescript-adk.prompt.txt`
   - `src/extension/GeminiCodeGenEngine.ts`
   - `src/webview/components/settings/SettingsPage.tsx`
 * **Context**:
-  Add TypeScript language target. Create `prompts/typescript-adk.prompt.txt` generating complete Node.js / TypeScript repository with `@google/genai`, `package.json`, and Vitest test suite.
+  Add TypeScript language target. Create `prompts/typescript-adk.prompt.txt` generating complete Node.js / TypeScript repository with `@google/genai`, `package.json`, and Vitest test suite. *(Deferred alongside `TASK-238` to keep code generation strictly Python-only.)*
 * **Sub-Agent Prompt**:
   ```
   Implement TypeScript code generation target.
