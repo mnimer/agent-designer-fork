@@ -81,7 +81,7 @@ def _get_loop():
         _async_thread.start()
     return _async_loop
 
-def _run_coroutine(coro, timeout=300):
+def _run_coroutine(coro, timeout=600):
     loop = _get_loop()
     future = asyncio.run_coroutine_threadsafe(coro, loop)
     return future.result(timeout=timeout)
@@ -93,7 +93,25 @@ def get_agent():
     if agent_instance is not None:
         return agent_instance
     try:
-        # 1. First inspect agent_runtime_app if present
+        # 1. Inspect agent.py first for app / root_agent / pipeline instances so ADK Runner preserves session_id & A2UI hooks
+        try:
+            import agent
+            for var_name in ['app', 'root_agent', 'agent_runtime', 'workflow', 'pipeline', 'agent_instance', 'agent']:
+                if hasattr(agent, var_name):
+                    val = getattr(agent, var_name)
+                    # Verify it is an instance, NOT an uninstantiated class or module
+                    if not isinstance(val, type) and not isinstance(val, type(sys)):
+                        if hasattr(val, 'set_up') and callable(getattr(val, 'set_up')):
+                            try:
+                                val.set_up()
+                            except Exception:
+                                pass
+                        agent_instance = val
+                        return agent_instance
+        except Exception:
+            pass
+
+        # 2. Fallback to agent_runtime_app if present
         try:
             import agent_runtime_app
             if hasattr(agent_runtime_app, 'agent_runtime'):
@@ -108,22 +126,8 @@ def get_agent():
         except Exception:
             pass
 
-        # 2. Inspect agent.py for root_agent / pipeline instances (prefer app if present)
-        import agent
-        for var_name in ['app', 'root_agent', 'agent_runtime', 'workflow', 'pipeline', 'agent_instance', 'agent']:
-            if hasattr(agent, var_name):
-                val = getattr(agent, var_name)
-                # Verify it is an instance, NOT an uninstantiated class or module
-                if not isinstance(val, type) and not isinstance(val, type(sys)):
-                    if hasattr(val, 'set_up') and callable(getattr(val, 'set_up')):
-                        try:
-                            val.set_up()
-                        except Exception:
-                            pass
-                    agent_instance = val
-                    return agent_instance
-
         # 3. Check for standalone ReasoningEngine classes that accept default constructor
+        import agent
         for attr_name in ['AgentReasoningEngine', 'ReasoningEngine', 'AgentWorkflow', 'RootAgent', 'Workflow']:
             if hasattr(agent, attr_name):
                 cls = getattr(agent, attr_name)
@@ -188,6 +192,67 @@ class TestHandler(BaseHTTPRequestHandler):
 
             res = None
 
+            def _extract_a2ui_from_obj(obj):
+                if not isinstance(obj, dict):
+                    return None
+                if "messages" in obj and isinstance(obj.get("messages"), list):
+                    return obj
+                if "surfaceId" in obj and ("components" in obj or "rootId" in obj):
+                    return obj
+                if "surface" in obj and isinstance(obj.get("surface"), dict):
+                    inner_surf = obj["surface"]
+                    if "messages" in inner_surf or "surfaceId" in inner_surf or "components" in inner_surf:
+                        return inner_surf
+                if "result" in obj and isinstance(obj.get("result"), dict):
+                    return _extract_a2ui_from_obj(obj["result"])
+                return None
+
+            def _extract_a2ui_from_event(evt):
+                surfaces = []
+                content = getattr(evt, 'content', None) if not isinstance(evt, dict) else evt.get('content')
+                if content:
+                    parts = getattr(content, 'parts', []) if not isinstance(content, dict) else content.get('parts', [])
+                    for p in (parts or []):
+                        fresp = p.get('function_response') if isinstance(p, dict) else getattr(p, 'function_response', None)
+                        if fresp:
+                            resp_data = fresp.get('response') if isinstance(fresp, dict) else getattr(fresp, 'response', None)
+                            surf = _extract_a2ui_from_obj(resp_data)
+                            if surf:
+                                surfaces.append(surf)
+                return surfaces
+
+            def _merge_a2ui_surfaces_into_text(text, surfaces):
+                if not surfaces:
+                    return text
+                import re as _re
+                cleaned = text or ""
+                fence = chr(96) * 3
+                # Strip a2ui fenced blocks (closing fence must be at line end / EOS, never inside JSON strings)
+                cleaned = _re.sub(
+                    fence + r"a2ui\\b[\\s\\S]*?(?:" + fence + r"(?=[ \\t]*(?:\\r?\\n|$))|$)",
+                    "",
+                    cleaned,
+                    flags=_re.IGNORECASE,
+                )
+                # Strip json fenced blocks that contain A2UI surface payloads
+                def _strip_a2ui_json_fence(m):
+                    block_body = m.group(1) or ""
+                    if '"messages"' in block_body or '"createSurface"' in block_body or '"updateComponents"' in block_body or '"surfaceId"' in block_body:
+                        return ""
+                    return m.group(0)
+                cleaned = _re.sub(
+                    fence + r"json\\b([\\s\\S]*?)(?:" + fence + r"(?=[ \\t]*(?:\\r?\\n|$))|$)",
+                    _strip_a2ui_json_fence,
+                    cleaned,
+                    flags=_re.IGNORECASE,
+                )
+                cleaned = cleaned.strip()
+                for surf in surfaces:
+                    surf_json = json.dumps(surf)
+                    if surf_json not in cleaned:
+                        cleaned = f"{cleaned}\\n\\n{fence}a2ui\\n{surf_json}\\n{fence}".strip()
+                return cleaned
+
             def _extract_text_from_event(evt):
                 texts = []
                 if hasattr(evt, 'text') and evt.text:
@@ -250,14 +315,17 @@ class TestHandler(BaseHTTPRequestHandler):
             if hasattr(ag, 'async_stream_query') and callable(getattr(ag, 'async_stream_query')):
                 try:
                     accum = []
+                    stream_surfaces = []
                     async def _run_async_stream():
                         async for evt in ag.async_stream_query(message=prompt, user_id="test_user"):
+                            for s in _extract_a2ui_from_event(evt):
+                                stream_surfaces.append(s)
                             txt = _extract_text_from_event(evt)
                             if txt:
                                 accum.append(txt)
                     _run_coroutine(_run_async_stream())
-                    if accum:
-                        res = "".join(accum)
+                    if accum or stream_surfaces:
+                        res = _merge_a2ui_surfaces_into_text("".join(accum), stream_surfaces)
                 except Exception as stream_err:
                     sys.stderr.write(f"[AdkApp async_stream_query Fallback] {stream_err}\\n")
                     sys.stderr.flush()
@@ -265,12 +333,15 @@ class TestHandler(BaseHTTPRequestHandler):
             if res is None and hasattr(ag, 'stream_query') and callable(getattr(ag, 'stream_query')):
                 try:
                     accum = []
+                    stream_surfaces = []
                     for evt in ag.stream_query(message=prompt, user_id="test_user"):
+                        for s in _extract_a2ui_from_event(evt):
+                            stream_surfaces.append(s)
                         txt = _extract_text_from_event(evt)
                         if txt:
                             accum.append(txt)
-                    if accum:
-                        res = "".join(accum)
+                    if accum or stream_surfaces:
+                        res = _merge_a2ui_surfaces_into_text("".join(accum), stream_surfaces)
                 except Exception as stream_err:
                     sys.stderr.write(f"[AdkApp stream_query Fallback] {stream_err}\\n")
                     sys.stderr.flush()
@@ -314,8 +385,51 @@ class TestHandler(BaseHTTPRequestHandler):
                         if session is None:
                             session = await _shared_session_service.create_session(app_name=app_name, user_id="test_user", session_id=session_id)
 
+                        # Check if prompt is a structured A2UI userAction JSON payload
+                        stripped_prompt = (prompt or "").strip()
+                        if stripped_prompt.startswith("{") and "userAction" in stripped_prompt:
+                            try:
+                                parsed_action = json.loads(stripped_prompt)
+                                if isinstance(parsed_action, dict) and "userAction" in parsed_action:
+                                    import importlib as _importlib
+                                    candidate_adaptors = []
+                                    tools_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools")
+                                    if os.path.isdir(tools_dir):
+                                        for fname in sorted(os.listdir(tools_dir)):
+                                            if fname.endswith(".py") and not fname.startswith("_"):
+                                                mod_name = f"tools.{fname[:-3]}"
+                                                try:
+                                                    mod = _importlib.import_module(mod_name)
+                                                    if hasattr(mod, "A2uiAdaptor"):
+                                                        candidate_adaptors.append(getattr(mod, "A2uiAdaptor"))
+                                                except Exception:
+                                                    pass
+                                    for fallback_mod in ("a2ui.a2ui_adaptor", "a2ui_adaptor"):
+                                        try:
+                                            mod = _importlib.import_module(fallback_mod)
+                                            if hasattr(mod, "A2uiAdaptor"):
+                                                candidate_adaptors.append(getattr(mod, "A2uiAdaptor"))
+                                        except Exception:
+                                            pass
+                                    sess_state = getattr(session, "state", None)
+                                    for adaptor_cls in candidate_adaptors:
+                                        try:
+                                            routed = adaptor_cls.route_user_action(parsed_action, session_state=sess_state)
+                                            if hasattr(routed, "get") and routed.get("status") == "handled":
+                                                msg_text = routed.get("message", "Action processed.")
+                                                surf_obj = routed.get("surface")
+                                                if surf_obj:
+                                                    fence = chr(96) * 3
+                                                    return f"{msg_text}\\n\\n{fence}a2ui\\n{json.dumps(surf_obj)}\\n{fence}"
+                                                return msg_text
+                                        except Exception:
+                                            continue
+                            except Exception:
+                                pass
+
                         final_texts = []
                         accum_texts = []
+                        a2ui_surfaces = []
                         error_messages = []
                         async for evt in runner.run_async(
                             user_id="test_user",
@@ -329,6 +443,9 @@ class TestHandler(BaseHTTPRequestHandler):
                             if hasattr(evt, 'is_final_response') and callable(getattr(evt, 'is_final_response')):
                                 is_final = evt.is_final_response()
 
+                            for surf in _extract_a2ui_from_event(evt):
+                                a2ui_surfaces.append(surf)
+
                             txt = _extract_text_from_event(evt)
                             if txt:
                                 if is_final:
@@ -336,10 +453,11 @@ class TestHandler(BaseHTTPRequestHandler):
                                 else:
                                     accum_texts.append(txt)
 
-                        if final_texts:
-                            return "".join(final_texts)
-                        if accum_texts:
-                            return "".join(accum_texts)
+                        combined_text = "".join(final_texts) if final_texts else ("".join(accum_texts) if accum_texts else "")
+                        if a2ui_surfaces:
+                            combined_text = _merge_a2ui_surfaces_into_text(combined_text, a2ui_surfaces)
+                        if combined_text:
+                            return combined_text
                         if error_messages:
                             raise RuntimeError("; ".join(error_messages))
                         return None

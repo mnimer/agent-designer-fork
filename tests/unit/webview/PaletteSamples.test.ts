@@ -128,7 +128,11 @@ describe('PaletteCard Sample Categories & Collapsible Accordions', () => {
 
     assert.equal(provider.formatSampleCategory('retail'), 'Retail');
     assert.equal(provider.formatSampleCategory('sdlc'), 'SDLC');
+    assert.equal(provider.formatSampleCategory('dataanalytics'), 'Data Analytics');
+    assert.equal(provider.formatSampleCategory('data-analytics'), 'Data Analytics');
+    assert.equal(provider.formatSampleCategory('data_analytics'), 'Data Analytics');
     assert.equal(provider.formatSampleCategory('finance'), 'Finance');
+    assert.equal(provider.formatSampleCategory('healthcare'), 'Healthcare');
     assert.equal(provider.formatSampleCategory('research'), 'Research');
     assert.equal(provider.formatSampleCategory('operations'), 'Operations');
     assert.equal(provider.formatSampleCategory('creative'), 'Creative');
@@ -137,21 +141,28 @@ describe('PaletteCard Sample Categories & Collapsible Accordions', () => {
     assert.equal(provider.formatSampleCategory('custom-domain'), 'Custom-domain');
   });
 
-  it('should categorize both company_verifier and travel_concierge under Retail from physical disk', () => {
+  it('should categorize samples from category subfolders (retail, dataanalytics, sdlc) on physical disk', () => {
     const mockContext: any = { extensionPath: process.cwd(), subscriptions: [] };
     const provider = new AgentEditorProvider(mockContext);
     const discovered = provider.discoverResourceSamples();
 
-    assert.equal(discovered.length, 2, 'Must discover exactly 2 samples from resource/samples/');
+    assert.ok(discovered.length >= 5, `Must discover at least 5 samples from resource/samples/, found ${discovered.length}`);
 
     const retailSamples = discovered.filter((s) => s.category === 'Retail');
-    assert.equal(
-      retailSamples.length,
-      2,
-      `Expected both samples to be categorized under 'Retail', but found: ${discovered.map(s => `${s.id} (${s.category})`).join(', ')}`
+    assert.ok(
+      retailSamples.length >= 2,
+      `Expected at least 2 Retail samples from resource/samples/retail/, but found: ${discovered.map(s => `${s.id} (${s.category})`).join(', ')}`
     );
 
-    const ids = retailSamples.map((s) => s.id).sort();
-    assert.deepEqual(ids, ['company_verifier', 'travel_concierge']);
+    const ids = retailSamples.map((s) => s.id);
+    assert.ok(ids.includes('company_verifier'), 'Expected company_verifier in Retail samples');
+    assert.ok(ids.includes('travel_concierge'), 'Expected travel_concierge in Retail samples');
+    assert.ok(!ids.includes('retail_data_and_ai_demo'), 'retail_data_and_ai_demo should be removed from Retail samples');
+
+    // Verify other category subfolders
+    const byId = Object.fromEntries(discovered.map((s) => [s.id, s]));
+    assert.equal(byId['kc_data_domain_builder']?.category, 'Data Analytics');
+    assert.equal(byId['code_reviewer']?.category, 'SDLC');
+    assert.equal(byId['a2ui_kitchen_sink']?.category, 'SDLC');
   });
 });

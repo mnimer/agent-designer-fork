@@ -59,7 +59,10 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
              * **Loop (`subAgentPattern: "loop"` / `"review_critique"`)**: Use `SequentialAgent(sub_agents=[LoopAgent(name="refinement_loop", sub_agents=[child_1, child_2, ...], max_iterations=3), synthesizer])`. DO NOT use `ParallelAgent`.
              * **Coordinator (`subAgentPattern: "coordinator"` / `"hierarchical_decomposition"`)**: Use `Agent(name="...", model="gemini-3.7-flash", sub_agents=[child_1, child_2, ...], output_schema=ResponseSchema)`.
              * **Agent Class Parameter Constraints**:
-                - `Agent(...)`: Leaf execution agent accepting `name`, `model`, `instruction`, `description`, `tools`, `sub_agents`, `output_key`, `output_schema`. `output_key` stores output to session state.
+                - `Agent(...)`: Leaf execution agent accepting `name`, `model`, `instruction`, `description`, `tools`, `sub_agents`, `output_key`, `output_schema`, `generate_content_config`. `output_key` stores output to session state.
+                  * **Hyperparameter Configuration**: When workflow agent nodes specify `temperature`, `maxOutputTokens`, or sampling parameters, DO NOT pass `temperature` directly to `Agent(...)` (it causes a Pydantic `extra_forbidden` ValidationError). Instead, configure `generate_content_config=genai_types.GenerateContentConfig(temperature=..., max_output_tokens=...)` (importing `from google.genai import types as genai_types`) on the `Agent(...)` definition.
+                  * **Agent Iteration Limits**: For agent loops or iteration bounds, use reasonable defaults between 1 and 3 iterations (never high values like 10, to prevent runaway loops).
+                  * **Structured Output Schema (`output_schema`)**: When an agent node in the workflow specification specifies `structuredOutputSchema` (with `enabled: true`), you MUST wire the generated Pydantic model directly to that agent via `output_schema=<ModelName>` in `agent.py`. Do NOT merely import the model class; it must be passed into `Agent(output_schema=..., output_key=...)` so the model-level structured schema is enforced during execution.
                 - `RemoteA2aAgent(...)`: A2A protocol gateway agent accepting `name`, `description`, `agent_card`, `httpx_client`, `sub_agents`. Forbidden: `instruction`, `temperature`, `output_key`, `tools`. Passing `output_key` causes a Pydantic `extra_forbidden` ValidationError.
                 - `ParallelAgent(...)`, `SequentialAgent(...)`, `LoopAgent(...)`: Composite container agents accepting `name`, `description`, `sub_agents` (and `max_iterations` for Loop). Forbidden: `instruction`, `temperature`, `output_key`, `tools`. Passing `output_key` causes a Pydantic `extra_forbidden` ValidationError.
              * **CRITICAL ADK & VERTEX AI SEARCH TOOL CONSTRAINTS**:
@@ -77,7 +80,9 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
           4. **Recursive Composition Across N-Layers (2, 3, 4, 5+ Tiers Deep)**:
              * When a child agent itself has its own connected `subAgents: [...]`, that child is an intermediate parent. Its OWN `subAgentPattern` dictates how its grandchildren are orchestrated. Construct the hierarchy bottom-up: leaf agents first, intermediate orchestrators next, and root orchestrator as `root_agent`.
           5. **React Flow (`.agent`) Diagram Graph & Handle Interpretation**:
-             * **Trigger-to-Root Connections (`input_left`)**: Only the Root Coordinator agent (`isStartNode: true`) connects from triggers. All trigger nodes (`chat`, `tester`, `webhook`, `eventarc`, `cron`) connect from `sourceHandle: "trigger_out_right"` to the Root Agent's `targetHandle: "input_left"`. Triggers represent inbound invocation stimuli and test evaluation suites, not sub-agents.
+             * **Trigger-to-Root Connections**:
+               - **Test Suite Trigger Node (`tester` / Test Suite)**: ALWAYS connects from `sourceHandle: "trigger_out_right"` (Right handle) to the Root Agent's `targetHandle: "input_left"` (Left handle). Test Suite nodes represent evaluation suites and test prompts, positioned to the left of the Root Agent.
+               - **Runtime Inbound Triggers (`chat`, `webhook`, `eventarc`, `cron`, `pubsub`)**: Connect from `sourceHandle: "trigger_out_bottom"` (Bottom handle) to the Root Agent's `targetHandle: "input"` (Top handle). Triggers represent inbound invocation stimuli, not sub-agents.
              * **Agent-to-SubAgent Delegation (`output` -> `input`)**: Standard delegation flows from parent `sourceHandle: "output"` to child `targetHandle: "input"`. These edges wire the target agent into the parent agent's `sub_agents=[...]` list.
              * **Control-Flow Source Handles**:
                - Router (`agentKind: "router"`): `sourceHandle` matches branch ID (`branch_if_1`, `branch_else`). Routes to branch target agents conditionally.
@@ -99,6 +104,14 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
       * Implement tools as native, type-annotated Python functions with descriptive docstrings detailing parameter purposes and return schemas so Gemini's function calling engine can accurately plan tool use.
       * ADK automatically converts typed Python functions into tool declarations and dispatches calls during the agent loop.
 
+    - Structured Input Schemas (`inputSchema` / Pydantic v2 `BaseModel` for inputs):
+      * When an agent or router node has `inputSchema` defined and enabled:
+        - In `pydantic_models.py`, define a Pydantic v2 `BaseModel` for incoming input/state (e.g. `class <AgentName>Input(BaseModel): ...`).
+        - Strongly type each field: `str`, `int`, `float`, `bool`, `List[...]`, `dict`, `Literal[...]`.
+        - Use `Field(description=..., default=...)` for optional/required fields.
+        - In execution entrypoints (`server.py` / `main.py` / agent runner), validate incoming request payloads using `<AgentName>Input.model_validate(payload)`.
+        - For Router Agents (`agentKind: "router"`), condition expressions evaluate against the validated typed attributes (e.g. `input.urgency > 3`, `input.category == 'billing'`).
+
     - Observability: Logging, Tracing & Metrics (ADK & OpenTelemetry Strategy):
       * **NO Hardcoded `print()` Statements**: Under NO circumstances should you use `print()` for agent tracing or logging. Do NOT subclass `Agent` or override `_run_async_impl` to intercept execution.
       * **Structured Logging**: Configure Python's standard `logging` module (`logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')`) in `server.py`, `main.py`, and `agent.py`. All ADK loggers are children of `google_adk` (use `DEBUG` level for LLM prompt/response inspection).
@@ -107,19 +120,27 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
 
 2. **File Structure to Generate**:
    - `agent.py`: Core ADK agent module defining `root_agent` (`Agent`, `SequentialAgent`, `ParallelAgent`, `LoopAgent`, or `Workflow`) with sub-agents, system instructions, tools, and output schemas. Dynamically prepend its own directory to `sys.path` (via `Path(__file__).parent.resolve()`) before importing local sibling modules (e.g. `pydantic_models`, `tools`) to guarantee clean module resolution across local and container environments.
-   - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs ONLY when explicitly defined in nodes (e.g. `outputFormat: "json"`). If `outputFormat` is `"text"` or unconfigured, DO NOT invent artificial Pydantic schema models or result classes.
+   - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs and typed input schemas (`inputSchema`) (when defined in nodes). If `outputFormat` is `"text"` and no `inputSchema` is configured, DO NOT invent artificial Pydantic schema models or result classes.
    - **ZERO TEST-SUITE LEAKAGE (CRITICAL MANDATE)**: `triggerNode`, `testPrompts`, `testPayload`, and `expectedOutput` are strictly for test suites and evaluation. NEVER leak or incorporate test queries, expected assertions, or specific test entities (e.g. stock tickers, sample names) into `agent.py`, `server.py`, or agent instructions. Agent instructions must strictly reflect ONLY the node's `systemPrompt`.
    - `tools/*.py`: Tool definitions (e.g., Google Search, custom functions, MCP tools). Group tools logically by category/source. Use standard `logging.getLogger(__name__)`.
    - `server.py`: Production FastAPI server wrapping Google ADK's `root_agent` and handling incoming client requests, triggers, and health checks. Follow these implementation instructions:
      * **Core Server Configuration**:
        - Import and use Google ADK's `get_fast_api_app(agents_dir=..., web=True, trigger_sources=[...])` from `google.adk.cli.fast_api` to automatically mount built-in ADK routes (`/run_sse`, `/apps/{app}/trigger/pubsub`, health checks, etc.).
        - Initialize ADK's `InMemorySessionService()` (or configured persistence) and construct `Runner(agent=root_agent, app_name=..., session_service=session_service, auto_create_session=True)` with `auto_create_session=True` to guarantee sessions are automatically provisioned on request.
-       - Expose `GET /healthz` returning `{"status": "ok", "agent": root_agent.name}` for Cloud Run health probes.
+       - Expose both `GET /health` and `GET /healthz` returning `{"status": "ok", "agent": root_agent.name}` for local runner and Cloud Run health probes.
      * **Direct Query & Test Execution Routes (`POST /` and `POST /api/run`)**:
        - ALWAYS expose `@app.post("/")` and `@app.post("/api/run")` so the Visual Agent Designer Interactive Chat tab, smoke testers, and external HTTP clients can invoke the agent directly via POST.
        - Accept flexible JSON request payloads: `{"input": {"query": "..."}}` (extension runner format), `{"query": "..."}`, `{"prompt": "..."}`, or raw strings.
+       - If `root_agent` has `inputSchema` configured, validate incoming payloads against `<AgentName>Input.model_validate(...)` early before executing the agent runner.
        - When resolving sessions, note that `await session_service.get_session(...)` returns `None` (rather than raising an exception) if the session does not exist. Always check `if not session:` and call `await session_service.create_session(...)` before running the agent.
-       - Dispatch the query to `root_agent` using ADK's latest asynchronous `Runner` and session service, stream/accumulate the text tokens, and return a standardized JSON response: `{"output": <text>, "response": <text>, "text": <text>, "status": "success"}`.
+       - Dispatch the query to `root_agent` using ADK's latest asynchronous `Runner` and session service, stream/accumulate the text tokens (filtering out intermediate `getattr(part, "thought", False)` chunks when final answer text is present), and return a standardized JSON response: `{"output": <text>, "response": <text>, "text": <text>, "status": "success"}`.
+     * **Agent-to-Agent (A2A) Protocol Endpoints for Gemini Enterprise (`GET /.well-known/agent.json`, `GET /.well-known/agent-card.json`, `POST /v1/message:send`, `POST /message:send`, `POST /v1/message:stream`, `POST /message:stream`, and JSON-RPC 2.0 on `POST /`)**:
+       - ALWAYS expose these A2A protocol routes directly on the FastAPI `app` (using standard FastAPI handlers without importing `a2a` or `google.adk.a2a`) so Gemini Enterprise (Discovery Engine) can discover and invoke the Cloud Run service:
+         * `GET /.well-known/agent.json` and `GET /.well-known/agent-card.json`: Return a valid A2A v0.3 `AgentCard` JSON object (`name`, `description`, `url` resolved from `x-forwarded-proto` / `x-forwarded-host`, `version: "1.0.0"`, `protocolVersion: "0.3.0"`, `preferredTransport: "JSONRPC"`, `defaultInputModes: ["text/plain", "application/json"]`, `defaultOutputModes: ["text/plain", "application/json"]`, `capabilities: {"streaming": False, "pushNotifications": False, "stateTransitionHistory": False}`, and `skills: [{"id": root_agent.name, "name": root_agent.name, "description": ..., "tags": ["adk", "cloud-run"]}]`). Note: Set `preferredTransport: "JSONRPC"` and `capabilities.streaming: False` because Gemini Enterprise (`_get_cloud_run_headers`) signs `Sec-Authenticated-Request-Headers` against the root `agent_card.url` path (`/`), which requires JSON-RPC 2.0 `POST /` to pass GFE / Cloud Run edge verification.
+         * `POST /v1/message:send` and `POST /message:send`: Parse incoming A2A `SendMessageRequest` JSON (`body.get("message") or body.get("request")`, extracting text from `content` or `parts` and `contextId` as the session ID), run the query against `root_agent`, and return the Protobuf-JSON `SendMessageResponse` wire shape expected by `a2a-sdk` `RestTransport` (`ParseDict(response_data, a2a_pb2.SendMessageResponse())`):
+           `{"message": {"messageId": str(uuid.uuid4()), "contextId": context_id, "role": "ROLE_AGENT", "content": [{"text": final_text}]}}`.
+         * `POST /v1/message:stream` and `POST /message:stream`: Parse incoming A2A `SendMessageRequest` JSON and return a `StreamingResponse(..., media_type="text/event-stream")` emitting `data: {"message": {"messageId": ..., "contextId": context_id, "role": "ROLE_AGENT", "content": [{"text": final_text}]}}\n\n`.
+         * On `POST /`: Detect A2A JSON-RPC 2.0 requests (`body.get("jsonrpc") == "2.0"` and `"method" in body` such as `"message/send"` or `"tasks/send"`), extract text from `params.message.parts` or `params.message.content`, execute `root_agent`, and return `{"jsonrpc": "2.0", "id": body.get("id"), "result": {"kind": "message", "messageId": ..., "contextId": context_id, "role": "agent", "parts": [{"kind": "text", "text": final_text}]}}`.
      * **OpenAI-Compatible Chat Endpoints (`GET /v1/models` and `POST /v1/chat/completions`)**:
        - GENERATE WHEN: The workflow includes a trigger node with `triggerType == "chat"` (or `triggerKind == "chat"`).
        - `GET /v1/models`: Returns a standard OpenAI model list object (`{"object": "list", "data": [...]}`) identifying the agent name and underlying LLM model.
@@ -161,9 +182,11 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
        * **Artifact Registry Repository**:
          - Provision `google_artifact_registry_repository` for storing agent container images (`format = "DOCKER"`).
        * **Identity & Least Privilege IAM Bindings**:
+         - Include `data "google_project" "current" {}` to resolve the numeric project number.
          - Provision dedicated `google_service_account` for Cloud Run (e.g. `"${var.service_name}-sa"`).
          - Grant `roles/aiplatform.user` project IAM member to the service account for Vertex AI Gemini model invocation.
-         - When public unauthenticated access is enabled, grant `roles/run.invoker` on the Cloud Run service to `allUsers`.
+         - Grant `roles/run.invoker` on `google_cloud_run_v2_service.agent_service` (`google_cloud_run_v2_service_iam_member.discovery_engine_invoker`) to `serviceAccount:service-${data.google_project.current.number}@gcp-sa-discoveryengine.iam.gserviceaccount.com` so Gemini Enterprise (Discovery Engine) can invoke the Cloud Run A2A service via `X-Serverless-Authorization` even when public unauthenticated access is disabled.
+         - When public unauthenticated access is enabled (`var.allow_unauthenticated`), grant `roles/run.invoker` on the Cloud Run service to `allUsers`.
          - When Secret Manager secrets are provisioned, grant `roles/secretmanager.secretAccessor` on the secrets to the service account.
        * **Cloud Run V2 Service (`google_cloud_run_v2_service`)**:
          - Configure `template.service_account` to the dedicated service account email.
@@ -177,6 +200,7 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
          - Set traffic allocation to 100% on latest revision (`TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST`).
          - Set `lifecycle { ignore_changes = [client, client_version, template[0].containers[0].image] }` to allow fast CI/CD container updates via Cloud Build / `gcloud run deploy` without Terraform state drift.
        * **Conditional Triggers & Integrations**:
+         - **Least-Privilege IAM & Invocation Security**: NEVER grant `roles/run.invoker` to `allUsers` unless the workflow specification explicitly specifies unauthenticated public access. For Eventarc, Pub/Sub, and Cloud Scheduler triggers, bind `roles/run.invoker` ONLY to the dedicated trigger service account (e.g. `google_service_account.eventarc_invoker.email` or `google_service_account.pubsub_invoker.email`).
          - **Pub/Sub Trigger** (when `triggerType` / `triggerKind == "pubsub"`): Enable `pubsub.googleapis.com`, provision dedicated invoker service account with `roles/run.invoker` on Cloud Run, and create `google_pubsub_subscription` with `push_config` pointing to the Cloud Run service `/pubsub` (or `/apps/{app}/trigger/pubsub`) endpoint with `oidc_token { service_account_email = google_service_account.pubsub_invoker.email }`.
          - **Eventarc Trigger** (when `triggerType` / `triggerKind == "eventarc"`): Enable `eventarc.googleapis.com`, provision dedicated invoker service account with `roles/run.invoker` on Cloud Run and `roles/eventarc.eventReceiver` on the project, and create `google_eventarc_trigger` matching the configured event routing to the Cloud Run service path.
          - **Cloud Scheduler (Cron Trigger)** (when `triggerType` / `triggerKind == "scheduled"` or `"cron"`): Enable `cloudscheduler.googleapis.com`, provision scheduler invoker service account with `roles/run.invoker` on Cloud Run, and create `google_cloud_scheduler_job` with the configured cron schedule, timezone, and HTTP target pointing to the Cloud Run service URL with OIDC authentication.
@@ -191,6 +215,12 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
       * `memory`: (string, default = "2Gi", description = "Memory allocation for Cloud Run service")
       * `min_instances`: (number, default = 0, description = "Minimum scale instance count")
       * `max_instances`: (number, default = 10, description = "Maximum scale instance count")
+      * `allow_unauthenticated`: (bool, default = false, description = "Allow unauthenticated public access to the Cloud Run service")
+      * `enable_agent_gateway`: (bool, default = true, description = "Provision Shared Regional Agent Gateway and Model Armor protection")
+      * `model_armor_template_id`: (string, default = "enterprise-baseline", description = "Model Armor security template ID")
+      * `publish_to_gemini_enterprise`: (bool, default = false, description = "Publish deployed agent to Gemini Enterprise App")
+      * `gemini_enterprise_app_id`: (string, default = "", description = "Target Gemini Enterprise (Discovery Engine) App/Engine ID")
+      * `gemini_enterprise_location`: (string, default = "global", description = "Gemini Enterprise collection location (global, us, eu)")
     - `outputs.tf`: Terraform outputs:
       * `service_url`: Reference `google_cloud_run_v2_service.agent_service.uri`.
       * `service_id`: Reference `google_cloud_run_v2_service.agent_service.id`.
@@ -202,29 +232,44 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
       * Step 2: Build Docker container image (`docker build -t ...`).
       * Step 3: Push image to Google Cloud Artifact Registry (`docker push ...`).
       * Step 4: Deploy container revision to Google Cloud Run (`gcloud run deploy ...`).
+      * Step 5: Post-deploy CI/CD governance & Gemini Enterprise registration (grants `roles/run.invoker` to `service-${PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com`, runs `evaluate.py` when `_RUN_CLOUD_EVAL=true`, and upserts the A2A `JSONRPC` agent card onto Gemini Enterprise when `_PUBLISH_GEMINI_ENTERPRISE=true` and `_GEMINI_ENTERPRISE_APP_ID` is provided).
+    - `Makefile`: Standardized, self-contained CLI & CI/CD automation entrypoint with targets:
+      * `make install`: `python3 -m venv .venv && .venv/bin/pip install --upgrade pip -r requirements.txt`
+      * `make dev`: `@test -x .venv/bin/python || $(MAKE) install` followed by `.venv/bin/python -m uvicorn server:app --reload --port $(PORT)`
+      * `make test`: `@test -x .venv/bin/pytest || $(MAKE) install` followed by `.venv/bin/pytest test_agent.py -v`
+      * `make eval`: `@test -x .venv/bin/python || $(MAKE) install` followed by `.venv/bin/python evaluate.py --project=$(PROJECT_ID) --location=$(REGION) --dataset=eval_dataset.jsonl`
+      * `make infra`: `terraform init && terraform apply -auto-approve -var="project_id=$(PROJECT_ID)" -var="region=$(REGION)" -var="service_name=$(SERVICE_NAME)" -var="enable_agent_gateway=$(ENABLE_AGENT_GATEWAY)" -var="model_armor_template_id=$(MODEL_ARMOR_TEMPLATE)" -var="publish_to_gemini_enterprise=$(PUBLISH_GEMINI_ENTERPRISE)" -var="gemini_enterprise_app_id=$(GEMINI_ENTERPRISE_APP_ID)" -var="gemini_enterprise_location=$(GEMINI_ENTERPRISE_LOCATION)"`
+      * `make deploy`: Deploys the Cloud Run service using overrideable variables (`PROJECT_ID ?=`, `REGION ?= us-central1`, `SERVICE_NAME ?=`, `CPU ?= 1`, `MEMORY ?= 2Gi`, `MIN_INSTANCES ?= 0`, `MAX_INSTANCES ?= 10`, `ALLOW_UNAUTHENTICATED ?= false`, `NETWORK_ATTACHMENT ?=`, `ENABLE_AGENT_GATEWAY ?= true`, `MODEL_ARMOR_TEMPLATE ?= enterprise-baseline`, `GATEWAY_ID ?= default-shared-agent-gateway`, `RUN_CLOUD_EVAL ?= false`, `PUBLISH_GEMINI_ENTERPRISE ?= false`, `GEMINI_ENTERPRISE_APP_ID ?=`, `GEMINI_ENTERPRISE_LOCATION ?= global`, `ENV_VARS ?= GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=global,GOOGLE_CLOUD_PROJECT=$(PROJECT_ID)`): `gcloud run deploy $(SERVICE_NAME) --source . --project $(PROJECT_ID) --region $(REGION) --platform managed --cpu=$(CPU) --memory=$(MEMORY) --min-instances=$(MIN_INSTANCES) --max-instances=$(MAX_INSTANCES) $(if $(filter true,$(ALLOW_UNAUTHENTICATED)),--allow-unauthenticated,--no-allow-unauthenticated) $(if $(NETWORK_ATTACHMENT),--network-attachment=$(NETWORK_ATTACHMENT),) --set-env-vars="$(ENV_VARS)" --quiet` (or `gcloud builds submit --config=cloudbuild.yaml --project=$(PROJECT_ID) .` when `USE_CLOUD_BUILD=true`), followed by optional `$(MAKE) eval` when `RUN_CLOUD_EVAL=true` and `$(MAKE) publish-gemini-enterprise` when `PUBLISH_GEMINI_ENTERPRISE=true`.
+      * `make register-agent`: Verifies the deployed Cloud Run agent in Google Cloud Agent Registry (`GET https://agentregistry.googleapis.com/v1alpha/projects/$(PROJECT_ID)/locations/$(REGION)/agents`) and applies least-privilege Agent Security Policies on both IAP (`POST https://iap.googleapis.com/v1/projects/$(PROJECT_ID)/locations/$(REGION)/iap_web/agentRegistry:setIamPolicy` granting `roles/iap.egressor` to the agent's `RuntimeIdentity` principal) and IAM v3 Unified Access Policies (`POST https://iam.googleapis.com/v3/projects/$(PROJECT_ID)/locations/global/accessPolicies` + `policyBindings` granting `iap.googleapis.com/resources.egressViaIAP`).
+      * `make setup-gateway`: Provisions the Model Armor template (`POST https://modelarmor.$(REGION).rep.googleapis.com/v1/projects/$(PROJECT_ID)/locations/$(REGION)/templates?templateId=$(MODEL_ARMOR_TEMPLATE)`), creates or updates the Shared Regional Agent Gateway (`POST https://networkservices.googleapis.com/v1alpha1/projects/$(PROJECT_ID)/locations/$(REGION)/agentGateways?agentGatewayId=$(GATEWAY_ID)` with `googleManaged.governedAccessPath = "AGENT_TO_ANYWHERE"`, `protocols = ["MCP"]`, and `registries = ["//agentregistry.googleapis.com/projects/$(PROJECT_ID)/locations/$(REGION)"]`), and binds IAP (`REQUEST_AUTHZ`) + Model Armor AI Security (`CONTENT_AUTHZ`) `authzExtensions` (`networkservices.googleapis.com/v1beta1`) and `authzPolicies` (`networksecurity.googleapis.com/v1beta1`).
+      * `make publish-gemini-enterprise`: Grants `roles/run.invoker` on `$(SERVICE_NAME)` to `serviceAccount:service-$$PROJECT_NUMBER@gcp-sa-discoveryengine.iam.gserviceaccount.com` via `gcloud run services add-iam-policy-binding`, then upserts the deployed Cloud Run agent onto the target Gemini Enterprise App (`GET` existing agents from `https://discoveryengine.googleapis.com/v1alpha/projects/$(PROJECT_ID)/locations/$(GEMINI_ENTERPRISE_LOCATION)/collections/default_collection/engines/$(GEMINI_ENTERPRISE_APP_ID)/assistants/default_assistant/agents`, `PATCH ?updateMask=displayName,description,a2aAgentDefinition` if matched or `POST` without `?agentId=` if new, setting `sharingConfig: {"scope": "ALL_USERS"}` and `a2aAgentDefinition.jsonAgentCard` with `preferredTransport: "JSONRPC"` and `url` set to the Cloud Run service root HTTPS URL).
 
 ### MANDATORY COMPLETE REPOSITORY FILE MANIFEST:
 Every response MUST create the complete project. Emitting only 1 or 2 files is strictly prohibited.
 You MUST output EVERY single one of the following files in the returned JSON array:
 1. `agent.py`: Complete Google ADK root_agent, sub-agents, and state flow.
-2. `server.py`: Production FastAPI server mounting ADK endpoints and health checks.
-3. `main.py`: Local CLI test runner using ADK Runner.
-4. `test_agent.py`: Pytest test suite validating all test scenarios against root_agent. When the workflow specification contains trigger nodes of type `tester` (or `triggerType == 'tester'`), inspect `config.testScenarios`, `config.testPrompts`, and `config.expectedOutput`. For EVERY defined test scenario (e.g. 'Test Case #1' with prompt 'Let\'s play a game.'), generate a dedicated pytest test function in `test_agent.py` that executes the scenario prompt against `root_agent` and asserts the expected output criteria.
-5. `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios.
-6. `evaluate.py`: Vertex AI Agent Evaluation script using vertexai.evaluation.EvalTask.
-7. `requirements.txt`: Complete pinned dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
-8. `Dockerfile`: Clean production container definition using python:3.11-slim. Always enforce non-root execution by creating a dedicated non-privileged user (`RUN useradd -u 8888 -m appuser && chown -R appuser:appuser /app` and `USER 8888`).
-9. `.dockerignore`: Docker ignore patterns excluding `.git`, `.venv`, `__pycache__`, `*.pyc`, `.env*`, `dist`, and build artifacts.
-10. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building container, and deploying.
-11. `main.tf`: Complete Terraform configuration deploying google_cloud_run_v2_service, Artifact Registry, Service Account, IAM roles, and triggers.
-12. `variables.tf`: Input variable definitions for Terraform.
-13. `outputs.tf`: Output values (service_url, service_id, artifact_repo_id, service_account_email).
-14. `terraform.tfvars`: Default variable values for local initialization.
-15. `pyproject.toml`: Modern packaging metadata and dependencies.
-16. `.gitignore`: Git ignore patterns for Python, venv, and cache.
-17. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
-18. `README.md`: Architecture overview, local execution, and deployment instructions.
-18. Auxiliary files as needed:
+2. `session_store.py`: Production session store checkpointer implementations (`get_session_store`).
+3. `server.py`: Production FastAPI server mounting ADK endpoints and health checks.
+4. `main.py`: Local CLI test runner using ADK Runner.
+5. `test_agent.py`: Pytest test suite validating all test scenarios against root_agent. When the workflow specification contains trigger nodes of type `tester` (or `triggerType == 'tester'`), inspect `config.testScenarios`, `config.testPrompts`, and `config.expectedOutput`. For EVERY defined test scenario (e.g. 'Test Case #1' with prompt 'Let\'s play a game.'), generate a dedicated pytest test function in `test_agent.py` that executes the scenario prompt against `root_agent` and asserts the expected output criteria.
+   - **Hermetic, Offline CI Execution**: All pytest functions executed as part of CI (such as cloudbuild.yaml step `pytest test_agent.py -v`) MUST test agent structure, tool logic, and mock external Vertex AI / Gemini LLM calls using `unittest.mock` or mock Runner event generators so that automated test suites pass offline without requiring ambient Google Cloud credentials or live network calls.
+   - **Strict Test Assertions**: In `test_agent.py`, test assertions MUST strictly verify the exact `expectedOutput` or `expectedOutputPattern` specified in `testScenarios` (e.g., `assert 'LockbitC2' in final_response_text`). NEVER weaken or bypass assertions by appending fallback conditions such as `or len(final_response_text) > 0` or `or True`, which make test failures impossible.
+6. `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios.
+7. `evaluate.py`: Vertex AI Agent Evaluation script using vertexai.evaluation.EvalTask.
+8. `requirements.txt`: Complete pinned dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
+9. `Makefile`: Self-contained CLI & CI/CD automation Makefile with `install`, `dev`, `test`, `eval`, `infra`, `deploy`, `register-agent`, `setup-gateway`, and `publish-gemini-enterprise` targets.
+10. `Dockerfile`: Clean production container definition using python:3.11-slim. Always enforce non-root execution by creating a dedicated non-privileged user (`RUN useradd -u 8888 -m appuser && chown -R appuser:appuser /app` and `USER 8888`).
+11. `.dockerignore`: Docker ignore patterns excluding `.git`, `.venv`, `__pycache__`, `*.pyc`, `.env*`, `dist`, and build artifacts.
+12. `cloudbuild.yaml`: CI/CD Cloud Build pipeline running tests, building container, and deploying.
+13. `main.tf`: Complete Terraform configuration deploying google_cloud_run_v2_service, Artifact Registry, Service Account, IAM roles, and triggers.
+14. `variables.tf`: Input variable definitions for Terraform.
+15. `outputs.tf`: Output values (service_url, service_id, artifact_repo_id, service_account_email).
+16. `terraform.tfvars`: Default variable values for local initialization.
+17. `pyproject.toml`: Modern packaging metadata and dependencies.
+18. `.gitignore`: Git ignore patterns for Python, venv, and cache.
+19. `.gcloudignore`: Cloud Build / gcloud deployment ignore patterns.
+20. `README.md`: Architecture overview, local execution (`make install && make dev`), unit testing (`make test`), Terraform provisioning (`make infra`), and standalone CLI / CI/CD deployment (`make deploy`).
+21. Auxiliary files as needed:
     - `pydantic_models.py` (when structured output schemas or Pydantic models are used)
     - `tools/*.py` (when custom tools are defined)
 
@@ -336,7 +381,7 @@ agent = Agent(
     # LLM generation parameters
     generate_content_config=genai_types.GenerateContentConfig(
         temperature=0.2,
-        max_output_tokens=1024,
+        max_output_tokens=8192,
     ),
 
     # Save final output to state
@@ -578,6 +623,9 @@ When a workflow node has `agentKind: "router"`, compile it into a custom `BaseAg
              yield event
      ```
    - Always route to the designated fallback branch (`isDefault: true`) if no explicit conditions match.
+3. **Structured Input Schema Support**:
+   - When `inputSchema` is enabled on the router node, parse and validate incoming session state or payload into `<RouterName>Input.model_validate(...)`.
+   - Condition expressions evaluate directly against typed input fields (e.g. `input.urgency > 3`, `input.category == 'billing'`).
 
 ### Synthesizer Agents (`agentKind: "synthesizer"`)
 
@@ -1024,6 +1072,28 @@ McpToolset(
         "Authorization": f"Bearer {fetch_id_token(Request(), MCP_SERVER_URL)}"
     },
 )
+
+# Databricks Managed MCP (Genie Space, Vector Search, Unity Catalog, SQL)
+# When Databricks MCP tools are attached (databricksConfig / databricks_mcp_*),
+# connect over Streamable HTTP with DATABRICKS_TOKEN Bearer auth.
+# Add DATABRICKS_TOKEN to .env.example and provision google_secret_manager_secret (databricks-mcp-token) in main.tf.
+McpToolset(
+    connection_params=StreamableHTTPConnectionParams(
+        url=os.environ.get("DATABRICKS_MCP_URL", "https://<workspace-hostname>/api/2.0/mcp/..."),
+        headers={"Authorization": f"Bearer {os.environ.get('DATABRICKS_TOKEN', '')}"},
+    ),
+)
+
+# Snowflake Managed & Cortex MCP (Analyst, Search, Agent, SQL, Generic)
+# When Snowflake MCP tools are attached (snowflakeConfig / snowflake_mcp_*),
+# connect over Streamable HTTP (or Stdio for snowflake-labs-mcp CLI mode) with SNOWFLAKE_MCP_TOKEN.
+# Add SNOWFLAKE_MCP_TOKEN to .env.example and provision google_secret_manager_secret (snowflake-mcp-token) in main.tf.
+McpToolset(
+    connection_params=StreamableHTTPConnectionParams(
+        url=os.environ.get("SNOWFLAKE_MCP_URL", "https://<account>.snowflakecomputing.com/api/v2/databases/<db>/schemas/<schema>/mcp-servers/<server>"),
+        headers={"Authorization": f"Bearer {os.environ.get('SNOWFLAKE_MCP_TOKEN', '')}"},
+    ),
+)
 ```
 
 **Gotchas:**
@@ -1054,6 +1124,33 @@ state["app:total_queries"] = 1000
 
 # Temporary (current invocation only)
 state["temp:intermediate_result"] = data
+```
+
+### Initial Session State Pre-loading (`data/initial_session_state.json`, TASK-215)
+
+When initializing new sessions or test harness scenarios, check if `data/initial_session_state.json` exists relative to the package root. If present, load its JSON dictionary and pass it as `initial_state` or merge into `session.state`:
+
+```python
+import json
+from pathlib import Path
+
+def load_initial_session_state() -> dict:
+    state_path = Path(__file__).resolve().parent / "data" / "initial_session_state.json"
+    if state_path.is_file():
+        try:
+            with open(state_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logging.getLogger(__name__).warning("Failed to load initial session state: %s", e)
+    return {}
+
+# Pass to session creation:
+session = await session_service.create_session(
+    app_name=APP_NAME,
+    user_id=user_id,
+    session_id=session_id,
+    state=load_initial_session_state(),
+)
 ```
 
 ### Session Service Options
@@ -2103,3 +2200,107 @@ Default ingress is `INGRESS_TRAFFIC_ALL` (public). To restrict, change the `ingr
 IAP (Identity-Aware Proxy) can be enabled by running `agents-cli deploy --iap` (Cloud Run only), which adds Google identity authentication without code changes. IAP is configured by the deploy flag, not by a generated Terraform variable.
 
 VPC connectors are not configured by default. Add them in custom Terraform if needed for private resource access (see `references/terraform-patterns.md`).
+
+---
+
+## v1.2.0 ADK ADVANCED CAPABILITY GUIDELINES
+
+When the workflow JSON includes any of the following advanced configuration fields, you MUST generate the corresponding ADK Python implementation:
+
+### 1. A2UI Integration (`a2uiConfig`, TASK-221)
+- If an agent node (root agent or any sub-agent) defines `a2uiConfig` with `enabled: true`:
+  * Generate root-level `a2ui_components.py` (never create a separate `a2ui/` subfolder) with UI component definitions (`build_a2ui_surface` returning `{"messages": [{"createSurface": {"surfaceId": ..., "catalog": "gemini_enterprise_composite_v09", "title": ...}}, {"updateComponents": {"surfaceId": ..., "rootId": ..., "components": [...]}}, {"updateDataModel": {"surfaceId": ..., "data": {...}}}]}`).
+  * **CANONICAL A2UI v0.9.1 COMPONENT CATALOG & JSON SCHEMA (MANDATORY)**:
+    - Every component in `"components": [...]` MUST use the exact keys `{"id": "...", "component": "<WidgetName>", "properties": {...}, "children": ["child_id_1", ...]}` (use `"properties"`, NOT `"props"`).
+    - **Supported Catalog Widgets**:
+      1. **Layout & Containers**: `MaterialCard` (`title`, `subtitle`, `status`, `children`), `MaterialColumn` (`spacing`, `children`), `MaterialRow` (`spacing`, `children`), `MaterialGridList` (`columns`, `children`), `MaterialExpansionPanel` (`title`, `expanded`, `children`), `MaterialTabs` (`tabs: [{"id", "label"}]`, `children`), `MaterialDivider`, `MaterialDialog` (`title`, `children`).
+      2. **Content & Status**: `MaterialText` (`text`, `variant`: `"h1"|"h2"|"h3"|"subtitle1"|"body1"|"body2"|"caption"|"code"`), `MaterialBadge` (`text`, `color`: `"success"|"warning"|"error"|"info"|"primary"|"neutral"`), `MaterialIcon` (`iconName`, `color`), `MaterialProgressBar` (`label`, `value`, `max`), `MaterialProgressSpinner` (`label`).
+      3. **Data Display & Composite**: `MaterialTable` / `RichTable` (`title`, `columns`: `[{"field": "...", "headerName": "..."}]`, `rows`: `[{...}]`), `Stepper` (`activeStep`, `steps`: `[{"id", "title", "status"}]`), `WorkOrderList` (`title`, `items`: `[{"id", "title", "assignee", "priority"}]`), `VegaChart` (`title`, `description`, `spec`: Vega-Lite v5 JSON spec), `GoogleMap` (`title`, `center`: `{"lat", "lng"}`, `zoom`, `markers`: `[{"id", "title", "lat", "lng", "status"}]`), `MosaicCarousel` (`title`, `items`: `[{"id", "title", "subtitle", "description", "badge", "imageUrl", "actionLabel", "actionName"}]`).
+      4. **Two-Way Bound Form Inputs & Actions**:
+         - `MaterialInput`: `{"label": "...", "inputType": "text"|"number", "placeholder": "...", "value": {"path": "/form/fieldName"}}`
+         - `MaterialSelect`: `{"label": "...", "options": [{"label": "Display Label", "value": "val"}], "value": {"path": "/form/fieldName"}}`
+         - `MaterialSlider`: `{"label": "...", "min": 0, "max": 100, "step": 1, "value": {"path": "/form/fieldName"}}`
+         - `MaterialCheckbox`: `{"label": "...", "checked": {"path": "/form/flagName"}}`
+         - `MaterialSlideToggle`: `{"label": "...", "checked": {"path": "/form/flagName"}}`
+         - `MaterialRadioButton`: `{"label": "...", "options": [{"label": "...", "value": "..."}], "value": {"path": "/form/fieldName"}}`
+         - `MaterialButton`: `{"label": "...", "variant": "contained"|"outlined", "color": "primary"|"success"|"warning"|"error", "action": {"event": {"name": "action_name", "context": {"fieldName": {"path": "/form/fieldName"}}}}}`
+  * **TOOL-LEVEL SURFACE EMISSION**: Whenever a tool function (in `tools/*.py`) supports an A2UI-enabled agent or sub-agent, include `"surface": build_..._surface(...)` in the dictionary returned by the tool function so the runner automatically renders the interactive A2UI surface whenever the tool is called.
+  * **TOKEN BUDGET & SURFACE ATTACHMENT RULE**: Always set `max_output_tokens=8192` on all A2UI-enabled agents and sub-agents (never `1024` or `2048`, which truncate JSON mid-stream). In each agent's `instruction`, instruct the LLM to provide a clear, concise consumer-friendly markdown summary and business rationale, and NOT to manually re-type or dump the raw `"surface"` JSON dictionary from the tool output into its text response (because the runtime automatically extracts and attaches the lossless `"surface"` dict from the tool response).
+  * Generate root-level `a2ui_adaptor.py` importing from `a2ui_components` and implementing UI action handlers (`A2uiAdaptor.route_user_action`) and `session.state` conversions. `A2uiAdaptor.route_user_action` MUST accept `(cls, user_action=None, session_state=None, context=None, **kwargs)` (supporting `action_name`, `action_or_prompt`, `user_action`, `prompt`, `action`, `session_state`, and `state` keyword arguments) and is synchronous. It MUST ONLY return `{"status": "handled", "surface": ..., "message": ...}` for structured `{"userAction": ...}` JSON payloads (e.g. button clicks) or exact single-word utility commands (`"help"`, `"about"`, `"show_skills"`, `"feedback"`, `"bug"`), and return `None` for normal conversational queries so the LLM agent and its tools execute normally.
+  * **CRITICAL CONSUMER UI RENDERING RULE**: The Chat Runner renders interactive A2UI widgets by extracting ```` ```a2ui\n<JSON>\n``` ```` blocks from the tool response or callback response.
+  * **FORBIDDEN**: NEVER instruct or allow the agent to output code tutorials, JSON schema explanations, or ASCII art representations of badges, progress bars, tables, or forms. Always render the real interactive A2UI surface from a consumer's perspective.
+  * Attach `before_model_callback=a2ui_before_model_callback` on the root agent AND on every sub-agent that has `a2uiConfig.enabled == true` so incoming `{"userAction": ...}` payloads and deterministic surface commands are routed via `A2uiAdaptor.route_user_action`:
+    ```python
+    async def a2ui_before_model_callback(
+        callback_context: CallbackContext, llm_request: LlmRequest
+    ) -> Optional[LlmResponse]:
+        user_prompt = ""
+        if llm_request.contents:
+            for part in getattr(llm_request.contents[-1], "parts", []):
+                if getattr(part, "text", None):
+                    user_prompt += part.text + " "
+        user_prompt = user_prompt.strip()
+        routed = A2uiAdaptor.route_user_action(user_prompt, session_state=callback_context.state)
+        if routed and routed.get("status") == "handled" and routed.get("surface"):
+            msg = routed.get("message", "Here is the interactive A2UI surface:")
+            text = f"{msg}\n\n```a2ui\n{json.dumps(routed['surface'])}\n```"
+            return LlmResponse(
+                content=genai_types.Content(role="model", parts=[genai_types.Part.from_text(text=text)])
+            )
+        return None
+    ```
+
+### 2. Agent Skills & Skill Factory (`skills` / `skillFactoryConfig`, TASK-223)
+- When agent nodes contain `skills`:
+  * Generate `skills/<skill_name>/SKILL.md` containing YAML frontmatter (`name`, `description`) and detailed execution instructions.
+  * In `agent.py`, import `from google.adk.tools.skill_toolset import SkillToolset, Skill` and attach `SkillToolset(skills=[...])` to the agent's tools.
+
+### 3. Artifact Service (`artifactConfig`, TASK-224)
+- When `artifactConfig` is configured on nodes or deployment:
+  * For local dev / in-memory: use `from google.adk.artifacts import InMemoryArtifactService; artifact_service = InMemoryArtifactService()`.
+  * For cloud / GCS: use `from google.adk.artifacts import GcsArtifactService; artifact_service = GcsArtifactService(bucket_name=os.getenv("ARTIFACT_BUCKET_NAME", "<bucket>"))`.
+  * Pass `artifact_service=artifact_service` to `Runner(..., artifact_service=artifact_service)`.
+
+### 4. Context Optimization (`contextCacheConfig`, `eventsCompactionConfig`, `includeContents`, TASK-225)
+- If `contextCacheConfig.enabled == true`: configure Gemini context caching (`types.CachedContent`) for prompts exceeding `minTokens`.
+- If `eventsCompactionConfig.enabled == true`: enable event compaction interval and window overlap.
+- If `includeContents == "none"`: set `include_contents="none"` to omit full historical payloads in tool call context.
+
+### 5. Planners & Adaptive Reasoning (`plannerConfig`, TASK-226)
+- If `plannerConfig.type == "built_in"`:
+  * Use `from google.adk.planners import BuiltInPlanner` and configure `planner=BuiltInPlanner(thinking_config=types.ThinkingConfig(include_thoughts=True, thinking_budget=budget))`.
+- If `plannerConfig.type == "plan_re_act"`:
+  * Use `from google.adk.planners import PlanReActPlanner; planner=PlanReActPlanner()`.
+
+### 6. Specialized ADK Toolsets (TASK-227 - TASK-234)
+- `OpenAPIToolset`: `from google.adk.tools.openapi_toolset import OpenAPIToolset`
+- `ApplicationIntegrationToolset`: `from google.adk.tools.application_integration_toolset import ApplicationIntegrationToolset`
+- `VertexAiRagRetrieval`: `from google.adk.tools.vertex_rag_store import VertexAiRagRetrieval`
+- `BigQueryToolset`: `from google.adk.tools.bigquery_toolset import BigQueryToolset, WriteMode`
+- `SpannerToolset`: `from google.adk.tools.spanner_toolset import SpannerToolset`
+- `ComputerUseToolset`: `from google.adk.tools.computer_use_toolset import ComputerUseToolset`
+- `ToolboxToolset`: `from google.adk.tools.toolbox_toolset import ToolboxToolset`
+- Control flow tools: `from google.adk.tools import exit_loop, transfer_to_agent, load_memory, load_artifacts`
+
+### 7. Live Streaming / WebSocket (`liveStreamingConfig`, TASK-235)
+- When enabled, in `server.py` expose FastAPI WebSocket endpoint `GET /ws/live` using `from google.adk.runners import LiveRequestQueue, RunConfig` and `await runner.run_live(...)`.
+
+### 8. Long-Term Memory Banks (`longTermMemory`, TASK-236)
+- When configured, instantiate `from google.adk.memory import VertexAiMemoryBankService, VertexAiRagMemoryService`.
+- Pass `memory_service` to `Runner(..., memory_service=memory_service)`.
+- In `agent.py`, attach `after_agent_callback` to save conversation sessions to memory:
+  ```python
+  async def persist_memory_callback(agent, session, **kwargs):
+      await memory_service.add_session_to_memory(session)
+  ```
+
+### 9. Custom Callbacks (`callbacks`, TASK-239)
+- Generate `callbacks.py` defining lifecycle hooks (`before_agent_callback`, `after_agent_callback`, `before_model_callback`, `after_model_callback`, `before_tool_callback`, `after_tool_callback`).
+- Wire callbacks directly into `Agent(..., before_agent_callback=..., after_tool_callback=...)`.
+
+### 10. Runner-Level Plugins (`plugins`, TASK-240)
+- When plugins are enabled in workflow config:
+  * Import from `google.adk.plugins`:
+    `from google.adk.plugins import ReflectAndRetryToolPlugin, BigQueryAgentAnalyticsPlugin, ContextFilterPlugin, SaveFilesAsArtifactsPlugin, DebugLoggingPlugin, BasePlugin`
+  * Instantiate configured plugins and pass to `Runner(..., plugins=[...])` or `App(..., plugins=[...])`.
+

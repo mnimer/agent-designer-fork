@@ -60,7 +60,7 @@ import { PanelDivider } from './Canvas/PanelDivider';
 import { useDiagramHistory } from '../hooks/useDiagramHistory';
 import { useFileTabs } from '../hooks/useFileTabs';
 import { useToolsManager } from '../hooks/useToolsManager';
-import { useResizablePanel } from '../hooks/useResizablePanel';
+import { useResizablePanel, BOTTOM_PANEL_HEADER_HEIGHT } from '../hooks/useResizablePanel';
 import { useCanvasKeyboardShortcuts } from '../hooks/useCanvasKeyboardShortcuts';
 import { useExtensionSync } from '../hooks/useExtensionSync';
 
@@ -195,7 +195,7 @@ export function FlowCanvas() {
     outputFolder: initialOutputFolder,
     deploymentTarget: (initialInjectedDoc?.deployment?.target || initialInjectedDoc?.deployment?.deploymentTarget || (initialInjectedDoc?.metadata as any)?.deploymentTarget || 'agent_engine') as any,
     includeTests: typeof initialInjectedDoc?.deployment?.includeTests === 'boolean' ? initialInjectedDoc.deployment.includeTests : true,
-    includeDocker: typeof initialInjectedDoc?.deployment?.includeDocker === 'boolean' ? initialInjectedDoc.deployment.includeDocker : false,
+    includeDocker: typeof initialInjectedDoc?.deployment?.includeDocker === 'boolean' ? initialInjectedDoc.deployment.includeDocker : true,
     useStreaming: typeof initialInjectedDoc?.deployment?.useStreaming === 'boolean' ? initialInjectedDoc.deployment.useStreaming : (settings.useStreamingByDefault ?? true),
     deployedResourceId: initialInjectedDoc?.deployment?.deployedResourceId,
     serviceUrl: initialInjectedDoc?.deployment?.serviceUrl,
@@ -231,16 +231,26 @@ export function FlowCanvas() {
     setIsToolDrawerOpen: () => {},
     setToolModalAgentId,
     setActiveEditorTab,
+    onStopLocalRunner: () => {
+      bridge.postMessage({
+        type: 'STOP_LOCAL_RUNNER',
+        payload: {},
+      });
+    },
   });
 
   /**
    * Dispatches CREATE_FILE_FROM_SAMPLE message to the VS Code extension host.
-   * Prompts the user with a Save As dialog and opens the saved blueprint in a new editor tab.
+   * Stops any active local deployment before opening the new agent workflow.
    *
    * @author Mike Nimer <mikenimer@google.com>
    */
   const handleOpenSampleInNewTab = useCallback(
     (sample: SampleWorkflowDefinition) => {
+      bridge.postMessage({
+        type: 'STOP_LOCAL_RUNNER',
+        payload: {},
+      });
       // NOTE: Forward sample creation to extension host to display save dialog and open new editor tab
       bridge.postMessage({
         type: 'CREATE_FILE_FROM_SAMPLE',
@@ -390,6 +400,7 @@ export function FlowCanvas() {
     isPanelMaximized,
     isDraggingDivider,
     panelContainerRef,
+    handleExpandPanel,
     handleToggleMaximizePanel,
     handleDividerMouseDown,
   } = useResizablePanel();
@@ -588,7 +599,7 @@ export function FlowCanvas() {
       }
 
       const nextNodes = nodes.map((n) => {
-        if (n.id === agentId && n.type === 'agentNode') {
+        if (n.id === agentId && (n.type === 'agentNode' || n.type === 'agent')) {
           return {
             ...n,
             data: {
@@ -606,9 +617,9 @@ export function FlowCanvas() {
   );
 
   const handleUpdateSubAgentPattern = useCallback(
-    (agentId: string, pattern: 'sequential' | 'hierarchical' | 'parallel' | 'loop') => {
+    (agentId: string, pattern: any) => {
       const targetNode = nodes.find((n) => n.id === agentId);
-      if (!targetNode || targetNode.type !== 'agentNode') return;
+      if (!targetNode || (targetNode.type !== 'agentNode' && targetNode.type !== 'agent')) return;
 
       const currentSubAgents: SubAgentRef[] = (targetNode.data as AgentData).subAgents || [];
       const updatedSubAgents = currentSubAgents.map((sub) => ({
@@ -617,7 +628,7 @@ export function FlowCanvas() {
       }));
 
       const nextNodes = nodes.map((n) => {
-        if (n.id === agentId && n.type === 'agentNode') {
+        if (n.id === agentId && (n.type === 'agentNode' || n.type === 'agent')) {
           return {
             ...n,
             data: {
@@ -639,7 +650,7 @@ export function FlowCanvas() {
   const handleUpdateMaxIterations = useCallback(
     (agentId: string, maxIterations: number) => {
       const nextNodes = nodes.map((n) => {
-        if (n.id === agentId && n.type === 'agentNode') {
+        if (n.id === agentId && (n.type === 'agentNode' || n.type === 'agent')) {
           return {
             ...n,
             data: {
@@ -836,6 +847,7 @@ export function FlowCanvas() {
           onRemoveTool: handleRemoveTool,
           onReorderSubAgents: handleReorderSubAgents,
           onUpdateSubAgentPattern: handleUpdateSubAgentPattern,
+          onPatternChange: handleUpdateSubAgentPattern,
           onUpdateMaxIterations: handleUpdateMaxIterations,
         },
       };
@@ -1137,12 +1149,21 @@ export function FlowCanvas() {
     }
   }, []);
 
+  /**
+   * Closes any open property inspector panel (AgentDrawer, TriggerDrawer, or ToolPropertyDrawer).
+   * Invoked when clicking the canvas pane, resizing divider, or anywhere inside the bottom tab panel.
+   */
+  const handleClosePropertyPanels = useCallback(() => {
+    setSelectedAgentId((prev) => (prev !== null ? null : prev));
+    setSelectedTriggerId((prev) => (prev !== null ? null : prev));
+    setIsTriggerDrawerOpen((prev) => (prev ? false : prev));
+    setIsToolDrawerOpen((prev) => (prev ? false : prev));
+    setEditingToolScope((prev) => (prev !== null ? null : prev));
+  }, [setIsToolDrawerOpen, setEditingToolScope]);
+
   const handlePaneClick = useCallback(() => {
-    setSelectedAgentId(null);
-    setSelectedTriggerId(null);
-    setIsTriggerDrawerOpen(false);
-    setIsToolDrawerOpen(false);
-  }, []);
+    handleClosePropertyPanels();
+  }, [handleClosePropertyPanels]);
 
   // ---------------------------------------------------------------------------
   // 7. Drag-and-Drop & Creation Handlers
@@ -1549,10 +1570,19 @@ export function FlowCanvas() {
   // ---------------------------------------------------------------------------
   const currentWorkflowDocument = useMemo((): AgentWorkflowDocument => {
     const currentActiveFile = fileTabs.find((t) => t.id === activeTabId) || fileTabs[0];
+    const resolvedName =
+      initialInjectedDoc?.name ||
+      (currentActiveFile?.title && currentActiveFile.title !== 'workflow.agent' && currentActiveFile.title !== 'Untitled'
+        ? currentActiveFile.title.replace(/\.agent$/, '')
+        : currentActiveFile?.filename
+        ? currentActiveFile.filename.replace(/\.agent$/, '')
+        : 'agent_workflow');
+    const { outputFolder: _discardOutput, deploymentTarget: _discardTarget, ...restInitialMetadata } =
+      (initialInjectedDoc?.metadata as any) || {};
     return {
-      version: '1.0.0',
-      name: currentActiveFile?.filename ? currentActiveFile.filename.replace(/\.agent$/, '') : 'agent_workflow',
-      description: 'Agent Workflow Document',
+      version: initialInjectedDoc?.version || '1.0.0',
+      name: resolvedName,
+      description: initialInjectedDoc?.description || 'Agent Workflow Document',
       framework: config.framework === 'google_adk' ? 'google-adk' : (config.framework as any) || 'google-adk',
       language: config.language || 'python',
       nodes: nodes.map((n) => ({
@@ -1572,8 +1602,7 @@ export function FlowCanvas() {
         data: e.data ? { ...e.data } : undefined,
       })),
       metadata: {
-        ...(initialInjectedDoc?.metadata?.createdAt ? { createdAt: initialInjectedDoc.metadata.createdAt } : {}),
-        ...(initialInjectedDoc?.metadata?.author ? { author: initialInjectedDoc.metadata.author } : {}),
+        ...restInitialMetadata,
         updatedAt: new Date().toISOString(),
       },
       deployment: {
@@ -1891,27 +1920,31 @@ export function FlowCanvas() {
             isPanelMaximized={isPanelMaximized}
             isDraggingDivider={isDraggingDivider}
             bottomPanelHeight={bottomPanelHeight}
-            onMouseDown={handleDividerMouseDown}
+            onMouseDown={(e) => {
+              handleClosePropertyPanels();
+              handleDividerMouseDown(e);
+            }}
             onDoubleClick={() => {
-              if (bottomPanelHeight === null) {
-                if (panelContainerRef.current) {
-                  setBottomPanelHeight(panelContainerRef.current.getBoundingClientRect().height * 0.55);
-                }
-              } else {
-                setBottomPanelHeight(null);
-              }
+              handleClosePropertyPanels();
+              handleToggleMaximizePanel();
             }}
           />
 
           {/* BOTTOM PANEL: CODE GENERATION, DEPLOYMENT & TEST RUNNER */}
           <div
+            data-testid="bottom-panel-container"
+            onMouseDownCapture={handleClosePropertyPanels}
+            onClick={handleClosePropertyPanels}
             style={{
-              height: isPanelMaximized
-                ? '100%'
-                : (bottomPanelHeight !== null ? `${bottomPanelHeight}px` : '33.333%'),
+              height:
+                bottomPanelHeight !== null
+                  ? `${bottomPanelHeight}px`
+                  : isPanelMaximized
+                  ? '66.667%'
+                  : `${BOTTOM_PANEL_HEADER_HEIGHT}px`,
             }}
-            className={`w-full overflow-hidden flex flex-col bg-[#0d1117] transition-[height] duration-200 ${
-              isPanelMaximized ? 'flex-1 h-full min-h-0' : 'shrink-0 min-h-[90px]'
+            className={`w-full overflow-hidden flex flex-col bg-[#0d1117] shrink-0 min-h-[40px] max-h-[calc(100%-8px)] ${
+              isDraggingDivider ? '' : 'transition-[height] duration-200'
             }`}
           >
             <CodeGenerationPanel
@@ -1926,8 +1959,12 @@ export function FlowCanvas() {
               hasGeneratedCode={hasGeneratedCode}
               testPrompts={testPrompts}
               agents={agentNodes}
-              isMaximized={isPanelMaximized}
+              isMaximized={
+                isPanelMaximized ||
+                (bottomPanelHeight !== null && bottomPanelHeight > BOTTOM_PANEL_HEADER_HEIGHT)
+              }
               onToggleMaximize={handleToggleMaximizePanel}
+              onExpandPanel={handleExpandPanel}
               document={currentWorkflowDocument}
               hasChatTrigger={hasChatTrigger}
               chatConfig={chatTriggerConfig}

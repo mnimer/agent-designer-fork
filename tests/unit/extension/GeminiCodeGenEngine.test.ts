@@ -1015,8 +1015,24 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
         // SQLite session checkpointer
         assert.ok(content.includes("'sqlite'"));
         assert.ok(content.includes('SqliteSessionStore'));
+
+        // Self-contained CLI & CI/CD Makefile manifest rules
+        assert.ok(content.includes('Makefile'), `${relPath} must require a Makefile`);
+        assert.ok(content.includes('make install'), `${relPath} must document make install`);
+        assert.ok(content.includes('make test'), `${relPath} must document make test`);
+        assert.ok(content.includes('make infra'), `${relPath} must document make infra`);
+        assert.ok(content.includes('make deploy'), `${relPath} must document make deploy`);
       });
     }
+
+    it('should require .agent_engine_config.json, .ae_ignore, and pyproject.toml in python_adk_agent-engine.prompt.txt', () => {
+      const aePromptPath = path.resolve(extensionPath, 'resource/prompts/python_adk_agent-engine.prompt.txt');
+      const aeContent = fs.readFileSync(aePromptPath, 'utf-8');
+      assert.ok(aeContent.includes('.agent_engine_config.json'));
+      assert.ok(aeContent.includes('.ae_ignore'));
+      assert.ok(aeContent.includes('pyproject.toml'));
+    });
   });
 });
+
 

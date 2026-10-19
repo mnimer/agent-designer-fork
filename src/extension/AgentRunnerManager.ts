@@ -24,9 +24,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { WebviewBridge } from './WebviewBridge';
 import { PythonEnvResolver } from './PythonEnvResolver';
-import { AgentWorkflowDocument, TriggerTestScenario } from '../shared/types';
+import { AgentWorkflowDocument, TriggerTestScenario, StructuredInputSchema } from '../shared/types';
 import { GeminiCodeGenEngine } from './GeminiCodeGenEngine';
 import { AgentEngineDeployer } from './AgentEngineDeployer';
+import { validatePayloadAgainstInputSchema } from '../shared/schemaValidation';
 
 import { RunnerEnvironment } from './runner/RunnerEnvironment';
 import { HealthCheckClient } from './runner/HealthCheckClient';
@@ -164,9 +165,14 @@ export class AgentRunnerManager {
    * @author Mike Nimer <mikenimer@google.com>
    */
   public async sendStatus(bridge: WebviewBridge, targetPort?: number): Promise<void> {
-    // Section 1: Resolve target port and probe health
+    if (this.inFlightStopPromise) {
+      await this.inFlightStopPromise.catch(() => {});
+    }
+    // Section 1: Resolve target port and probe health (/health and /healthz)
     const port = targetPort || this.lastRunningPort || 8000;
-    const isAlive = await this.healthCheck.httpGetCheck(port, '/health', 600);
+    const isAlive =
+      (await this.healthCheck.httpGetCheck(port, '/health', 600)) ||
+      (await this.healthCheck.httpGetCheck(port, '/healthz', 600));
     const isProcessTracked = this.processManager.activeLocalRunners.size > 0;
     const isRunning = isAlive || isProcessTracked;
 
@@ -207,9 +213,16 @@ export class AgentRunnerManager {
   }
 
   public startLocalRunner(options: StartLocalRunnerOptions): Promise<string> {
-    if (this.inFlightStopPromise) return Promise.reject(new Error('Operation in progress'));
     if (this.inFlightStartPromise) return this.inFlightStartPromise;
-    this.inFlightStartPromise = this.startLocalRunnerInternal(options).finally(() => { this.inFlightStartPromise = null; });
+    const runStart = async (): Promise<string> => {
+      if (this.inFlightStopPromise) {
+        await this.inFlightStopPromise.catch(() => {});
+      }
+      return this.startLocalRunnerInternal(options);
+    };
+    this.inFlightStartPromise = runStart().finally(() => {
+      this.inFlightStartPromise = null;
+    });
     return this.inFlightStartPromise;
   }
 
@@ -219,8 +232,21 @@ export class AgentRunnerManager {
     const { targetDirectory, port = 8000, envVars = {}, bridge } = options;
     const runnerId = `local-runner-${Date.now()}`;
     const targetDir = targetDirectory || process.cwd();
+    this.clearRunnerLogs();
     this.runnerStatus = 'starting';
     this.lastRunningPort = port;
+
+    // Ensure any previously tracked local runner processes are terminated before starting a new one
+    if (this.processManager.activeLocalRunners.size > 0) {
+      const existingRunners = Array.from(this.processManager.activeLocalRunners.entries());
+      for (const [oldId, oldProc] of existingRunners) {
+        this.processManager.unregisterProcess(oldId);
+        if (oldProc) {
+          oldProc.removeAllListeners();
+          await this.processManager.killProcessTree(oldProc);
+        }
+      }
+    }
 
     const startNotice = `[Local Runner] Preparing environment in ${targetDir}...`;
     this.appendRunnerLog(startNotice);
@@ -339,17 +365,37 @@ export class AgentRunnerManager {
   }
 
   public async stopLocalRunner(runnerId?: string, targetPort?: number, bridge?: WebviewBridge): Promise<void> {
-    if (this.inFlightStartPromise) throw new Error('Operation in progress');
     if (this.inFlightStopPromise) return this.inFlightStopPromise;
-    this.inFlightStopPromise = this.stopLocalRunnerInternal(runnerId, targetPort, bridge).finally(() => { this.inFlightStopPromise = null; });
+    const runStop = async (): Promise<void> => {
+      if (this.inFlightStartPromise) {
+        await this.inFlightStartPromise.catch(() => {});
+      }
+      await this.stopLocalRunnerInternal(runnerId, targetPort, bridge);
+    };
+    this.inFlightStopPromise = runStop().finally(() => {
+      this.inFlightStopPromise = null;
+    });
     return this.inFlightStopPromise;
   }
 
   public async stopRunner(runnerId?: string, targetPort?: number, bridge?: WebviewBridge) { return this.stopLocalRunner(runnerId, targetPort, bridge); }
 
   private async stopLocalRunnerInternal(runnerId?: string, targetPort?: number, bridge?: WebviewBridge): Promise<void> {
-    const portToKill = targetPort || this.lastRunningPort;
+    const portsToKill = new Set<number>();
+    if (targetPort && targetPort > 0) portsToKill.add(targetPort);
+    if (this.lastRunningPort && this.lastRunningPort > 0) portsToKill.add(this.lastRunningPort);
+    for (const trackedPort of this.processManager.activeRunnerPortMap.values()) {
+      if (trackedPort && trackedPort > 0) portsToKill.add(trackedPort);
+    }
+    if (portsToKill.size === 0) {
+      portsToKill.add(8000);
+    }
+
+    const primaryPort = targetPort || this.lastRunningPort || 8000;
+    this.runnerStatus = 'stopped';
     if (this.startupTimeoutTimer) { clearTimeout(this.startupTimeoutTimer); this.startupTimeoutTimer = null; }
+    if (this.healthCheck.healthCheckPollTimer) { clearInterval(this.healthCheck.healthCheckPollTimer); this.healthCheck.healthCheckPollTimer = null; }
+    if (this.healthCheck.healthCheckTimeoutTimer) { clearTimeout(this.healthCheck.healthCheckTimeoutTimer); this.healthCheck.healthCheckTimeoutTimer = null; }
 
     const terminateChild = async (proc: ChildProcess) => {
       proc.removeAllListeners();
@@ -358,24 +404,26 @@ export class AgentRunnerManager {
 
     if (runnerId && this.processManager.activeLocalRunners.has(runnerId)) {
       const proc = this.processManager.activeLocalRunners.get(runnerId);
-      this.processManager.activeLocalRunners.delete(runnerId);
+      this.processManager.unregisterProcess(runnerId);
       if (proc) await terminateChild(proc);
     } else {
       const runnersToTerminate = Array.from(this.processManager.activeLocalRunners.entries());
-      this.processManager.activeLocalRunners.clear();
       for (const [id, proc] of runnersToTerminate) {
+        this.processManager.unregisterProcess(id);
         if (proc) await terminateChild(proc);
       }
     }
 
-    if (portToKill) await this.killPort(portToKill);
+    for (const p of portsToKill) {
+      await this.killPort(p);
+    }
     this.cleanupEphemeralFiles();
 
     this.runnerStatus = 'stopped';
     this.appendRunnerLog('[Local Runner] Process stopped.');
 
     if (bridge) {
-      await bridge.postMessage({ type: 'LOCAL_RUNNER_STATUS', payload: { status: 'stopped', port: portToKill, logs: this.runnerLogs } });
+      await bridge.postMessage({ type: 'LOCAL_RUNNER_STATUS', payload: { status: 'stopped', port: primaryPort, logs: this.runnerLogs } });
     }
   }
 
@@ -449,6 +497,7 @@ export class AgentRunnerManager {
     const triggerNodes = (document.nodes || []).filter(n => n.type === 'trigger' || (n as any).type === 'triggerNode');
     const rootAgent = (document.nodes || []).find(n => n.type === 'agent' || (n as any).type === 'agentNode');
     const fallbackSchema = (rootAgent?.data as any)?.structuredOutput || (rootAgent?.data as any)?.structuredOutputSchema;
+    const fallbackInputSchema = (rootAgent?.data as any)?.inputSchema || (rootAgent?.data as any)?.routerConfig?.inputSchema;
 
     // Prioritize dedicated tester trigger nodes over general chat/webhook triggers
     const sortedTriggers = [...triggerNodes].sort((a, b) => {
@@ -474,6 +523,7 @@ export class AgentRunnerManager {
             expectedOutput: s.expectedOutput,
             assertionType: s.assertionType || (s as any).assertion_type,
             expectedSchema: s.expectedSchema || (s as any).expected_schema || fallbackSchema,
+            expectedInputSchema: s.expectedInputSchema || (s as any).expected_input_schema || fallbackInputSchema,
           });
         }
       } else if (data?.config?.testPrompts && Array.isArray(data.config.testPrompts) && data.config.testPrompts.length > 0) {
@@ -487,6 +537,7 @@ export class AgentRunnerManager {
             expectedOutput: p.expectedOutput,
             assertionType: p.assertionType || (p as any).assertion_type,
             expectedSchema: p.expectedSchema || (p as any).expected_schema || fallbackSchema,
+            expectedInputSchema: p.expectedInputSchema || (p as any).expected_input_schema || fallbackInputSchema,
           });
         }
       }
@@ -497,11 +548,11 @@ export class AgentRunnerManager {
         for (const id of scenarioIds) {
           if (!seenIds.has(id)) {
             seenIds.add(id);
-            scenarios.push({ id, name: `Test Scenario ${id}`, inputQuery: 'Provide a concise overview and execute planned actions.', expectedOutput: undefined });
+            scenarios.push({ id, name: `Test Scenario ${id}`, inputQuery: 'Provide a concise overview and execute planned actions.', expectedOutput: undefined, expectedInputSchema: fallbackInputSchema });
           }
         }
       } else {
-        scenarios.push({ id: 'default-scenario-1', name: 'Default Test Run', inputQuery: 'Provide a concise overview and execute planned actions.', expectedOutput: undefined });
+        scenarios.push({ id: 'default-scenario-1', name: 'Default Test Run', inputQuery: 'Provide a concise overview and execute planned actions.', expectedOutput: undefined, expectedInputSchema: fallbackInputSchema });
       }
     }
 
@@ -510,5 +561,62 @@ export class AgentRunnerManager {
       if (filtered.length > 0) return filtered;
     }
     return scenarios;
+  }
+
+  /**
+   * Validates a scenario's input against the workflow's configured input schema.
+   * Emits early schema validation errors when required fields are missing or types mismatch.
+   *
+   * @param scenario Test scenario
+   * @param document Workflow document
+   * @returns Validation result with error messages
+   */
+  public validateScenarioInput(
+    scenario: TriggerTestScenario,
+    document: AgentWorkflowDocument
+  ): { valid: boolean; errors: string[] } {
+    const rootAgent = (document.nodes || []).find(
+      (n) => n.type === 'agent' || (n as any).type === 'agentNode'
+    );
+    const inputSchema: StructuredInputSchema | undefined =
+      (scenario as any).expectedInputSchema ||
+      (rootAgent?.data as any)?.inputSchema ||
+      (rootAgent?.data as any)?.routerConfig?.inputSchema;
+
+    if (!inputSchema || !inputSchema.enabled || !inputSchema.fields || inputSchema.fields.length === 0) {
+      return { valid: true, errors: [] };
+    }
+
+    const inputQuery = scenario.inputQuery || '';
+    if (!inputQuery.trim()) {
+      const hasRequired = inputSchema.fields.some((f) => f.required);
+      if (hasRequired) {
+        return {
+          valid: false,
+          errors: ['Empty input query does not satisfy required input schema fields'],
+        };
+      }
+      return { valid: true, errors: [] };
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(inputQuery);
+    } catch {
+      const requiredFields = inputSchema.fields.filter((f) => f.required);
+      if (requiredFields.length > 0) {
+        return {
+          valid: false,
+          errors: [
+            `Input query is not valid JSON, cannot satisfy schema with required fields: ${requiredFields
+              .map((f) => f.name)
+              .join(', ')}`,
+          ],
+        };
+      }
+      return { valid: true, errors: [] };
+    }
+
+    return validatePayloadAgainstInputSchema(parsed, inputSchema);
   }
 }

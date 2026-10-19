@@ -123,10 +123,11 @@ describe('Editor Decomposition - Unit Tests', { concurrency: 1 }, () => {
       assert.equal(resolved, '/mock/workspace/sample_agent');
     });
 
-    it('should clean target directory successfully', async () => {
+    it('should clean target directory successfully while preserving virtual environments', async () => {
       const manager = new DocumentSyncManager(undefined);
       const tmpDir = `/tmp/test_clean_editor_${Date.now()}`;
-      fs.mkdirSync(tmpDir, { recursive: true });
+      fs.mkdirSync(path.join(tmpDir, '.venv'), { recursive: true });
+      fs.mkdirSync(path.join(tmpDir, 'venv'), { recursive: true });
       fs.writeFileSync(path.join(tmpDir, 'server.py'), '# code');
       fs.writeFileSync(path.join(tmpDir, 'preserved.agent'), '{}');
 
@@ -137,8 +138,12 @@ describe('Editor Decomposition - Unit Tests', { concurrency: 1 }, () => {
       const res = await manager.cleanTargetDirectory(tmpDir, mockDoc);
       assert.ok(res.cleaned.includes('server.py'));
       assert.ok(res.preserved.includes('preserved.agent'));
+      assert.ok(res.preserved.includes('.venv'));
+      assert.ok(res.preserved.includes('venv'));
       assert.equal(fs.existsSync(path.join(tmpDir, 'server.py')), false);
       assert.equal(fs.existsSync(path.join(tmpDir, 'preserved.agent')), true);
+      assert.equal(fs.existsSync(path.join(tmpDir, '.venv')), true);
+      assert.equal(fs.existsSync(path.join(tmpDir, 'venv')), true);
 
       fs.rmSync(tmpDir, { recursive: true, force: true });
     });

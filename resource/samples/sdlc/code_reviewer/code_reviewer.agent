@@ -1,0 +1,325 @@
+{
+  "version": "1.0.0",
+  "name": "Code Reviewing Agent",
+  "description": "Multi-agent code review system for Git pull request diffs and local repository folders. Coordinates specialized architecture, security, and packaging reviewers to produce a unified, actionable review report delivered directly in chat.",
+  "framework": "google-adk",
+  "language": "python",
+  "metadata": {
+    "author": "Mike Nimer <mikenimer@google.com>",
+    "category": "Developer Tools",
+    "badge": "Multi-Agent Code Review",
+    "iconName": "GitPullRequest",
+    "color": "blue",
+    "features": [
+      "Coordinator orchestrating 3 specialist sub-agents (Architecture, Security, Testing & Packaging)",
+      "Supports dual entry points: Git pull request diffs and local directory inspection",
+      "Specialized OWASP Top 10, CWE-89 SQL injection, SSRF, and secret leakage audits",
+      "Automated Test Suite node with 6 evaluation test scenarios",
+      "Synthesized Markdown code review report delivered directly in chat"
+    ],
+    "updatedAt": "2026-09-21T21:00:00.000Z"
+  },
+  "nodes": [
+    {
+      "id": "trigger_code_review_chat",
+      "type": "triggerNode",
+      "position": {
+        "x": 496,
+        "y": 48
+      },
+      "data": {
+        "id": "trigger_code_review_chat",
+        "label": "Code Review Chat Trigger",
+        "triggerType": "chat",
+        "triggerKind": "chat",
+        "description": "Conversational interface accepting a Git pull request diff, patch text, or local repository folder path for automated review.",
+        "targetRootAgentId": "agent_code_review_coordinator",
+        "config": {
+          "initialMessage": "Welcome to the Multi-Agent Code Reviewer. Submit a git diff patch or local directory path (e.g. './src/services') to begin your review.",
+          "streaming": true,
+          "sessionMemory": "in_memory"
+        }
+      }
+    },
+    {
+      "id": "trigger_code_review_tester",
+      "type": "triggerNode",
+      "position": {
+        "x": 48,
+        "y": 360
+      },
+      "data": {
+        "id": "trigger_code_review_tester",
+        "label": "Code Review Evaluation Suite (6 Scenarios)",
+        "triggerType": "tester",
+        "triggerKind": "tester",
+        "description": "Automated evaluation suite with 6 test scenarios covering SQL injection, plaintext secrets, missing requirements, monolithic architecture, SSRF, and clean production pull requests.",
+        "targetRootAgentId": "agent_code_review_coordinator",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "scenario-sql-injection-pr",
+              "name": "1. SQL Injection Vulnerability in User Query Tool",
+              "prompt": "Review this pull request diff:\n```diff\n--- a/services/user_service.py\n+++ b/services/user_service.py\n@@ -15,4 +15,6 @@\n def get_user_profile(db_conn, username: str):\n-    cursor = db_conn.cursor()\n-    cursor.execute('SELECT id, role FROM users WHERE username = %s', (username,))\n+    # Optimized query lookup\n+    query = f\"SELECT id, role, email FROM users WHERE username = '{username}'\"\n+    cursor = db_conn.cursor()\n+    cursor.execute(query)\n```",
+              "inputQuery": "Review this pull request diff:\n```diff\n--- a/services/user_service.py\n+++ b/services/user_service.py\n@@ -15,4 +15,6 @@\n def get_user_profile(db_conn, username: str):\n-    cursor = db_conn.cursor()\n-    cursor.execute('SELECT id, role FROM users WHERE username = %s', (username,))\n+    # Optimized query lookup\n+    query = f\"SELECT id, role, email FROM users WHERE username = '{username}'\"\n+    cursor = db_conn.cursor()\n+    cursor.execute(query)\n```",
+              "expectedOutput": "SQL injection",
+              "expectedOutputPattern": "SQL injection",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario-hardcoded-secret-pr",
+              "name": "2. Plaintext Secret Leak in Payment Client",
+              "prompt": "Review this pull request diff:\n```diff\n--- a/integrations/payment_client.py\n+++ b/integrations/payment_client.py\n@@ -5,3 +5,4 @@\n class PaymentGatewayClient:\n     def __init__(self):\n+        self.api_key = \"sk_live_dummy_secret_key_mock_token_987654321\"\n```",
+              "inputQuery": "Review this pull request diff:\n```diff\n--- a/integrations/payment_client.py\n+++ b/integrations/payment_client.py\n@@ -5,3 +5,4 @@\n class PaymentGatewayClient:\n     def __init__(self):\n+        self.api_key = \"sk_live_dummy_secret_key_mock_token_987654321\"\n```",
+              "expectedOutput": "secret",
+              "expectedOutputPattern": "secret",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario-missing-dependency-pr",
+              "name": "3. Missing Dependency - Undeclared Third-Party Import in Service",
+              "prompt": "Review this repository code snippet:\nFile: services/notifier.py\n```python\nimport httpx\nfrom pydantic import BaseModel\n\nasync def send_notification(url: str, payload: dict):\n    async with httpx.AsyncClient() as client:\n        await client.post(url, json=payload)\n```\nFile: requirements.txt\n```\npydantic>=2.0.0\npytest>=8.0.0\n```",
+              "inputQuery": "Review this repository code snippet:\nFile: services/notifier.py\n```python\nimport httpx\nfrom pydantic import BaseModel\n\nasync def send_notification(url: str, payload: dict):\n    async with httpx.AsyncClient() as client:\n        await client.post(url, json=payload)\n```\nFile: requirements.txt\n```\npydantic>=2.0.0\npytest>=8.0.0\n```",
+              "expectedOutput": "httpx",
+              "expectedOutputPattern": "httpx",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario-architecture-god-class",
+              "name": "4. Monolithic God-Class Violating Single Responsibility",
+              "prompt": "Review this module architecture in src/order_manager.py:\n```python\nclass OrderSystem:\n    def parse_http_request(self, req): ...\n    def execute_raw_sql(self, sql): ...\n    def charge_credit_card(self, token, amount): ...\n    def send_smtp_email(self, recipient, body): ...\n    def render_html_receipt(self, order): ...\n    def poll_hardware_barcode_scanner(self): ...\n```",
+              "inputQuery": "Review this module architecture in src/order_manager.py:\n```python\nclass OrderSystem:\n    def parse_http_request(self, req): ...\n    def execute_raw_sql(self, sql): ...\n    def charge_credit_card(self, token, amount): ...\n    def send_smtp_email(self, recipient, body): ...\n    def render_html_receipt(self, order): ...\n    def poll_hardware_barcode_scanner(self): ...\n```",
+              "expectedOutput": "Single Responsibility",
+              "expectedOutputPattern": "Single Responsibility",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario-ssrf-unvalidated-url",
+              "name": "5. SSRF Flaw with Unvalidated URL & Missing Timeout",
+              "prompt": "Review this pull request diff:\n```diff\n--- a/handlers/webhook_handler.py\n+++ b/handlers/webhook_handler.py\n@@ -20,4 +20,6 @@\n def dispatch_partner_event(partner_callback_url: str, event_data: dict):\n+    import requests\n+    # Forward payload to partner endpoint\n+    resp = requests.post(partner_callback_url, json=event_data)\n+    return resp.status_code\n```",
+              "inputQuery": "Review this pull request diff:\n```diff\n--- a/handlers/webhook_handler.py\n+++ b/handlers/webhook_handler.py\n@@ -20,4 +20,6 @@\n def dispatch_partner_event(partner_callback_url: str, event_data: dict):\n+    import requests\n+    # Forward payload to partner endpoint\n+    resp = requests.post(partner_callback_url, json=event_data)\n+    return resp.status_code\n```",
+              "expectedOutput": "timeout",
+              "expectedOutputPattern": "timeout",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario-clean-production-pr",
+              "name": "6. Clean Production PR with Tests and Parameterized Queries",
+              "prompt": "Review this production pull request diff:\n```diff\n--- a/repositories/user_repo.py\n+++ b/repositories/user_repo.py\n@@ -10,4 +10,12 @@\n+class UserRepository:\n+    def __init__(self, db_pool):\n+        self.db_pool = db_pool\n+\n+    def find_by_id(self, user_id: str) -> Optional[UserRecord]:\n+        with self.db_pool.acquire() as conn:\n+            cursor = conn.cursor()\n+            cursor.execute('SELECT id, email, status FROM users WHERE id = %s', (user_id,))\n+            row = cursor.fetchone()\n+            return UserRecord(**row) if row else None\n```",
+              "inputQuery": "Review this production pull request diff:\n```diff\n--- a/repositories/user_repo.py\n+++ b/repositories/user_repo.py\n@@ -10,4 +10,12 @@\n+class UserRepository:\n+    def __init__(self, db_pool):\n+        self.db_pool = db_pool\n+\n+    def find_by_id(self, user_id: str) -> Optional[UserRecord]:\n+        with self.db_pool.acquire() as conn:\n+            cursor = conn.cursor()\n+            cursor.execute('SELECT id, email, status FROM users WHERE id = %s', (user_id,))\n+            row = cursor.fetchone()\n+            return UserRecord(**row) if row else None\n```",
+              "expectedOutput": "APPROVED",
+              "expectedOutputPattern": "APPROVED",
+              "assertionType": "contains"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "agent_code_review_coordinator",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 328
+      },
+      "data": {
+        "id": "agent_code_review_coordinator",
+        "name": "code_review_coordinator",
+        "label": "Code Review Coordinator",
+        "role": "Orchestrates domain-specific code reviews, dispatches code/diffs to specialist sub-agents, reconciles findings, and delivers a unified review report directly to chat.",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "maxIterations": 10,
+        "agentKind": "standard",
+        "subAgentPattern": "parallel",
+        "isStartNode": true,
+        "colorTheme": "blue",
+        "systemPrompt": "You are the Lead Code Review Coordinator Agent.\n\nYour job is to conduct comprehensive, enterprise-grade code reviews for inbound Pull Requests (diffs) or local repository directories.\n\n### WORKFLOW:\n1. Input Processing:\n   - If the user provides a Git patch / diff, use `parse_git_diff_tool` to inspect changed files, added lines, and deletions.\n   - If the user provides a directory path or repository files, use `inspect_directory_tool` to inspect file trees and content.\n2. Delegation to Specialists:\n   - Delegate the code simultaneously to your three specialized sub-agents:\n     * `architecture_reviewer`: Evaluates software architecture, design patterns, modularity, DRY principles, error handling, and performance.\n     * `security_reviewer`: Audits for OWASP Top 10 vulnerabilities, CWE-89 SQL injection, SSRF, command injection, and plaintext secrets.\n     * `packaging_reviewer`: Inspects test coverage, mocking boundaries, dependency definitions (requirements.txt, package.json), and build manifests.\n3. Synthesis & Reporting:\n   - Synthesize all findings into a unified, actionable Markdown review report.\n   - Eliminate duplicate findings and dismiss any false positives.\n   - Categorize issues by severity: [BLOCKER], [WARNING], [SUGGESTION].\n   - Render the final review report directly in chat formatted as:\n     # Pull Request / Code Review Report\n     ## Executive Summary & Verdict: (APPROVED | CHANGES REQUESTED | COMMENT)\n     ## Quality Scorecard (Architecture: X/100, Security: Y/100, Testing: Z/100)\n     ## Detailed Findings by Specialist\n     ## Recommended Remediation Steps",
+        "tools": [
+          {
+            "id": "tool_parse_git_diff",
+            "name": "parse_git_diff_tool",
+            "type": "custom",
+            "description": "Parses unified git diff or patch text into structured file chunks with additions, deletions, and line numbers.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/code_inspection_tools.py",
+            "functionName": "parse_git_diff_tool",
+            "parameters": {
+              "diff_text": "string - Raw unified diff or git patch string to analyze"
+            },
+            "enabled": true
+          },
+          {
+            "id": "tool_inspect_directory",
+            "name": "inspect_directory_tool",
+            "type": "custom",
+            "description": "Scans and reads source code files in a given directory path for evaluation.",
+            "toolMode": "local_file",
+            "sourceFile": "./tools/code_inspection_tools.py",
+            "functionName": "inspect_directory_tool",
+            "parameters": {
+              "directory_path": "string - Relative or absolute directory path to inspect"
+            },
+            "enabled": true
+          }
+        ],
+        "subAgents": [
+          {
+            "agentId": "agent_architecture_reviewer",
+            "name": "Architecture Reviewer",
+            "role": "Evaluates architectural patterns, clean code principles, modularity, and error handling",
+            "delegationType": "parallel"
+          },
+          {
+            "agentId": "agent_security_reviewer",
+            "name": "Security Reviewer",
+            "role": "Audits code for OWASP Top 10 vulnerabilities, SQL injection, SSRF, and credential leaks",
+            "delegationType": "parallel"
+          },
+          {
+            "agentId": "agent_packaging_reviewer",
+            "name": "Testing & Packaging Reviewer",
+            "role": "Audits unit test coverage, mock boundaries, and dependency manifests",
+            "delegationType": "parallel"
+          }
+        ],
+        "memoryType": "in_memory",
+        "memoryConfig": {
+          "type": "in_memory",
+          "windowTurns": 10,
+          "maxTokens": 4096
+        },
+        "outputFormat": "text"
+      }
+    },
+    {
+      "id": "agent_architecture_reviewer",
+      "type": "agentNode",
+      "position": {
+        "x": 48,
+        "y": 952
+      },
+      "data": {
+        "id": "agent_architecture_reviewer",
+        "name": "architecture_reviewer",
+        "label": "Architecture & Code Quality Specialist",
+        "role": "Evaluates software architecture, design patterns, separation of concerns, DRY principles, exception handling, and runtime efficiency.",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "maxIterations": 6,
+        "agentKind": "standard",
+        "colorTheme": "purple",
+        "systemPrompt": "You are the Architecture & Code Quality Review Specialist.\n\nReview the supplied code or git diff against the following criteria:\n1. **Software Architecture & Separation of Concerns**: Are business logic, data access, and transport layers properly separated? Flag monolithic 'god classes' or tight coupling.\n2. **Clean Code & Idiomatic Patterns**: Are classes and functions focused, well-named, and adhering to single responsibility? Avoid deeply nested conditionals.\n3. **Error Handling & Resilience**: Are exceptions caught with specific error types rather than bare `except:` clauses? Are error states handled gracefully?\n4. **Performance & Resource Leaks**: Flag potential memory leaks, unclosed file descriptors, unindexed database scans, or N+1 query patterns.\n\nProduce structured feedback with severity levels (CRITICAL, MAJOR, MINOR), line numbers, and actionable code suggestions.",
+        "tools": [],
+        "subAgents": [],
+        "memoryType": "none",
+        "outputFormat": "text"
+      }
+    },
+    {
+      "id": "agent_security_reviewer",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 952
+      },
+      "data": {
+        "id": "agent_security_reviewer",
+        "name": "security_reviewer",
+        "label": "Security & Vulnerability Specialist",
+        "role": "Audits source code for OWASP Top 10 vulnerabilities, SQL injection, SSRF, command injection, and plaintext secrets.",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "maxIterations": 6,
+        "agentKind": "standard",
+        "colorTheme": "red",
+        "systemPrompt": "You are the Security & Vulnerability Code Review Specialist.\n\nAudit the supplied source code or git diff against the following security checklist:\n1. **Injection Flaws (CWE-89 SQL Injection, CWE-78 Command Injection)**: Verify database queries use parameterized placeholders (ORM or bind parameters) rather than raw string concatenation (f-strings or % formatting). Flag raw subprocess execution with shell=True.\n2. **Credential & Secret Leakage**: Detect hardcoded API keys (Google AIzaSy, AWS AKIA, GitHub PATs, OAuth secrets), private keys, or passwords committed into code.\n3. **Server-Side Request Forgery (SSRF - CWE-918)**: When outbound HTTP requests are made, verify that URLs are strictly validated and explicit timeouts are configured.\n4. **Authentication & Authorization**: Verify that protected endpoints check user identity and roles before performing state-changing operations.\n5. **Input Validation & Sanitization**: Ensure external parameters and untrusted user inputs are validated before processing.\n\nProduce structured findings citing exact file names, line numbers, CWE identifiers, and safe remediation examples.",
+        "tools": [],
+        "subAgents": [],
+        "memoryType": "none",
+        "outputFormat": "text"
+      }
+    },
+    {
+      "id": "agent_packaging_reviewer",
+      "type": "agentNode",
+      "position": {
+        "x": 880,
+        "y": 952
+      },
+      "data": {
+        "id": "agent_packaging_reviewer",
+        "name": "packaging_reviewer",
+        "label": "Testing & Packaging Specialist",
+        "role": "Audits unit test coverage, mock boundaries, edge case assertions, package dependencies, and container deployment manifests.",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "maxIterations": 6,
+        "agentKind": "standard",
+        "colorTheme": "green",
+        "systemPrompt": "You are the Testing, Packaging & Dependency Review Specialist.\n\nAudit the supplied source code or git diff against the following quality checklist:\n1. **Automated Test Coverage**: Are new features or bug fixes accompanied by corresponding unit tests? Do tests verify edge cases, error conditions, and happy paths?\n2. **Mock Boundaries & CI Isolation**: In unit tests, are external cloud services, network calls, and database connections properly mocked so tests run deterministically in CI without external credentials?\n3. **Dependency Specifications**: Are all imported third-party libraries declared in requirements.txt, pyproject.toml, or package.json? Are version constraints pinned to prevent unexpected breaking changes?\n4. **Build & Container Configuration**: If Dockerfile or deployment configs are present, verify least-privilege non-root execution and proper .dockerignore build context exclusions.\n\nProduce structured findings detailing missing dependencies, unmocked network calls, or untested code branches.",
+        "tools": [],
+        "subAgents": [],
+        "memoryType": "none",
+        "outputFormat": "text"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_chat_to_coordinator",
+      "source": "trigger_code_review_chat",
+      "sourceHandle": "trigger_out_bottom",
+      "target": "agent_code_review_coordinator",
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#f59e0b", "strokeWidth": 2, "strokeDasharray": "5 5" }
+    },
+    {
+      "id": "edge_tester_to_coordinator",
+      "source": "trigger_code_review_tester",
+      "sourceHandle": "trigger_out_right",
+      "target": "agent_code_review_coordinator",
+      "targetHandle": "input_left",
+      "animated": true,
+      "style": { "stroke": "#f59e0b", "strokeWidth": 2, "strokeDasharray": "5 5" }
+    },
+    {
+      "id": "edge_coordinator_to_arch",
+      "source": "agent_code_review_coordinator",
+      "sourceHandle": "output",
+      "target": "agent_architecture_reviewer",
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge_coordinator_to_sec",
+      "source": "agent_code_review_coordinator",
+      "sourceHandle": "output",
+      "target": "agent_security_reviewer",
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge_coordinator_to_pkg",
+      "source": "agent_code_review_coordinator",
+      "sourceHandle": "output",
+      "target": "agent_packaging_reviewer",
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#3b82f6", "strokeWidth": 2 }
+    }
+  ],
+  "deployment": {
+    "target": "agent_engine",
+    "deploymentTarget": "agent_engine",
+    "outputFolder": "./code_reviewer_agent/",
+    "framework": "google-adk",
+    "language": "python",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true
+  }
+}

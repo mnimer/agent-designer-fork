@@ -15,7 +15,7 @@ import * as path from 'node:path';
 import { AgentWorkflowDocument } from '../../../../src/shared/types';
 
 describe('Company Verifier Sample Workflow (.agent)', () => {
-  const samplePath = path.resolve(__dirname, '../../../../resource/samples/company_verifier/company_verifier.agent');
+  const samplePath = path.resolve(__dirname, '../../../../resource/samples/retail/company_verifier/company_verifier.agent');
 
   it('should load resource/samples/company_verifier/company_verifier.agent successfully as valid JSON', () => {
     assert.ok(fs.existsSync(samplePath), 'company_verifier.agent file exists in resource/samples/company_verifier/');

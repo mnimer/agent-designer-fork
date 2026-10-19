@@ -17,6 +17,7 @@ import { WebviewBridge } from '../WebviewBridge';
 import { GcloudDetector } from './GcloudDetector';
 import { ArtifactStager } from './ArtifactStager';
 import { ReasoningEngineClient } from './ReasoningEngineClient';
+import { UnifiedDeployRunner } from './UnifiedDeployRunner';
 import {
   DeploymentMetadataRecord,
   ActiveDeploymentRecord,
@@ -28,13 +29,28 @@ export class DeployPipeline {
   private activeProcesses = new Map<string, ChildProcess>();
   private activeDeployments = new Map<string, ActiveDeploymentRecord>();
   private cancelledDirectories = new Set<string>();
+  private unifiedRunner: UnifiedDeployRunner;
 
   constructor(
     private gcloudDetector: GcloudDetector,
     private artifactStager: ArtifactStager,
     private reasoningEngineClient: ReasoningEngineClient,
-    private pythonResolver?: { resolvePythonEnvironment(targetDir?: string): Promise<{ path: string } | null> }
-  ) {}
+    private pythonResolver?: {
+      resolvePythonEnvironment(targetDir?: string): Promise<{ path: string } | null>;
+      ensureVirtualEnvironment?(targetDir?: string): Promise<{ path: string }>;
+      ensureDependenciesInstalled?(
+        pythonBin: string,
+        targetDir: string,
+        onLog?: (msg: string, stream?: 'stdout' | 'stderr' | 'system') => Promise<void> | void
+      ): Promise<void>;
+    }
+  ) {
+    this.unifiedRunner = new UnifiedDeployRunner(
+      this.gcloudDetector,
+      this.activeProcesses,
+      this.cancelledDirectories
+    );
+  }
 
   /**
    * Constructs the command arguments array for the deployment execution.
@@ -89,13 +105,17 @@ export class DeployPipeline {
       }
     }
 
-    args.push('--session_service_uri', 'memory://');
+    args.push('--otel_to_cloud');
 
     if (options.stagingBucket && options.stagingBucket.trim()) {
       const bucketUri = options.stagingBucket.trim().startsWith('gs://')
         ? options.stagingBucket.trim()
         : `gs://${options.stagingBucket.trim()}`;
       args.push('--artifact_service_uri', bucketUri);
+    }
+
+    if (options.serviceAccount && options.serviceAccount.trim()) {
+      args.push('--service_account', options.serviceAccount.trim());
     }
 
     args.push('.');
@@ -108,7 +128,23 @@ export class DeployPipeline {
    */
   public getDeployCommandString(options: AgentEngineDeployOptions): string {
     const existingMeta = this.artifactStager.readDeploymentMetadata(options.targetDirectory);
-    if (this.gcloudDetector.hasBinary('adk')) {
+    if (this.unifiedRunner.hasMakefileTarget(options.targetDirectory, 'deploy')) {
+      return this.unifiedRunner.buildMakeDeployCommand({
+        target: 'agent_engine',
+        targetDirectory: options.targetDirectory,
+        projectId: options.projectId,
+        region: options.region,
+        displayName: options.displayName,
+        agentEngineId: !options.forceNew
+          ? options.agentEngineId || existingMeta?.remote_agent_runtime_id
+          : undefined,
+        stagingBucket: options.stagingBucket,
+        serviceAccount: options.serviceAccount,
+        networkAttachment: options.networkAttachment,
+        governance: options.governance,
+      }).commandString;
+    }
+    if (this.gcloudDetector.hasBinary('adk', options.targetDirectory)) {
       const args = this.buildAdkDeployArgs(options, existingMeta);
       return `adk ${args.join(' ')}`;
     }
@@ -166,15 +202,7 @@ export class DeployPipeline {
 
     const executionDir = targetDirectory;
 
-    // 3. Ensure packaging files exist
-    this.artifactStager.ensureIgnoreFiles(targetDirectory);
-    this.artifactStager.ensureManifestFile(targetDirectory, options);
-    this.artifactStager.ensurePyProjectToml(targetDirectory, options);
-    this.artifactStager.ensureAgentRuntimeApp(targetDirectory);
-    this.artifactStager.ensureAgentImports(targetDirectory);
-    this.artifactStager.ensureAgentEngineConfig(targetDirectory);
-
-    // 4. Check for existing deployment metadata or configured engine ID
+    // 3. Check for existing deployment metadata or configured engine ID (zero procedural file mutation)
     const existingMeta = this.artifactStager.readDeploymentMetadata(targetDirectory);
     let candidateEngineId = options.agentEngineId?.trim() || existingMeta?.remote_agent_runtime_id;
 
@@ -224,9 +252,9 @@ export class DeployPipeline {
       remoteRuntimeId: resolvedEngineId || existingMeta?.remote_agent_runtime_id,
     });
 
-    const actionLabel = isUpdate ? 'Updating existing Agent Engine Runtime' : 'Deploying new Agent Engine Runtime';
+    const actionLabel = isUpdate ? 'Updating existing Agent Runtime' : 'Deploying new Agent Runtime';
     this.logToBridge(bridge, `[0.0s] Initializing ${actionLabel}...`, 'system', targetDirectory);
-    this.logToBridge(bridge, `[0.1s] Target: Vertex AI Agent Engine (${region})`, 'system', targetDirectory);
+    this.logToBridge(bridge, `[0.1s] Target: Agent Runtime (${region})`, 'system', targetDirectory);
     this.logToBridge(bridge, `[0.2s] Project: ${projectId}`, 'system', targetDirectory);
 
     if (isUpdate && resolvedEngineId) {
@@ -244,14 +272,68 @@ export class DeployPipeline {
       remoteRuntimeId: resolvedEngineId || existingMeta?.remote_agent_runtime_id,
     });
 
-    // 6. Determine deployment tool and build arguments
-    let deployTool: 'adk' | 'agents-cli' | 'python';
+    // 6. Determine deployment tool and build arguments (preferring Makefile dogfooding when present)
+    let deployTool: 'make' | 'adk' | 'agents-cli' | 'python';
     let deployArgs: string[];
 
-    if (this.gcloudDetector.hasBinary('adk')) {
+    const hasMakefileDeploy =
+      this.unifiedRunner.hasMakefileTarget(targetDirectory, 'deploy') &&
+      this.gcloudDetector.hasBinary('make', targetDirectory);
+
+    // If requirements.txt exists and adk is not yet installed in .venv, auto-provision .venv first
+    // so both `make deploy` and direct `adk deploy` have `.venv/bin/adk` ready with live IDE progress logs.
+    const hasRequirements = fs.existsSync(path.join(targetDirectory, 'requirements.txt'));
+    if (
+      hasRequirements &&
+      !this.gcloudDetector.hasBinary('adk', targetDirectory) &&
+      !this.gcloudDetector.hasBinary('agents-cli', targetDirectory) &&
+      !fs.existsSync(path.join(targetDirectory, 'deploy.py')) &&
+      this.pythonResolver?.ensureVirtualEnvironment &&
+      this.pythonResolver?.ensureDependenciesInstalled
+    ) {
+      try {
+        this.logToBridge(
+          bridge,
+          `[0.4s] Provisioning local Python virtual environment (.venv) and installing ADK CLI dependencies from requirements.txt...`,
+          'system',
+          targetDirectory
+        );
+        const venvEnv = await this.pythonResolver.ensureVirtualEnvironment(targetDirectory);
+        await this.pythonResolver.ensureDependenciesInstalled(
+          venvEnv.path,
+          targetDirectory,
+          (msg, stream = 'system') => {
+            this.logToBridge(bridge, msg, stream, targetDirectory);
+          }
+        );
+      } catch (provErr: any) {
+        this.logToBridge(
+          bridge,
+          `[WARNING] Automatic virtual environment provisioning failed: ${provErr?.message || provErr}`,
+          'stderr',
+          targetDirectory
+        );
+      }
+    }
+
+    if (hasMakefileDeploy) {
+      deployTool = 'make';
+      deployArgs = this.unifiedRunner.buildMakeDeployCommand({
+        target: 'agent_engine',
+        targetDirectory,
+        projectId,
+        region,
+        displayName: options.displayName,
+        agentEngineId: options.agentEngineId || (!options.forceNew ? existingMeta?.remote_agent_runtime_id : undefined),
+        stagingBucket: options.stagingBucket,
+        serviceAccount: options.serviceAccount,
+        networkAttachment: options.networkAttachment,
+        envVars: options.envVars,
+      }).args;
+    } else if (this.gcloudDetector.hasBinary('adk', targetDirectory)) {
       deployTool = 'adk';
       deployArgs = this.buildAdkDeployArgs(options, existingMeta);
-    } else if (this.gcloudDetector.hasBinary('agents-cli')) {
+    } else if (this.gcloudDetector.hasBinary('agents-cli', targetDirectory)) {
       deployTool = 'agents-cli';
       deployArgs = this.buildDeployArgs(options, existingMeta);
     } else if (fs.existsSync(path.join(targetDirectory, 'deploy.py'))) {
@@ -273,13 +355,16 @@ export class DeployPipeline {
     const deployCmd = `${deployTool} ${deployArgs.join(' ')}`;
     this.logToBridge(bridge, `[0.5s] Executing: ${deployCmd}`, 'system', targetDirectory);
 
-    const env: NodeJS.ProcessEnv = this.gcloudDetector.getExtendedEnv({
-      GOOGLE_CLOUD_PROJECT: projectId,
-      CLOUDSDK_CORE_PROJECT: projectId,
-      GOOGLE_GENAI_USE_VERTEXAI: '1',
-      GOOGLE_CLOUD_LOCATION: 'global',
-      ...(options.envVars || {}),
-    });
+    const env: NodeJS.ProcessEnv = this.gcloudDetector.getExtendedEnv(
+      {
+        GOOGLE_CLOUD_PROJECT: projectId,
+        CLOUDSDK_CORE_PROJECT: projectId,
+        GOOGLE_GENAI_USE_VERTEXAI: '1',
+        GOOGLE_CLOUD_LOCATION: 'global',
+        ...(options.envVars || {}),
+      },
+      targetDirectory
+    );
 
     let pythonExecutable = process.platform === 'win32' ? 'python.exe' : 'python3';
     if (deployTool === 'python') {
@@ -317,7 +402,8 @@ export class DeployPipeline {
           shell: false,
         });
       } else {
-        child = spawn(deployTool, deployArgs, {
+        const resolvedToolPath = this.gcloudDetector.resolveBinaryPath(deployTool, targetDirectory) || deployTool;
+        child = spawn(resolvedToolPath, deployArgs, {
           cwd: executionDir,
           env,
           shell: false,
@@ -377,7 +463,7 @@ export class DeployPipeline {
         }
       });
 
-      child.on('close', (code: number | null, signal: string | null) => {
+      child.on('close', async (code: number | null, signal: string | null) => {
         this.activeProcesses.delete(targetDirectory);
         this.artifactStager.cleanupAdkTempDirectories(targetDirectory, deployStartTime);
 
@@ -406,6 +492,28 @@ export class DeployPipeline {
           const serviceUrl = this.reasoningEngineClient.resolveEndpointUrl(region, projectId, remoteRuntimeId);
           const consoleUrl = detectedConsoleUrl || this.reasoningEngineClient.resolveConsoleUrl(region, projectId, remoteRuntimeId);
 
+          const resolvedAgentId =
+            options.displayName ||
+            (options.document as any)?.name ||
+            path.basename(targetDirectory);
+
+          const governanceResult = await this.unifiedRunner.runPostDeployGovernance({
+            target: 'agent_engine',
+            targetDirectory,
+            projectId,
+            region,
+            agentId: resolvedAgentId,
+            displayName: resolvedAgentId,
+            description: (options.document as any)?.description,
+            deployedResourceUri: remoteRuntimeId,
+            serviceUrl,
+            serviceAccount: options.serviceAccount,
+            stagingBucket: options.stagingBucket,
+            document: options.document,
+            governance: options.governance,
+            onLog: (text, stream) => this.logToBridge(bridge, text, stream, targetDirectory),
+          });
+
           const metadata: DeploymentMetadataRecord = {
             remote_agent_runtime_id: remoteRuntimeId,
             deployment_target: 'agent_runtime',
@@ -419,7 +527,27 @@ export class DeployPipeline {
             service_account: options.serviceAccount,
             network_attachment: options.networkAttachment,
             staging_bucket: options.stagingBucket,
-            status: 'ACTIVE',
+            status:
+              governanceResult.evalGateStatus === 'warning'
+                ? 'ACTIVE_WITH_EVAL_WARNINGS'
+                : 'ACTIVE',
+            agent_registry_resource: governanceResult.agentRegistryResource,
+            security_policy_resource: governanceResult.securityPolicyResource,
+            agent_gateway_resource: governanceResult.agentGatewayResource,
+            model_armor_template_id: governanceResult.modelArmorTemplateId,
+            telemetry_enabled: governanceResult.telemetryEnabled,
+            evaluation_set_resource: governanceResult.evaluationSetResource,
+            evaluation_experiment_resource: governanceResult.evaluationExperimentResource,
+            evaluation_run_resource: governanceResult.evaluationRunResource,
+            evaluation_items_count: governanceResult.evaluationItemsCount,
+            apphub_application_resource: governanceResult.appHubApplicationResource,
+            apphub_workload_resource: governanceResult.appHubWorkloadResource,
+            eval_gate_status: governanceResult.evalGateStatus,
+            eval_warnings: governanceResult.evalWarnings,
+            eval_task_experiment_url: governanceResult.evalTaskExperimentUrl,
+            gemini_enterprise_agent_uri: governanceResult.geminiEnterpriseAgentUri,
+            gemini_enterprise_console_url: governanceResult.geminiEnterpriseConsoleUrl,
+            gemini_enterprise_blocked_by_eval: governanceResult.geminiEnterpriseBlockedByEval,
           };
 
           this.artifactStager.writeDeploymentMetadata(targetDirectory, metadata);
@@ -433,7 +561,16 @@ export class DeployPipeline {
             active.metadata = metadata;
           }
 
-          this.logToBridge(bridge, `✅ Deployment succeeded!`, 'system', targetDirectory);
+          if (governanceResult.evalGateStatus === 'warning') {
+            this.logToBridge(
+              bridge,
+              `⚠️ Deployment Succeeded with Evaluation Warnings!`,
+              'system',
+              targetDirectory
+            );
+          } else {
+            this.logToBridge(bridge, `✅ Deployment succeeded!`, 'system', targetDirectory);
+          }
           this.logToBridge(bridge, `✨ Resource ID: ${remoteRuntimeId}`, 'system', targetDirectory);
           this.logToBridge(bridge, `🚀 Endpoint: ${serviceUrl}`, 'system', targetDirectory);
 
@@ -451,6 +588,7 @@ export class DeployPipeline {
             serviceUrl,
             consoleUrl,
             metadata,
+            governanceResult,
           });
         } else {
           let errMsg = detectedFailureMessage;

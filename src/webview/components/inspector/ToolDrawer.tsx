@@ -31,6 +31,8 @@ import {
   TRANSPORT_DESCRIPTIONS,
 } from './tools';
 import type { McpHandshakeResult } from './tools';
+import { OpenApiToolsetModal } from '../palette/OpenApiToolsetModal';
+import { ToolConfigModal } from './ToolConfigModal';
 
 export {
   McpToolDrawer,
@@ -121,6 +123,49 @@ export const ToolDrawer: React.FC<ToolDrawerProps> = (props) => {
   // 7. Preload Memory Drawer (preload_memory)
   if (tool.builtinType === 'preload_memory' || tool.id === 'builtin_preload_memory') {
     return <PreloadMemoryToolDrawer {...props} />;
+  }
+
+  // 7.5. OpenAPI Toolset Modal & Config Drawer
+  if (tool.builtinType === 'openapi_toolset' || tool.id === 'builtin_openapi_toolset') {
+    return (
+      <OpenApiToolsetModal
+        isOpen={isOpen}
+        onClose={props.onClose}
+        initialTool={tool}
+        onSave={(updatedTool) => {
+          if (props.onSaveTool) props.onSaveTool(updatedTool);
+          if (props.onUpdateTool) props.onUpdateTool(updatedTool);
+        }}
+      />
+    );
+  }
+
+  // 7.6. Advanced ADK Toolsets & Control Flow Modal Drawer
+  if (
+    tool.builtinType === 'application_integration' ||
+    tool.builtinType === 'vertex_ai_rag_retrieval' ||
+    tool.builtinType === 'bigquery_toolset' ||
+    tool.builtinType === 'spanner_toolset' ||
+    tool.builtinType === 'computer_use' ||
+    tool.builtinType === 'toolbox_databases' ||
+    tool.id === 'builtin_application_integration' ||
+    tool.id === 'builtin_vertex_ai_rag_retrieval' ||
+    tool.id === 'builtin_bigquery_toolset' ||
+    tool.id === 'builtin_spanner_toolset' ||
+    tool.id === 'builtin_computer_use' ||
+    tool.id === 'builtin_toolbox_databases'
+  ) {
+    return (
+      <ToolConfigModal
+        isOpen={isOpen}
+        onClose={props.onClose}
+        tool={tool}
+        onSave={(updatedTool) => {
+          if (props.onSaveTool) props.onSaveTool(updatedTool);
+          if (props.onUpdateTool) props.onUpdateTool(updatedTool);
+        }}
+      />
+    );
   }
 
   // 8. REST API Tool Drawer

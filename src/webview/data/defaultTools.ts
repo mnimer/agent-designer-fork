@@ -15,16 +15,22 @@
  * Plus:
  * 8. Custom Function (`custom`)
  * 9. Google Cloud Remote MCP Servers (`google_cloud_mcp`)
+ * 10. Databricks Managed MCP Servers (`mcp`)
+ * 11. Snowflake Managed & Cortex MCP Servers (`mcp`)
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
 
 import { ToolDefinition } from '../types';
 import { GOOGLE_CLOUD_MCP_SERVERS, createToolDefinitionFromGcpMcpServer } from './googleCloudMcpServers';
+import { DATABRICKS_MCP_DEFAULT_TOOLS } from './databricksMcpServers';
+import { SNOWFLAKE_MCP_DEFAULT_TOOLS } from './snowflakeMcpServers';
 
 export const GOOGLE_CLOUD_MCP_DEFAULT_TOOLS: ToolDefinition[] = GOOGLE_CLOUD_MCP_SERVERS.map((server) =>
   createToolDefinitionFromGcpMcpServer(server)
 );
+
+export { DATABRICKS_MCP_DEFAULT_TOOLS, SNOWFLAKE_MCP_DEFAULT_TOOLS };
 
 export const ADK_DEFAULT_TOOLS: ToolDefinition[] = [
   {
@@ -158,4 +164,6 @@ export const ADK_DEFAULT_TOOLS: ToolDefinition[] = [
 export const AVAILABLE_TOOLS: ToolDefinition[] = [
   ...ADK_DEFAULT_TOOLS,
   ...GOOGLE_CLOUD_MCP_DEFAULT_TOOLS,
+  ...DATABRICKS_MCP_DEFAULT_TOOLS,
+  ...SNOWFLAKE_MCP_DEFAULT_TOOLS,
 ];

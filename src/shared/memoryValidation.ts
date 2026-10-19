@@ -92,7 +92,7 @@ export function validateMemoryConfig(
   // Section 4: SQLite Checkpointer Warning for Cloud Deployments
   else if (config.type === 'sqlite') {
     result.warnings.push(
-      `${prefix}SQLite memory uses a local disk file. In containerized Cloud Run / Agent Engine deployments, data will not persist across container restarts.`
+      `${prefix}SQLite memory uses a local disk file. In containerized Cloud Run / Agent Runtime deployments, data will not persist across container restarts.`
     );
   }
 

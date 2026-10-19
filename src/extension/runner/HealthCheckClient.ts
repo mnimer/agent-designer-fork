@@ -330,7 +330,9 @@ export class HealthCheckClient {
           return;
         }
 
-        const isAlive = await this.httpGetCheck(port, '/health', 300);
+        const isAlive =
+          (await this.httpGetCheck(port, '/health', 300)) ||
+          (await this.httpGetCheck(port, '/healthz', 300));
         if (isAlive) {
           cleanup();
           resolve(true);

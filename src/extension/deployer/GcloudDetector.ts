@@ -15,6 +15,8 @@ import { spawn } from 'child_process';
 export class GcloudDetector {
   private _cachedAccessToken: string | null = null;
   private _cachedAccessTokenExpiresAt = 0;
+  private _cachedIdentityToken: string | null = null;
+  private _cachedIdentityTokenExpiresAt = 0;
   private resolvedGcloudPath?: string;
 
   constructor(private deployer?: any) {}
@@ -49,11 +51,33 @@ export class GcloudDetector {
    * even when spawned from GUI VS Code.
    *
    * @param extraEnv Optional additional environment variables to merge
+   * @param targetDirectory Optional agent target directory to prioritize its local .venv/bin
    * @returns ProcessEnv with augmented PATH
    */
-  public getExtendedEnv(extraEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  public getExtendedEnv(extraEnv?: NodeJS.ProcessEnv, targetDirectory?: string): NodeJS.ProcessEnv {
     const home = process.env.HOME || '';
+    const binFolder = process.platform === 'win32' ? 'Scripts' : 'bin';
+    const venvPaths: string[] = [];
+
+    if (targetDirectory) {
+      venvPaths.push(
+        path.join(targetDirectory, '.venv', binFolder),
+        path.join(targetDirectory, 'venv', binFolder),
+        path.join(targetDirectory, 'env', binFolder)
+      );
+    }
+
+    if (process.env.VIRTUAL_ENV) {
+      venvPaths.push(path.join(process.env.VIRTUAL_ENV, binFolder));
+    }
+
+    venvPaths.push(
+      path.join(process.cwd(), '.venv', binFolder),
+      path.join(home, '.local', 'pipx', 'venvs', 'google-adk', binFolder)
+    );
+
     const extraPaths = [
+      ...venvPaths,
       path.join(home, '.local', 'bin'),
       path.join(home, '.cargo', 'bin'),
       path.join(home, 'Development', 'libraries', 'google-cloud-sdk', 'bin'),
@@ -80,7 +104,7 @@ export class GcloudDetector {
     const combinedPaths: string[] = [];
 
     for (const p of extraPaths) {
-      if (!existingParts.includes(p) && fs.existsSync(p)) {
+      if (!existingParts.includes(p) && !combinedPaths.includes(p) && fs.existsSync(p)) {
         combinedPaths.push(p);
       }
     }
@@ -154,22 +178,41 @@ export class GcloudDetector {
 
   /**
    * Public hasBinary method that delegates to deployer if overridden.
+   *
+   * @param binaryName Name of executable binary to check
+   * @param targetDirectory Optional agent target directory to include local .venv/bin
+   * @returns true if executable exists
    */
-  public hasBinary(binaryName: string): boolean {
+  public hasBinary(binaryName: string, targetDirectory?: string): boolean {
     if (this.deployer && this.deployer.hasBinary !== AgentEngineDeployer.prototype.hasBinary) {
-      return this.deployer.hasBinary(binaryName);
+      return this.deployer.hasBinary(binaryName, targetDirectory);
     }
-    return this.hasBinaryInternal(binaryName);
+    return this.hasBinaryInternal(binaryName, targetDirectory);
   }
 
   /**
-   * Internal hasBinary method with actual detection.
+   * Internal hasBinary method with actual detection across extended PATH and local virtualenvs.
+   *
+   * @param binaryName Name of executable binary to check
+   * @param targetDirectory Optional agent target directory to include local .venv/bin
+   * @returns true if executable exists
    */
-  public hasBinaryInternal(binaryName: string): boolean {
+  public hasBinaryInternal(binaryName: string, targetDirectory?: string): boolean {
+    return this.resolveBinaryPath(binaryName, targetDirectory) !== null;
+  }
+
+  /**
+   * Resolves the full file system path of an executable binary across extended PATH and local virtualenvs.
+   *
+   * @param binaryName Name of executable binary to locate
+   * @param targetDirectory Optional agent target directory to include local .venv/bin
+   * @returns Full path to the executable if found, otherwise null
+   */
+  public resolveBinaryPath(binaryName: string, targetDirectory?: string): string | null {
     try {
-      const extendedEnv = this.getExtendedEnv();
+      const extendedEnv = this.getExtendedEnv(undefined, targetDirectory);
       const pathValue = extendedEnv.PATH || extendedEnv.Path || process.env.PATH || '';
-      if (!pathValue) return false;
+      if (!pathValue) return null;
 
       const dirs = pathValue.split(path.delimiter);
       const isWin = process.platform === 'win32';
@@ -187,7 +230,7 @@ export class GcloudDetector {
             try {
               const stat = fs.statSync(fullPath);
               if (stat.isFile()) {
-                return true;
+                return fullPath;
               }
             } catch {
               // Ignore stat failures
@@ -195,9 +238,9 @@ export class GcloudDetector {
           }
         }
       }
-      return false;
+      return null;
     } catch {
-      return false;
+      return null;
     }
   }
 
@@ -277,6 +320,74 @@ export class GcloudDetector {
       if (token && token.length > 0) {
         this.cachedAccessToken = token;
         this.cachedAccessTokenExpiresAt = now + 10 * 60 * 1000; // 10 minutes
+        return `Bearer ${token}`;
+      }
+    } catch {}
+
+    return '';
+  }
+
+  /**
+   * Public getIdentityTokenHeader that delegates to deployer if overridden.
+   * Cloud Run (*.run.app) IAM authentication requires an OIDC Identity Token
+   * rather than an OAuth2 access token.
+   */
+  public async getIdentityTokenHeader(): Promise<string> {
+    if (this.deployer && this.deployer.getIdentityTokenHeader && this.deployer.getIdentityTokenHeader !== AgentEngineDeployer.prototype.getIdentityTokenHeader) {
+      return this.deployer.getIdentityTokenHeader();
+    }
+    return this.getIdentityTokenHeaderInternal();
+  }
+
+  /**
+   * Internal implementation of Google Cloud OIDC identity token fetcher (`gcloud auth print-identity-token`).
+   */
+  public async getIdentityTokenHeaderInternal(): Promise<string> {
+    const now = Date.now();
+    if (this._cachedIdentityToken && this._cachedIdentityTokenExpiresAt > now) {
+      return `Bearer ${this._cachedIdentityToken}`;
+    }
+
+    const envIdToken = process.env.GOOGLE_IDENTITY_TOKEN || process.env.CLOUDSDK_AUTH_IDENTITY_TOKEN;
+    if (envIdToken && envIdToken.trim().length > 0) {
+      this._cachedIdentityToken = envIdToken.trim();
+      this._cachedIdentityTokenExpiresAt = now + 10 * 60 * 1000;
+      return `Bearer ${this._cachedIdentityToken}`;
+    }
+
+    const gcloudBinary = await this.resolveGcloudPath();
+    const extendedEnv = this.getExtendedEnv();
+
+    try {
+      const token = await new Promise<string>((resolve, reject) => {
+        const cp = spawn(gcloudBinary, ['auth', 'print-identity-token'], {
+          env: extendedEnv,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        let stdout = '';
+        cp.stdout.on('data', (d) => {
+          stdout += d.toString();
+        });
+        cp.on('error', reject);
+        const timer = setTimeout(() => {
+          try {
+            cp.kill('SIGTERM');
+          } catch {}
+          reject(new Error('gcloud auth print-identity-token timed out'));
+        }, 15000);
+        cp.on('close', (code) => {
+          clearTimeout(timer);
+          if (code === 0 && stdout.trim().length > 0) {
+            resolve(stdout.trim());
+          } else {
+            reject(new Error(`${gcloudBinary} auth print-identity-token exited with code ${code}`));
+          }
+        });
+      });
+
+      if (token && token.length > 0) {
+        this._cachedIdentityToken = token;
+        this._cachedIdentityTokenExpiresAt = now + 10 * 60 * 1000;
         return `Bearer ${token}`;
       }
     } catch {}

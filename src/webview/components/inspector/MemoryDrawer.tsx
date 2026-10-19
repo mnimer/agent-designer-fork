@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { AgentMemoryConfig, AgentMemoryType } from '../../types';
 import { MEMORY_OPTIONS, getMemoryOption } from '../../data/memoryOptions';
+import { MemoryConfigSection } from './MemoryConfigSection';
 
 export interface MemoryDrawerProps {
   memoryConfig?: AgentMemoryConfig;
@@ -369,6 +370,12 @@ export const MemoryDrawer: React.FC<MemoryDrawerProps> = ({
           </div>
         )}
       </div>
+
+      {/* Cross-Session Long-Term Memory (TASK-236) and Artifact Storage (TASK-224) */}
+      <MemoryConfigSection
+        memoryConfig={memoryConfig}
+        onUpdateMemoryConfig={onUpdateMemoryConfig}
+      />
     </div>
   );
 };

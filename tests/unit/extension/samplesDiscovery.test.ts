@@ -33,11 +33,35 @@ describe('AgentEditorProvider Samples Discovery (TASK-128)', { concurrency: 1 },
 
     const samples = provider.discoverResourceSamples();
     assert.ok(Array.isArray(samples), 'discoverResourceSamples must return an array');
-    assert.strictEqual(samples.length, 2, `Expected exactly 2 samples discovered from disk, got ${samples.length}`);
+    assert.ok(samples.length >= 5, `Expected at least 5 samples discovered from disk, got ${samples.length}`);
 
     const ids = samples.map((s) => s.id);
+    assert.ok(ids.includes('code_reviewer'), 'Expected code_reviewer in discovered samples');
     assert.ok(ids.includes('company_verifier'), 'Expected company_verifier in discovered samples');
     assert.ok(ids.includes('travel_concierge'), 'Expected travel_concierge in discovered samples');
+    assert.ok(ids.includes('kc_data_domain_builder'), 'Expected kc_data_domain_builder in discovered samples');
+    assert.ok(ids.includes('a2ui_kitchen_sink'), 'Expected a2ui_kitchen_sink in discovered samples');
+
+    // Verify display names for discovered samples
+    const codeReviewerSample = samples.find((s) => s.id === 'code_reviewer');
+    assert.equal(codeReviewerSample?.name, 'Code Reviewing Agent');
+    const kitchenSinkSample = samples.find((s) => s.id === 'a2ui_kitchen_sink');
+    assert.equal(kitchenSinkSample?.name, 'A2UI Kitchen Sink Agent');
+    const travelSample = samples.find((s) => s.id === 'travel_concierge');
+    assert.equal(travelSample?.name, 'Travel Concierge');
+    const dataDomainSample = samples.find((s) => s.id === 'kc_data_domain_builder');
+    assert.equal(dataDomainSample?.name, 'Data Domain Builder');
+
+    // Verify removed samples are no longer present
+    assert.ok(!ids.includes('retail_data_and_ai_demo'), 'retail_data_and_ai_demo should be removed');
+    assert.ok(!ids.includes('airline_irops_a2ui'), 'airline_irops_a2ui should be removed');
+    assert.ok(!ids.includes('wealth_rebalancing_a2ui'), 'wealth_rebalancing_a2ui should be removed');
+    assert.ok(!ids.includes('clinical_trial_matching_a2ui'), 'clinical_trial_matching_a2ui should be removed');
+    assert.ok(!ids.includes('cloud_finops_security_a2ui'), 'cloud_finops_security_a2ui should be removed');
+    assert.ok(!ids.includes('merchandising_agent_a2ui'), 'merchandising_agent_a2ui should be removed');
+    assert.ok(!ids.includes('retail_marketing_promo_a2ui'), 'retail_marketing_promo_a2ui should be removed');
+    assert.ok(!ids.includes('retail_vendor_deal_desk_a2ui'), 'retail_vendor_deal_desk_a2ui should be removed');
+    assert.ok(!ids.includes('retail_allocation_planner_a2ui'), 'retail_allocation_planner_a2ui should be removed');
 
     // Verify metadata properties are populated
     for (const sample of samples) {
@@ -185,5 +209,100 @@ describe('AgentEditorProvider Samples Discovery (TASK-128)', { concurrency: 1 },
       false,
       'Should not open editor when canceled'
     );
+  });
+
+  it('should enforce trigger handle bindings and 8pt-grid layout across all sample .agent blueprints', () => {
+    const projectRoot = path.resolve(__dirname, '../../..');
+    const mockContext: any = {
+      extensionPath: projectRoot,
+      subscriptions: [],
+    };
+    const provider = new AgentEditorProvider(mockContext);
+
+    const samples = provider.discoverResourceSamples();
+    assert.ok(samples.length >= 5, `Expected at least 5 samples, got ${samples.length}`);
+
+    for (const sample of samples) {
+      const nodes: any[] = sample.nodes || [];
+      const edges: any[] = sample.edges || [];
+
+      // Verify all nodes adhere to the 8pt grid
+      for (const node of nodes) {
+        assert.equal(
+          node.position.x % 8,
+          0,
+          `Sample "${sample.id}" node "${node.id}" x=${node.position.x} must be a multiple of 8`
+        );
+        assert.equal(
+          node.position.y % 8,
+          0,
+          `Sample "${sample.id}" node "${node.id}" y=${node.position.y} must be a multiple of 8`
+        );
+      }
+
+      const triggerNodes = nodes.filter(
+        (n) => n.type === 'triggerNode' || n.type === 'trigger'
+      );
+      assert.ok(
+        triggerNodes.length >= 2,
+        `Sample "${sample.id}" must have at least 2 trigger nodes (operational trigger + tester trigger)`
+      );
+
+      let hasTesterTrigger = false;
+      let hasOperationalTrigger = false;
+
+      for (const trigger of triggerNodes) {
+        const triggerType =
+          trigger.data?.triggerType || trigger.data?.triggerKind || trigger.data?.type;
+        const triggerEdge = edges.find((e) => e.source === trigger.id);
+        assert.ok(
+          triggerEdge,
+          `Sample "${sample.id}" trigger "${trigger.id}" must have an outgoing edge to the root agent`
+        );
+
+        const targetAgent = nodes.find((n) => n.id === triggerEdge.target);
+        assert.ok(
+          targetAgent,
+          `Sample "${sample.id}" trigger "${trigger.id}" target root agent "${triggerEdge.target}" must exist`
+        );
+
+        if (triggerType === 'tester' || triggerType === 'test') {
+          hasTesterTrigger = true;
+          assert.equal(
+            triggerEdge.sourceHandle,
+            'trigger_out_right',
+            `Sample "${sample.id}" tester trigger "${trigger.id}" must connect from right handle (trigger_out_right)`
+          );
+          assert.equal(
+            triggerEdge.targetHandle,
+            'input_left',
+            `Sample "${sample.id}" tester trigger "${trigger.id}" must connect to root agent left handle (input_left)`
+          );
+          assert.ok(
+            trigger.position.x < targetAgent.position.x,
+            `Sample "${sample.id}" tester trigger "${trigger.id}" (x=${trigger.position.x}) must be positioned to the left of root agent "${targetAgent.id}" (x=${targetAgent.position.x})`
+          );
+        } else {
+          hasOperationalTrigger = true;
+          assert.equal(
+            triggerEdge.sourceHandle,
+            'trigger_out_bottom',
+            `Sample "${sample.id}" trigger "${trigger.id}" (${triggerType}) must connect from bottom handle (trigger_out_bottom)`
+          );
+          assert.equal(
+            triggerEdge.targetHandle,
+            'input',
+            `Sample "${sample.id}" trigger "${trigger.id}" (${triggerType}) must connect to root agent top handle (input)`
+          );
+          assert.ok(
+            trigger.position.y < targetAgent.position.y,
+            `Sample "${sample.id}" trigger "${trigger.id}" (y=${trigger.position.y}) must be positioned above root agent "${targetAgent.id}" (y=${targetAgent.position.y})`
+          );
+        }
+      }
+
+      assert.ok(hasTesterTrigger, `Sample "${sample.id}" must include a Test Runner trigger`);
+      assert.ok(hasOperationalTrigger, `Sample "${sample.id}" must include an operational trigger`);
+    }
   });
 });

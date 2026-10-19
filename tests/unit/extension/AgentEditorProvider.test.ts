@@ -506,14 +506,16 @@ describe('AgentEditorProvider', { concurrency: 1 }, () => {
     }
   });
 
-  it('should cleanly delete old code files and venv while preserving .agent and .git folders', async () => {
+  it('should cleanly delete old code files while preserving .venv, venv, .agent and .git folders', async () => {
     const fs = await import('node:fs');
     const path = await import('node:path');
     const mockContext: any = { extensionPath: '/mock', subscriptions: [] };
     const provider = new AgentEditorProvider(mockContext);
 
     const tmpCleanDir = `/tmp/test_clean_target_${Date.now()}`;
-    fs.mkdirSync(path.join(tmpCleanDir, '.venv'), { recursive: true });
+    fs.mkdirSync(path.join(tmpCleanDir, '.venv', 'bin'), { recursive: true });
+    fs.writeFileSync(path.join(tmpCleanDir, '.venv', 'bin', 'python'), '#!/bin/sh', 'utf-8');
+    fs.mkdirSync(path.join(tmpCleanDir, 'venv'), { recursive: true });
     fs.mkdirSync(path.join(tmpCleanDir, '.git'), { recursive: true });
     fs.writeFileSync(path.join(tmpCleanDir, 'old_agent.py'), '# old agent', 'utf-8');
     fs.writeFileSync(path.join(tmpCleanDir, 'server.py'), '# old server', 'utf-8');
@@ -527,14 +529,16 @@ describe('AgentEditorProvider', { concurrency: 1 }, () => {
 
     assert.ok(cleanupResult.cleaned.includes('old_agent.py'));
     assert.ok(cleanupResult.cleaned.includes('server.py'));
-    assert.ok(cleanupResult.cleaned.includes('.venv'));
+    assert.ok(cleanupResult.preserved.includes('.venv'));
+    assert.ok(cleanupResult.preserved.includes('venv'));
     assert.ok(cleanupResult.preserved.includes('.git'));
     assert.ok(cleanupResult.preserved.includes('my_workflow.agent'));
 
     // Verify filesystem state
     assert.equal(fs.existsSync(path.join(tmpCleanDir, 'old_agent.py')), false);
     assert.equal(fs.existsSync(path.join(tmpCleanDir, 'server.py')), false);
-    assert.equal(fs.existsSync(path.join(tmpCleanDir, '.venv')), false);
+    assert.equal(fs.existsSync(path.join(tmpCleanDir, '.venv', 'bin', 'python')), true);
+    assert.equal(fs.existsSync(path.join(tmpCleanDir, 'venv')), true);
     assert.equal(fs.existsSync(path.join(tmpCleanDir, '.git')), true);
     assert.equal(fs.existsSync(path.join(tmpCleanDir, 'my_workflow.agent')), true);
 
@@ -948,7 +952,7 @@ class NotAFunction:
     assert.strictEqual(parsedFailMsg.payload.success, false);
 
     // 2. Test OPEN_LOCAL_TOOL_FILE
-    const actualToolPath = path.resolve(__dirname, '../../../resource/samples/travel-concierge/tools/memory_toolset.py');
+    const actualToolPath = path.resolve(__dirname, '../../../resource/samples/retail/travel-concierge/tools/memory_toolset.py');
     await (messageCallback as any)({
       type: 'OPEN_LOCAL_TOOL_FILE',
       payload: { filePath: actualToolPath },
@@ -969,6 +973,134 @@ class NotAFunction:
     assert.strictEqual(pickedSuccessMsg.payload.success, true);
     assert.ok(pickedSuccessMsg.payload.filePath.includes('memory_toolset.py'));
     assert.ok(pickedSuccessMsg.payload.functions.some((f: any) => f.name === 'memorize'));
+  });
+
+  it('should handle SAVE_DOCUMENT message by updating buffer, calling document.save(), and posting DOCUMENT_SAVED', async () => {
+    const mockContext: any = {
+      extensionPath: '/mock/extension',
+      extensionUri: vscode.Uri.file('/mock/extension'),
+      subscriptions: [],
+    };
+    const provider = new AgentEditorProvider(mockContext);
+
+    let saveCalled = false;
+    let currentText = '{}';
+    const mockDoc: any = {
+      uri: vscode.Uri.file('/mock/workspace/save_test.agent'),
+      getText: () => currentText,
+      positionAt: () => new vscode.Position(0, 0),
+      save: async () => {
+        saveCalled = true;
+        return true;
+      },
+    };
+
+    let messageCallback: ((msg: any) => Promise<void>) | null = null;
+    const postedMessages: any[] = [];
+    const mockPanel: any = {
+      webview: {
+        options: {},
+        html: '',
+        postMessage: async (msg: any) => {
+          postedMessages.push(msg);
+          return true;
+        },
+        onDidReceiveMessage: (cb: any) => {
+          messageCallback = cb;
+          return { dispose: () => {} };
+        },
+        cspSource: 'vscode-webview:',
+        asWebviewUri: (uri: any) => uri.toString(),
+      },
+      onDidDispose: () => {},
+    };
+
+    await provider.resolveCustomTextEditor(mockDoc, mockPanel, {} as any);
+    assert.ok(messageCallback);
+
+    const updatedWorkflow: AgentWorkflowDocument = {
+      version: '1.0.0',
+      name: 'save_test',
+      description: 'Saved workflow',
+      framework: 'google-adk',
+      language: 'python',
+      nodes: [],
+      edges: [],
+    };
+
+    await (messageCallback as any)({
+      type: 'SAVE_DOCUMENT',
+      payload: {
+        document: updatedWorkflow,
+        docVersion: 5,
+      },
+    });
+
+    assert.equal(saveCalled, true, 'SAVE_DOCUMENT must invoke document.save()');
+    const savedMsg = postedMessages.find((m) => m.type === 'DOCUMENT_SAVED');
+    assert.ok(savedMsg, 'SAVE_DOCUMENT must emit DOCUMENT_SAVED');
+    assert.equal(savedMsg.payload.docVersion, 5);
+  });
+
+  it('should stop local deployment runner, cancel active runs, and reset state when a file/panel is closed', async () => {
+    const mockContext: any = {
+      extensionPath: '/mock/extension',
+      extensionUri: vscode.Uri.file('/mock/extension'),
+      subscriptions: [],
+    };
+    const provider = new AgentEditorProvider(mockContext);
+
+    let stopCalledCount = 0;
+    let cancelAllCalledCount = 0;
+    let resetChatCalledCount = 0;
+    let clearLogsCalledCount = 0;
+
+    provider.runnerManager.stopLocalRunner = async () => {
+      stopCalledCount++;
+    };
+    provider.runnerManager.cancelAll = () => {
+      cancelAllCalledCount++;
+    };
+    provider.runnerManager.resetChatSession = () => {
+      resetChatCalledCount++;
+    };
+    provider.runnerManager.clearRunnerLogs = () => {
+      clearLogsCalledCount++;
+    };
+
+    const mockDoc: any = {
+      uri: vscode.Uri.file('/mock/workspace/closing_agent.agent'),
+      getText: () => '{}',
+      positionAt: () => new vscode.Position(0, 0),
+    };
+
+    const disposeCallbacks: Array<() => Promise<void> | void> = [];
+    const mockPanel: any = {
+      webview: {
+        options: {},
+        html: '',
+        postMessage: async () => true,
+        onDidReceiveMessage: () => ({ dispose: () => {} }),
+        cspSource: 'vscode-webview:',
+        asWebviewUri: (uri: any) => uri.toString(),
+      },
+      onDidDispose: (cb: any) => {
+        disposeCallbacks.push(cb);
+        return { dispose: () => {} };
+      },
+    };
+
+    await provider.resolveCustomTextEditor(mockDoc, mockPanel, {} as any);
+    assert.ok(disposeCallbacks.length > 0);
+
+    for (const cb of disposeCallbacks) {
+      await cb();
+    }
+
+    assert.equal(stopCalledCount, 1, 'stopLocalRunner must be called when closing file panel');
+    assert.equal(cancelAllCalledCount, 1, 'cancelAll must be called when closing file panel');
+    assert.equal(resetChatCalledCount, 1, 'resetChatSession must be called when closing file panel');
+    assert.equal(clearLogsCalledCount, 1, 'clearRunnerLogs must be called when closing file panel');
   });
 });
 

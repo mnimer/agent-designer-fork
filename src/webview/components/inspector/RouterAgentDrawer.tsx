@@ -9,6 +9,7 @@
  * 1. Unified Kind Selector: Enables instant conversion of any node into a Router, Standard, or A2A node.
  * 2. Visual Branch Management: Dynamic rule-based routing with fallback handling.
  * 3. Full-Height Viewport Drawer: Uses fixed inset-y-0 right-0 z-50 w-[420px] overlay to span full viewport height over bottom panels, matching TriggerDrawer.
+ * 4. Structured Input Schema & Dynamic Condition Variables: Integrated StructuredInputBuilder for strongly typed router decision models with condition expression variable suggestions and static syntax validation.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -42,10 +43,16 @@ import {
   RouterConfig, 
   RouterEvaluationMode, 
   RouterBranchCondition,
-  ToolDefinition
+  ToolDefinition,
+  StructuredInputSchema
 } from '../../types';
 import { validateAgentIdentifier, sanitizeAgentIdentifier } from '../../../shared/identifierValidation';
 import { ModelSelector } from '../drawers/primitives/ModelSelector';
+import { 
+  StructuredInputBuilder, 
+  getInputSchemaFieldSuggestions, 
+  validateConditionExpression 
+} from './StructuredInputBuilder';
 
 interface RouterAgentDrawerProps {
   agent: AgentData;
@@ -206,6 +213,19 @@ export const RouterAgentDrawer: React.FC<RouterAgentDrawerProps> = ({
   const handleUpdateRouterConfig = (updates: Partial<RouterConfig>) => {
     const newConfig = { ...routerConfig, ...updates };
     onUpdateAgent({ routerConfig: newConfig });
+  };
+
+  const effectiveInputSchema: StructuredInputSchema | undefined = agent.inputSchema || routerConfig.inputSchema;
+  const variableSuggestions = getInputSchemaFieldSuggestions(effectiveInputSchema);
+
+  const handleUpdateInputSchema = (newSchema: StructuredInputSchema) => {
+    onUpdateAgent({
+      inputSchema: newSchema,
+      routerConfig: {
+        ...routerConfig,
+        inputSchema: newSchema,
+      },
+    });
   };
 
   const handleUpdateBranch = (branchId: string, updates: Partial<RouterBranchCondition>) => {
@@ -489,6 +509,15 @@ export const RouterAgentDrawer: React.FC<RouterAgentDrawerProps> = ({
           </div>
         )}
 
+        {/* ROUTER INPUT SCHEMA BUILDER */}
+        <StructuredInputBuilder
+          schema={effectiveInputSchema}
+          agentLabel={agent.label}
+          onChange={handleUpdateInputSchema}
+          title="Router Input Schema"
+          description="Define structured input fields that decision conditions evaluate against (input.<field>)"
+        />
+
         {/* DECISION BRANCHES LIST (if / elif / else) */}
         <div className="space-y-3 pt-2 border-t border-[#30363d]">
           <div className="flex items-center justify-between">
@@ -579,6 +608,51 @@ export const RouterAgentDrawer: React.FC<RouterAgentDrawerProps> = ({
                       placeholder={fieldMeta.placeholder}
                       className="w-full px-2.5 py-1 bg-[#161b22] border border-[#30363d] rounded text-xs text-purple-200 font-mono focus:border-purple-500 focus:outline-none"
                     />
+
+                    {/* Static Syntax Validation Warnings */}
+                    {!isFallback && (() => {
+                      const expr = branch.conditionExpression || branch.condition || '';
+                      const validation = validateConditionExpression(expr, effectiveInputSchema);
+                      if (!validation.valid && validation.warnings.length > 0) {
+                        return (
+                          <div className="space-y-0.5 pt-0.5">
+                            {validation.warnings.map((warn, wIdx) => (
+                              <div key={wIdx} className="flex items-center gap-1 text-[9px] text-amber-400 font-mono">
+                                <AlertTriangle className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                                <span>{warn}</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Variable Suggestions matching Input Schema */}
+                    {!isFallback && variableSuggestions.length > 0 && (
+                      <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                        <span className="text-[9px] text-gray-400">Insert Variable:</span>
+                        {variableSuggestions.map((suggestion) => (
+                          <button
+                            key={suggestion}
+                            type="button"
+                            onClick={() => {
+                              const currentVal = branch.conditionExpression || branch.condition || '';
+                              const updatedVal = currentVal.trim() ? `${currentVal.trim()} && ${suggestion}` : suggestion;
+                              handleUpdateBranch(branch.id, {
+                                conditionExpression: updatedVal,
+                                condition: updatedVal,
+                              });
+                            }}
+                            className="px-1.5 py-0.2 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[9px] font-mono transition-colors cursor-pointer"
+                            title={`Insert ${suggestion}`}
+                          >
+                            +{suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
                     <div className="text-[9px] text-gray-400">
                       {fieldMeta.helpText}
                     </div>

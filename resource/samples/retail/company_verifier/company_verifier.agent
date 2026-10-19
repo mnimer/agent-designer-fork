@@ -1,0 +1,229 @@
+{
+  "version": "1.0.0",
+  "name": "Company Verifier & Entity Classifier",
+  "description": "Automated business entity verification. Listens to Pub/Sub registration events, queries Google Search Grounding and Web Page Reader for corporate presence and operational status, and uses prompt reasoning to classify entity legitimacy and category (restaurant, machine shop, retail, medical, tech, etc.).",
+  "framework": "google-adk",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "trigger_pubsub_company",
+      "type": "triggerNode",
+      "position": {
+        "x": 496,
+        "y": 48
+      },
+      "data": {
+        "id": "trigger_pubsub_company",
+        "label": "Pub/Sub: Company Registrations",
+        "triggerType": "pubsub",
+        "triggerKind": "pubsub",
+        "targetRootAgentId": "agent_company_verifier",
+        "description": "Ingests real-time vendor and merchant registration events from GCP Pub/Sub.",
+        "config": {
+          "topic": "projects/enterprise-ops/topics/company-registration-events",
+          "subscription": "sub-company-verifier-v1",
+          "messageFormat": "json",
+          "ackDeadlineSeconds": 60,
+          "autoRegisterSubscription": true
+        }
+      }
+    },
+    {
+      "id": "trigger_company_verifier_tester",
+      "type": "triggerNode",
+      "position": {
+        "x": 48,
+        "y": 328
+      },
+      "data": {
+        "id": "trigger_company_verifier_tester",
+        "label": "Company Verifier Test Suite (4 Scenarios)",
+        "triggerType": "tester",
+        "triggerKind": "tester",
+        "targetRootAgentId": "agent_company_verifier",
+        "description": "Automated evaluation suite testing entity legitimacy verification and taxonomy classification across restaurant, machine shop, retail, and suspicious shell registrations.",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "test-verify-restaurant-entity",
+              "name": "1. Verify Legitimate Restaurant Entity",
+              "prompt": "Verify company registration: 'Tartine Bakery & Cafe, 600 Guerrero St, San Francisco, CA 94110'",
+              "inputQuery": "Verify company registration: 'Tartine Bakery & Cafe, 600 Guerrero St, San Francisco, CA 94110'",
+              "expectedOutput": "restaurant",
+              "expectedOutputPattern": "restaurant",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-verify-machine-shop-entity",
+              "name": "2. Verify Industrial CNC Machine Shop",
+              "prompt": "Verify company registration: ' Haas Automation Inc, 2800 Sturgis Rd, Oxnard, CA 93030'",
+              "inputQuery": "Verify company registration: ' Haas Automation Inc, 2800 Sturgis Rd, Oxnard, CA 93030'",
+              "expectedOutput": "machine shop",
+              "expectedOutputPattern": "machine shop",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-verify-retail-entity",
+              "name": "3. Verify Specialty Retail Storefront",
+              "prompt": "Verify company registration: 'REI Seattle Flagship, 222 Yale Ave N, Seattle, WA 98109'",
+              "inputQuery": "Verify company registration: 'REI Seattle Flagship, 222 Yale Ave N, Seattle, WA 98109'",
+              "expectedOutput": "retail",
+              "expectedOutputPattern": "retail",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-flag-suspicious-registration",
+              "name": "4. Flag Unverified Shell Registration",
+              "prompt": "Verify company registration: 'X99 Phantom Global Holdings LLC, 000 Nowhere Blvd, Suite 99999'",
+              "inputQuery": "Verify company registration: 'X99 Phantom Global Holdings LLC, 000 Nowhere Blvd, Suite 99999'",
+              "expectedOutput": "UNVERIFIED",
+              "expectedOutputPattern": "(UNVERIFIED|SUSPICIOUS)",
+              "assertionType": "regex"
+            }
+          ],
+          "testPrompts": [
+            {
+              "id": "test-verify-restaurant-entity",
+              "name": "1. Verify Legitimate Restaurant Entity",
+              "prompt": "Verify company registration: 'Tartine Bakery & Cafe, 600 Guerrero St, San Francisco, CA 94110'",
+              "inputQuery": "Verify company registration: 'Tartine Bakery & Cafe, 600 Guerrero St, San Francisco, CA 94110'",
+              "expectedOutput": "restaurant",
+              "expectedOutputPattern": "restaurant",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-verify-machine-shop-entity",
+              "name": "2. Verify Industrial CNC Machine Shop",
+              "prompt": "Verify company registration: ' Haas Automation Inc, 2800 Sturgis Rd, Oxnard, CA 93030'",
+              "inputQuery": "Verify company registration: ' Haas Automation Inc, 2800 Sturgis Rd, Oxnard, CA 93030'",
+              "expectedOutput": "machine shop",
+              "expectedOutputPattern": "machine shop",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-verify-retail-entity",
+              "name": "3. Verify Specialty Retail Storefront",
+              "prompt": "Verify company registration: 'REI Seattle Flagship, 222 Yale Ave N, Seattle, WA 98109'",
+              "inputQuery": "Verify company registration: 'REI Seattle Flagship, 222 Yale Ave N, Seattle, WA 98109'",
+              "expectedOutput": "retail",
+              "expectedOutputPattern": "retail",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test-flag-suspicious-registration",
+              "name": "4. Flag Unverified Shell Registration",
+              "prompt": "Verify company registration: 'X99 Phantom Global Holdings LLC, 000 Nowhere Blvd, Suite 99999'",
+              "inputQuery": "Verify company registration: 'X99 Phantom Global Holdings LLC, 000 Nowhere Blvd, Suite 99999'",
+              "expectedOutput": "UNVERIFIED",
+              "expectedOutputPattern": "(UNVERIFIED|SUSPICIOUS)",
+              "assertionType": "regex"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "agent_company_verifier",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 328
+      },
+      "data": {
+        "id": "agent_company_verifier",
+        "label": "Company Verifier & Classifier",
+        "role": "Verifies business legitimacy against Google Search Grounding and categorizes business type (restaurant, machine shop, retail, medical, tech, etc.).",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "maxIterations": 8,
+        "agentKind": "standard",
+        "systemPrompt": "You are an automated Business Verification and Entity Classifier Agent.\n\nWhen a company registration payload is received:\n1. Use Google Search Grounding to verify recent web footprint, official corporate filings, or business directory listings.\n2. Cross-verify if the place is marked as OPERATIONAL, permanently closed, or unrecognized.\n3. If search returns ambiguous results, use the Web Page Reader to inspect official domain pages.\n4. Analyze the place details to answer two primary questions:\n   a. Is this a genuine, real, and operating business? (Status: \"VERIFIED\" | \"UNVERIFIED\" | \"SUSPICIOUS\")\n   b. What specific business category does it belong to? Classify into standardized taxonomy:\n      - \"restaurant\" (cafes, diners, bars, bakeries, food service)\n      - \"machine shop\" (CNC machining, metal fabrication, tooling, industrial manufacturing)\n      - \"retail\" (apparel, electronics, grocery, convenience, specialty stores)\n      - \"auto repair & service\" (mechanics, body shops, dealerships)\n      - \"healthcare & medical clinic\" (dental, physician practices, clinics, therapy)\n      - \"logistics & warehousing\" (trucking, freight, distribution centers)\n      - \"technology & software\" (IT services, software development, data centers)\n      - \"professional services\" (legal, accounting, consulting, architectural)\n5. Return a structured JSON verification report with confidence score (0.00 - 1.00), verified physical address, operational status, primary category, secondary subcategories, and any fraud risk flags.",
+        "tools": [
+          {
+            "id": "tool_google_search",
+            "name": "Google Search Grounding",
+            "type": "search",
+            "category": "grounding",
+            "builtinType": "google_search",
+            "description": "Grounding search engine tool for real-time web retrieval and source verification.",
+            "codePrompt": "Query the Google Search Grounding tool with the given search terms. Return structured search snippets, source titles, and citation URLs for grounding model responses.",
+            "parameters": {
+              "query": "string - The search terms or question to look up online"
+            },
+            "googleSearchConfig": {
+              "domainFilters": [],
+              "dynamicThreshold": 0.3
+            },
+            "enabled": true
+          },
+          {
+            "id": "builtin_load_web_page",
+            "name": "Web Page Reader",
+            "type": "search",
+            "category": "grounding",
+            "builtinType": "load_web_page",
+            "description": "Fetches web page content over HTTP and converts HTML to clean, model-friendly markdown.",
+            "codePrompt": "Load public web pages by URL, stripping boilerplate markup, navigation, and script tags to return clean markdown for document inspection and summary.",
+            "parameters": {
+              "url": "string - Fully qualified HTTP or HTTPS URL to fetch"
+            },
+            "enabled": true
+          }
+        ],
+        "subAgents": [],
+        "subAgentPattern": "parallel",
+        "memoryType": "in_memory",
+        "memoryConfig": {
+          "type": "in_memory",
+          "windowTurns": 10,
+          "maxTokens": 4096
+        },
+        "outputFormat": "json_schema",
+        "isStartNode": true,
+        "colorTheme": "amber"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_pubsub_to_verifier",
+      "source": "trigger_pubsub_company",
+      "sourceHandle": "trigger_out_bottom",
+      "target": "agent_company_verifier",
+      "targetHandle": "input",
+      "animated": true,
+      "style": { "stroke": "#f59e0b", "strokeWidth": 2, "strokeDasharray": "5 5" }
+    },
+    {
+      "id": "edge_tester_to_verifier",
+      "source": "trigger_company_verifier_tester",
+      "sourceHandle": "trigger_out_right",
+      "target": "agent_company_verifier",
+      "targetHandle": "input_left",
+      "animated": true,
+      "style": { "stroke": "#f59e0b", "strokeWidth": 2, "strokeDasharray": "5 5" }
+    }
+  ],
+  "metadata": {
+    "category": "Retail",
+    "badge": "Pub/Sub + Search Grounding",
+    "features": [
+      "Cloud Pub/Sub Event Ingestion trigger with custom subscription",
+      "Google Search Grounding for entity verification",
+      "Web Page Reader for official domain and filing inspection",
+      "Taxonomy classifier: restaurant, machine shop, retail, healthcare, etc.",
+      "Structured JSON verification report with confidence & risk indicators"
+    ],
+    "updatedAt": "2026-09-17T01:32:36.464Z"
+  },
+  "deployment": {
+    "target": "agent_engine",
+    "deploymentTarget": "agent_engine",
+    "outputFolder": "./company_verifier_agent/",
+    "framework": "google-adk",
+    "language": "python",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true
+  }
+}

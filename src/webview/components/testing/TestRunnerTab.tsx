@@ -64,6 +64,8 @@ interface TestRunnerTabProps {
   document?: AgentWorkflowDocument;
   onOpenTriggerSettings?: () => void;
   onNavigateToDeployment?: () => void;
+  hasChatTrigger?: boolean;
+  onOpenPromptInChat?: (promptText: string) => void;
 }
 
 interface ExecutionLogEntry {
@@ -82,7 +84,15 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
   document: propDocument,
   onOpenTriggerSettings,
   onNavigateToDeployment,
+  hasChatTrigger = false,
+  onOpenPromptInChat,
 }) => {
+  const effectiveHasChatTrigger = Boolean(
+    hasChatTrigger ||
+      propDocument?.nodes?.some(
+        (n: any) => n.type === 'trigger' && n.data?.triggerType === 'chat'
+      )
+  );
   const bridge = useWebviewBridge();
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
   const [isRunningAll, setIsRunningAll] = useState<boolean>(false);
@@ -104,8 +114,6 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
   /**
    * Handles mouse drag to resize the execution logs drawer.
    * Allows dragging up or down with bounded heights between 80px and 600px.
-   *
-   * @author Mike Nimer <mikenimer@google.com>
    */
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -139,13 +147,20 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
     remoteEngineId;
   const isDeployed = Boolean(deployedResourceId);
 
+  const userSelectedTargetRef = useRef<boolean>(false);
+
   const [executionTarget, setExecutionTarget] = useState<'local' | 'remote'>(() => {
     return isDeployed ? 'remote' : 'local';
   });
 
-  // Automatically select remote execution if deployed and local runner is offline
+  // Automatically select remote execution if deployed and local runner is idle/stopped,
+  // unless the user manually chose a target or the local runner is starting/running.
   useEffect(() => {
-    if (isDeployed && localRunnerStatus !== 'running') {
+    if (
+      isDeployed &&
+      (localRunnerStatus === 'idle' || localRunnerStatus === 'stopped') &&
+      !userSelectedTargetRef.current
+    ) {
       setExecutionTarget('remote');
     }
   }, [isDeployed, localRunnerStatus]);
@@ -181,24 +196,20 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
 
   /**
    * Health check callback (invoked on tab open, target change, or manual user refresh).
-   * Dynamically queries GET_AGENT_ENGINE_STATUS when targeting remote Agent Engine,
-   * or GET_LOCAL_RUNNER_STATUS when targeting the local uvicorn runner.
-   *
-   * @author Mike Nimer <mikenimer@google.com>
+   * Queries both GET_LOCAL_RUNNER_STATUS and GET_AGENT_ENGINE_STATUS so the tab always
+   * reflects live status for both the local uvicorn server and remote deployment.
    */
   const checkRunnerHealth = useCallback(() => {
     setIsCheckingHealth(true);
-    if (executionTarget === 'remote') {
-      const targetDir = config?.outputFolder;
+    bridge.postMessage({ type: 'GET_LOCAL_RUNNER_STATUS' });
+    const targetDir = config?.outputFolder;
+    if (executionTarget === 'remote' || targetDir) {
       bridge.postMessage({
         type: 'GET_AGENT_ENGINE_STATUS',
         payload: { targetDirectory: targetDir },
       });
-      setTimeout(() => setIsCheckingHealth(false), 1500);
-    } else {
-      bridge.postMessage({ type: 'GET_LOCAL_RUNNER_STATUS' });
-      setTimeout(() => setIsCheckingHealth(false), 1500);
     }
+    setTimeout(() => setIsCheckingHealth(false), 1500);
   }, [bridge, executionTarget, config?.outputFolder]);
 
   // Check health once on tab mount or whenever execution target changes
@@ -211,6 +222,9 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
     const unsubStatus = bridge.subscribe('LOCAL_RUNNER_STATUS', (payload) => {
       if (payload?.status) {
         setLocalRunnerStatus(payload.status);
+        if (payload.status === 'running') {
+          setExecutionTarget('local');
+        }
       }
       if (payload?.port) {
         setLocalRunnerPort(payload.port);
@@ -596,10 +610,10 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
             title={
               !isTargetReady
                 ? executionTarget === 'remote'
-                  ? 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab to run tests.'
+                  ? 'Remote agent is not deployed. Deploy to Agent Runtime on the Deployment tab to run tests.'
                   : 'Local agent is offline. Start the agent in the Deployment tab to run tests.'
                 : executionTarget === 'remote'
-                ? 'Run all unit tests against remote Agent Engine'
+                ? 'Run all unit tests against remote Agent Runtime'
                 : 'Run all unit tests'
             }
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-pink-600 hover:bg-pink-500 disabled:opacity-40 disabled:hover:bg-pink-600 text-white font-bold text-xs shadow-md transition-all cursor-pointer disabled:cursor-not-allowed"
@@ -628,7 +642,10 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
             <span className="text-gray-400 font-medium shrink-0">Target:</span>
             <select
               value={executionTarget}
-              onChange={(e) => setExecutionTarget(e.target.value as 'local' | 'remote')}
+              onChange={(e) => {
+                userSelectedTargetRef.current = true;
+                setExecutionTarget(e.target.value as 'local' | 'remote');
+              }}
               className="bg-transparent text-white text-xs font-medium focus:outline-none cursor-pointer"
             >
               <option value="local" className="bg-[#161b22] text-white">
@@ -777,7 +794,7 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                 <span className="text-amber-200/90 ml-1">
                   {executionTarget === 'remote' ? (
                     <>
-                      Deploy the workflow to <strong>Agent Engine</strong> on the Deployment tab to enable remote unit test execution.
+                      Deploy the workflow to <strong>Agent Runtime</strong> on the Deployment tab to enable remote unit test execution.
                     </>
                   ) : (
                     <>
@@ -896,9 +913,9 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                       title={
                         !isTargetReady
                           ? executionTarget === 'remote'
-                            ? 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab to run this test.'
+                            ? 'Remote agent is not deployed. Deploy to Agent Runtime on the Deployment tab to run this test.'
                             : 'Local agent server is offline. Start the agent in the Deployment tab to run this test.'
-                          : `Execute test scenario against ${executionTarget === 'remote' ? 'remote Agent Engine' : 'local runner'}`
+                          : `Execute test scenario against ${executionTarget === 'remote' ? 'remote Agent Runtime' : 'local runner'}`
                       }
                       className="px-2.5 py-1 rounded-md bg-[#0d1117] hover:bg-pink-600 border border-[#30363d] hover:border-pink-500 text-gray-300 hover:text-white text-[11px] font-medium transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:hover:bg-[#0d1117] disabled:hover:border-[#30363d] disabled:cursor-not-allowed"
                     >
@@ -917,17 +934,32 @@ export const TestRunnerTab: React.FC<TestRunnerTabProps> = ({
                         <Terminal className="w-3 h-3 text-pink-400" />
                         Input Prompt
                       </span>
-                      <button
-                        onClick={() => handleCopy(tp.prompt || (tp as any).inputQuery || '', `prompt_${tp.id}`)}
-                        className="text-[10px] text-gray-400 hover:text-white flex items-center gap-0.5 cursor-pointer"
-                        title="Copy prompt"
-                      >
-                        {copiedId === `prompt_${tp.id}` ? (
-                          <Check className="w-2.5 h-2.5 text-emerald-400" />
-                        ) : (
-                          <Copy className="w-2.5 h-2.5" />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(tp.prompt || (tp as any).inputQuery || '', `prompt_${tp.id}`)}
+                          className="text-[10px] text-gray-400 hover:text-white flex items-center gap-0.5 cursor-pointer"
+                          title="Copy prompt"
+                        >
+                          {copiedId === `prompt_${tp.id}` ? (
+                            <Check className="w-2.5 h-2.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-2.5 h-2.5" />
+                          )}
+                        </button>
+                        {effectiveHasChatTrigger && onOpenPromptInChat && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenPromptInChat(tp.prompt || (tp as any).inputQuery || '')}
+                            className="text-[10px] text-gray-400 hover:text-emerald-400 flex items-center gap-0.5 cursor-pointer transition-colors"
+                            title="Open in Interactive Chat"
+                            aria-label="Open in Interactive Chat"
+                            data-testid={`open-in-chat-${tp.id}`}
+                          >
+                            <ArrowRight className="w-2.5 h-2.5" />
+                          </button>
                         )}
-                      </button>
+                      </div>
                     </div>
                     <div className="flex-1 p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d] font-mono text-[11px] text-gray-200 leading-relaxed overflow-y-auto max-h-[140px] select-text cursor-text" style={{ userSelect: 'text' }}>
                       {tp.prompt || (tp as any).inputQuery || ''}

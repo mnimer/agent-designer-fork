@@ -44,11 +44,15 @@ import {
   Layers,
 } from 'lucide-react';
 import { AgentWorkflowDocument } from '../../../shared/types';
-import { GeneratedFile } from '../../types';
+import { GeneratedFile, AgentGovernanceConfig } from '../../types';
 import { useWebviewBridge } from '../../hooks/useWebviewBridge';
 import { CloudRunDeploymentMetadataRecord } from '../../../extension/CloudRunDeployer';
 import { extractRuntimeSecrets } from '../../utils/runtimeSecrets';
 import { validateWorkflowMemory } from '../../../shared/memoryValidation';
+import {
+  GovernanceStatusCard,
+  createDefaultGovernanceConfig,
+} from './GovernanceStatusCard';
 
 export interface CloudRunDeployTabProps {
   document?: AgentWorkflowDocument;
@@ -98,6 +102,9 @@ export const CloudRunDeployTab: React.FC<CloudRunDeployTabProps> = ({
   const [concurrency, setConcurrency] = useState<number>(80);
   const [allowUnauthenticated, setAllowUnauthenticated] = useState<boolean>(false);
   const [networkAttachment, setNetworkAttachment] = useState<string>('');
+  const [governance, setGovernance] = useState<AgentGovernanceConfig>(() =>
+    createDefaultGovernanceConfig(workflowDoc)
+  );
 
   // Deployment Lifecycle State
   const [deployStatus, setDeployStatus] = useState<
@@ -219,6 +226,7 @@ export const CloudRunDeployTab: React.FC<CloudRunDeployTabProps> = ({
           allowUnauthenticated,
           networkAttachment: networkAttachment.trim() || undefined,
           envVars: secrets,
+          governance,
         },
       });
     }
@@ -414,6 +422,16 @@ export const CloudRunDeployTab: React.FC<CloudRunDeployTabProps> = ({
               />
             </div>
           </div>
+
+          {/* Enterprise Agent Governance & Gemini Enterprise Publishing Card */}
+          <GovernanceStatusCard
+            document={workflowDoc}
+            projectId={projectId}
+            region={region}
+            value={governance}
+            onChange={setGovernance}
+            metadata={deploymentMetadata}
+          />
 
           {/* Runtime Secrets Card */}
           {detectedSecrets.length > 0 && (

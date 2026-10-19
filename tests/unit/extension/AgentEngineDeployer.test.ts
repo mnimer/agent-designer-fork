@@ -264,8 +264,7 @@ describe('AgentEngineDeployer', () => {
         'us-central1',
         '--display_name',
         'Customer Service Agent',
-        '--session_service_uri',
-        'memory://',
+        '--otel_to_cloud',
         '.',
       ]);
     });
@@ -299,8 +298,7 @@ describe('AgentEngineDeployer', () => {
         'us-east4',
         '--agent_engine_id',
         '987654321',
-        '--session_service_uri',
-        'memory://',
+        '--otel_to_cloud',
         '.',
       ]);
     });
@@ -781,7 +779,199 @@ create_params:
       const stagedDir = path.join(tempDir, 'my_hyphenated_agent');
       assert.equal(fs.existsSync(stagedDir), false, 'Duplicate staged directory must NOT be created');
     });
+
+    it('should detect and execute adk binary from targetDirectory/.venv/bin/adk when not in global PATH and no deploy.py exists', async () => {
+      if (process.platform === 'win32') return;
+      const bridge = createMockBridge();
+      fs.writeFileSync(path.join(tempDir, 'agent.py'), '# agent code');
+
+      const venvBinDir = path.join(tempDir, '.venv', 'bin');
+      fs.mkdirSync(venvBinDir, { recursive: true });
+      const expectedId = 'projects/my-project-123/locations/us-central1/reasoningEngines/5566778899';
+      const adkPath = path.join(venvBinDir, 'adk');
+      fs.writeFileSync(
+        adkPath,
+        `#!/bin/sh\necho "Deploying via local .venv adk..."\necho "Deployed: ${expectedId}"\nexit 0\n`,
+        { mode: 0o755 }
+      );
+
+      const result = await deployer.deploy({
+        document: mockDocument,
+        targetDirectory: tempDir,
+        projectId: 'my-project-123',
+        region: 'us-central1',
+        bridge,
+      });
+
+      assert.equal(result.success, true, `Expected deploy to succeed using .venv/bin/adk, got error: ${result.error}`);
+      assert.equal(result.remoteRuntimeId, expectedId);
+    });
+
+    it('should auto-provision .venv and install requirements.txt when deploying newly generated code without deploy.py or global adk', async () => {
+      if (process.platform === 'win32') return;
+      const bridge = createMockBridge();
+      fs.writeFileSync(path.join(tempDir, 'agent.py'), '# agent code');
+      fs.writeFileSync(path.join(tempDir, 'requirements.txt'), 'google-adk>=2.0.0\n');
+
+      const expectedId = 'projects/my-project-123/locations/us-central1/reasoningEngines/1122334455';
+      let ensureVenvCalled = false;
+      let ensureDepsCalled = false;
+
+      const customDeployer = new AgentEngineDeployer({
+        resolvePythonEnvironment: async (dir?: string) => ({
+          path: path.join(dir || tempDir, '.venv', 'bin', 'python'),
+        }),
+        ensureVirtualEnvironment: async (dir?: string) => {
+          ensureVenvCalled = true;
+          const venvBinDir = path.join(dir || tempDir, '.venv', 'bin');
+          fs.mkdirSync(venvBinDir, { recursive: true });
+          const pythonBin = path.join(venvBinDir, 'python');
+          fs.writeFileSync(pythonBin, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+          return { path: pythonBin, isVirtualEnv: true, source: 'workspace-folder' as const };
+        },
+        ensureDependenciesInstalled: async (_pythonBin: string, dir: string, onLog?: any) => {
+          ensureDepsCalled = true;
+          if (onLog) {
+            await onLog('[Local Runner] Installing dependencies from requirements.txt into .venv...', 'system');
+          }
+          const adkPath = path.join(dir, '.venv', 'bin', 'adk');
+          fs.writeFileSync(
+            adkPath,
+            `#!/bin/sh\necho "Provisioned adk running..."\necho "Created: ${expectedId}"\nexit 0\n`,
+            { mode: 0o755 }
+          );
+        },
+      } as any);
+
+      try {
+        const result = await customDeployer.deploy({
+          document: mockDocument,
+          targetDirectory: tempDir,
+          projectId: 'my-project-123',
+          region: 'us-central1',
+          bridge,
+        });
+
+        assert.equal(ensureVenvCalled, true, 'Should call ensureVirtualEnvironment when adk is missing and requirements.txt exists');
+        assert.equal(ensureDepsCalled, true, 'Should call ensureDependenciesInstalled when adk is missing and requirements.txt exists');
+        assert.equal(result.success, true, `Expected deploy to succeed after provisioning .venv, got: ${result.error}`);
+        assert.equal(result.remoteRuntimeId, expectedId);
+      } finally {
+        customDeployer.dispose();
+      }
+    });
+
+    it('should log warning and return descriptive error when auto-provisioning fails and no CLI or deploy.py exists', async () => {
+      const bridge = createMockBridge();
+      fs.writeFileSync(path.join(tempDir, 'agent.py'), '# agent code');
+      fs.writeFileSync(path.join(tempDir, 'requirements.txt'), 'google-adk>=2.0.0\n');
+
+      const failingDeployer = new AgentEngineDeployer({
+        resolvePythonEnvironment: async () => null,
+        ensureVirtualEnvironment: async () => {
+          throw new Error('Simulated pip network failure');
+        },
+        ensureDependenciesInstalled: async () => {},
+      } as any);
+      (failingDeployer as any).hasBinary = () => false;
+
+      try {
+        const result = await failingDeployer.deploy({
+          document: mockDocument,
+          targetDirectory: tempDir,
+          projectId: 'my-project-123',
+          region: 'us-central1',
+          bridge,
+        });
+
+        assert.equal(result.success, false);
+        assert.ok(result.error?.includes("Neither 'adk' nor 'agents-cli' CLI tool was found in PATH"));
+        const warnLog = bridge.postedMessages.find(
+          (m) => m.type === 'AGENT_ENGINE_DEPLOY_LOG' && m.payload.text.includes('Simulated pip network failure')
+        );
+        assert.ok(warnLog, 'Should log provisioning failure warning to bridge');
+      } finally {
+        failingDeployer.dispose();
+      }
+    });
+
+    it('should NOT procedurally mutate agent.py or inject synthetic Python files during deploy()', async () => {
+      const bridge = createMockBridge();
+      const agentPyPath = path.join(tempDir, 'agent.py');
+      const originalAgentCode = '# Pure prompt-generated agent.py\nfrom google.adk.agents import Agent\nroot_agent = Agent(name="pure_agent")\n';
+      fs.writeFileSync(agentPyPath, originalAgentCode, 'utf8');
+
+      const expectedId = 'projects/my-project-123/locations/us-central1/reasoningEngines/77889900';
+      const scriptContent = [
+        'import sys',
+        `print("Deployed to Agent Platform: ${expectedId}")`,
+        'sys.exit(0)',
+      ].join('\n');
+      fs.writeFileSync(path.join(tempDir, 'deploy.py'), scriptContent);
+      (deployer as any).hasBinary = () => false;
+
+      const result = await deployer.deploy({
+        document: mockDocument,
+        targetDirectory: tempDir,
+        projectId: 'my-project-123',
+        region: 'us-central1',
+        bridge,
+      });
+
+      assert.equal(result.success, true);
+      assert.equal(fs.readFileSync(agentPyPath, 'utf8'), originalAgentCode, 'agent.py must not be mutated during deploy()');
+      assert.equal(fs.existsSync(path.join(tempDir, 'agent_runtime_app.py')), false, 'agent_runtime_app.py must not be injected during deploy()');
+      assert.equal(fs.existsSync(path.join(tempDir, 'agents-cli-manifest.yaml')), false, 'agents-cli-manifest.yaml must not be injected during deploy()');
+    });
+
+    it('should execute make deploy directly with all UI options when Makefile is present in targetDirectory', async () => {
+      if (process.platform === 'win32') return;
+      const bridge = createMockBridge();
+      fs.writeFileSync(path.join(tempDir, 'agent.py'), '# agent code\n', 'utf8');
+
+      const expectedId = 'projects/my-project-123/locations/us-central1/reasoningEngines/4455667788';
+      const makefileContent = [
+        '.PHONY: deploy',
+        'deploy:',
+        `\t@echo "Makefile deploy running with PROJECT_ID=\$(PROJECT_ID) REGION=\$(REGION) DISPLAY_NAME=\$(DISPLAY_NAME) STAGING_BUCKET=\$(STAGING_BUCKET) SERVICE_ACCOUNT=\$(SERVICE_ACCOUNT) NETWORK_ATTACHMENT=\$(NETWORK_ATTACHMENT)"`,
+        `\t@echo "Deployed: ${expectedId}"`,
+      ].join('\n');
+      fs.writeFileSync(path.join(tempDir, 'Makefile'), makefileContent + '\n', 'utf8');
+
+      const result = await deployer.deploy({
+        document: mockDocument,
+        targetDirectory: tempDir,
+        projectId: 'my-project-123',
+        region: 'us-central1',
+        displayName: 'dogfood_agent',
+        stagingBucket: 'gs://dogfood-staging',
+        serviceAccount: 'dogfood-sa@my-project-123.iam.gserviceaccount.com',
+        networkAttachment: 'projects/my-project-123/regions/us-central1/networkAttachments/psc-1',
+        bridge,
+      });
+
+      assert.equal(result.success, true, `Expected make deploy to succeed, got error: ${result.error}`);
+      assert.equal(result.remoteRuntimeId, expectedId);
+
+      const logTexts = bridge.postedMessages
+        .filter((m) => m.type === 'AGENT_ENGINE_DEPLOY_LOG')
+        .map((m) => m.payload.text)
+        .join('\n');
+      assert.ok(logTexts.includes('Executing: make deploy'), 'Should log Executing: make deploy');
+      assert.ok(logTexts.includes('PROJECT_ID=my-project-123'), 'Makefile should receive PROJECT_ID');
+      assert.ok(logTexts.includes('DISPLAY_NAME=dogfood_agent'), 'Makefile should receive DISPLAY_NAME');
+      assert.ok(logTexts.includes('STAGING_BUCKET=gs://dogfood-staging'), 'Makefile should receive STAGING_BUCKET');
+      assert.ok(
+        logTexts.includes('SERVICE_ACCOUNT=dogfood-sa@my-project-123.iam.gserviceaccount.com'),
+        'Makefile should receive SERVICE_ACCOUNT'
+      );
+      assert.ok(
+        logTexts.includes('NETWORK_ATTACHMENT=projects/my-project-123/regions/us-central1/networkAttachments/psc-1'),
+        'Makefile should receive NETWORK_ATTACHMENT'
+      );
+    });
   });
+
 
   describe('Deployment Cancellation & Process Lifecycle', () => {
     it('should cancel active deployment and notify webview', () => {

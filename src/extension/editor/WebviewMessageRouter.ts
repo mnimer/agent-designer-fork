@@ -41,7 +41,10 @@ import {
   DEFAULT_PUBSUB_TOPICS_FALLBACK,
   DEFAULT_PUBSUB_SUBSCRIPTIONS_FALLBACK,
   DEFAULT_SERVICE_ACCOUNTS_FALLBACK,
+  DEFAULT_MODEL_ARMOR_TEMPLATES_FALLBACK,
+  DEFAULT_GEMINI_ENTERPRISE_APPS_FALLBACK,
 } from '../GcpDiscoveryManager';
+import { UnifiedDeployRunner } from '../deployer/UnifiedDeployRunner';
 import {
   WebviewToExtensionMessage,
   isWriteFilesPayload,
@@ -266,6 +269,11 @@ export class WebviewMessageRouter {
       });
     });
 
+    // 3b. Explicit Document Save Handler (invoked on Generate Code or manual save)
+    bridge.onMessage('SAVE_DOCUMENT' as any, async (payload: any) => {
+      await this.saveWorkflowDocument(document, payload?.document, payload?.docVersion, bridge);
+    });
+
     // 4. Code Generation & Export Handlers
     bridge.onMessage('GENERATE_CODE', async (payload) => {
       if (!payload) return;
@@ -278,19 +286,12 @@ export class WebviewMessageRouter {
       this.activeCodeGenAbortController = abortController;
 
       // NOTE: Auto-save the .agent document to disk with the latest workflow payload before generating code
-      if (payload.document) {
-        try {
-          const updatedJson = JSON.stringify(payload.document, null, 2);
-          await this.documentSyncManager.updateTextDocument(document, updatedJson);
-          if (typeof document.save === 'function') {
-            await document.save();
-          }
-        } catch (saveErr) {
-          this.outputChannel?.appendLine(
-            `[AgentEditorProvider] Warning: Failed to auto-save .agent document prior to code generation: ${saveErr}`
-          );
-        }
-      }
+      await this.saveWorkflowDocument(
+        document,
+        payload.document,
+        typeof (payload.document as any)?.version === 'number' ? (payload.document as any).version : undefined,
+        bridge
+      );
 
       const secretsProvider = SecretsProvider.getInstance();
       const apiKey = (await secretsProvider.getGeminiApiKey()) || process.env.GEMINI_API_KEY || '';
@@ -298,6 +299,7 @@ export class WebviewMessageRouter {
       const targetDirPath = this.documentSyncManager.resolveTargetDirectory(document, payload.outputFolder);
       const targetDir = vscode.Uri.file(targetDirPath);
 
+      this.runnerManager?.clearRunnerLogs?.();
       await this.documentSyncManager.cleanTargetDirectory(targetDirPath, document);
 
       const deploymentTarget =
@@ -346,8 +348,9 @@ export class WebviewMessageRouter {
             await vscode.workspace.fs.writeFile(fileUri, buffer);
           }
 
-          // Copy any local Python tool files referenced in the workflow
+          // Copy any local Python tool files referenced in the workflow and sample data files
           await this.provider.copyLocalToolFiles(payload.document, document, targetDirPath);
+          await this.provider.copySampleDataFiles(payload.document, document, targetDirPath);
 
           vscode.window.showInformationMessage(
             `Agent Flow: Generated and saved ${result.files.length} files in ${path.basename(targetDir.fsPath)}`
@@ -486,8 +489,10 @@ export class WebviewMessageRouter {
           pathsWritten.push(writeItem.path);
         }
 
-        // Copy any local Python tool files referenced in the workflow
-        await this.provider.copyLocalToolFiles(payload.document, document, targetDirPath);
+        // Copy any local Python tool files referenced in the workflow and sample data files
+        const docToUse = (payload as any).document || (document ? JSON.parse(document.getText()) : undefined);
+        await this.provider.copyLocalToolFiles(docToUse, document, targetDirPath);
+        await this.provider.copySampleDataFiles(docToUse, document, targetDirPath);
 
         vscode.window.showInformationMessage(
           `Agent Flow: Generated ${pathsWritten.length} files in ${path.basename(targetDir.fsPath)}`
@@ -553,6 +558,12 @@ export class WebviewMessageRouter {
           await vscode.workspace.fs.writeFile(fileUri, buffer);
           pathsWritten.push(file.path);
         }
+
+        // Copy any local Python tool files and sample data files into export target
+        const exportDoc = payload.document || (document ? JSON.parse(document.getText()) : undefined);
+        const copiedTools = await this.provider.copyLocalToolFiles(exportDoc, document, targetDir);
+        const copiedData = await this.provider.copySampleDataFiles(exportDoc, document, targetDir);
+        pathsWritten.push(...copiedTools, ...copiedData);
 
         await bridge.postMessage({
           type: 'EXPORT_COMPLETE',
@@ -947,6 +958,7 @@ export class WebviewMessageRouter {
         agentEngineId: payload.agentEngineId,
         displayName: payload.displayName || parsedDoc?.name,
         envVars: payload.envVars,
+        governance: payload.governance,
         bridge,
       });
 
@@ -962,6 +974,7 @@ export class WebviewMessageRouter {
             serviceUrl: res.serviceUrl,
             consoleUrl: res.consoleUrl,
             deployedAt: new Date().toISOString(),
+            governance: payload.governance || currentDeploy.governance,
             agentEngine: {
               deployedResourceId: res.remoteRuntimeId,
               serviceUrl: res.serviceUrl,
@@ -1044,6 +1057,7 @@ export class WebviewMessageRouter {
         allowUnauthenticated: payload.allowUnauthenticated,
         networkAttachment: payload.networkAttachment,
         envVars: payload.envVars,
+        governance: payload.governance,
         bridge,
       });
 
@@ -1059,6 +1073,7 @@ export class WebviewMessageRouter {
             serviceUrl: res.serviceUrl,
             consoleUrl: res.consoleUrl,
             deployedAt: new Date().toISOString(),
+            governance: payload.governance || currentDeploy.governance,
             cloudRun: {
               deployedResourceId: res.serviceName || payload.serviceName,
               serviceUrl: res.serviceUrl,
@@ -1122,7 +1137,12 @@ export class WebviewMessageRouter {
     // 11. Local Python Tool Handlers
     bridge.onMessage('PICK_LOCAL_PYTHON_TOOL', async () => {
       try {
-        const defaultUri = document ? vscode.Uri.file(path.dirname(document.uri.fsPath)) : vscode.workspace.workspaceFolders?.[0]?.uri;
+        const targetDir = document
+          ? this.documentSyncManager.resolveTargetDirectory(document)
+          : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+        const defaultUri = targetDir
+          ? vscode.Uri.file(fs.existsSync(targetDir) ? targetDir : path.dirname(document.uri.fsPath))
+          : vscode.workspace.workspaceFolders?.[0]?.uri;
         const uris = await vscode.window.showOpenDialog({
           canSelectFiles: true,
           canSelectFolders: false,
@@ -1135,9 +1155,12 @@ export class WebviewMessageRouter {
         if (!uris || uris.length === 0) return;
         const pickedUri = uris[0];
         const pickedPath = pickedUri.fsPath;
-        const baseDir = document ? path.dirname(document.uri.fsPath) : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-        let relPath = path.relative(baseDir, pickedPath);
-        if (!relPath.startsWith('.')) relPath = `./${relPath}`;
+        let relPath = targetDir ? path.relative(targetDir, pickedPath) : `./tools/${path.basename(pickedPath)}`;
+        if (relPath.startsWith('..') || path.isAbsolute(relPath)) {
+          relPath = `./tools/${path.basename(pickedPath)}`;
+        } else if (!relPath.startsWith('.')) {
+          relPath = `./${relPath}`;
+        }
 
         const content = fs.readFileSync(pickedPath, 'utf-8');
         const functions = this.provider.parsePythonFunctions(content);
@@ -1165,13 +1188,16 @@ export class WebviewMessageRouter {
     bridge.onMessage('PARSE_PYTHON_TOOL_FILE', async (payload: any) => {
       try {
         const filePath = payload.filePath;
-        const baseDir = document ? path.dirname(document.uri.fsPath) : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-        const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
+        const { targetDir, resolvedPath } = this.resolveToolPathInTargetOrSample(document, filePath);
         if (fs.existsSync(resolvedPath)) {
           const content = fs.readFileSync(resolvedPath, 'utf-8');
           const functions = this.provider.parsePythonFunctions(content);
-          let relPath = path.relative(baseDir, resolvedPath);
-          if (!relPath.startsWith('.')) relPath = `./${relPath}`;
+          let relPath = targetDir ? path.relative(targetDir, resolvedPath) : `./tools/${path.basename(resolvedPath)}`;
+          if (relPath.startsWith('..') || path.isAbsolute(relPath)) {
+            relPath = `./tools/${path.basename(resolvedPath)}`;
+          } else if (!relPath.startsWith('.')) {
+            relPath = `./${relPath}`;
+          }
           await bridge.postMessage({
             type: 'PYTHON_TOOL_FILE_PARSED',
             payload: {
@@ -1208,8 +1234,7 @@ export class WebviewMessageRouter {
     bridge.onMessage('OPEN_LOCAL_TOOL_FILE', async (payload: any) => {
       try {
         const filePath = payload.filePath;
-        const baseDir = document ? path.dirname(document.uri.fsPath) : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-        const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
+        const { resolvedPath } = this.resolveToolPathInTargetOrSample(document, filePath);
         if (fs.existsSync(resolvedPath)) {
           const doc = await vscode.workspace.openTextDocument(resolvedPath);
           await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside });
@@ -1343,6 +1368,117 @@ export class WebviewMessageRouter {
       }
     });
 
+    bridge.onMessage('FETCH_MODEL_ARMOR_TEMPLATES', async (payload: any, rawMessage?: any) => {
+      try {
+        const projectId = payload?.projectId;
+        const location = payload?.location || 'us-central1';
+        const forceRefresh = payload?.forceRefresh || false;
+        const result = await this.gcpDiscoveryManager.getModelArmorTemplates(projectId, location, forceRefresh);
+        await bridge.postMessage({
+          type: 'MODEL_ARMOR_TEMPLATES_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            templates: result.templates,
+            source: result.source,
+            projectId: result.projectId,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'MODEL_ARMOR_TEMPLATES_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            templates: DEFAULT_MODEL_ARMOR_TEMPLATES_FALLBACK,
+            source: 'fallback',
+            projectId: payload?.projectId,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('FETCH_GEMINI_ENTERPRISE_APPS', async (payload: any, rawMessage?: any) => {
+      try {
+        const projectId = payload?.projectId;
+        const location = payload?.location || 'global';
+        const forceRefresh = payload?.forceRefresh || false;
+        const result = await this.gcpDiscoveryManager.getGeminiEnterpriseApps(projectId, location, forceRefresh);
+        await bridge.postMessage({
+          type: 'GEMINI_ENTERPRISE_APPS_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            apps: result.apps,
+            source: result.source,
+            projectId: result.projectId,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'GEMINI_ENTERPRISE_APPS_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            apps: DEFAULT_GEMINI_ENTERPRISE_APPS_FALLBACK,
+            source: 'fallback',
+            projectId: payload?.projectId,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('PUBLISH_TO_GEMINI_ENTERPRISE', async (payload: any) => {
+      try {
+        const targetDir = this.documentSyncManager.resolveTargetDirectory(document, payload?.targetDirectory);
+        const projectId = payload?.projectId || 'my-gcp-project';
+        const region = payload?.region || 'us-central1';
+        const appId = payload?.appId || 'default-enterprise-workspace';
+        const location = payload?.location || 'global';
+        const agentName = (payload?.agentName || 'agent').toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+        const runner = new UnifiedDeployRunner();
+        const cmd = runner.buildPublishGeminiEnterpriseCommand({
+          targetDirectory: targetDir,
+          projectId,
+          region,
+          agentId: agentName,
+          deployedResourceUri: payload?.deployedResourceId || '',
+          geminiEnterpriseAppId: appId,
+          geminiEnterpriseLocation: location,
+          agentGatewayResource:
+            payload?.bindGateway !== false
+              ? `projects/${projectId}/locations/${region}/agentGateways/default-shared-agent-gateway`
+              : undefined,
+        });
+        const execResult = await runner.executeCommand({
+          targetDirectory: targetDir,
+          executable: cmd.executable,
+          args: cmd.args,
+        });
+        const geminiEnterpriseUrl = `https://console.cloud.google.com/gen-app-builder/engines/${appId}?project=${projectId}`;
+        const geminiEnterpriseAgentId = `projects/${projectId}/locations/${location}/collections/default_collection/engines/${appId}/assistants/default_assistant/agents/${agentName}`;
+        await bridge.postMessage({
+          type: 'GEMINI_ENTERPRISE_PUBLISHED',
+          payload: {
+            success: execResult.exitCode === 0,
+            geminiEnterpriseAppId: appId,
+            geminiEnterpriseUrl,
+            geminiEnterpriseAgentId,
+            error:
+              execResult.exitCode !== 0
+                ? execResult.stderrLines.join('\n') || 'Failed to publish to Gemini Enterprise App'
+                : undefined,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'GEMINI_ENTERPRISE_PUBLISHED',
+          payload: {
+            success: false,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
     bridge.onMessage('CREATE_FILE_FROM_SAMPLE', async (payload: any) => {
       try {
         const sampleId = payload?.sampleId;
@@ -1420,6 +1556,33 @@ export class WebviewMessageRouter {
         const contentToWrite = JSON.stringify(sampleDoc, null, 2);
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(contentToWrite, 'utf-8'));
 
+        // Section 3b: Copy sample tools and data directories from resource/samples/* directly into the workflow's target directory
+        if (found?.sourceFilePath && fs.existsSync(path.dirname(targetUri.fsPath))) {
+          const sampleSourceDir = path.dirname(found.sourceFilePath);
+          const outputFolder =
+            sampleDoc?.deployment?.outputFolder ||
+            sampleDoc?.metadata?.outputFolder;
+          const sampleTargetDir = this.documentSyncManager.resolveTargetDirectory(
+            { uri: targetUri, getText: () => contentToWrite } as any,
+            outputFolder
+          );
+
+          const sampleToolsDir = path.join(sampleSourceDir, 'tools');
+          const targetToolsDir = path.join(sampleTargetDir, 'tools');
+          if (fs.existsSync(sampleToolsDir)) {
+            fs.mkdirSync(sampleTargetDir, { recursive: true });
+            fs.cpSync(sampleToolsDir, targetToolsDir, { recursive: true, force: true });
+          }
+
+          // Recursively copy sample data directory preserving nested target subfolders
+          const sampleDataDir = path.join(sampleSourceDir, 'data');
+          const targetDataDir = path.join(sampleTargetDir, 'data');
+          if (fs.existsSync(sampleDataDir)) {
+            fs.mkdirSync(sampleTargetDir, { recursive: true });
+            fs.cpSync(sampleDataDir, targetDataDir, { recursive: true, force: true });
+          }
+        }
+
         // 4. Open the new file in VS Code in a new editor tab using our custom editor
         await vscode.commands.executeCommand('vscode.openWith', targetUri, 'agentFlow.editor');
       } catch (err: any) {
@@ -1445,5 +1608,131 @@ export class WebviewMessageRouter {
         handler({ type: type as any, payload } as WebviewToExtensionMessage, bridge, document);
       });
     });
+  }
+
+  /**
+   * Resolves a relative Python tool path strictly inside the workflow's generated target directory
+   * (or from its canonical `resource/samples/*` directory if not yet generated), never in the parent
+   * directory outside the generated target folder.
+   */
+  private resolveToolPathInTargetOrSample(
+    document: vscode.TextDocument | undefined,
+    filePath: string
+  ): { targetDir: string; resolvedPath: string } {
+    if (!document) {
+      const wsDir = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+      return {
+        targetDir: wsDir,
+        resolvedPath: path.isAbsolute(filePath) ? filePath : path.resolve(wsDir, filePath),
+      };
+    }
+
+    let parsedDoc: any;
+    try {
+      parsedDoc = JSON.parse(document.getText() || '{}');
+    } catch {
+      parsedDoc = undefined;
+    }
+
+    const outputFolder =
+      parsedDoc?.deployment?.outputFolder ||
+      parsedDoc?.deploymentConfig?.outputFolder ||
+      parsedDoc?.metadata?.outputFolder;
+    const targetDir = this.documentSyncManager.resolveTargetDirectory(document, outputFolder);
+
+    if (path.isAbsolute(filePath)) {
+      return { targetDir, resolvedPath: filePath };
+    }
+
+    const targetCandidate = path.resolve(targetDir, filePath);
+    if (fs.existsSync(targetCandidate)) {
+      return { targetDir, resolvedPath: targetCandidate };
+    }
+
+    if (typeof this.provider?.resolveCanonicalSampleDir === 'function') {
+      const canonicalSampleDir = this.provider.resolveCanonicalSampleDir(parsedDoc, document);
+      if (canonicalSampleDir) {
+        const sampleCandidate = path.resolve(canonicalSampleDir, filePath);
+        if (fs.existsSync(sampleCandidate)) {
+          return { targetDir, resolvedPath: sampleCandidate };
+        }
+      }
+    }
+
+    return { targetDir, resolvedPath: targetCandidate };
+  }
+
+  /**
+   * Synchronizes the workflow document JSON into the VS Code TextDocument buffer
+   * (updating lastAppliedContent and pendingEditsCount to prevent echo loops) and
+   * persists the open file to disk via `document.save()`.
+   *
+   * @param document Active VS Code TextDocument for the `.agent` file
+   * @param workflowDoc Optional updated workflow document payload from the webview
+   * @param docVersion Optional document version counter
+   * @param bridge Optional WebviewBridge to notify with DOCUMENT_SAVED
+   */
+  public async saveWorkflowDocument(
+    document: vscode.TextDocument,
+    workflowDoc?: any,
+    docVersion?: number,
+    bridge?: WebviewBridge
+  ): Promise<void> {
+    const uriStr = document.uri.toString();
+    try {
+      if (workflowDoc && !this.documentSyncManager.hasParseError(uriStr)) {
+        const updatedJson = JSON.stringify(workflowDoc, null, 2);
+        this.documentSyncManager.setLastAppliedContent(uriStr, updatedJson);
+
+        if (typeof docVersion === 'number' && docVersion > this.documentSyncManager.getDocumentVersion(uriStr)) {
+          this.documentSyncManager.setDocumentVersion(uriStr, docVersion);
+        }
+
+        if (document.getText() !== updatedJson) {
+          const currentPending = this.documentSyncManager.getPendingEditsCount(uriStr);
+          this.documentSyncManager.setPendingEditsCount(uriStr, currentPending + 1);
+          try {
+            const success = await this.documentSyncManager.updateTextDocument(document, updatedJson);
+            if (!success) {
+              const val = this.documentSyncManager.getPendingEditsCount(uriStr);
+              if (val > 0) {
+                this.documentSyncManager.setPendingEditsCount(uriStr, val - 1);
+              }
+            }
+          } catch (editErr) {
+            const val = this.documentSyncManager.getPendingEditsCount(uriStr);
+            if (val > 0) {
+              this.documentSyncManager.setPendingEditsCount(uriStr, val - 1);
+            }
+            throw editErr;
+          }
+        }
+      }
+
+      if (typeof document.save === 'function') {
+        await document.save();
+      }
+      if ((document as any).isDirty && typeof vscode.commands?.executeCommand === 'function') {
+        try {
+          await vscode.commands.executeCommand('workbench.action.files.save', document.uri);
+        } catch {
+          // Ignore fallback command errors in test or headless environments
+        }
+      }
+
+      if (bridge) {
+        await bridge.postMessage({
+          type: 'DOCUMENT_SAVED',
+          payload: {
+            docVersion: typeof docVersion === 'number' ? docVersion : this.documentSyncManager.getDocumentVersion(uriStr),
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+    } catch (saveErr) {
+      this.outputChannel?.appendLine(
+        `[AgentEditorProvider] Warning: Failed to save .agent document (${uriStr}): ${saveErr}`
+      );
+    }
   }
 }

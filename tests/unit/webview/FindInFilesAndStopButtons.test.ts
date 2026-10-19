@@ -164,5 +164,17 @@ describe('Find in Files & Stop Buttons', () => {
         },
       ]);
     });
+
+    it('should display Language PYTHON label in CodePreviewTab without a redundant Python selection button', async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const codePreviewSource = fs.readFileSync(
+        path.resolve(__dirname, '../../../src/webview/components/tabs/CodePreviewTab.tsx'),
+        'utf-8'
+      );
+      assert.ok(codePreviewSource.includes('<span>Language</span>'));
+      assert.ok(codePreviewSource.includes('PYTHON'));
+      assert.ok(!codePreviewSource.includes('🐍 Python'));
+    });
   });
 });

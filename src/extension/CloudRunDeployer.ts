@@ -35,7 +35,10 @@ import * as https from 'https';
 import * as http from 'http';
 import { WebviewBridge } from './WebviewBridge';
 import { GeneratedFile } from '../shared/codegen/types';
-import { AgentWorkflowDocument } from '../shared/types';
+import { AgentWorkflowDocument, AgentGovernanceConfig } from '../shared/types';
+import { UnifiedDeployRunner } from './deployer/UnifiedDeployRunner';
+import { GcloudDetector } from './deployer/GcloudDetector';
+import { PostDeployGovernanceResult } from './deployer/DeployTypes';
 
 /**
  * Persisted schema for `cloud_run_deployment_metadata.json`.
@@ -54,7 +57,17 @@ export interface CloudRunDeploymentMetadataRecord {
   max_instances?: number;
   allow_unauthenticated?: boolean;
   network_attachment?: string;
-  status: 'ACTIVE' | 'DEPLOYING' | 'FAILED' | 'READY';
+  status: 'ACTIVE' | 'DEPLOYING' | 'FAILED' | 'READY' | 'READY_WITH_EVAL_WARNINGS';
+  agent_registry_resource?: string;
+  security_policy_resource?: string;
+  agent_gateway_resource?: string;
+  model_armor_template_id?: string;
+  eval_gate_status?: 'passed' | 'warning' | 'skipped';
+  eval_warnings?: string[];
+  eval_task_experiment_url?: string;
+  gemini_enterprise_agent_uri?: string;
+  gemini_enterprise_console_url?: string;
+  gemini_enterprise_blocked_by_eval?: boolean;
   [key: string]: any;
 }
 
@@ -92,6 +105,7 @@ export interface CloudRunDeployOptions {
   allowUnauthenticated?: boolean;
   networkAttachment?: string;
   envVars?: Record<string, string>;
+  governance?: AgentGovernanceConfig;
   document?: AgentWorkflowDocument;
   bridge?: WebviewBridge;
 }
@@ -116,22 +130,69 @@ export interface CloudRunDeployResult {
   consoleUrl?: string;
   serviceName?: string;
   metadata?: CloudRunDeploymentMetadataRecord;
+  governanceResult?: PostDeployGovernanceResult;
   error?: string;
 }
 
 /**
  * CloudRunDeployer implementation.
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 export class CloudRunDeployer {
   private static activeDeployments: Map<string, ActiveCloudRunDeploymentRecord> = new Map();
   private static activeProcesses: Map<string, child_process.ChildProcess> = new Map();
+  private static cancelledDirectories: Set<string> = new Set();
+  private gcloudDetector: GcloudDetector;
+  private unifiedRunner: UnifiedDeployRunner;
 
   /**
    * Constructs the CloudRunDeployer.
    */
-  constructor() {}
+  constructor() {
+    this.gcloudDetector = new GcloudDetector();
+    this.unifiedRunner = new UnifiedDeployRunner(
+      this.gcloudDetector,
+      CloudRunDeployer.activeProcesses,
+      CloudRunDeployer.cancelledDirectories
+    );
+  }
+
+  /**
+   * Formats a human-readable shell command string representing the Cloud Run deployment,
+   * preferring `make deploy` when a self-contained `Makefile` is present in `targetDirectory`.
+   */
+  public getDeployCommandString(options: CloudRunDeployOptions): string {
+    if (this.unifiedRunner.hasMakefileTarget(options.targetDirectory, 'deploy')) {
+      return this.unifiedRunner.buildMakeDeployCommand({
+        target: 'cloud_run',
+        targetDirectory: options.targetDirectory,
+        projectId: options.projectId,
+        region: options.region,
+        serviceName: options.serviceName,
+        cpu: options.cpu,
+        memory: options.memory,
+        minInstances: options.minInstances,
+        maxInstances: options.maxInstances,
+        allowUnauthenticated: options.allowUnauthenticated,
+        networkAttachment: options.networkAttachment,
+      }).commandString;
+    }
+
+    const args = this.unifiedRunner.buildCloudRunGcloudArgs({
+      target: 'cloud_run',
+      targetDirectory: options.targetDirectory,
+      projectId: options.projectId,
+      region: options.region,
+      serviceName: options.serviceName,
+      cpu: options.cpu,
+      memory: options.memory,
+      minInstances: options.minInstances,
+      maxInstances: options.maxInstances,
+      allowUnauthenticated: options.allowUnauthenticated,
+      networkAttachment: options.networkAttachment,
+      envVars: options.envVars,
+    });
+    return `gcloud ${args.join(' ')}`;
+  }
 
   /**
    * Validates target directory for deployment readiness.
@@ -347,60 +408,37 @@ export class CloudRunDeployer {
       'system'
     );
 
-    // Build deployment arguments for gcloud run deploy
-    // Using source-based deploy: `gcloud run deploy [SERVICE] --source . --project ... --region ...`
-    const args = [
-      'run',
-      'deploy',
-      serviceName,
-      '--source',
-      '.',
-      '--project',
+    const cmdOptions = {
+      target: 'cloud_run' as const,
+      targetDirectory: targetDir,
       projectId,
-      '--region',
       region,
-      '--platform',
-      'managed',
-      `--cpu=${cpu}`,
-      `--memory=${memory}`,
-      `--min-instances=${minInstances}`,
-      `--max-instances=${maxInstances}`,
-    ];
-
-    if (allowUnauthenticated) {
-      args.push('--allow-unauthenticated');
-    } else {
-      args.push('--no-allow-unauthenticated');
-    }
-
-    if (networkAttachment) {
-      args.push(`--network-attachment=${networkAttachment}`);
-    }
-
-    // Set standard environment variables
-    const envVars = {
-      GOOGLE_GENAI_USE_VERTEXAI: 'true',
-      GOOGLE_CLOUD_LOCATION: 'global',
-      GOOGLE_CLOUD_PROJECT: projectId,
-      ...(options.envVars || {}),
+      serviceName,
+      cpu,
+      memory,
+      minInstances,
+      maxInstances,
+      allowUnauthenticated,
+      networkAttachment,
+      envVars: options.envVars,
+      governance: options.governance,
     };
 
-    const envPairs = Object.entries(envVars)
-      .map(([k, v]) => `${k}=${v}`)
-      .join(',');
-    if (envPairs) {
-      args.push(`--set-env-vars=${envPairs}`);
-    }
+    const useMakefile =
+      this.unifiedRunner.hasMakefileTarget(targetDir, 'deploy') &&
+      this.gcloudDetector.hasBinary('make', targetDir);
 
-    // Also suppress interactive prompts
-    args.push('--quiet');
+    const executable = useMakefile ? 'make' : 'gcloud';
+    const args = useMakefile
+      ? this.unifiedRunner.buildMakeDeployCommand(cmdOptions).args
+      : this.unifiedRunner.buildCloudRunGcloudArgs(cmdOptions);
 
-    this.emitLog(targetDir, bridge, `[RUN COMMAND] gcloud ${args.join(' ')}`, 'system');
+    this.emitLog(targetDir, bridge, `[RUN COMMAND] ${executable} ${args.join(' ')}`, 'system');
 
     return new Promise<CloudRunDeployResult>((resolve) => {
-      // NOTE: Spawn subprocess with extended PATH for gcloud
-      const env = this.getExtendedEnv();
-      const child = child_process.spawn('gcloud', args, {
+      // NOTE: Spawn subprocess with extended PATH for make / gcloud
+      const env = this.getExtendedEnv(targetDir);
+      const child = child_process.spawn(executable, args, {
         cwd: targetDir,
         env,
       });
@@ -452,7 +490,7 @@ export class CloudRunDeployer {
         resolve({ success: false, error: errMsg });
       });
 
-      child.on('close', (code) => {
+      child.on('close', async (code) => {
         CloudRunDeployer.activeProcesses.delete(targetDir);
 
         if (code === 0) {
@@ -467,6 +505,21 @@ export class CloudRunDeployer {
           }
 
           const consoleUrl = `https://console.cloud.google.com/run/detail/${region}/${serviceName}/metrics?project=${projectId}`;
+          const cloudRunResourceUri = `projects/${projectId}/locations/${region}/services/${serviceName}`;
+
+          const governanceResult = await this.unifiedRunner.runPostDeployGovernance({
+            target: 'cloud_run',
+            targetDirectory: targetDir,
+            projectId,
+            region,
+            agentId: serviceName,
+            displayName: options.document?.name || serviceName,
+            description: options.document?.description,
+            deployedResourceUri: cloudRunResourceUri,
+            serviceUrl,
+            governance: options.governance,
+            onLog: (text, stream) => this.emitLog(targetDir, bridge, text, stream),
+          });
 
           const metadata: CloudRunDeploymentMetadataRecord = {
             service_name: serviceName,
@@ -482,7 +535,20 @@ export class CloudRunDeployer {
             max_instances: maxInstances,
             allow_unauthenticated: allowUnauthenticated,
             network_attachment: networkAttachment || undefined,
-            status: 'READY',
+            status:
+              governanceResult.evalGateStatus === 'warning'
+                ? 'READY_WITH_EVAL_WARNINGS'
+                : 'READY',
+            agent_registry_resource: governanceResult.agentRegistryResource,
+            security_policy_resource: governanceResult.securityPolicyResource,
+            agent_gateway_resource: governanceResult.agentGatewayResource,
+            model_armor_template_id: governanceResult.modelArmorTemplateId,
+            eval_gate_status: governanceResult.evalGateStatus,
+            eval_warnings: governanceResult.evalWarnings,
+            eval_task_experiment_url: governanceResult.evalTaskExperimentUrl,
+            gemini_enterprise_agent_uri: governanceResult.geminiEnterpriseAgentUri,
+            gemini_enterprise_console_url: governanceResult.geminiEnterpriseConsoleUrl,
+            gemini_enterprise_blocked_by_eval: governanceResult.geminiEnterpriseBlockedByEval,
           };
 
           this.writeDeploymentMetadata(targetDir, metadata);
@@ -515,6 +581,7 @@ export class CloudRunDeployer {
             consoleUrl,
             serviceName,
             metadata,
+            governanceResult,
           });
         } else {
           const errMsg = `Deployment process exited with code ${code}. Check logs above for details.`;
@@ -606,15 +673,27 @@ export class CloudRunDeployer {
     let idToken = '';
     if (serviceUrl.startsWith('https://') && !serviceUrl.includes('localhost') && !serviceUrl.includes('127.0.0.1')) {
       try {
+        // NOTE: User credentials do not support `--audiences` on `gcloud auth print-identity-token`,
+        // so try standard identity token generation first and fall back to `--audiences` for service accounts.
         idToken = child_process
-          .execSync(`gcloud auth print-identity-token --audiences="${serviceUrl}"`, {
+          .execSync('gcloud auth print-identity-token', {
             encoding: 'utf8',
             timeout: 5000,
             stdio: ['pipe', 'pipe', 'ignore'],
           })
           .trim();
       } catch {
-        // NOTE: Unauthenticated services do not require identity tokens
+        try {
+          idToken = child_process
+            .execSync(`gcloud auth print-identity-token --audiences="${serviceUrl}"`, {
+              encoding: 'utf8',
+              timeout: 5000,
+              stdio: ['pipe', 'pipe', 'ignore'],
+            })
+            .trim();
+        } catch {
+          // NOTE: Unauthenticated services do not require identity tokens
+        }
       }
     }
 

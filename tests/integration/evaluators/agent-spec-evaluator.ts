@@ -5,23 +5,61 @@
  *
  * Purpose:
  * Audits generated AI Agent code, tests, and deployment artifacts against the
- * visual Workflow Specification (.agent JSON) to ensure that all user-configured
- * agent nodes, trigger nodes, system prompts, tools, test scenarios, and deployment
- * settings are faithfully incorporated and utilized in the generated codebase.
+ * visual Workflow Specification (.agent JSON) to ensure that ALL user-configured
+ * agent nodes, trigger nodes, system prompts, tools, structured output schemas,
+ * test scenarios, and deployment settings are faithfully incorporated into code.
  *
  * Architectural decisions:
- * - Parses the JSON .agent workflow document into a structured specification checklist
- *   (agents, triggers, tools, memory, test prompts, deployment target).
- * - Instructs the sub-agent to cross-reference every defined node and property against
- *   generated files (agent.py, test_agent.py, Dockerfile, etc.), catching silently
- *   omitted agents, dropped tools, missing test cases, or fallback values.
- * - Emits structured findings with category 'SPECIFICATION'.
+ * - Parses 100% of the canonical .agent workflow JSON document into a structured
+ *   Requirement Traceability Matrix (RTM) covering:
+ *   1. Agent nodes, models, temperatures, and verbatim prompt constraints.
+ *   2. Structured Output Schemas (Pydantic models with exact typed fields).
+ *   3. Tool contracts (source files, function signatures, typed parameters, search).
+ *   4. Memory backends and specialized agent configurations (HITL, Router, etc.).
+ *   5. Trigger configurations and embedded test scenarios across all trigger kinds.
+ *   6. Human-readable edge topology resolution.
+ * - Instructs the sub-agent to verify each REQ-* item and return structured
+ *   verifications with verbatim line-numbered code evidence.
  */
 
 import { GoogleGenAI } from '@google/genai';
-import { SpecialistAgentResult } from './types';
-import { GeneratedFileCandidate } from './deterministic-gate';
+import { SpecialistAgentResult, RequirementVerification } from './types';
+import { GeneratedFileCandidate, formatFilesWithLineNumbers } from './deterministic-gate';
 import { EVALUATOR_MODEL } from './agent-architecture-evaluator';
+
+/**
+ * Parsed representation of a tool definition.
+ */
+export interface ParsedToolDefinition {
+    id: string;
+    name: string;
+    type: string;
+    description?: string;
+    toolMode?: string;
+    sourceFile?: string;
+    functionName?: string;
+    parameters?: Record<string, string>;
+    codePrompt?: string;
+    endpointUrl?: string;
+    httpMethod?: string;
+    mcpConfig?: any;
+    vertexAiSearchConfig?: any;
+}
+
+/**
+ * Parsed representation of a structured output schema.
+ */
+export interface ParsedStructuredOutputSchema {
+    enabled: boolean;
+    name?: string;
+    fields: Array<{
+        name: string;
+        type: string;
+        required?: boolean;
+        arrayItemType?: string;
+        description?: string;
+    }>;
+}
 
 /**
  * Parsed representation of an agent node in the workflow.
@@ -32,10 +70,26 @@ export interface ParsedAgentNode {
     label: string;
     role?: string;
     model?: string;
+    temperature?: number;
+    topP?: number;
+    maxOutputTokens?: number;
+    thinkingBudget?: number;
+    maxIterations?: number;
+    agentKind?: string;
     systemPrompt?: string;
-    tools: { id: string; name: string; type: string; description?: string }[];
+    tools: ParsedToolDefinition[];
     subAgents: { agentId: string; name: string; delegationType?: string }[];
     subAgentPattern?: string;
+    structuredOutput?: ParsedStructuredOutputSchema;
+    memoryType?: string;
+    memoryConfig?: Record<string, any>;
+    a2aConfig?: Record<string, any>;
+    routerConfig?: Record<string, any>;
+    debateConfig?: Record<string, any>;
+    synthesizerConfig?: Record<string, any>;
+    hitlConfig?: Record<string, any>;
+    fallbackConfig?: Record<string, any>;
+    guardrailConfig?: Record<string, any>;
     isStartNode?: boolean;
     outputFormat?: string;
 }
@@ -46,9 +100,17 @@ export interface ParsedAgentNode {
 export interface ParsedTriggerNode {
     id: string;
     label: string;
-    triggerType: 'chat' | 'tester' | 'eventarc' | 'cron' | 'rest' | 'mcp' | string;
+    triggerType: 'chat' | 'tester' | 'eventarc' | 'cron' | 'pubsub' | 'rest' | 'mcp' | string;
     config: Record<string, any>;
     targetRootAgentId?: string;
+    testScenarios: Array<{
+        id: string;
+        name?: string;
+        prompt?: string;
+        inputQuery?: string;
+        expectedOutput?: string;
+        assertionType?: string;
+    }>;
 }
 
 /**
@@ -60,13 +122,26 @@ export interface ParsedAgentSpec {
     framework: string;
     language: string;
     deploymentTarget: string;
+    deploymentConfig: {
+        includeDocker?: boolean;
+        includeTests?: boolean;
+        useStreaming?: boolean;
+        [key: string]: any;
+    };
     agents: ParsedAgentNode[];
     triggers: ParsedTriggerNode[];
-    edges: { source: string; target: string; sourceHandle?: string; targetHandle?: string }[];
+    edges: {
+        source: string;
+        target: string;
+        sourceName: string;
+        targetName: string;
+        sourceHandle?: string;
+        targetHandle?: string;
+    }[];
 }
 
 /**
- * Safely parses the .agent JSON string into a structured specification model.
+ * Safely parses the .agent JSON string into an exhaustive specification model.
  *
  * @param workflowJson - Raw .agent JSON content.
  * @returns Structured ParsedAgentSpec object.
@@ -78,6 +153,7 @@ export function parseAgentWorkflowSpec(workflowJson: string): ParsedAgentSpec {
             framework: 'google-adk',
             language: 'python',
             deploymentTarget: 'agent_engine',
+            deploymentConfig: {},
             agents: [],
             triggers: [],
             edges: []
@@ -90,6 +166,7 @@ export function parseAgentWorkflowSpec(workflowJson: string): ParsedAgentSpec {
 
         const agents: ParsedAgentNode[] = [];
         const triggers: ParsedTriggerNode[] = [];
+        const nodeNameMap = new Map<string, string>();
 
         for (const node of rawNodes) {
             const data = node.data || {};
@@ -100,21 +177,46 @@ export function parseAgentWorkflowSpec(workflowJson: string): ParsedAgentSpec {
                 node.id?.includes('trigger') ||
                 node.id?.includes('tester');
 
+            const displayName = String(data.name || data.label || node.id);
+            nodeNameMap.set(String(node.id || ''), displayName);
+
             if (isTrigger) {
+                const config = typeof data.config === 'object' && data.config !== null ? data.config : {};
+                const rawScenarios = Array.isArray(config.testScenarios) ? config.testScenarios : [];
+                const rawPrompts = Array.isArray(config.testPrompts) ? config.testPrompts : [];
+                const combinedScenarios = [...rawScenarios, ...rawPrompts].map((sc: any, idx: number) => ({
+                    id: String(sc.id || `scenario_${idx + 1}`),
+                    name: sc.name,
+                    prompt: sc.prompt,
+                    inputQuery: sc.inputQuery,
+                    expectedOutput: sc.expectedOutput || sc.expectedOutputPattern,
+                    assertionType: sc.assertionType
+                }));
+
                 triggers.push({
                     id: String(node.id || ''),
                     label: String(data.label || 'Trigger'),
-                    triggerType: String(data.triggerType || 'chat'),
-                    config: typeof data.config === 'object' && data.config !== null ? data.config : {},
-                    targetRootAgentId: data.targetRootAgentId
+                    triggerType: String(data.triggerType || data.triggerKind || 'chat'),
+                    config,
+                    targetRootAgentId: data.targetRootAgentId,
+                    testScenarios: combinedScenarios
                 });
             } else {
                 const rawTools = Array.isArray(data.tools) ? data.tools : [];
-                const tools = rawTools.map((t: any) => ({
+                const tools: ParsedToolDefinition[] = rawTools.map((t: any) => ({
                     id: String(t.id || ''),
                     name: String(t.name || ''),
                     type: String(t.type || ''),
-                    description: t.description
+                    description: t.description,
+                    toolMode: t.toolMode,
+                    sourceFile: t.sourceFile,
+                    functionName: t.functionName,
+                    parameters: t.parameters,
+                    codePrompt: t.codePrompt,
+                    endpointUrl: t.endpointUrl,
+                    httpMethod: t.httpMethod,
+                    mcpConfig: t.mcpConfig,
+                    vertexAiSearchConfig: t.vertexAiSearchConfig
                 }));
 
                 const rawSubAgents = Array.isArray(data.subAgents) ? data.subAgents : [];
@@ -124,16 +226,50 @@ export function parseAgentWorkflowSpec(workflowJson: string): ParsedAgentSpec {
                     delegationType: sa.delegationType
                 }));
 
+                const rawStructured = data.structuredOutput || data.structuredOutputSchema;
+                let structuredOutput: ParsedStructuredOutputSchema | undefined;
+                if (rawStructured && (rawStructured.enabled || Array.isArray(rawStructured.fields))) {
+                    structuredOutput = {
+                        enabled: Boolean(rawStructured.enabled),
+                        name: rawStructured.name,
+                        fields: Array.isArray(rawStructured.fields)
+                            ? rawStructured.fields.map((f: any) => ({
+                                  name: String(f.name || ''),
+                                  type: String(f.type || 'string'),
+                                  required: Boolean(f.required),
+                                  arrayItemType: f.arrayItemType,
+                                  description: f.description
+                              }))
+                            : []
+                    };
+                }
+
                 agents.push({
                     id: String(node.id || ''),
                     name: String(data.name || data.label || node.id),
                     label: String(data.label || 'Unnamed Agent'),
                     role: data.role,
                     model: data.model,
+                    temperature: data.temperature,
+                    topP: data.topP,
+                    maxOutputTokens: data.maxOutputTokens,
+                    thinkingBudget: data.thinkingBudget,
+                    maxIterations: data.maxIterations,
+                    agentKind: data.agentKind,
                     systemPrompt: data.systemPrompt,
                     tools,
                     subAgents,
                     subAgentPattern: data.subAgentPattern,
+                    structuredOutput,
+                    memoryType: data.memoryType,
+                    memoryConfig: data.memoryConfig,
+                    a2aConfig: data.a2aConfig,
+                    routerConfig: data.routerConfig,
+                    debateConfig: data.debateConfig,
+                    synthesizerConfig: data.synthesizerConfig,
+                    hitlConfig: data.hitlConfig,
+                    fallbackConfig: data.fallbackConfig,
+                    guardrailConfig: data.guardrailConfig,
                     isStartNode: Boolean(data.isStartNode),
                     outputFormat: data.outputFormat
                 });
@@ -141,12 +277,18 @@ export function parseAgentWorkflowSpec(workflowJson: string): ParsedAgentSpec {
         }
 
         const rawEdges = Array.isArray(parsed.edges) ? parsed.edges : [];
-        const edges = rawEdges.map((e: any) => ({
-            source: String(e.source || ''),
-            target: String(e.target || ''),
-            sourceHandle: e.sourceHandle,
-            targetHandle: e.targetHandle
-        }));
+        const edges = rawEdges.map((e: any) => {
+            const sourceId = String(e.source || '');
+            const targetId = String(e.target || '');
+            return {
+                source: sourceId,
+                target: targetId,
+                sourceName: nodeNameMap.get(sourceId) || sourceId,
+                targetName: nodeNameMap.get(targetId) || targetId,
+                sourceHandle: e.sourceHandle,
+                targetHandle: e.targetHandle
+            };
+        });
 
         const deployment = parsed.deployment || {};
         const deploymentTarget = deployment.deploymentTarget || deployment.target || 'agent_engine';
@@ -157,6 +299,11 @@ export function parseAgentWorkflowSpec(workflowJson: string): ParsedAgentSpec {
             framework: String(parsed.framework || deployment.framework || 'google-adk'),
             language: String(parsed.language || deployment.language || 'python'),
             deploymentTarget: String(deploymentTarget),
+            deploymentConfig: {
+                includeDocker: deployment.includeDocker,
+                includeTests: deployment.includeTests,
+                useStreaming: deployment.useStreaming
+            },
             agents,
             triggers,
             edges
@@ -167,6 +314,7 @@ export function parseAgentWorkflowSpec(workflowJson: string): ParsedAgentSpec {
             framework: 'google-adk',
             language: 'python',
             deploymentTarget: 'agent_engine',
+            deploymentConfig: {},
             agents: [],
             triggers: [],
             edges: []
@@ -175,7 +323,7 @@ export function parseAgentWorkflowSpec(workflowJson: string): ParsedAgentSpec {
 }
 
 /**
- * Formats a parsed agent specification into a human-readable checklist for the evaluator model.
+ * Formats a parsed agent specification into a numbered Requirement Traceability Matrix (RTM).
  *
  * @param spec - Structured ParsedAgentSpec.
  * @returns Formatted checklist string.
@@ -183,51 +331,80 @@ export function parseAgentWorkflowSpec(workflowJson: string): ParsedAgentSpec {
 export function formatAgentSpecChecklist(spec: ParsedAgentSpec): string {
     const lines: string[] = [];
 
-    lines.push(`Workflow Name: "${spec.name}" (Framework: ${spec.framework}, Language: ${spec.language}, Deployment: ${spec.deploymentTarget})`);
-    lines.push(`Total Agent Nodes: ${spec.agents.length}`);
+    lines.push(`Workflow: "${spec.name}" | Framework: ${spec.framework} | Language: ${spec.language} | Deployment Target: ${spec.deploymentTarget}`);
+    lines.push(`Deployment Flags: includeDocker=${spec.deploymentConfig.includeDocker}, includeTests=${spec.deploymentConfig.includeTests}, useStreaming=${spec.deploymentConfig.useStreaming}`);
+    lines.push(`\n=== REQUIREMENT TRACEABILITY MATRIX (RTM) ===`);
 
     for (const [idx, agent] of spec.agents.entries()) {
-        const startMarker = agent.isStartNode ? ' [START / ROOT NODE]' : '';
-        lines.push(`\n[Agent ${idx + 1}] ID: "${agent.id}" | Name: "${agent.name}" | Label: "${agent.label}"${startMarker}`);
-        if (agent.model) lines.push(`  Model: ${agent.model}`);
-        if (agent.role) lines.push(`  Role: ${agent.role}`);
-        if (agent.systemPrompt) lines.push(`  System Prompt: "${agent.systemPrompt}"`);
-        if (agent.subAgentPattern) lines.push(`  Sub-Agent Pattern: ${agent.subAgentPattern}`);
+        const reqId = `REQ-AGENT-${idx + 1}`;
+        const startMarker = agent.isStartNode ? ' [ROOT / START NODE]' : '';
+        lines.push(`\n[${reqId}] Agent: "${agent.name}" (Label: "${agent.label}") ${startMarker}`);
+        if (agent.model) lines.push(`  - Model: ${agent.model}`);
+        if (agent.temperature !== undefined) lines.push(`  - Temperature: ${agent.temperature}`);
+        if (agent.maxIterations !== undefined) lines.push(`  - Max Iterations: ${agent.maxIterations}`);
+        if (agent.role) lines.push(`  - Role: ${agent.role}`);
+        if (agent.subAgentPattern) lines.push(`  - Pattern: ${agent.subAgentPattern}`);
+        if (agent.memoryType && agent.memoryType !== 'none') lines.push(`  - Memory: ${agent.memoryType}`);
+        if (agent.systemPrompt) lines.push(`  - System Instructions: "${agent.systemPrompt}"`);
 
-        if (agent.tools.length > 0) {
-            lines.push(`  Tools (${agent.tools.length}):`);
-            for (const t of agent.tools) {
-                lines.push(`    - [${t.type}] "${t.name}" (ID: ${t.id})`);
+        // Structured Output Schemas
+        if (agent.structuredOutput && agent.structuredOutput.fields.length > 0) {
+            const schemaName = agent.structuredOutput.name || `${agent.name}Output`;
+            lines.push(`  - [REQ-SCHEMA-${agent.name}] Pydantic Model "${schemaName}":`);
+            for (const f of agent.structuredOutput.fields) {
+                const req = f.required ? 'required' : 'optional';
+                const typeStr = f.type === 'array' ? `array<${f.arrayItemType || 'string'}>` : f.type;
+                lines.push(`      * ${f.name} (${typeStr}, ${req}) - ${f.description || ''}`);
             }
         }
 
+        // Tools
+        if (agent.tools.length > 0) {
+            for (const [tIdx, t] of agent.tools.entries()) {
+                const toolReqId = `REQ-TOOL-${agent.name}-${tIdx + 1}`;
+                lines.push(`  - [${toolReqId}] Tool: "${t.name}" (${t.type})`);
+                if (t.sourceFile) lines.push(`      File: ${t.sourceFile}`);
+                if (t.functionName) lines.push(`      Function: ${t.functionName}`);
+                if (t.parameters) lines.push(`      Parameters: ${JSON.stringify(t.parameters)}`);
+                if (t.description) lines.push(`      Description: ${t.description}`);
+            }
+        }
+
+        // Subagents
         if (agent.subAgents.length > 0) {
-            lines.push(`  Sub-Agents (${agent.subAgents.length}):`);
+            lines.push(`  - Sub-Agents (${agent.subAgents.length}):`);
             for (const sa of agent.subAgents) {
-                lines.push(`    - "${sa.name}" (Agent ID: ${sa.agentId})`);
+                lines.push(`      * Delegated Child: "${sa.name}" (ID: ${sa.agentId})`);
             }
         }
     }
 
+    // Triggers and Test Scenarios
     if (spec.triggers.length > 0) {
-        lines.push(`\nTriggers (${spec.triggers.length}):`);
+        lines.push(`\nTriggers & Test Scenarios:`);
         for (const [idx, tr] of spec.triggers.entries()) {
-            lines.push(`\n[Trigger ${idx + 1}] ID: "${tr.id}" | Type: ${tr.triggerType} | Label: "${tr.label}"`);
-            if (tr.targetRootAgentId) lines.push(`  Target Root Agent ID: ${tr.targetRootAgentId}`);
-            const configKeys = Object.keys(tr.config);
-            if (configKeys.length > 0) {
-                lines.push(`  Config:`);
-                for (const key of configKeys) {
-                    lines.push(`    - ${key}: ${JSON.stringify(tr.config[key])}`);
+            const trigReqId = `REQ-TRIGGER-${idx + 1}`;
+            lines.push(`\n[${trigReqId}] Trigger: "${tr.label}" (Type: ${tr.triggerType})`);
+            if (tr.targetRootAgentId) lines.push(`  - Target Root Agent: ${tr.targetRootAgentId}`);
+            if (Object.keys(tr.config).length > 0) {
+                lines.push(`  - Config: ${JSON.stringify(tr.config)}`);
+            }
+            if (tr.testScenarios.length > 0) {
+                for (const [sIdx, sc] of tr.testScenarios.entries()) {
+                    const testReqId = `REQ-TEST-${idx + 1}-${sIdx + 1}`;
+                    lines.push(`  - [${testReqId}] Test Scenario "${sc.name || sc.id}":`);
+                    if (sc.prompt || sc.inputQuery) lines.push(`      Input: "${sc.prompt || sc.inputQuery}"`);
+                    if (sc.expectedOutput) lines.push(`      Expected: "${sc.expectedOutput}" (assertion: ${sc.assertionType || 'contains'})`);
                 }
             }
         }
     }
 
+    // Edges
     if (spec.edges.length > 0) {
-        lines.push(`\nTopology Edges (${spec.edges.length}):`);
+        lines.push(`\nTopology Edges:`);
         for (const edge of spec.edges) {
-            lines.push(`  - Source "${edge.source}" -> Target "${edge.target}"`);
+            lines.push(`  - Connection: "${edge.sourceName}" -> "${edge.targetName}"`);
         }
     }
 
@@ -251,54 +428,70 @@ export async function evaluateAgentSpecification(
     const checklistText = formatAgentSpecChecklist(spec);
 
     const prompt = `You are the Principal Agent Specification & Workflow Conformance Evaluator Agent.
-Your responsibility is auditing generated AI Agent code to verify that it FAITHFULLY IMPLEMENTS THE EXACT WORKFLOW DEFINED IN THE .AGENT JSON SPECIFICATION.
-You must ensure that ALL declared agent nodes, trigger nodes, system prompts, tools, subagents, test scenarios, and deployment targets are properly incorporated and used.
+Your responsibility is auditing generated AI Agent code to verify that it FAITHFULLY AND ACCURATELY IMPLEMENTS THE EXACT WORKFLOW DEFINED IN THE .AGENT JSON SPECIFICATION.
+You must ensure that ALL declared agent nodes, Pydantic schemas, tools, subagents, test scenarios, and deployment targets are properly generated and wired.
 
-=== PARSED SPECIFICATION CHECKLIST ===
+=== REQUIREMENT TRACEABILITY MATRIX (RTM) ===
 ${checklistText}
-======================================
+=============================================
 
-=== FULL INPUT WORKFLOW JSON ===
-${workflowJson}
-================================
+=== GENERATED SOURCE FILES & ARTIFACTS (WITH LINE NUMBERS) ===
+${formatFilesWithLineNumbers(files)}
+=============================================================
 
-=== GENERATED SOURCE FILES & ARTIFACTS ===
-${files.map(f => `--- FILE: ${f.filename} ---\n${f.content}\n`).join('\n')}
-=========================================
+Audit the code against the RTM and complete the following checks:
+1. **Agent Node Completeness & Instruction Fidelity**:
+   - Inspect every [REQ-AGENT-*] in the RTM.
+   - Verify that EVERY agent node defined in the JSON is instantiated in \`agent.py\`.
+   - Verify that system prompts in code preserve all critical constraints, role instructions, and workflows from the JSON without being heavily summarized or dropped.
+   - Verify configured hyperparameters (\`temperature\`, \`maxIterations\`) are passed to agent instances.
 
-Audit the code against the following Specification Conformance Checklist:
-1. **Agent Node Completeness & Configuration**:
-   - Inspect every agent node in the checklist (e.g. Animal Expert, Cat Agent, Fish Agent).
-   - Verify that EVERY agent node defined in the JSON is actually declared and wired in \`agent.py\`.
-   - Verify that the system prompt / instructions for each agent reflect the \`systemPrompt\` from the JSON.
-   - Flag any agent node that was defined in the JSON but is MISSING, SILENTLY OMITTED, or REPLACED with generic placeholders.
+2. **Structured Output Schemas (Pydantic Models)**:
+   - For every [REQ-SCHEMA-*], verify that a corresponding Pydantic \`BaseModel\` class is generated in code with exact field names and types.
+   - Verify the schema is wired to the agent via \`output_schema=...\` (or handled via \`output_key\` if combined with Search tools).
 
-2. **Tools & Capabilities Conformance**:
-   - Verify that tools assigned to each agent in the JSON (e.g. Google Search Grounding) are attached to the corresponding agent in code.
-   - Verify that agents not configured with tools do not have random tools attached.
+3. **Tools & Function Contracts**:
+   - For every [REQ-TOOL-*], verify that custom tool functions (\`sourceFile\` and \`functionName\`) exist in \`files[]\` and have typed parameters and docstrings.
+   - Verify that declared tools are attached to their specified agents in \`tools=[...]\`.
 
-3. **Trigger Nodes & Test Scenarios Conformance**:
-   - If a \`chat\` trigger is defined, is streaming or conversational history supported?
-   - If a \`tester\` trigger is defined with \`testPrompts\` / \`testScenarios\`, are those specific test scenarios implemented as assertions or test cases in \`test_agent.py\`?
+4. **Triggers & Automated Test Scenarios**:
+   - For every [REQ-TEST-*], verify that the test scenario input query and expected output assertions are implemented in \`test_agent.py\`.
+   - Verify that the test assertion matches the configured \`assertionType\` (e.g. substring contains, schema validation).
 
-4. **Deployment Target Conformance**:
-   - Does the generated deployment configuration (e.g. \`Dockerfile\`, \`main.tf\`, \`deploy_agent_engine.py\`, or Cloud Run configs) match the \`deploymentTarget\` specified in the JSON?
+5. **Deployment Target Conformance**:
+   - Does the generated deployment configuration match \`${spec.deploymentTarget}\`?
+   - Container targets (\`cloudrun\`, \`agent_engine\`) ALWAYS require Dockerfile and .dockerignore for production container builds.
 
 Severity Guidelines:
-- CRITICAL: A defined agent node, system prompt, or declared tool is completely missing from code; test scenarios from tester trigger are completely omitted from test_agent.py.
-- MAJOR: A configured parameter (e.g. streaming, model temperature, role) was ignored or replaced with an arbitrary fallback.
-- MINOR: Minor wording differences in docstrings or non-blocking comments.`;
+- CRITICAL: A defined agent node, Pydantic output model, custom tool, or tester scenario is completely missing or silently omitted; code targets the wrong deployment environment.
+- MAJOR: Hyperparameters (temperature, maxIterations) are omitted or defaulted; prompt constraints are severely diluted; test assertions do not verify expected outputs.
+- MINOR: Minor wording differences in docstrings or comments.`;
 
     const schema = {
         type: "object",
         properties: {
             passed: {
                 type: "boolean",
-                description: "True if all configured agent nodes, prompts, tools, and specification requirements are faithfully implemented"
+                description: "True if all configured agent nodes, schemas, prompts, tools, and specification requirements are faithfully implemented"
             },
             summary: {
                 type: "string",
                 description: "Specification conformance assessment summary"
+            },
+            requirementVerifications: {
+                type: "array",
+                description: "Traceability verification status for each REQ-* item in the RTM",
+                items: {
+                    type: "object",
+                    properties: {
+                        id: { type: "string", description: "Requirement ID (e.g. REQ-AGENT-1, REQ-SCHEMA-triage_specialist)" },
+                        category: { type: "string", enum: ["AGENT", "TOOL", "SCHEMA", "TRIGGER", "PARAM", "TEST"] },
+                        status: { type: "string", enum: ["VERIFIED", "PARTIAL", "MISSING"] },
+                        evidence: { type: "string", description: "Exact line-numbered code snippet proving implementation, or 'OMITTED'" },
+                        details: { type: "string", description: "Explanation of verification findings" }
+                    },
+                    required: ["id", "category", "status", "evidence", "details"]
+                }
             },
             findings: {
                 type: "array",
@@ -309,6 +502,8 @@ Severity Guidelines:
                         category: { type: "string", enum: ["SPECIFICATION"] },
                         severity: { type: "string", enum: ["CRITICAL", "MAJOR", "MINOR"] },
                         file: { type: "string" },
+                        lineNumber: { type: "integer", description: "1-indexed line number where the issue occurs" },
+                        evidence: { type: "string", description: "Exact line-numbered code snippet showing the issue, or 'OMITTED'" },
                         description: { type: "string" },
                         rationale: { type: "string" }
                     },
@@ -323,6 +518,7 @@ Severity Guidelines:
         model: EVALUATOR_MODEL,
         contents: prompt,
         config: {
+            temperature: 0.1,
             responseMimeType: 'application/json',
             responseSchema: schema
         }
@@ -337,6 +533,7 @@ Severity Guidelines:
         agentName: 'AgentSpecificationAgent',
         passed: parsed.passed,
         summary: parsed.summary,
+        requirementVerifications: parsed.requirementVerifications || [],
         findings: parsed.findings || []
     };
 }

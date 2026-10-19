@@ -250,12 +250,18 @@ export class PythonEnvResolver {
     onLog?: (msg: string, stream?: 'stdout' | 'stderr' | 'system') => Promise<void> | void
   ): Promise<void> {
     const needsA2A = this.requiresA2ADependencies(targetDir);
+    const needsAdk = this.requiresAdkDependencies(targetDir);
 
     try {
-      // Step 1: Quick import check for all core packages (including a2a when needed)
-      const importCheck = needsA2A
-        ? 'import fastapi, uvicorn, pydantic, google.genai, a2a'
-        : 'import fastapi, uvicorn, pydantic, google.genai';
+      // Step 1: Quick import check for all core packages (including google.adk and a2a when needed)
+      const requiredModules = ['fastapi', 'uvicorn', 'pydantic', 'google.genai'];
+      if (needsAdk) {
+        requiredModules.push('google.adk');
+      }
+      if (needsA2A) {
+        requiredModules.push('a2a');
+      }
+      const importCheck = `import ${requiredModules.join(', ')}`;
       await execFileAsync(pythonBin, ['-c', importCheck], { cwd: targetDir });
       return; // All required packages are already installed
     } catch {
@@ -313,6 +319,37 @@ export class PythonEnvResolver {
   }
 
   /**
+   * Scans target directory to detect if Google ADK (`google-adk` / `google.adk`) dependencies are required.
+   *
+   * Logic Flow:
+   * 1. Inspects requirements.txt for references to 'google-adk'.
+   * 2. Scans agent.py for 'google.adk' imports.
+   *
+   * @param targetDir Target workspace directory
+   * @returns boolean true if ADK dependencies are required
+   */
+  public requiresAdkDependencies(targetDir: string): boolean {
+    try {
+      const reqPath = path.join(targetDir, 'requirements.txt');
+      if (fs.existsSync(reqPath)) {
+        const reqContent = fs.readFileSync(reqPath, 'utf-8');
+        if (reqContent.includes('google-adk')) {
+          return true;
+        }
+      }
+
+      const agentPyPath = path.join(targetDir, 'agent.py');
+      if (fs.existsSync(agentPyPath)) {
+        const content = fs.readFileSync(agentPyPath, 'utf-8');
+        if (content.includes('google.adk')) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }
+
+  /**
    * Scans target directory to detect if Agent-to-Agent (A2A) dependencies are needed.
    *
    * Logic Flow:
@@ -333,19 +370,28 @@ export class PythonEnvResolver {
         }
       }
 
+      const stripCommentsAndDocstrings = (src: string): string =>
+        src
+          .replace(/"""[\s\S]*?"""|'''[\s\S]*?'''/g, '')
+          .replace(/#.*$/gm, '');
+
+      const hasA2APackageImport = (src: string): boolean => {
+        const cleaned = stripCommentsAndDocstrings(src);
+        return (
+          /^\s*(?:import\s+a2a\b|from\s+a2a\b)/m.test(cleaned) ||
+          cleaned.includes('RemoteA2aAgent') ||
+          cleaned.includes('google.adk.a2a') ||
+          /\bto_a2a\s*\(/.test(cleaned)
+        );
+      };
+
       // Check common python entrypoints
       const pyFiles = ['agent.py', 'server.py', 'agent_workflow.py', 'main.py', '_agent_test_runner.py'];
       for (const file of pyFiles) {
         const filePath = path.join(targetDir, file);
         if (fs.existsSync(filePath)) {
           const content = fs.readFileSync(filePath, 'utf-8');
-          if (
-            content.includes('import a2a') ||
-            content.includes('from a2a') ||
-            content.includes('RemoteA2aAgent') ||
-            content.includes('to_a2a') ||
-            content.includes('google.adk.a2a')
-          ) {
+          if (hasA2APackageImport(content)) {
             return true;
           }
         }
@@ -358,7 +404,7 @@ export class PythonEnvResolver {
         for (const file of files) {
           if (file.endsWith('.py')) {
             const content = fs.readFileSync(path.join(toolsDir, file), 'utf-8');
-            if (content.includes('a2a') || content.includes('RemoteA2aAgent')) {
+            if (hasA2APackageImport(content)) {
               return true;
             }
           }

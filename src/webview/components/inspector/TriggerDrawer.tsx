@@ -45,6 +45,7 @@ import {
   GCP_PROJECT_SERVICE_ACCOUNTS
 } from '../../data/triggerDefinitions';
 import { useWebviewBridge } from '../../hooks/useWebviewBridge';
+import { LiveStreamingConfigPanel } from './TriggerInspectorDrawer';
 
 interface TriggerDrawerProps {
   trigger: TriggerData | null;
@@ -497,6 +498,16 @@ export const TriggerDrawer: React.FC<TriggerDrawerProps> = ({
                 checked={formData.config.streaming ?? true}
                 onChange={(e) => handleConfigChange({ streaming: e.target.checked })}
                 className="rounded bg-[#161b22] border-[#30363d] text-amber-500 focus:ring-0 cursor-pointer"
+              />
+            </div>
+
+            {/* Live Bidirectional Streaming (Gemini Live API / WebRTC & WebSocket) */}
+            <div className="pt-2 border-t border-[#30363d]">
+              <LiveStreamingConfigPanel
+                liveConfig={formData.config?.liveStreamingConfig}
+                onChange={(liveStreamingConfig) =>
+                  handleConfigChange({ liveStreamingConfig })
+                }
               />
             </div>
           </div>

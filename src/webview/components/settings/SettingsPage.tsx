@@ -648,7 +648,7 @@ export const SettingsPage: React.FC = () => {
                         className="w-full px-3 py-1.5 bg-[var(--vscode-canvas-bg)] border border-[var(--vscode-border)] rounded-lg text-xs text-[var(--vscode-text-primary)] focus:outline-none cursor-pointer"
                       >
                         <option value="cloud_run">Google Cloud Run (Serverless Container)</option>
-                        <option value="agent_engine">Google Agent Engine (Managed)</option>
+                        <option value="agent_engine">Google Agent Runtime (Managed)</option>
                         <option value="local">Local FastMCP / Docker CLI</option>
                       </select>
                     </div>
@@ -821,7 +821,7 @@ export const SettingsPage: React.FC = () => {
                         <span>Google Cloud Platform Defaults</span>
                       </h2>
                       <p className="text-xs text-[var(--vscode-text-secondary)] mt-0.5">
-                        Default project and compute zone for Cloud Run and Vertex AI deployments.
+                        Default project and compute zone for Cloud Run and Agent Runtime deployments.
                       </p>
                     </div>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-500 border border-sky-500/30 font-mono">
@@ -858,7 +858,7 @@ export const SettingsPage: React.FC = () => {
                         onChange={(e) => handleUpdate({ defaultGcpRegion: e.target.value })}
                         className="w-full px-3 py-1.5 bg-[var(--vscode-canvas-bg)] border border-[var(--vscode-border)] rounded-lg text-xs text-[var(--vscode-text-primary)] focus:outline-none cursor-pointer"
                       >
-                        <option value="global">global (Vertex AI Global Endpoint)</option>
+                        <option value="global">global (Global Endpoint)</option>
                         <option value="us-central1">us-central1 (Iowa)</option>
                         <option value="us-east1">us-east1 (South Carolina)</option>
                         <option value="us-west1">us-west1 (Oregon)</option>

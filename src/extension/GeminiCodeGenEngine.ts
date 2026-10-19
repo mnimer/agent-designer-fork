@@ -233,21 +233,47 @@ export class GeminiCodeGenEngine {
       ? 'agent-engine'
       : rawTarget.includes('cloud')
       ? 'cloudrun'
+      : rawTarget.includes('gke')
+      ? 'gke'
       : rawTarget.replace(/_/g, '-');
 
-    const candidateFileNames = [
+    const normLang = (language || 'python').toLowerCase().trim();
+    const candidateFileNames: string[] = [];
+
+    // Language- and target-specific prompt template resolution (TASK-237, TASK-238)
+    if (normLang === 'go') {
+      candidateFileNames.push(
+        `go_adk_${normalizedTarget}.prompt.txt`,
+        `go_adk_cloudrun.prompt.txt`,
+        `go_adk.prompt.txt`
+      );
+    } else if (normLang === 'java') {
+      candidateFileNames.push(
+        `java_adk_${normalizedTarget}.prompt.txt`,
+        `java_adk_cloudrun.prompt.txt`,
+        `java_adk.prompt.txt`
+      );
+    } else if (normLang === 'python' && (normalizedTarget === 'gke' || rawTarget === 'gke')) {
+      candidateFileNames.push(
+        `python_adk_gke.prompt.txt`,
+        `python_adk_cloudrun.prompt.txt`,
+        `python_adk_agent-engine.prompt.txt`
+      );
+    } else {
       // 1. Target-specific filenames (e.g., python_adk_agent-engine.prompt.txt, python_adk_cloudrun.prompt.txt)
-      `${language}_${cleanFramework}_${normalizedTarget}.prompt.txt`,
-      `${language}_${cleanFramework}_${rawTarget.replace(/_/g, '-')}.prompt.txt`,
-      `${language}_${cleanFramework}_${rawTarget.replace(/[_-]/g, '')}.prompt.txt`,
-      `${language}-${cleanFramework}-${normalizedTarget}.prompt.txt`,
-      // 2. Default target filenames
-      `${language}_${cleanFramework}_agent-engine.prompt.txt`,
-      `${language}_${cleanFramework}_cloudrun.prompt.txt`,
-      `${language}_${cleanFramework}.prompt.txt`,
-      'python_adk_agent-engine.prompt.txt',
-      'python_adk_cloudrun.prompt.txt',
-    ];
+      candidateFileNames.push(
+        `${normLang}_${cleanFramework}_${normalizedTarget}.prompt.txt`,
+        `${normLang}_${cleanFramework}_${rawTarget.replace(/_/g, '-')}.prompt.txt`,
+        `${normLang}_${cleanFramework}_${rawTarget.replace(/[_-]/g, '')}.prompt.txt`,
+        `${normLang}-${cleanFramework}-${normalizedTarget}.prompt.txt`,
+        // 2. Default target filenames
+        `${normLang}_${cleanFramework}_agent-engine.prompt.txt`,
+        `${normLang}_${cleanFramework}_cloudrun.prompt.txt`,
+        `${normLang}_${cleanFramework}.prompt.txt`,
+        'python_adk_agent-engine.prompt.txt',
+        'python_adk_cloudrun.prompt.txt'
+      );
+    }
 
     const searchDirs = [
       path.join(this.extensionPath, 'resource', 'prompts'),

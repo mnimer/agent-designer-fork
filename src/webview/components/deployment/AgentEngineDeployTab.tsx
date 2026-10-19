@@ -43,12 +43,16 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { AgentWorkflowDocument } from '../../../shared/types';
-import { GeneratedFile } from '../../types';
+import { GeneratedFile, AgentGovernanceConfig } from '../../types';
 import { useWebviewBridge } from '../../hooks/useWebviewBridge';
 import { DeploymentMetadataRecord } from '../../../extension/AgentEngineDeployer';
 import { validateTargetFolder } from '../../../shared/folderValidation';
 import { isValidAgentEngineId } from '../../../shared/identifierValidation';
 import { validateWorkflowMemory } from '../../../shared/memoryValidation';
+import {
+  GovernanceStatusCard,
+  createDefaultGovernanceConfig,
+} from './GovernanceStatusCard';
 
 export interface AgentEngineDeployTabProps {
   document?: AgentWorkflowDocument;
@@ -101,6 +105,9 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
   const [networkAttachment, setNetworkAttachment] = useState<string>('');
   const [stagingBucket, setStagingBucket] = useState<string>('');
   const [forceNew, setForceNew] = useState<boolean>(false);
+  const [governance, setGovernance] = useState<AgentGovernanceConfig>(() =>
+    createDefaultGovernanceConfig(workflowDoc)
+  );
   const [agentEngineId, setAgentEngineId] = useState<string>(() => {
     const deployment = (workflowDoc as any)?.deployment;
     const directId = deployment?.agentEngine?.deployedResourceId;
@@ -251,7 +258,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
     if (!folderValidation.isValid) {
       setErrorMessage(
         folderValidation.error ||
-          `Target folder '${folderValidation.folderBase}' is not a valid Python identifier. Vertex AI Agent Engine requires the agent directory to be a valid Python module name.`
+          `Target folder '${folderValidation.folderBase}' is not a valid Python identifier. Agent Runtime requires the agent directory to be a valid Python module name.`
       );
       return;
     }
@@ -279,6 +286,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
         forceNew,
         agentEngineId: agentEngineId.trim() || undefined,
         envVars: secrets,
+        governance,
       },
     });
   };
@@ -320,18 +328,26 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
           <div className="flex items-center justify-between border-b border-[#30363d] pb-2">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-white">
               <Server className="w-4 h-4 text-emerald-400" />
-              <span>Vertex AI Agent Engine</span>
+              <span>Agent Runtime</span>
             </div>
             <span
               className={`text-[10px] px-2 py-0.5 rounded font-mono border ${
-                deployStatus === 'success'
+                deployStatus === 'success' && metadata?.eval_gate_status === 'warning'
+                  ? 'bg-amber-950/40 text-amber-400 border-amber-500/40'
+                  : deployStatus === 'success'
                   ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/40'
                   : isDeploying
                   ? 'bg-amber-950/40 text-amber-400 border-amber-500/40'
                   : 'bg-[#0d1117] text-gray-400 border-[#30363d]'
               }`}
             >
-              {deployStatus === 'success' ? 'Active' : isDeploying ? 'Deploying' : 'Ready'}
+              {deployStatus === 'success' && metadata?.eval_gate_status === 'warning'
+                ? 'Succeeded with Eval Warnings'
+                : deployStatus === 'success'
+                ? 'Active'
+                : isDeploying
+                ? 'Deploying'
+                : 'Ready'}
             </span>
           </div>
 
@@ -443,6 +459,16 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
             </div>
           </div>
 
+          {/* Enterprise Agent Governance & Gemini Enterprise Publishing Card */}
+          <GovernanceStatusCard
+            document={workflowDoc}
+            projectId={projectId}
+            region={region}
+            value={governance}
+            onChange={setGovernance}
+            metadata={metadata}
+          />
+
           {/* Action Button */}
           <div className="flex flex-col gap-2">
             {!memoryValidation.isValid && (
@@ -480,7 +506,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
                   className="flex-1 py-2 rounded-lg text-xs font-bold bg-[#238636] opacity-70 text-white flex items-center justify-center gap-2 cursor-wait"
                 >
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Deploying to Vertex AI...</span>
+                  <span>Deploying to Agent Runtime...</span>
                 </button>
                 <button
                   onClick={handleCancelDeploy}
@@ -511,8 +537,8 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
                 <Rocket className="w-3.5 h-3.5" />
                 <span>
                   {hasExistingDeployment && !forceNew
-                    ? 'Update Agent Engine Instance'
-                    : 'Deploy to Vertex AI Agent Engine'}
+                    ? 'Update Agent Runtime Instance'
+                    : 'Deploy to Agent Runtime'}
                 </span>
               </button>
             )}
@@ -535,7 +561,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
           <div className="flex items-center gap-2">
             <Terminal className="w-3.5 h-3.5 text-emerald-400" />
             <span className="text-xs font-mono font-semibold text-white">
-              Agent Engine Build & Provisioning Telemetry
+              Agent Runtime Build & Provisioning Telemetry
             </span>
           </div>
 
@@ -632,7 +658,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
           ) : (
             <div className="p-3 bg-[#161b22]/50 border border-[#30363d] rounded-lg text-xs text-gray-400 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Deploy to Agent Engine to obtain live HTTP passthrough credentials and endpoints.</span>
+              <span>Deploy to Agent Runtime to obtain live HTTP passthrough credentials and endpoints.</span>
             </div>
           )}
         </div>

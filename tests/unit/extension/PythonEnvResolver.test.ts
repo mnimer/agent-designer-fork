@@ -79,6 +79,15 @@ describe('PythonEnvResolver', () => {
       fs.unlinkSync(path.join(tempDir, 'requirements.txt'));
       fs.writeFileSync(path.join(tempDir, 'agent.py'), 'from google.adk.agents.remote_a2a_agent import RemoteA2aAgent\n');
       assert.equal(resolver.requiresA2ADependencies(tempDir), true);
+
+      // Test 4: server.py with native FastAPI A2A routes (/v1/message:send) or comments mentioning RemoteA2aAgent
+      // should NOT falsely require the external a2a-sdk package
+      fs.unlinkSync(path.join(tempDir, 'agent.py'));
+      fs.writeFileSync(
+        path.join(tempDir, 'server.py'),
+        '"""A2A endpoints for Gemini Enterprise & RemoteA2aAgent"""\n# RemoteA2aAgent comment\n@app.post("/v1/message:send")\nasync def a2a_send_message():\n    return {}\n'
+      );
+      assert.equal(resolver.requiresA2ADependencies(tempDir), false);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
@@ -162,6 +171,32 @@ describe('PythonEnvResolver', () => {
       const duplicateA2ALog = logs.find((l) => l.includes('A2A protocol detected. Installing a2a-sdk'));
       assert.equal(duplicateA2ALog, undefined, 'Should not log redundant A2A install line when requirements.txt exists');
       assert.ok(logs.some((l) => l.includes('Installing dependencies from requirements.txt')));
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should detect ADK dependencies accurately from requirements.txt and agent.py', () => {
+    const resolver = new PythonEnvResolver();
+    const tempDir = path.join('/tmp', `adk_detect_test_${Date.now()}`);
+    const fs = require('fs');
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    try {
+      // Simple empty directory returns false
+      assert.equal(resolver.requiresAdkDependencies(tempDir), false);
+
+      // Non-existent directory returns false without throwing
+      assert.equal(resolver.requiresAdkDependencies(path.join(tempDir, 'nonexistent')), false);
+
+      // requirements.txt with google-adk returns true
+      fs.writeFileSync(path.join(tempDir, 'requirements.txt'), 'google-adk>=2.0.0\n');
+      assert.equal(resolver.requiresAdkDependencies(tempDir), true);
+
+      // agent.py with google.adk import returns true when requirements.txt does not list it
+      fs.writeFileSync(path.join(tempDir, 'requirements.txt'), 'pydantic>=2.0.0\n');
+      fs.writeFileSync(path.join(tempDir, 'agent.py'), 'from google.adk.agents import Agent\n');
+      assert.equal(resolver.requiresAdkDependencies(tempDir), true);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

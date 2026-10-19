@@ -256,6 +256,28 @@ export class TestAndChatExecutor {
       });
     }
 
+    // Early Input Schema Validation Gate (TASK-196)
+    const schemaValidation = runner.validateScenarioInput(scenario, document);
+    if (!schemaValidation.valid && schemaValidation.errors.length > 0) {
+      const errorMsg = `[Input Schema Validation Error]: ${schemaValidation.errors.join('; ')}`;
+      await bridge.postMessage({
+        type: 'EXECUTION_LOG',
+        payload: {
+          runId,
+          scenarioId: scenario.id,
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          message: errorMsg,
+        },
+      });
+      return {
+        passed: false,
+        output: '',
+        error: errorMsg,
+        durationMs: 0,
+      };
+    }
+
     // Branch 1: Remote Execution
     if (executionTarget === 'remote') {
       await bridge.postMessage({
@@ -820,7 +842,11 @@ export class TestAndChatExecutor {
         }
 
         if (!streamedTokens && finalReply) {
-          if (streaming && finalReply.length > 50) {
+          const hasA2UISurface =
+            finalReply.includes('```a2ui') ||
+            finalReply.includes('"createSurface"') ||
+            finalReply.includes('"updateComponents"');
+          if (streaming && finalReply.length > 50 && !hasA2UISurface) {
             const words = finalReply.split(' ');
             for (let i = 0; i < words.length; i++) {
               const token = words[i] + (i < words.length - 1 ? ' ' : '');
@@ -1045,7 +1071,11 @@ export class TestAndChatExecutor {
 
           assistantReply = replyContent;
 
-          if (streaming && replyContent.length > 50) {
+          const hasA2UISurface =
+            replyContent.includes('```a2ui') ||
+            replyContent.includes('"createSurface"') ||
+            replyContent.includes('"updateComponents"');
+          if (streaming && replyContent.length > 50 && !hasA2UISurface) {
             const words = replyContent.split(' ');
             for (let i = 0; i < words.length; i++) {
               const token = words[i] + (i < words.length - 1 ? ' ' : '');

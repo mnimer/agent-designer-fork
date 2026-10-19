@@ -93,8 +93,8 @@ describe('TASK-173: Travel Concierge Sample & Info Dialog Suite', () => {
     );
   });
 
-  it('should have physical .agent, README.md, and Python tools files in resource/samples/travel-concierge/', () => {
-    const sampleDir = path.join(projectRoot, 'resource', 'samples', 'travel-concierge');
+  it('should have physical .agent, README.md, and Python tools files in resource/samples/retail/travel-concierge/', () => {
+    const sampleDir = path.join(projectRoot, 'resource', 'samples', 'retail', 'travel-concierge');
     const agentFile = path.join(sampleDir, 'travel-concierge.agent');
     const readmeFile = path.join(sampleDir, 'README.md');
     const toolsDir = path.join(sampleDir, 'tools');
@@ -133,10 +133,9 @@ describe('TASK-173: Travel Concierge Sample & Info Dialog Suite', () => {
     };
     const provider = new AgentEditorProvider(mockContext);
     const discovered = provider.discoverResourceSamples();
-    assert.strictEqual(
-      discovered.length,
-      2,
-      `discoverResourceSamples should discover exactly 2 samples from resource/samples on disk but found ${discovered.length}: ${discovered.map((s) => s.id).join(', ')}`
+    assert.ok(
+      discovered.length >= 3,
+      `discoverResourceSamples should discover >= 3 samples from resource/samples on disk but found ${discovered.length}: ${discovered.map((s) => s.id).join(', ')}`
     );
     const travelSample = discovered.find(
       (s) => s.id === 'travel_concierge' || s.id === 'travel-concierge'
@@ -198,7 +197,7 @@ describe('TASK-173: Travel Concierge Sample & Info Dialog Suite', () => {
     const { spawnSync } = require('child_process');
     const res = spawnSync(
       'python3',
-      ['-m', 'unittest', 'discover', '-s', 'resource/samples/travel-concierge/tests', '-v'],
+      ['-m', 'unittest', 'discover', '-s', 'resource/samples/retail/travel-concierge/tests', '-v'],
       { cwd: projectRoot, encoding: 'utf-8' }
     );
     assert.equal(res.status, 0, 'Python unittest process should exit with status 0');
@@ -242,6 +241,7 @@ describe('TASK-173: Travel Concierge Sample & Info Dialog Suite', () => {
       projectRoot,
       'resource',
       'samples',
+      'retail',
       'travel-concierge',
       'travel-concierge.agent'
     );

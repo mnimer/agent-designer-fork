@@ -169,7 +169,7 @@ export const SynthesizerDrawer: React.FC<SynthesizerDrawerProps> = ({
           <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
           <div>
             <span className="font-semibold text-emerald-300">Terminal Reducer Node: </span>
-            Aggregates upstream state variables and synthesizes them into structured Pydantic / JSON schema. Tools are disabled per Vertex AI controlled generation guidelines.
+            Aggregates upstream state variables and synthesizes them into structured Pydantic / JSON schema. Tools are disabled per controlled generation guidelines.
           </div>
         </div>
 

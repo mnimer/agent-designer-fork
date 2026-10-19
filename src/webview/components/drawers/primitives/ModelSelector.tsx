@@ -1,11 +1,25 @@
-import React from 'react';
-import { Cpu, Sliders, Info } from 'lucide-react';
+/**
+ * ModelSelector - Modular drop-down model selector with reasoning budget controls.
+ *
+ * This component standardizes model picking and exposes specialized controls 
+ * such as collapsible temperature, token budgets, and adaptive thinking (reasoning budget)
+ * for advanced models like Gemini 3.8 and Gemini 3.7 Flash.
+ *
+ * Architectural Decisions:
+ * 1. Cohesive AI Parameters: Group model-specific switches within the same container.
+ * 2. 8pt Grid Compliant: Utilizes gap-4 (16px), space-y-4 (16px), and p-3 (12px) spacings.
+ * 3. Collapsible Creative Temperature: Collapsed by default since users rarely adjust it,
+ *    while displaying the active value badge in the header.
+ *
+ * @author Mike Nimer <mikenimer@google.com>
+ */
+
+import React, { useState } from 'react';
+import { Cpu, Sliders, ChevronDown, ChevronRight } from 'lucide-react';
 import { DrawerField } from './DrawerField';
 
 /**
  * ModelSelectorProps - Properties for the ModelSelector primitive component
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 export interface ModelSelectorProps {
   selectedModel?: string;
@@ -23,38 +37,25 @@ const SUPPORTED_MODELS = [
   { 
     id: 'gemini-3.8-flash', 
     name: 'Gemini 3.8 Flash (Recommended)', 
-    desc: 'Next-gen hybrid reasoning with adaptive thinking on Vertex AI (location="global")' 
+    desc: 'Next-gen hybrid reasoning with adaptive thinking (location="global")' 
   },
   { 
     id: 'gemini-3.7-flash', 
     name: 'Gemini 3.7 Flash', 
-    desc: 'Hybrid reasoning with adaptive thinking on Vertex AI (location="global")' 
+    desc: 'Hybrid reasoning with adaptive thinking (location="global")' 
   },
   { 
     id: 'gemini-3.6-flash', 
     name: 'Gemini 3.6 Flash', 
-    desc: 'Advanced multimodal reasoning on Vertex AI' 
+    desc: 'Advanced multimodal reasoning' 
   },
   { 
     id: 'gemini-3.5-flash', 
     name: 'Gemini 3.5 Flash', 
-    desc: 'Fast, lightweight multimodal reasoning on Vertex AI' 
+    desc: 'Fast, lightweight multimodal reasoning' 
   },
 ];
 
-/**
- * ModelSelector - Modular drop-down model selector with reasoning budget controls.
- *
- * This component standardizes model picking and exposes specialized controls 
- * such as temperature, token budgets, and adaptive thinking (reasoning budget)
- * for advanced models like Gemini 3.8 and Gemini 3.7 Flash.
- *
- * Architectural Decisions:
- * 1. Cohesive AI Parameters: Group model-specific switches within the same container.
- * 2. 8pt Grid Compliant: Utilizes gap-4 (16px), space-y-4 (16px), and p-3 (12px) spacings.
- *
- * @author Mike Nimer <mikenimer@google.com>
- */
 export const ModelSelector: React.FC<ModelSelectorProps> = ({
   selectedModel,
   value,
@@ -66,6 +67,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   onChangeThinkingBudget,
   className = '',
 }) => {
+  const [isTempExpanded, setIsTempExpanded] = useState(false);
   const currentModel = selectedModel || value || 'gemini-3.7-flash';
   const handleModelChangeCallback = onChangeModel || onChange || (() => {});
 
@@ -91,7 +93,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   };
 
   return (
-    <div className={`space-y-4 ${className}`}>
+    <div className={`space-y-3 ${className}`}>
       {/* 1. Model Dropdown Select */}
       <DrawerField 
         label="AI Foundation Model" 
@@ -118,15 +120,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         </div>
       </DrawerField>
 
-      {/* Model Description Box */}
-      <div className="p-3 bg-emerald-950/10 border border-emerald-500/10 rounded-lg flex gap-2">
-        <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-        <p className="text-[10px] text-gray-400 leading-relaxed">
-          {SUPPORTED_MODELS.find(m => m.id === currentModel)?.desc || 'Custom selected LLM foundation engine.'}
-        </p>
-      </div>
-
-      {/* 2. Reasoning / Thinking Budget Panel (only visible for Gemini 3.7) */}
+      {/* 2. Reasoning / Thinking Budget Panel (only visible when onChangeThinkingBudget is passed) */}
       {supportsReasoning && onChangeThinkingBudget && (
         <div 
           className="p-3.5 bg-[#161b22] border border-[#30363d] rounded-lg space-y-3"
@@ -175,35 +169,57 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         </div>
       )}
 
-      {/* 3. Creative Temperature Slider */}
+      {/* 3. Creative Temperature Slider (Collapsed by Default) */}
       {onChangeTemperature && (
-        <DrawerField 
-          label="Creative Temperature" 
-          subLabel="Controls creative randomness. Lower is more predictable, higher is more creative."
-          tooltip="A value of 0.0 is deterministic and ideal for routine coding or analytics, 1.0 is standard."
-        >
-          <div className="space-y-1.5 pt-1" data-testid="temp-container">
-            <div className="flex justify-between text-[10px] font-mono">
-              <span className="text-gray-400">Value Threshold</span>
-              <span className="text-emerald-400 font-semibold">{temperature.toFixed(1)}</span>
+        <div className="rounded-lg border border-[#30363d] bg-[#0d1117] overflow-hidden" data-testid="temp-collapsible-section">
+          <button
+            type="button"
+            onClick={() => setIsTempExpanded((prev) => !prev)}
+            className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-[#161b22] transition-colors cursor-pointer"
+            data-testid="temp-toggle-button"
+          >
+            <div className="flex items-center gap-1.5">
+              {isTempExpanded ? (
+                <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+              )}
+              <span className="text-[11px] font-bold uppercase tracking-tight text-gray-300">
+                Creative Temperature
+              </span>
             </div>
-            <input
-              type="range"
-              min={0.0}
-              max={2.0}
-              step={0.1}
-              value={temperature}
-              onChange={(e) => onChangeTemperature(parseFloat(e.target.value))}
-              className="w-full accent-emerald-500 cursor-pointer h-1.5 rounded-lg bg-gray-700"
-              data-testid="temp-slider"
-            />
-            <div className="flex justify-between text-[9px] text-gray-500 font-mono">
-              <span>0.0 (Deterministic)</span>
-              <span>1.0 (Balanced)</span>
-              <span>2.0 (Creative)</span>
+            <span className="text-[10px] font-mono font-semibold text-emerald-400 bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-500/20">
+              {temperature.toFixed(1)}
+            </span>
+          </button>
+
+          {isTempExpanded && (
+            <div className="px-3 pb-3 pt-1 border-t border-[#21262d] space-y-2" data-testid="temp-container">
+              <p className="text-[10px] text-gray-400 leading-normal">
+                Controls creative randomness. Lower is more predictable (0.0), higher is more creative (2.0).
+              </p>
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-gray-400">Value Threshold</span>
+                <span className="text-emerald-400 font-semibold">{temperature.toFixed(1)}</span>
+              </div>
+              <input
+                type="range"
+                min={0.0}
+                max={2.0}
+                step={0.1}
+                value={temperature}
+                onChange={(e) => onChangeTemperature(parseFloat(e.target.value))}
+                className="w-full accent-emerald-500 cursor-pointer h-1.5 rounded-lg bg-gray-700"
+                data-testid="temp-slider"
+              />
+              <div className="flex justify-between text-[9px] text-gray-500 font-mono">
+                <span>0.0 (Deterministic)</span>
+                <span>1.0 (Balanced)</span>
+                <span>2.0 (Creative)</span>
+              </div>
             </div>
-          </div>
-        </DrawerField>
+          )}
+        </div>
       )}
     </div>
   );

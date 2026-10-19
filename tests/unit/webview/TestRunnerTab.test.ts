@@ -40,11 +40,11 @@ describe('TestRunnerTab Execution Target & Health Check Logic', () => {
   ): string {
     if (!isTargetReady) {
       return executionTarget === 'remote'
-        ? 'Remote agent is not deployed. Deploy to Agent Engine on the Deployment tab to run tests.'
+        ? 'Remote agent is not deployed. Deploy to Agent Runtime on the Deployment tab to run tests.'
         : 'Local agent is offline. Start the agent in the Deployment tab to run tests.';
     }
     return executionTarget === 'remote'
-      ? 'Run all unit tests against remote Agent Engine'
+      ? 'Run all unit tests against remote Agent Runtime'
       : 'Run all unit tests';
   }
 
@@ -59,7 +59,7 @@ describe('TestRunnerTab Execution Target & Health Check Logic', () => {
       return {
         show: true,
         title: 'Remote Agent is Not Deployed.',
-        message: 'Deploy the workflow to Agent Engine on the Deployment tab to enable remote unit test execution.',
+        message: 'Deploy the workflow to Agent Runtime on the Deployment tab to enable remote unit test execution.',
       };
     }
     return {
@@ -133,7 +133,7 @@ describe('TestRunnerTab Execution Target & Health Check Logic', () => {
     const banner = resolveWarningBanner(isTargetReady, 'remote');
     assert.equal(banner.show, true);
     assert.equal(banner.title, 'Remote Agent is Not Deployed.');
-    assert.match(banner.message, /Deploy the workflow to Agent Engine/);
+    assert.match(banner.message, /Deploy the workflow to Agent Runtime/);
   });
 
   it('should show local offline banner when local runner is selected and offline', () => {
