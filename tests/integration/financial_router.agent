@@ -1,0 +1,377 @@
+{
+  "version": "1.0.0",
+  "name": "financial_services_router",
+  "description": "Financial Fraud & Services Dynamic Branching Router",
+  "framework": "google-adk",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "router_financial_dispatch",
+      "type": "agentNode",
+      "position": {
+        "x": 1488,
+        "y": 336
+      },
+      "data": {
+        "id": "router_financial_dispatch",
+        "name": "financial_services_router",
+        "label": "Financial Services Router",
+        "role": "Dynamic Financial Intent and Transaction Router",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "agentKind": "router",
+        "systemPrompt": "Evaluate incoming transaction details against routing rules and dispatch execution to the appropriate specialized financial service team.",
+        "isStartNode": true,
+        "memoryType": "sqlite",
+        "memoryConfig": {
+          "type": "sqlite",
+          "sqlitePath": "./sessions.db"
+        },
+        "inputSchema": {
+          "enabled": true,
+          "name": "TransactionInput",
+          "fields": [
+            {
+              "name": "transaction_amount",
+              "type": "number",
+              "required": true,
+              "description": "Total monetary amount of the transaction in USD"
+            },
+            {
+              "name": "transaction_type",
+              "type": "string",
+              "required": true,
+              "enumValues": [
+                "wire",
+                "card",
+                "crypto",
+                "ach"
+              ],
+              "description": "Payment instrument type"
+            },
+            {
+              "name": "risk_score",
+              "type": "number",
+              "required": true,
+              "description": "0-100 risk score"
+            },
+            {
+              "name": "is_international",
+              "type": "boolean",
+              "required": true,
+              "description": "Whether the transaction originates from or terminates in a foreign jurisdiction"
+            }
+          ]
+        },
+        "routerConfig": {
+          "evaluationMode": "boolean_expression",
+          "routingStrategy": "first_match",
+          "branches": [
+            {
+              "id": "branch_fraud",
+              "label": "Fraud Investigation",
+              "conditionExpression": "input.risk_score >= 75 or (input.is_international and input.transaction_amount > 10000)",
+              "targetAgentId": "agent_fraud_investigator"
+            },
+            {
+              "id": "branch_wealth",
+              "label": "Wealth Advisory",
+              "conditionExpression": "input.transaction_amount >= 100000 and input.risk_score < 40",
+              "targetAgentId": "agent_wealth_advisor"
+            },
+            {
+              "id": "branch_dispute",
+              "label": "Card Dispute Services",
+              "conditionExpression": "input.transaction_type == 'card' and input.risk_score >= 40",
+              "targetAgentId": "agent_dispute_specialist"
+            },
+            {
+              "id": "branch_default",
+              "label": "General Customer Care",
+              "targetAgentId": "agent_general_support",
+              "isDefault": true,
+              "isDefaultFallback": true
+            }
+          ]
+        },
+        "subAgents": [
+          {
+            "agentId": "agent_fraud_investigator",
+            "name": "Fraud Investigator",
+            "delegationType": "router",
+            "role": "Financial Fraud & Anti-Money Laundering Specialist"
+          },
+          {
+            "agentId": "agent_wealth_advisor",
+            "name": "Wealth Advisor",
+            "delegationType": "router",
+            "role": "Private Wealth & High Net Worth Portfolio Advisor"
+          },
+          {
+            "agentId": "agent_dispute_specialist",
+            "name": "Card Dispute Specialist",
+            "delegationType": "router",
+            "role": "Cardholder Dispute Resolution Specialist"
+          },
+          {
+            "agentId": "agent_general_support",
+            "name": "General Support Specialist",
+            "delegationType": "router",
+            "role": "Customer Care Specialist"
+          }
+        ],
+        "tools": []
+      }
+    },
+    {
+      "id": "trigger_chat_financial",
+      "type": "triggerNode",
+      "position": {
+        "x": 1520,
+        "y": 48
+      },
+      "data": {
+        "id": "trigger_chat_financial",
+        "label": "Financial Portal Chat",
+        "triggerType": "chat",
+        "description": "Real-time banking operations and security portal chat interface.",
+        "config": {
+          "initialMessage": "Welcome to Financial Services. Please provide transaction details for review.",
+          "streaming": true,
+          "sessionMemory": "sqlite"
+        },
+        "targetRootAgentId": "router_financial_dispatch"
+      }
+    },
+    {
+      "id": "trigger_tester_financial",
+      "type": "triggerNode",
+      "position": {
+        "x": 942,
+        "y": 176
+      },
+      "data": {
+        "id": "trigger_tester_financial",
+        "label": "Router Test Suite",
+        "triggerType": "tester",
+        "description": "Validation test suite for conditional branches and default fallback routing.",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "test_scenario_fraud",
+              "name": "High Risk International Wire - Fraud Team",
+              "prompt": "{\"transaction_amount\": 15000, \"transaction_type\": \"wire\", \"risk_score\": 85, \"is_international\": true}",
+              "inputQuery": "{\"transaction_amount\": 15000, \"transaction_type\": \"wire\", \"risk_score\": 85, \"is_international\": true}",
+              "expectedOutput": "fraud",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test_scenario_wealth",
+              "name": "High Net Worth Wire - Wealth Advisory",
+              "prompt": "{\"transaction_amount\": 250000, \"transaction_type\": \"wire\", \"risk_score\": 15, \"is_international\": false}",
+              "inputQuery": "{\"transaction_amount\": 250000, \"transaction_type\": \"wire\", \"risk_score\": 15, \"is_international\": false}",
+              "expectedOutput": "wealth",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test_scenario_dispute",
+              "name": "Suspicious Card Charge - Dispute Team",
+              "prompt": "{\"transaction_amount\": 120, \"transaction_type\": \"card\", \"risk_score\": 45, \"is_international\": false}",
+              "inputQuery": "{\"transaction_amount\": 120, \"transaction_type\": \"card\", \"risk_score\": 45, \"is_international\": false}",
+              "expectedOutput": "dispute",
+              "assertionType": "contains"
+            },
+            {
+              "id": "test_scenario_general",
+              "name": "Routine ACH Deposit - General Support Fallback",
+              "prompt": "{\"transaction_amount\": 50, \"transaction_type\": \"ach\", \"risk_score\": 10, \"is_international\": false}",
+              "inputQuery": "{\"transaction_amount\": 50, \"transaction_type\": \"ach\", \"risk_score\": 10, \"is_international\": false}",
+              "expectedOutput": "support",
+              "assertionType": "contains"
+            }
+          ]
+        },
+        "targetRootAgentId": "router_financial_dispatch"
+      }
+    },
+    {
+      "id": "agent_fraud_investigator",
+      "type": "agentNode",
+      "position": {
+        "x": 951,
+        "y": 984
+      },
+      "data": {
+        "id": "agent_fraud_investigator",
+        "name": "fraud_investigator",
+        "label": "Fraud Investigator",
+        "role": "Financial Fraud & Anti-Money Laundering Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "systemPrompt": "You are a senior Fraud Investigation Specialist. When a suspicious or high-risk transaction arrives, analyze fraudulent indicators, issue account freezes or security step-up challenges, and file SAR escalation alerts.",
+        "agentKind": "standard",
+        "tools": [],
+        "subAgents": [],
+        "isStartNode": false
+      }
+    },
+    {
+      "id": "agent_wealth_advisor",
+      "type": "agentNode",
+      "position": {
+        "x": 1320,
+        "y": 990
+      },
+      "data": {
+        "id": "agent_wealth_advisor",
+        "name": "wealth_advisor",
+        "label": "Wealth Advisor",
+        "role": "Private Wealth & High Net Worth Portfolio Advisor",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.3,
+        "systemPrompt": "You are a Private Wealth Advisor. For high-value transactions, review portfolio asset allocation, advise on liquidity positioning, tax-loss harvesting, and high-net-worth client banking privileges.",
+        "agentKind": "standard",
+        "tools": [],
+        "subAgents": [],
+        "isStartNode": false
+      }
+    },
+    {
+      "id": "agent_dispute_specialist",
+      "type": "agentNode",
+      "position": {
+        "x": 1696,
+        "y": 992
+      },
+      "data": {
+        "id": "agent_dispute_specialist",
+        "name": "dispute_specialist",
+        "label": "Card Dispute Specialist",
+        "role": "Cardholder Dispute Resolution Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "systemPrompt": "You are a Cardholder Dispute Resolution Specialist. For card billing errors or disputed charges, initiate card network chargeback proceedings, issue provisional credits, and request merchant documentation.",
+        "agentKind": "standard",
+        "tools": [],
+        "subAgents": [],
+        "isStartNode": false
+      }
+    },
+    {
+      "id": "agent_general_support",
+      "type": "agentNode",
+      "position": {
+        "x": 2036,
+        "y": 1000
+      },
+      "data": {
+        "id": "agent_general_support",
+        "name": "general_support",
+        "label": "General Support Specialist",
+        "role": "Customer Care Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.4,
+        "systemPrompt": "You are a General Support Specialist. Handle routine account servicing, balance inquiries, routing numbers, and general customer care questions courteously and efficiently.",
+        "agentKind": "standard",
+        "tools": [],
+        "subAgents": [],
+        "isStartNode": false
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_trigger_chat_router",
+      "source": "trigger_chat_financial",
+      "target": "router_financial_dispatch",
+      "sourceHandle": "trigger_out_bottom",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_trigger_tester_router",
+      "source": "trigger_tester_financial",
+      "target": "router_financial_dispatch",
+      "sourceHandle": "trigger_out_right",
+      "targetHandle": "input_left",
+      "animated": true
+    },
+    {
+      "id": "e_router_fraud",
+      "source": "router_financial_dispatch",
+      "target": "agent_fraud_investigator",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_router_wealth",
+      "source": "router_financial_dispatch",
+      "target": "agent_wealth_advisor",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_router_dispute",
+      "source": "router_financial_dispatch",
+      "target": "agent_dispute_specialist",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_router_general",
+      "source": "router_financial_dispatch",
+      "target": "agent_general_support",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_router_router_financial_dispatch_branch_fraud_agent_fraud_investigator",
+      "source": "router_financial_dispatch",
+      "target": "agent_fraud_investigator",
+      "sourceHandle": "branch_fraud",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_router_router_financial_dispatch_branch_wealth_agent_wealth_advisor",
+      "source": "router_financial_dispatch",
+      "target": "agent_wealth_advisor",
+      "sourceHandle": "branch_wealth",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_router_router_financial_dispatch_branch_dispute_agent_dispute_specialist",
+      "source": "router_financial_dispatch",
+      "target": "agent_dispute_specialist",
+      "sourceHandle": "branch_dispute",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_router_router_financial_dispatch_branch_default_agent_general_support",
+      "source": "router_financial_dispatch",
+      "target": "agent_general_support",
+      "sourceHandle": "branch_default",
+      "targetHandle": "input",
+      "animated": true
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-10-20T22:10:40.691Z"
+  },
+  "deployment": {
+    "target": "cloud_run",
+    "deploymentTarget": "cloud_run",
+    "outputFolder": "./financial_router/",
+    "framework": "google-adk",
+    "language": "python",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true
+  }
+}

@@ -256,6 +256,79 @@ describe('Deterministic Pre-Flight Gate', () => {
             const findings = checkPythonAstAndImports(files);
             expect(findings.some(f => f.id === 'AST-MISSING-DEPENDENCY-google-cloud-bigquery' && f.severity === 'MAJOR')).toBe(true);
         });
+
+        it('should NOT flag a missing dependency when a third-party module name is only mentioned in comments or docstrings', () => {
+            const files: GeneratedFileCandidate[] = [
+                {
+                    filename: 'session_store.py',
+                    content: '"""Supports google.cloud.spanner and google.cloud.firestore backends when configured."""\n# Optional google.cloud.spanner checkpointer\n'
+                },
+                {
+                    filename: 'agent.py',
+                    content: 'from google.adk import Agent\nroot_agent = Agent(name="clean_agent")\n'
+                },
+                {
+                    filename: 'requirements.txt',
+                    content: 'google-adk\n'
+                }
+            ];
+            const findings = checkPythonAstAndImports(files);
+            expect(findings.some(f => f.id === 'AST-MISSING-DEPENDENCY-google-cloud-spanner')).toBe(false);
+            expect(findings.some(f => f.id === 'AST-MISSING-DEPENDENCY-google-cloud-firestore')).toBe(false);
+        });
+
+        it('should flag a CRITICAL finding when an output_key state variable is interpolated as bare {key} without trailing ? or state.setdefault', () => {
+            const unsafeFiles: GeneratedFileCandidate[] = [
+                {
+                    filename: 'agent.py',
+                    content: [
+                        'from google.adk.agents import Agent, LoopAgent',
+                        'algorithm_generator = Agent(name="algorithm_generator", instruction="Previous Feedback: {evaluation_feedback}", output_key="candidate_code")',
+                        'benchmark_evaluator = Agent(name="benchmark_evaluator", instruction="Code: {candidate_code?}", output_key="evaluation_feedback")',
+                        'root_agent = LoopAgent(name="loop", sub_agents=[algorithm_generator, benchmark_evaluator], max_iterations=4)'
+                    ].join('\n')
+                }
+            ];
+            const unsafeFindings = checkPythonAstAndImports(unsafeFiles);
+            expect(unsafeFindings.some(f => f.id === 'AST-UNSAFE-STATE-INTERPOLATION-evaluation_feedback' && f.severity === 'CRITICAL')).toBe(true);
+            expect(unsafeFindings.some(f => f.id === 'AST-UNSAFE-STATE-INTERPOLATION-candidate_code')).toBe(false);
+        });
+
+        it('should flag a CRITICAL finding when a custom BaseAgent subclass assigns self.<attr> without extra="allow" or before super().__init__()', () => {
+            const missingExtraFiles: GeneratedFileCandidate[] = [
+                {
+                    filename: 'agent.py',
+                    content: [
+                        'from google.adk.agents import BaseAgent',
+                        'class FinancialServicesRouter(BaseAgent):',
+                        '    def __init__(self, name: str = "router", fraud_agent=None):',
+                        '        super().__init__(name=name)',
+                        '        self.fraud_agent = fraud_agent',
+                        'root_agent = FinancialServicesRouter()'
+                    ].join('\n')
+                }
+            ];
+            const findings1 = checkPythonAstAndImports(missingExtraFiles);
+            expect(findings1.some(f => f.id === 'AST-BASEAGENT-PYDANTIC-CONFIG-FinancialServicesRouter' && f.severity === 'CRITICAL')).toBe(true);
+
+            const badOrderFiles: GeneratedFileCandidate[] = [
+                {
+                    filename: 'agent.py',
+                    content: [
+                        'from google.adk.agents import BaseAgent',
+                        'from pydantic import ConfigDict',
+                        'class FinancialServicesRouter(BaseAgent):',
+                        '    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")',
+                        '    def __init__(self, name: str = "router", fraud_agent=None):',
+                        '        self.fraud_agent = fraud_agent',
+                        '        super().__init__(name=name)',
+                        'root_agent = FinancialServicesRouter()'
+                    ].join('\n')
+                }
+            ];
+            const findings2 = checkPythonAstAndImports(badOrderFiles);
+            expect(findings2.some(f => f.id === 'AST-BASEAGENT-SUPER-INIT-ORDER-FinancialServicesRouter' && f.severity === 'CRITICAL')).toBe(true);
+        });
     });
 
     describe('runDeterministicGate', () => {

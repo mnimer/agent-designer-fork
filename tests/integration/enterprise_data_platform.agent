@@ -1,0 +1,215 @@
+{
+  "version": "1.0.0",
+  "name": "enterprise_data_platform",
+  "description": "Enterprise Data Platform with Executive Analyst, BigQuery Remote MCP Server, NL2SQL Agent-as-a-Tool wrapper, and Cloud Spanner Checkpointer",
+  "framework": "google-adk",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "agent_executive_analyst",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 376
+      },
+      "data": {
+        "id": "agent_executive_analyst",
+        "name": "executive_data_analyst",
+        "label": "Executive Data Analyst",
+        "role": "Executive Data Analytics Director",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "thinkingBudget": 4096,
+        "isStartNode": true,
+        "systemPrompt": "Executive Data Analyst responsible for answering complex enterprise analytics inquiries. Discovers dataset schemas via BigQuery Remote MCP Server and invokes the generate_sql_query Agent-as-a-Tool wrapper (agent_nl2sql_expert) to synthesize partitioned, cost-optimized BigQuery SQL.",
+        "memoryType": "spanner",
+        "memoryConfig": {
+          "type": "spanner",
+          "instanceId": "data-platform-spanner",
+          "databaseId": "analytics_sessions",
+          "tableName": "ExecutiveAnalyticsSessions"
+        },
+        "tools": [
+          {
+            "id": "tool_bigquery_remote_mcp",
+            "name": "BigQuery Remote MCP",
+            "type": "mcp",
+            "description": "Direct BigQuery dataset and table schema discovery via Google Cloud Remote MCP",
+            "mcpConfig": {
+              "serverType": "google_cloud_remote",
+              "gcpService": "bigquery",
+              "domain": "databases_storage",
+              "launchStage": "GA",
+              "transport": "streamable_http",
+              "serverUrl": "https://bigquery-mcp.enterprise-data.internal/mcp",
+              "authType": "google_iam",
+              "defaultScopes": [
+                "https://www.googleapis.com/auth/bigquery"
+              ]
+            }
+          },
+          {
+            "id": "tool_nl2sql_subagent",
+            "name": "generate_sql_query",
+            "type": "builtin",
+            "builtinType": "agent_as_tool",
+            "functionName": "generate_sql_query",
+            "description": "Translates natural language questions into performant BigQuery SQL and explains query plan",
+            "subAgentId": "agent_nl2sql_expert",
+            "subAgentName": "generate_sql_query",
+            "subAgentDescription": "Translates natural language questions into performant BigQuery SQL and explains query plan",
+            "parameters": {
+              "question": "string - Natural language analytical question and target tables"
+            }
+          }
+        ],
+        "subAgents": [
+          {
+            "agentId": "agent_nl2sql_expert",
+            "name": "nl2sql_expert_agent",
+            "delegationType": "agent_as_tool"
+          }
+        ]
+      }
+    },
+    {
+      "id": "agent_nl2sql_expert",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 984
+      },
+      "data": {
+        "id": "agent_nl2sql_expert",
+        "name": "nl2sql_expert_agent",
+        "label": "NL2SQL Expert Agent",
+        "role": "BigQuery SQL Architecture Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "systemPrompt": "Generates production-grade BigQuery Standard SQL adhering to date partitioning, clustering column predicates, and bytes-scanned cost optimization rules, along with a clear query execution plan explanation.",
+        "tools": [],
+        "subAgents": []
+      }
+    },
+    {
+      "id": "trigger_eventarc_data",
+      "type": "triggerNode",
+      "position": {
+        "x": 312,
+        "y": 48
+      },
+      "data": {
+        "id": "trigger_eventarc_data",
+        "label": "GCS Ingestion Eventarc Trigger",
+        "triggerType": "eventarc",
+        "description": "Eventarc trigger listening to GCS dataset finalized events",
+        "config": {
+          "eventType": "google.cloud.storage.object.v1.finalized",
+          "bucketName": "enterprise-analytics-landing-zone",
+          "serviceAccount": "eventarc-analytics-sa@gcp-project-test.iam.gserviceaccount.com"
+        },
+        "targetRootAgentId": "agent_executive_analyst"
+      }
+    },
+    {
+      "id": "trigger_chat_data",
+      "type": "triggerNode",
+      "position": {
+        "x": 672,
+        "y": 88
+      },
+      "data": {
+        "id": "trigger_chat_data",
+        "label": "Executive Analytics Chat",
+        "triggerType": "chat",
+        "description": "Interactive executive analytics inquiry chat interface",
+        "config": {
+          "initialMessage": "Enterprise Data Platform Executive Analyst online.",
+          "streaming": true,
+          "sessionMemory": "spanner"
+        },
+        "targetRootAgentId": "agent_executive_analyst"
+      }
+    },
+    {
+      "id": "trigger_tester_data",
+      "type": "triggerNode",
+      "position": {
+        "x": 48,
+        "y": 416
+      },
+      "data": {
+        "id": "trigger_tester_data",
+        "label": "Enterprise Analytics Test Suite",
+        "triggerType": "tester",
+        "description": "QA validation suite for schema discovery, SQL generation, and query plan explanations",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "scenario_billing_export_partitioned_sql",
+              "name": "Billing Export Partitioned SQL Query Scenario",
+              "prompt": "Discover schema for billing_export table and generate a partitioned BigQuery SQL query for Q3 cloud spend by department.",
+              "expectedOutput": "SELECT",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario_parquet_query_plan_explanation",
+              "name": "GCS Parquet Query Plan Scenario",
+              "prompt": "Analyze newly uploaded GCS parquet dataset in enterprise-analytics-landing-zone and explain the SQL query plan.",
+              "expectedOutput": "query",
+              "assertionType": "contains"
+            }
+          ]
+        },
+        "targetRootAgentId": "agent_executive_analyst"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_eventarc_to_analyst",
+      "source": "trigger_eventarc_data",
+      "target": "agent_executive_analyst",
+      "sourceHandle": "trigger_out_bottom",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_chat_to_analyst",
+      "source": "trigger_chat_data",
+      "target": "agent_executive_analyst",
+      "sourceHandle": "trigger_out_bottom",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_tester_to_analyst",
+      "source": "trigger_tester_data",
+      "target": "agent_executive_analyst",
+      "sourceHandle": "trigger_out_right",
+      "targetHandle": "input_left",
+      "animated": true
+    },
+    {
+      "id": "edge_analyst_to_nl2sql",
+      "source": "agent_executive_analyst",
+      "target": "agent_nl2sql_expert",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-10-20T19:53:40.951Z"
+  },
+  "deployment": {
+    "target": "agent_engine",
+    "deploymentTarget": "agent_engine",
+    "outputFolder": "./enterprise_data_platform/",
+    "framework": "google-adk",
+    "language": "python",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true
+  }
+}

@@ -1,26 +1,36 @@
-# [TASK-241] Interactive Chat Markdown Table Rendering Support
+# [TASK-203 to TASK-212] End-to-End Integration Tasks Tracker
 
-## Problem Statement
-When testing agents such as the **Knowledge Catalog Data Domain Builder** (`kc-data-domain-builder`) in the **Interactive Chat** tab (`ChatRunnerTab.tsx` -> `ChatMessageRenderer.tsx`), Markdown tables (e.g., DDD bounded context proposals, BigQuery dataset/table inventories, schema column definitions) are not rendered as structured HTML tables. Instead, `ChatMessageRenderer.tsx` falls back to rendering each pipe-delimited table row as a raw `<p>` paragraph line.
+> **Author**: Mike Nimer <mikenimer@google.com>  
+> **Orchestrator**: Task Developer Manager (`nimer-task-developer-manager`)
 
-## Plan
-1. **Write Isolated Failing Unit Tests (`tests/unit/webview/ChatMessageRenderer.test.ts`)**:
-   - Test rendering standard GitHub Flavored Markdown (GFM) tables with header rows, delimiter rows (`| --- | :--- | :---: | ---: |`), and multiple body rows into `<table>`, `<thead>`, `<tbody>`, `<tr>`, `<th>`, and `<td>` elements.
-   - Test inline formatting inside table cells (`**bold**`, `*italic*`, `` `inline_code` ``, `[links](url)`, `<br>` / `<br/>` line breaks, and escaped pipes `\|` / pipes inside inline code).
-   - Test column alignment (`left`, `center`, `right`) parsed from GFM delimiter rows.
-   - Test tables without outer leading/trailing pipes (e.g., `Col A | Col B` followed by `--- | ---`).
-   - Test streaming / partial table states (header + delimiter row with 0 body rows yet, or ragged rows with fewer cells than headers, or a single unconfirmed pipe line fallback).
-   - Test mixed content (headings, paragraphs, bullet lists, code blocks, and multiple tables in the same chat turn).
-2. **Implement Markdown Table Parsing & Rendering in `src/webview/components/chat/ChatMessageRenderer.tsx`**:
-   - Add helper functions (`splitTableRow`, `isTableDelimiterRow`, `parseColumnAlignments`, `renderInlineText` with `<br>` and nested formatting support) and table block buffering/flushing in `ChatMessageRenderer`.
-   - Style tables following the 8pt grid system and dark theme (`#0d1117`, `#161b22`, `#21262d`, `#30363d`, emerald accents matching Interactive Chat).
-   - Ensure `ChatRunnerTab.tsx` message container supports horizontal table scrolling cleanly (`min-w-0`).
-3. **Verify & Document**:
-   - Run unit tests (`ChatMessageRenderer.test.ts`, `MarkdownViewer.test.ts`) and full compilation (`npm run compile`).
-   - Update `TASKS.md` and `REQUIREMENTS.md` if applicable.
+## Objective
+Implement and verify the 10 End-to-End Integration Test suites (`TASK-203` through `TASK-212`) across both **Google Agent Runtime** (`agent_engine`) and **Google Cloud Run** (`cloudrun`) deployment targets, plus unit tests in `tests/unit/evaluators/agent-spec-evaluator.test.ts` validating 100% RTM extraction for each new `.agent` specification.
 
-## Checklist
-- [x] Step 1: Write isolated failing unit tests in `tests/unit/webview/ChatMessageRenderer.test.ts`.
-- [x] Step 2: Implement GFM table parsing, alignment, inline `<br>`, and escaped pipe handling in `src/webview/components/chat/ChatMessageRenderer.tsx`.
-- [x] Step 3: Verify all unit tests pass and TypeScript compiles cleanly.
-- [x] Step 4: Update `TASKS.md`.
+## Task Queue & Status
+
+- [x] **TASK-203**: Integration Test: Financial Fraud & Services Router (Intent Classifier + State Expressions + SQLite)
+  - Files: `tests/integration/financial_router.agent`, `tests/integration/financial-router.test.ts`
+- [x] **TASK-204**: Integration Test: Market Research Synthesizer Reducer (Parallel Fan-Out + Multi-Tool + Firestore)
+  - Files: `tests/integration/market_research_synthesizer.agent`, `tests/integration/market-research-synthesizer.test.ts`
+- [x] **TASK-205**: Integration Test: Commercial Loan HITL Approval Gate (Human-in-the-Loop + Cloud SQL PostgreSQL)
+  - Files: `tests/integration/loan_approval_hitl.agent`, `tests/integration/loan-approval-hitl.test.ts`
+- [x] **TASK-206**: Integration Test: Resilient Weather & Outage Fallback (Circuit Breaker + Memorystore Redis + Cron)
+  - Files: `tests/integration/resilient_weather_fallback.agent`, `tests/integration/resilient-weather-fallback.test.ts`
+- [x] **TASK-207**: Integration Test: Healthcare Diagnostic Guardrail Shield (Bi-directional PII Gate + Cloud Spanner)
+  - Files: `tests/integration/healthcare_guardrail.agent`, `tests/integration/healthcare-guardrail.test.ts`
+- [x] **TASK-208**: Integration Test: Procurement B2B A2A Protocol Agent (JSON-RPC 2.0 + Google Cloud IAM OIDC)
+  - Files: `tests/integration/procurement_a2a.agent`, `tests/integration/procurement-a2a.test.ts`
+- [x] **TASK-209**: Integration Test: Autonomous Code Optimizer Loop (Evaluator-Optimizer + Thinking Budget + Sandbox)
+  - Files: `tests/integration/code_optimizer_loop.agent`, `tests/integration/code-optimizer-loop.test.ts`
+- [x] **TASK-210**: Integration Test: Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus)
+  - Files: `tests/integration/policy_debate.agent`, `tests/integration/policy-debate.test.ts`
+- [x] **TASK-211**: Integration Test: Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL)
+  - Files: `tests/integration/legal_contract_triad.agent`, `tests/integration/legal-contract-triad.test.ts`
+- [x] **TASK-212**: Integration Test: Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner)
+  - Files: `tests/integration/enterprise_data_platform.agent`, `tests/integration/enterprise-data-platform.test.ts`
+
+## Verification Gates per Task
+1. `.agent` blueprint conforms to `AgentWorkflowDocument` schema (`src/shared/agentSpec.ts`), uses 8pt-snapped coordinates (`x % 8 === 0`, `y % 8 === 0`), and follows trigger handle conventions (`tester` on left via `trigger_out_right` -> `input_left`; operational triggers above via `trigger_out_bottom` -> `input`).
+2. `agent-spec-evaluator.ts` (`parseAgentWorkflowSpec` & `formatAgentSpecChecklist`) extracts 100% of specialized configs (`routerConfig`, `synthesizerConfig`, `hitlConfig`, `fallbackConfig`, `guardrailConfig`, `a2aConfig`, `debateConfig`, `inputSchema`, `thinkingBudget`, `memoryConfig`) and is verified by unit tests in `tests/unit/evaluators/agent-spec-evaluator.test.ts`.
+3. Integration test (`npx tsx --test tests/integration/<name>.test.ts`) executes `runCodegenAndEvaluate()` against both `'agent_engine'` and `'cloudrun'`, passing with `hardVetoTriggered === false`, `overallScore >= 80`, `architectureScore >= 75`, `specificationScore >= 75`, `securityScore >= 80`, and `isGood === true`.
+4. If any prompt remediation directive is surfaced during evaluation, update `resource/prompts/python_adk_agent-engine.prompt.txt` and `resource/prompts/python_adk_cloudrun.prompt.txt` directly (never add procedural post-processing).

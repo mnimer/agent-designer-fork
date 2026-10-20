@@ -13,7 +13,7 @@ import { RunnerEnvironment } from '../../../src/extension/runner/RunnerEnvironme
 import { HealthCheckClient } from '../../../src/extension/runner/HealthCheckClient';
 import { ProcessLifecycleManager } from '../../../src/extension/runner/ProcessLifecycleManager';
 import { getLocalRunnerScriptContent } from '../../../src/extension/runner/LocalRunnerScriptProvider';
-import { TestAndChatExecutor } from '../../../src/extension/runner/TestAndChatExecutor';
+import { TestAndChatExecutor, LOCAL_AGENT_EXECUTION_TIMEOUT_MS } from '../../../src/extension/runner/TestAndChatExecutor';
 import { ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 
@@ -73,10 +73,12 @@ describe('Runner Decomposition - Unit Tests', () => {
   });
 
   describe('LocalRunnerScriptProvider', () => {
-    it('should return non-empty python test runner adapter template containing root_agent', () => {
+    it('should return non-empty python test runner adapter template containing root_agent and BrokenPipeError handling', () => {
       const content = getLocalRunnerScriptContent();
       assert.ok(content.length > 100);
-      assert.ok(content.includes('HTTPServer'));
+      assert.ok(content.includes('ThreadingHTTPServer'));
+      assert.ok(content.includes('BrokenPipeError'));
+      assert.ok(content.includes('ConnectionResetError'));
       assert.ok(content.includes('root_agent'));
       assert.ok(content.includes('_async_loop'));
       assert.ok(content.includes('_run_coroutine'));
@@ -85,6 +87,10 @@ describe('Runner Decomposition - Unit Tests', () => {
   });
 
   describe('TestAndChatExecutor', () => {
+    it('should configure LOCAL_AGENT_EXECUTION_TIMEOUT_MS >= 180000ms for multi-agent and sandbox runs', () => {
+      assert.ok(LOCAL_AGENT_EXECUTION_TIMEOUT_MS >= 180000);
+    });
+
     it('should format simple error messages cleanly', () => {
       const executor = new TestAndChatExecutor();
       const err = new Error('Database connection failed');

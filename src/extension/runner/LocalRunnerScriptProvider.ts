@@ -21,7 +21,7 @@ import os
 import json
 import threading
 import asyncio
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 
 # Disable OpenTelemetry exporter loops during local testing to avoid 400 Bad Request export spam
 os.environ.setdefault("OTEL_SDK_DISABLED", "true")
@@ -503,27 +503,31 @@ class TestHandler(BaseHTTPRequestHandler):
                 content_str = str(res)
 
             if data.get('stream'):
-                self.send_response(200)
-                self.send_header('Content-Type', 'text/event-stream')
-                self.send_header('Cache-Control', 'no-cache')
-                self.send_header('Connection', 'close')
-                self.end_headers()
-                chunks = content_str.split(' ')
-                for i, c in enumerate(chunks):
-                    token = c + (' ' if i < len(chunks) - 1 else '')
-                    is_last = (i == len(chunks) - 1)
-                    chunk_obj = {
-                        "id": "chatcmpl-test",
-                        "object": "chat.completion.chunk",
-                        "created": 1234567890,
-                        "model": data.get("model", "gemini-flash"),
-                        "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": "stop" if is_last else None}]
-                    }
-                    self.wfile.write(f"data: {json.dumps(chunk_obj)}\\n\\n".encode('utf-8'))
+                try:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/event-stream')
+                    self.send_header('Cache-Control', 'no-cache')
+                    self.send_header('Connection', 'close')
+                    self.end_headers()
+                    chunks = content_str.split(' ')
+                    for i, c in enumerate(chunks):
+                        token = c + (' ' if i < len(chunks) - 1 else '')
+                        is_last = (i == len(chunks) - 1)
+                        chunk_obj = {
+                            "id": "chatcmpl-test",
+                            "object": "chat.completion.chunk",
+                            "created": 1234567890,
+                            "model": data.get("model", "gemini-flash"),
+                            "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": "stop" if is_last else None}]
+                        }
+                        self.wfile.write(f"data: {json.dumps(chunk_obj)}\\n\\n".encode('utf-8'))
+                        self.wfile.flush()
+                    self.wfile.write(b"data: [DONE]\\n\\n")
                     self.wfile.flush()
-                self.wfile.write(b"data: [DONE]\\n\\n")
-                self.wfile.flush()
-                self.close_connection = True
+                    self.close_connection = True
+                except (BrokenPipeError, ConnectionResetError):
+                    sys.stderr.write("[Test Server] Client disconnected before stream response completed.\\n")
+                    sys.stderr.flush()
                 return
 
             resp_payload = {
@@ -543,11 +547,20 @@ class TestHandler(BaseHTTPRequestHandler):
                 ]
             }
             resp_bytes = json.dumps(resp_payload).encode('utf-8')
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', str(len(resp_bytes)))
-            self.end_headers()
-            self.wfile.write(resp_bytes)
+            try:
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(resp_bytes)))
+                self.end_headers()
+                self.wfile.write(resp_bytes)
+            except (BrokenPipeError, ConnectionResetError):
+                sys.stderr.write("[Test Server] Client disconnected before HTTP 200 response could be written.\\n")
+                sys.stderr.flush()
+                return
+        except (BrokenPipeError, ConnectionResetError):
+            sys.stderr.write("[Test Server] Client connection closed early.\\n")
+            sys.stderr.flush()
+            return
         except Exception as err:
             import traceback
             tb = traceback.format_exc()
@@ -563,11 +576,14 @@ class TestHandler(BaseHTTPRequestHandler):
                 }
             }
             err_bytes = json.dumps(err_payload).encode('utf-8')
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', str(len(err_bytes)))
-            self.end_headers()
-            self.wfile.write(err_bytes)
+            try:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(err_bytes)))
+                self.end_headers()
+                self.wfile.write(err_bytes)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
 
 def main():
     import argparse
@@ -575,7 +591,7 @@ def main():
     parser.add_argument('--port', type=int, default=8000)
     args = parser.parse_args()
     port = int(os.environ.get('PORT', args.port))
-    server = HTTPServer(('0.0.0.0', port), TestHandler)
+    server = ThreadingHTTPServer(('0.0.0.0', port), TestHandler)
     print(f"Uvicorn running on http://0.0.0.0:{port} (Agent Test Adapter)", flush=True)
     server.serve_forever()
 

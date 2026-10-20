@@ -139,7 +139,7 @@ export function scanForPlaintextSecrets(files: GeneratedFileCandidate[]): Evalua
             ruleId: 'SEC-GITHUB-PAT'
         },
         {
-            regex: /(?:password|secret|api_key|token)\s*[:=]\s*["'](?!(\$\{|\$|%s|<|YOUR_|mock_|test_|os\.getenv|env\[))([^\s"'`]{8,})["']/gi,
+            regex: /(?:password|secret|api_key|token)\s*[:=]\s*["'](?!(\$\{|\$|%s|<|\[|YOUR_|REPLACE_|REDACTED|mock_|test_|os\.getenv|env\[))([^\s"'`]{8,})["']/gi,
             description: 'Potential hardcoded secret or token assignment detected',
             ruleId: 'SEC-HARDCODED-TOKEN'
         }
@@ -161,9 +161,9 @@ export function scanForPlaintextSecrets(files: GeneratedFileCandidate[]): Evalua
             pattern.regex.lastIndex = 0;
             let match: RegExpExecArray | null;
             while ((match = pattern.regex.exec(file.content)) !== null) {
-                // Ignore matches that are obviously template placeholders
+                // Ignore matches that are obviously template placeholders or redaction tokens
                 const matchedVal = match[0];
-                if (matchedVal.includes('YOUR_') || matchedVal.includes('REPLACE_') || matchedVal.includes('EXAMPLE')) {
+                if (matchedVal.includes('YOUR_') || matchedVal.includes('REPLACE_') || matchedVal.includes('EXAMPLE') || matchedVal.includes('REDACTED')) {
                     continue;
                 }
 
@@ -251,6 +251,83 @@ export function checkPythonAstAndImports(files: GeneratedFileCandidate[]): Evalu
         }
     }
 
+    // 2b. Check for unguarded {state_key} placeholders without '?' in agent.py instructions
+    if (agentPy) {
+        const outputKeyRegex = /\boutput_key\s*=\s*["']([a-zA-Z_][a-zA-Z0-9_]*)["']/g;
+        const definedOutputKeys = new Set<string>();
+        let okMatch: RegExpExecArray | null;
+        while ((okMatch = outputKeyRegex.exec(agentPy.content)) !== null) {
+            definedOutputKeys.add(okMatch[1]);
+        }
+
+        // Check if any defined output_key is interpolated as bare {key} without '?' and without state.setdefault("key"...)
+        for (const stateKey of definedOutputKeys) {
+            const barePlaceholderRegex = new RegExp(`(?<!\\{)\\{${stateKey}\\}(?!\\})`);
+            const hasSetDefault = new RegExp(`state\\.setdefault\\s*\\(\\s*["']${stateKey}["']`).test(agentPy.content);
+            const match = barePlaceholderRegex.exec(agentPy.content);
+            if (match && !hasSetDefault) {
+                const lineNum = agentPy.content.substring(0, match.index).split('\n').length;
+                findings.push({
+                    id: `AST-UNSAFE-STATE-INTERPOLATION-${stateKey}`,
+                    category: 'ARCHITECTURE',
+                    severity: 'CRITICAL',
+                    file: agentPy.filename,
+                    lineNumber: lineNum,
+                    evidence: match[0],
+                    description: `Unguarded session state template variable "{${stateKey}}" in instruction without trailing "?" or before_agent_callback state.setdefault("${stateKey}", ...)`,
+                    rationale: `Google ADK's inject_session_state raises KeyError: "Context variable not found: \`${stateKey}\`" on Iteration 1 of LoopAgent or when the state key is not yet populated. Always use "{${stateKey}?}" with a trailing "?" or initialize in before_agent_callback.`
+                });
+            }
+        }
+
+        // 2c. Check custom BaseAgent subclasses for Pydantic v2 extra='allow' and super().__init__() ordering
+        const baseAgentClassRegex = /class\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*BaseAgent\s*\)\s*:([\s\S]*?)(?=\n(?:class\s+|def\s+|[A-Za-z_][A-Za-z0-9_]*\s*=)|\s*$)/g;
+        let clsMatch: RegExpExecArray | null;
+        while ((clsMatch = baseAgentClassRegex.exec(agentPy.content)) !== null) {
+            const className = clsMatch[1];
+            const classBody = clsMatch[2];
+            const initMatch = /def\s+__init__\s*\([\s\S]*?\)\s*(?:->\s*None\s*)?:([\s\S]*?)(?=\n\s{4}(?:async\s+)?def\s+|\s*$)/.exec(classBody);
+            if (!initMatch) {
+                continue;
+            }
+            const initBody = initMatch[1];
+            const selfAssignMatch = /\bself\.([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)/.exec(initBody);
+            if (!selfAssignMatch) {
+                continue;
+            }
+            const assignedAttr = selfAssignMatch[1];
+            const superCallIndex = initBody.search(/super\s*\(\s*\)\s*\.\s*__init__/);
+            const firstSelfAssignIndex = selfAssignMatch.index;
+            const hasExtraAllow = /extra\s*=\s*["']allow["']/.test(classBody);
+            const hasDeclaredField = new RegExp(`^\\s{4}${assignedAttr}\\s*:`, 'm').test(classBody);
+            const lineNum = agentPy.content.substring(0, clsMatch.index).split('\n').length;
+
+            if (!hasExtraAllow && !hasDeclaredField) {
+                findings.push({
+                    id: `AST-BASEAGENT-PYDANTIC-CONFIG-${className}`,
+                    category: 'ARCHITECTURE',
+                    severity: 'CRITICAL',
+                    file: agentPy.filename,
+                    lineNumber: lineNum,
+                    evidence: `class ${className}(BaseAgent): self.${assignedAttr} = ...`,
+                    description: `Custom BaseAgent subclass "${className}" assigns self.${assignedAttr} in __init__ without model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow") or a declared Pydantic class field`,
+                    rationale: `In Google ADK, BaseAgent is a Pydantic v2 BaseModel with extra="forbid". Assigning undeclared self.<attr> raises ValueError: "${className}" object has no field "${assignedAttr}" at startup.`
+                });
+            } else if (superCallIndex !== -1 && firstSelfAssignIndex < superCallIndex) {
+                findings.push({
+                    id: `AST-BASEAGENT-SUPER-INIT-ORDER-${className}`,
+                    category: 'ARCHITECTURE',
+                    severity: 'CRITICAL',
+                    file: agentPy.filename,
+                    lineNumber: lineNum,
+                    evidence: `self.${assignedAttr} = ... before super().__init__(...)`,
+                    description: `Custom BaseAgent subclass "${className}" assigns self.${assignedAttr} BEFORE calling super().__init__(...)`,
+                    rationale: `In Pydantic v2 BaseModel subclasses, assigning self.<attr> before super().__init__() raises AttributeError: '${className}' object has no attribute '__pydantic_extra__' or ValueError.`
+                });
+            }
+        }
+    }
+
     // 3. Verify local module imports resolve to generated files
     const allFileNames = new Set(files.map(f => f.filename));
     const normalizedFileBases = new Set(
@@ -302,7 +379,12 @@ export function checkPythonAstAndImports(files: GeneratedFileCandidate[]): Evalu
         };
 
         for (const [moduleImport, reqPackage] of Object.entries(thirdPartyMappings)) {
-            const isImported = pyFiles.some(f => f.content.includes(moduleImport));
+            const escapedModule = moduleImport.replace(/\./g, '\\.');
+            // Match top-level imports (at column 0) outside of session_store.py's lazy optional backend initializers
+            const importStmtRegex = new RegExp(`(?:^|\\n)(?:import\\s+${escapedModule}\\b|from\\s+${escapedModule}\\b)`);
+            const isImported = pyFiles
+                .filter(f => f.filename !== 'session_store.py')
+                .some(f => importStmtRegex.test(f.content));
             if (isImported && !reqContent.includes(reqPackage)) {
                 findings.push({
                     id: `AST-MISSING-DEPENDENCY-${reqPackage}`,

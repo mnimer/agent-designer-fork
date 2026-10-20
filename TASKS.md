@@ -117,16 +117,16 @@
 | [**TASK-200**](#task-200) | v1.0.3 | Memory / Redis | Cloud Memorystore (Redis/Valkey) Checkpointer & Session TTL Expiration | **Complete** | TASK-115 |
 | [**TASK-201**](#task-201) | v1.2.0 | Quality / Integration | Animal Expert Multi-Agent System (Parallel Fan-Out + Search Grounding) | **Complete** | TASK-106, TASK-113 |
 | [**TASK-202**](#task-202) | v1.2.0 | Quality / Integration | CyberGuardian SecOps Multi-Agent System (Coordinator + Eventarc Trigger) | **Complete** | TASK-106, TASK-121 |
-| [**TASK-203**](#task-203) | v1.2.0 | Quality / Integration | Financial Fraud & Services Router (Intent Classifier + State Expressions + SQLite) | **Not Started** | TASK-117, TASK-196, TASK-197 |
-| [**TASK-204**](#task-204) | v1.2.0 | Quality / Integration | Market Research Synthesizer Reducer (Parallel Fan-Out + Multi-Tool + Firestore) | **Not Started** | TASK-113, TASK-114, TASK-187 |
-| [**TASK-205**](#task-205) | v1.2.0 | Quality / Integration | Commercial Loan HITL Approval Gate (Human-in-the-Loop + Cloud SQL PostgreSQL) | **Not Started** | TASK-188, TASK-198 |
-| [**TASK-206**](#task-206) | v1.2.0 | Quality / Integration | Resilient Weather & Outage Fallback (Circuit Breaker + Memorystore Redis + Cron) | **Not Started** | TASK-189, TASK-200 |
-| [**TASK-207**](#task-207) | v1.2.0 | Quality / Integration | Healthcare Diagnostic Guardrail Shield (Bi-directional PII Gate + Cloud Spanner) | **Not Started** | TASK-190, TASK-199 |
-| [**TASK-208**](#task-208) | v1.2.0 | Quality / Integration | Procurement B2B A2A Protocol Agent (JSON-RPC 2.0 + Google Cloud IAM OIDC) | **Not Started** | TASK-116, TASK-121 |
-| [**TASK-209**](#task-209) | v1.2.0 | Quality / Integration | Autonomous Code Optimizer Loop (Evaluator-Optimizer + Thinking Budget + Sandbox) | **Not Started** | TASK-192A, TASK-192B |
-| [**TASK-210**](#task-210) | v1.2.0 | Quality / Integration | Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus) | **Not Started** | TASK-193A, TASK-193B |
-| [**TASK-211**](#task-211) | v1.2.0 | Quality / Integration | Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL) | **Not Started** | TASK-195A, TASK-195B, TASK-198 |
-| [**TASK-212**](#task-212) | v1.2.0 | Quality / Integration | Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner) | **Not Started** | TASK-129, TASK-130, TASK-199 |
+| [**TASK-203**](#task-203) | v1.2.0 | Quality / Integration | Financial Fraud & Services Router (Intent Classifier + State Expressions + SQLite) | **Complete** | TASK-117, TASK-196, TASK-197 |
+| [**TASK-204**](#task-204) | v1.2.0 | Quality / Integration | Market Research Synthesizer Reducer (Parallel Fan-Out + Multi-Tool + Firestore) | **Complete** | TASK-113, TASK-114, TASK-187 |
+| [**TASK-205**](#task-205) | v1.2.0 | Quality / Integration | Commercial Loan HITL Approval Gate (Human-in-the-Loop + Cloud SQL PostgreSQL) | **Complete** | TASK-188, TASK-198 |
+| [**TASK-206**](#task-206) | v1.2.0 | Quality / Integration | Resilient Weather & Outage Fallback (Circuit Breaker + Memorystore Redis + Cron) | **Complete** | TASK-189, TASK-200 |
+| [**TASK-207**](#task-207) | v1.2.0 | Quality / Integration | Healthcare Diagnostic Guardrail Shield (Bi-directional PII Gate + Cloud Spanner) | **Complete** | TASK-190, TASK-199 |
+| [**TASK-208**](#task-208) | v1.2.0 | Quality / Integration | Procurement B2B A2A Protocol Agent (JSON-RPC 2.0 + Google Cloud IAM OIDC) | **Complete** | TASK-116, TASK-121 |
+| [**TASK-209**](#task-209) | v1.2.0 | Quality / Integration | Autonomous Code Optimizer Loop (Evaluator-Optimizer + Thinking Budget + Sandbox) | **Complete** | TASK-192A, TASK-192B |
+| [**TASK-210**](#task-210) | v1.2.0 | Quality / Integration | Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus) | **Complete** | TASK-193A, TASK-193B |
+| [**TASK-211**](#task-211) | v1.2.0 | Quality / Integration | Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL) | **Complete** | TASK-195A, TASK-195B, TASK-198 |
+| [**TASK-212**](#task-212) | v1.2.0 | Quality / Integration | Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner) | **Complete** | TASK-129, TASK-130, TASK-199 |
 | [**TASK-213**](#task-213) | v1.2.0 | Quality / Evaluators | Multi-Agent Evaluator Optimization & Hardening (Gemini 3.8 Flash Cyber, RTM, False-Positive Veto Fix, AST Checks) | **Complete** | TASK-201, TASK-202 |
 | [**TASK-214**](#task-214) | v1.2.0 | Samples / SDLC | Autonomous Multi-Agent Code Reviewer Blueprint (resource/samples/code_reviewer/) | **Complete** | TASK-128, TASK-213 |
 | [**TASK-215**](#task-215) | v1.2.0 | Samples / Retail | Reverse Engineer `retail-data-and-ai-demo` (Unified 3-Sub-Agent Architecture + Dual-Mode Local SQLite & Asset Sync — [ADR-001](docs/adr/001-retail-data-and-ai-demo-architecture.md)) | **Deferred (See ADR-001)** | TASK-128 |
@@ -4117,7 +4117,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-203] Integration Test: Financial Fraud & Services Router (Intent Classifier + State Expressions + SQLite)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Complete
 * **Target Package/Files**:
   - `tests/integration/financial-router.test.ts`
   - `tests/integration/financial_router.agent`
@@ -4183,7 +4183,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-204] Integration Test: Market Research Synthesizer Reducer (Parallel Fan-Out + Multi-Tool + Firestore)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Complete
 * **Target Package/Files**:
   - `tests/integration/market-research-synthesizer.test.ts`
   - `tests/integration/market_research_synthesizer.agent`
@@ -4250,7 +4250,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-205] Integration Test: Commercial Loan HITL Approval Gate (Human-in-the-Loop + Cloud SQL PostgreSQL)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Completed
 * **Target Package/Files**:
   - `tests/integration/loan-approval-hitl.test.ts`
   - `tests/integration/loan_approval_hitl.agent`
@@ -4311,7 +4311,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-206] Integration Test: Resilient Weather & Outage Fallback (Circuit Breaker + Memorystore Redis + Cron)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Completed
 * **Target Package/Files**:
   - `tests/integration/resilient-weather-fallback.test.ts`
   - `tests/integration/resilient_weather_fallback.agent`
@@ -4367,7 +4367,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-207] Integration Test: Healthcare Diagnostic Guardrail Shield (Bi-directional PII Gate + Cloud Spanner)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Completed
 * **Target Package/Files**:
   - `tests/integration/healthcare-guardrail.test.ts`
   - `tests/integration/healthcare_guardrail.agent`
@@ -4432,7 +4432,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-208] Integration Test: Procurement B2B A2A Protocol Agent (JSON-RPC 2.0 + Google Cloud IAM OIDC)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Completed
 * **Target Package/Files**:
   - `tests/integration/procurement-a2a.test.ts`
   - `tests/integration/procurement_a2a.agent`
@@ -4489,7 +4489,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-209] Integration Test: Autonomous Code Optimizer Loop (Evaluator-Optimizer + Thinking Budget + Sandbox)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Complete
 * **Target Package/Files**:
   - `tests/integration/code-optimizer-loop.test.ts`
   - `tests/integration/code_optimizer_loop.agent`
@@ -4547,7 +4547,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-210] Integration Test: Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Complete
 * **Target Package/Files**:
   - `tests/integration/policy-debate.test.ts`
   - `tests/integration/policy_debate.agent`
@@ -4606,7 +4606,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-211] Integration Test: Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Complete
 * **Target Package/Files**:
   - `tests/integration/legal-contract-triad.test.ts`
   - `tests/integration/legal_contract_triad.agent`
@@ -4664,7 +4664,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-212] Integration Test: Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Complete
 * **Target Package/Files**:
   - `tests/integration/enterprise-data-platform.test.ts`
   - `tests/integration/enterprise_data_platform.agent`

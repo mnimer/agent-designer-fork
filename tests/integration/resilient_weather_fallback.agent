@@ -1,0 +1,263 @@
+{
+  "version": "1.0.0",
+  "name": "resilient_weather_fallback",
+  "description": "Resilient Weather Telemetry Fallback with Circuit Breaker, Redis Memorystore, and Cron Schedule",
+  "framework": "google-adk",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "fallback_weather_shield",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 336
+      },
+      "data": {
+        "id": "fallback_weather_shield",
+        "name": "weather_circuit_breaker",
+        "label": "Circuit Breaker Fallback Agent",
+        "role": "Resilient Weather Operations Circuit Breaker",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "agentKind": "fallback",
+        "systemPrompt": "Monitors weather telemetry requests, dispatches live satellite observations through the primary agent, and automatically triggers circuit breaker failover to the cached radar archive upon upstream service failure or quota exhaustion.",
+        "isStartNode": true,
+        "memoryType": "redis",
+        "memoryConfig": {
+          "type": "redis",
+          "redisHost": "10.0.0.45",
+          "redisPort": 6379,
+          "ttlSeconds": 86400,
+          "authSecretName": "REDIS_AUTH_SECRET"
+        },
+        "fallbackConfig": {
+          "primaryTargetAgentId": "agent_live_weather",
+          "fallbackTargetAgentId": "agent_radar_archive",
+          "maxRetries": 3,
+          "retryDelaySeconds": 2,
+          "caughtErrorCodes": [
+            "RESOURCE_EXHAUSTED",
+            "503",
+            "DEADLINE_EXCEEDED",
+            "QUOTA_EXCEEDED",
+            "UNAVAILABLE"
+          ],
+          "fallbackStrategy": "switch_agent",
+          "staticFallbackMessage": "Live radar services currently offline. Advisory generated using historic cached observation models."
+        },
+        "subAgents": [
+          {
+            "agentId": "agent_live_weather",
+            "name": "live_weather_agent",
+            "delegationType": "primary"
+          },
+          {
+            "agentId": "agent_radar_archive",
+            "name": "cached_radar_archive",
+            "delegationType": "fallback"
+          }
+        ],
+        "tools": []
+      }
+    },
+    {
+      "id": "trigger_cron_weather",
+      "type": "triggerNode",
+      "position": {
+        "x": 312,
+        "y": 48
+      },
+      "data": {
+        "id": "trigger_cron_weather",
+        "label": "Severe Weather Advisory Cron",
+        "triggerType": "cron",
+        "description": "Periodic 6-hour cron schedule triggering regional storm advisory bulletins.",
+        "config": {
+          "cronExpression": "0 */6 * * *",
+          "timeZone": "America/Chicago",
+          "defaultPayload": "Generate 6-hour severe weather telemetry advisory for Midwest corridor."
+        },
+        "targetRootAgentId": "fallback_weather_shield"
+      }
+    },
+    {
+      "id": "trigger_chat_weather",
+      "type": "triggerNode",
+      "position": {
+        "x": 664,
+        "y": 48
+      },
+      "data": {
+        "id": "trigger_chat_weather",
+        "label": "Weather Operations Console",
+        "triggerType": "chat",
+        "description": "Interactive console for dispatchers and meteorologists with Redis-backed streaming.",
+        "config": {
+          "initialMessage": "Weather Resilience Operations Console ready.",
+          "streaming": true,
+          "sessionMemory": "redis"
+        },
+        "targetRootAgentId": "fallback_weather_shield"
+      }
+    },
+    {
+      "id": "trigger_tester_weather",
+      "type": "triggerNode",
+      "position": {
+        "x": 48,
+        "y": 360
+      },
+      "data": {
+        "id": "trigger_tester_weather",
+        "label": "Weather Resilience Test Suite",
+        "triggerType": "tester",
+        "description": "Automated test scenarios verifying primary live radar advisory and failover degradation advisory.",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "scenario_primary_telemetry",
+              "name": "Primary Live Telemetry Advisory",
+              "prompt": "Generate current live telemetry advisory for Chicago O'Hare (ORD).",
+              "inputQuery": "Generate current live telemetry advisory for Chicago O'Hare (ORD).",
+              "expectedOutput": "telemetry",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario_failover_archive",
+              "name": "Upstream Outage Fallback Degradation Advisory",
+              "prompt": "Simulate upstream radar outage (503 / RESOURCE_EXHAUSTED) for Dallas-Fort Worth (DFW) and generate failover advisory.",
+              "inputQuery": "Simulate upstream radar outage (503 / RESOURCE_EXHAUSTED) for Dallas-Fort Worth (DFW) and generate failover advisory.",
+              "expectedOutput": "advisory",
+              "assertionType": "contains"
+            }
+          ]
+        },
+        "targetRootAgentId": "fallback_weather_shield"
+      }
+    },
+    {
+      "id": "agent_live_weather",
+      "type": "agentNode",
+      "position": {
+        "x": 256,
+        "y": 920
+      },
+      "data": {
+        "id": "agent_live_weather",
+        "name": "live_weather_agent",
+        "label": "Live Weather Agent",
+        "role": "Real-Time Radar & Satellite Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "agentKind": "standard",
+        "systemPrompt": "Retrieves real-time atmospheric and radar telemetry via the Weather Telemetry REST API. Synthesizes current conditions, convective hazard alerts, and barometric trends.",
+        "tools": [
+          {
+            "id": "tool_weather_telemetry_api",
+            "name": "Weather Telemetry REST API",
+            "type": "rest",
+            "endpointUrl": "https://api.weather-service.internal/v1/telemetry",
+            "httpMethod": "GET",
+            "timeoutSeconds": 15,
+            "description": "Fetches real-time radar Doppler and satellite telemetry metrics for a geographic region.",
+            "parameters": {
+              "region": "string - Geographic region or airport ICAO code"
+            },
+            "enabled": true
+          }
+        ],
+        "subAgents": []
+      }
+    },
+    {
+      "id": "agent_radar_archive",
+      "type": "agentNode",
+      "position": {
+        "x": 664,
+        "y": 920
+      },
+      "data": {
+        "id": "agent_radar_archive",
+        "name": "cached_radar_archive",
+        "label": "Cached Radar Archive Agent",
+        "role": "Historical Climatology Retrieval Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "agentKind": "standard",
+        "systemPrompt": "Queries historical climatology archives and cached radar observation datastores via Vertex AI Search when live radar feeds are unavailable or degraded.",
+        "tools": [
+          {
+            "id": "tool_climatology_search",
+            "name": "Climatology Archive Search",
+            "type": "search",
+            "builtinType": "vertex_ai_search",
+            "description": "Enterprise search over cached radar observations and climatology archives.",
+            "vertexAiSearchConfig": {
+              "dataStoreId": "projects/gcp-project-test/locations/global/collections/default_collection/dataStores/climatology-archive-ds"
+            },
+            "parameters": {
+              "query": "string - Search query for historic meteorological patterns and radar scans"
+            },
+            "enabled": true
+          }
+        ],
+        "subAgents": []
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_cron_to_fallback",
+      "source": "trigger_cron_weather",
+      "target": "fallback_weather_shield",
+      "sourceHandle": "trigger_out_bottom",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_chat_to_fallback",
+      "source": "trigger_chat_weather",
+      "target": "fallback_weather_shield",
+      "sourceHandle": "trigger_out_bottom",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_tester_to_fallback",
+      "source": "trigger_tester_weather",
+      "target": "fallback_weather_shield",
+      "sourceHandle": "trigger_out_right",
+      "targetHandle": "input_left",
+      "animated": true
+    },
+    {
+      "id": "edge_fallback_to_live",
+      "source": "fallback_weather_shield",
+      "target": "agent_live_weather",
+      "sourceHandle": "primary",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_fallback_to_archive",
+      "source": "fallback_weather_shield",
+      "target": "agent_radar_archive",
+      "sourceHandle": "fallback",
+      "targetHandle": "input",
+      "animated": true
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-10-20T23:19:04.766Z"
+  },
+  "deployment": {
+    "target": "agent_engine",
+    "deploymentTarget": "agent_engine",
+    "outputFolder": "./resilient_weather_fallback/",
+    "framework": "google-adk",
+    "language": "python",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true
+  }
+}

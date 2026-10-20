@@ -47,6 +47,24 @@ export interface ParsedToolDefinition {
 }
 
 /**
+ * Parsed representation of an input schema.
+ */
+export interface ParsedInputField {
+    name: string;
+    type: string;
+    required?: boolean;
+    arrayItemType?: string;
+    description?: string;
+    enumValues?: string[];
+}
+
+export interface ParsedInputSchema {
+    enabled?: boolean;
+    name?: string;
+    fields: ParsedInputField[];
+}
+
+/**
  * Parsed representation of a structured output schema.
  */
 export interface ParsedStructuredOutputSchema {
@@ -80,6 +98,7 @@ export interface ParsedAgentNode {
     tools: ParsedToolDefinition[];
     subAgents: { agentId: string; name: string; delegationType?: string }[];
     subAgentPattern?: string;
+    inputSchema?: ParsedInputSchema;
     structuredOutput?: ParsedStructuredOutputSchema;
     memoryType?: string;
     memoryConfig?: Record<string, any>;
@@ -226,6 +245,37 @@ export function parseAgentWorkflowSpec(workflowJson: string): ParsedAgentSpec {
                     delegationType: sa.delegationType
                 }));
 
+                const rawInput = data.inputSchema || data.structuredInput || data.routerConfig?.inputSchema;
+                let inputSchema: ParsedInputSchema | undefined;
+                if (rawInput && (rawInput.enabled !== false || Array.isArray(rawInput.fields) || (rawInput.properties && typeof rawInput.properties === 'object'))) {
+                    const rawFields = Array.isArray(rawInput.fields)
+                        ? rawInput.fields
+                        : (rawInput.properties && typeof rawInput.properties === 'object'
+                            ? Object.entries(rawInput.properties).map(([name, p]: [string, any]) => ({
+                                name,
+                                type: p.type || 'string',
+                                required: Array.isArray(rawInput.required) && rawInput.required.includes(name),
+                                description: p.description,
+                                enumValues: p.enum || p.enumValues
+                            }))
+                            : []);
+
+                    if (rawFields.length > 0 || rawInput.enabled) {
+                        inputSchema = {
+                            enabled: rawInput.enabled !== undefined ? Boolean(rawInput.enabled) : true,
+                            name: rawInput.name,
+                            fields: rawFields.map((f: any) => ({
+                                name: String(f.name || ''),
+                                type: String(f.type || 'string'),
+                                required: Boolean(f.required),
+                                arrayItemType: f.arrayItemType,
+                                description: f.description,
+                                enumValues: Array.isArray(f.enumValues) ? f.enumValues : (Array.isArray(f.enum) ? f.enum : undefined)
+                            }))
+                        };
+                    }
+                }
+
                 const rawStructured = data.structuredOutput || data.structuredOutputSchema;
                 let structuredOutput: ParsedStructuredOutputSchema | undefined;
                 if (rawStructured && (rawStructured.enabled || Array.isArray(rawStructured.fields))) {
@@ -260,6 +310,7 @@ export function parseAgentWorkflowSpec(workflowJson: string): ParsedAgentSpec {
                     tools,
                     subAgents,
                     subAgentPattern: data.subAgentPattern,
+                    inputSchema,
                     structuredOutput,
                     memoryType: data.memoryType,
                     memoryConfig: data.memoryConfig,
@@ -339,13 +390,45 @@ export function formatAgentSpecChecklist(spec: ParsedAgentSpec): string {
         const reqId = `REQ-AGENT-${idx + 1}`;
         const startMarker = agent.isStartNode ? ' [ROOT / START NODE]' : '';
         lines.push(`\n[${reqId}] Agent: "${agent.name}" (Label: "${agent.label}") ${startMarker}`);
+        if (agent.agentKind && agent.agentKind !== 'standard') lines.push(`  - Agent Kind: ${agent.agentKind}`);
         if (agent.model) lines.push(`  - Model: ${agent.model}`);
         if (agent.temperature !== undefined) lines.push(`  - Temperature: ${agent.temperature}`);
+        if (agent.thinkingBudget !== undefined) lines.push(`  - Thinking Budget: ${agent.thinkingBudget}`);
         if (agent.maxIterations !== undefined) lines.push(`  - Max Iterations: ${agent.maxIterations}`);
         if (agent.role) lines.push(`  - Role: ${agent.role}`);
         if (agent.subAgentPattern) lines.push(`  - Pattern: ${agent.subAgentPattern}`);
-        if (agent.memoryType && agent.memoryType !== 'none') lines.push(`  - Memory: ${agent.memoryType}`);
+        if (agent.memoryType && agent.memoryType !== 'none') {
+            lines.push(`  - Memory: ${agent.memoryType}`);
+            if (agent.memoryConfig && typeof agent.memoryConfig === 'object') {
+                const mc = agent.memoryConfig;
+                const details: string[] = [];
+                if (mc.sqlitePath) details.push(`sqlitePath: "${mc.sqlitePath}"`);
+                if (mc.collectionName) details.push(`collectionName: "${mc.collectionName}"`);
+                if (mc.instanceConnectionName) details.push(`instanceConnectionName: "${mc.instanceConnectionName}"`);
+                if (mc.databaseName) details.push(`databaseName: "${mc.databaseName}"`);
+                if (mc.instanceId) details.push(`instanceId: "${mc.instanceId}"`);
+                if (mc.databaseId) details.push(`databaseId: "${mc.databaseId}"`);
+                if (mc.redisHost) details.push(`redisHost: "${mc.redisHost}"`);
+                if (mc.redisPort !== undefined) details.push(`redisPort: ${mc.redisPort}`);
+                if (mc.ttlSeconds !== undefined) details.push(`ttlSeconds: ${mc.ttlSeconds}`);
+                if (details.length > 0) {
+                    lines.push(`      Memory Details: ${details.join(', ')}`);
+                }
+            }
+        }
         if (agent.systemPrompt) lines.push(`  - System Instructions: "${agent.systemPrompt}"`);
+
+        // Input Schema
+        if (agent.inputSchema && agent.inputSchema.fields.length > 0) {
+            const schemaName = agent.inputSchema.name || `${agent.name}Input`;
+            lines.push(`  - [REQ-INPUT-SCHEMA-${agent.name}] Input Schema Model "${schemaName}":`);
+            for (const f of agent.inputSchema.fields) {
+                const req = f.required ? 'required' : 'optional';
+                const enumInfo = f.enumValues && f.enumValues.length > 0 ? ` [enum: ${f.enumValues.join(', ')}]` : '';
+                const typeStr = f.type === 'array' ? `array<${f.arrayItemType || 'string'}>` : f.type;
+                lines.push(`      * ${f.name} (${typeStr}, ${req}${enumInfo}) - ${f.description || ''}`);
+            }
+        }
 
         // Structured Output Schemas
         if (agent.structuredOutput && agent.structuredOutput.fields.length > 0) {
@@ -358,6 +441,78 @@ export function formatAgentSpecChecklist(spec: ParsedAgentSpec): string {
             }
         }
 
+        // Router Configuration
+        if (agent.routerConfig) {
+            const rc = agent.routerConfig;
+            lines.push(`  - [REQ-ROUTER-${agent.name}] Router Configuration:`);
+            if (rc.evaluationMode) lines.push(`      Evaluation Mode: ${rc.evaluationMode}`);
+            if (rc.routingStrategy) lines.push(`      Routing Strategy: ${rc.routingStrategy}`);
+            if (Array.isArray(rc.branches) && rc.branches.length > 0) {
+                lines.push(`      Branches (${rc.branches.length}):`);
+                for (const b of rc.branches) {
+                    const def = b.isDefault || b.isDefaultFallback ? ' [DEFAULT FALLBACK]' : '';
+                    lines.push(`        * Branch "${b.label || b.id}": condition="${b.conditionExpression || b.condition || 'default'}" -> target="${b.targetAgentId || b.target}"${def}`);
+                }
+            }
+        }
+
+        // Synthesizer Configuration
+        if (agent.synthesizerConfig) {
+            const sc = agent.synthesizerConfig;
+            lines.push(`  - [REQ-SYNTHESIZER-${agent.name}] Synthesizer Configuration:`);
+            if (sc.inputStateKeys) lines.push(`      Input State Keys: ${JSON.stringify(sc.inputStateKeys)}`);
+            if (sc.reductionStrategy) lines.push(`      Reduction Strategy: ${sc.reductionStrategy}`);
+        }
+
+        // HITL Configuration
+        if (agent.hitlConfig) {
+            const hc = agent.hitlConfig;
+            lines.push(`  - [REQ-HITL-${agent.name}] Human-in-the-Loop Configuration:`);
+            if (hc.approvalCondition) lines.push(`      Approval Condition: "${hc.approvalCondition}"`);
+            if (hc.timeoutHours !== undefined) lines.push(`      Timeout: ${hc.timeoutHours}h`);
+            if (hc.approvedAgentId) lines.push(`      Approved Target: "${hc.approvedAgentId}"`);
+            if (hc.rejectedAgentId) lines.push(`      Rejected Target: "${hc.rejectedAgentId}"`);
+        }
+
+        // Fallback Configuration
+        if (agent.fallbackConfig) {
+            const fc = agent.fallbackConfig;
+            lines.push(`  - [REQ-FALLBACK-${agent.name}] Fallback Configuration:`);
+            if (fc.maxRetries !== undefined) lines.push(`      Max Retries: ${fc.maxRetries}`);
+            if (fc.caughtErrorCodes) lines.push(`      Caught Errors: ${JSON.stringify(fc.caughtErrorCodes)}`);
+            if (fc.primaryTargetAgentId) lines.push(`      Primary Target: "${fc.primaryTargetAgentId}"`);
+            if (fc.fallbackTargetAgentId) lines.push(`      Fallback Target: "${fc.fallbackTargetAgentId}"`);
+        }
+
+        // Guardrail Configuration
+        if (agent.guardrailConfig) {
+            const gc = agent.guardrailConfig;
+            lines.push(`  - [REQ-GUARDRAIL-${agent.name}] Guardrail Configuration:`);
+            if (gc.direction) lines.push(`      Direction: ${gc.direction}`);
+            if (gc.safetyPolicies) lines.push(`      Safety Policies: ${JSON.stringify(gc.safetyPolicies)}`);
+            if (gc.regexPatterns) lines.push(`      Regex Patterns: ${JSON.stringify(gc.regexPatterns)}`);
+            if (gc.actionOnViolation) lines.push(`      Action on Violation: ${gc.actionOnViolation}`);
+        }
+
+        // A2A Configuration
+        if (agent.a2aConfig) {
+            const ac = agent.a2aConfig;
+            lines.push(`  - [REQ-A2A-${agent.name}] Agent-to-Agent Configuration:`);
+            if (ac.endpoint) lines.push(`      Endpoint: ${ac.endpoint}`);
+            if (ac.agentCardUrl) lines.push(`      Agent Card URL: ${ac.agentCardUrl}`);
+            if (ac.authType) lines.push(`      Auth Type: ${ac.authType}`);
+            if (ac.capabilities) lines.push(`      Capabilities: ${JSON.stringify(ac.capabilities)}`);
+        }
+
+        // Debate Configuration
+        if (agent.debateConfig) {
+            const dc = agent.debateConfig;
+            lines.push(`  - [REQ-DEBATE-${agent.name}] Multi-Agent Debate Configuration:`);
+            if (dc.maxRounds !== undefined) lines.push(`      Max Rounds: ${dc.maxRounds}`);
+            if (dc.consensusThreshold !== undefined) lines.push(`      Consensus Threshold: ${dc.consensusThreshold}`);
+            if (dc.debateStyle) lines.push(`      Debate Style: ${dc.debateStyle}`);
+        }
+
         // Tools
         if (agent.tools.length > 0) {
             for (const [tIdx, t] of agent.tools.entries()) {
@@ -367,6 +522,8 @@ export function formatAgentSpecChecklist(spec: ParsedAgentSpec): string {
                 if (t.functionName) lines.push(`      Function: ${t.functionName}`);
                 if (t.parameters) lines.push(`      Parameters: ${JSON.stringify(t.parameters)}`);
                 if (t.description) lines.push(`      Description: ${t.description}`);
+                if (t.vertexAiSearchConfig) lines.push(`      Vertex AI Search: ${JSON.stringify(t.vertexAiSearchConfig)}`);
+                if (t.mcpConfig) lines.push(`      MCP Config: ${JSON.stringify(t.mcpConfig)}`);
             }
         }
 
@@ -444,11 +601,12 @@ Audit the code against the RTM and complete the following checks:
    - Inspect every [REQ-AGENT-*] in the RTM.
    - Verify that EVERY agent node defined in the JSON is instantiated in \`agent.py\`.
    - Verify that system prompts in code preserve all critical constraints, role instructions, and workflows from the JSON without being heavily summarized or dropped.
-   - Verify configured hyperparameters (\`temperature\`, \`maxIterations\`) are passed to agent instances.
+   - Verify configured \`temperature\` is passed to LLM agent instances (via \`GenerateContentConfig\`). Note: Standard Google ADK \`Agent(...)\` does NOT accept \`max_iterations\` (only \`LoopAgent\` accepts \`max_iterations\`), and \`BaseAgent\` control-flow subclasses (\`router\`, \`hitl\`, \`fallback\`, \`guardrail\`) do not take LLM \`temperature\` or \`max_iterations\`; NEVER flag omitting \`maxIterations\` on non-LoopAgent nodes or \`temperature\` on \`BaseAgent\` nodes.
+   - **CRITICAL MODEL VERSION RULE**: NEVER flag, penalize, or deduct points for differences in Gemini model version numbers (e.g. \`gemini-3.8-flash\` in code vs \`gemini-3.7-flash\` in the \`.agent\` JSON, or \`gemini-4-*\`). Model versions evolve continuously as new versions are released; any modern Gemini model string is 100% compliant and MUST NOT be checked for exact version equality.
 
 2. **Structured Output Schemas (Pydantic Models)**:
    - For every [REQ-SCHEMA-*], verify that a corresponding Pydantic \`BaseModel\` class is generated in code with exact field names and types.
-   - Verify the schema is wired to the agent via \`output_schema=...\` (or handled via \`output_key\` if combined with Search tools).
+   - Verify the schema is wired to the agent via \`output_schema=...\`, OR if the agent has ANY tools attached (\`tools=[...]\` including \`search\`, \`custom_code\`, \`rest\`, \`mcp\`, or \`builtin\`), verify that \`output_schema\` is intentionally omitted on \`Agent(...)\` (because Vertex AI Gemini forbids combining \`tools\` with \`output_schema\` controlled generation on the same agent) and that the agent writes its structured output to \`output_key\` instead. NEVER penalize omitting \`output_schema\` on an agent that has \`tools\`.
 
 3. **Tools & Function Contracts**:
    - For every [REQ-TOOL-*], verify that custom tool functions (\`sourceFile\` and \`functionName\`) exist in \`files[]\` and have typed parameters and docstrings.
@@ -460,11 +618,11 @@ Audit the code against the RTM and complete the following checks:
 
 5. **Deployment Target Conformance**:
    - Does the generated deployment configuration match \`${spec.deploymentTarget}\`?
-   - Container targets (\`cloudrun\`, \`agent_engine\`) ALWAYS require Dockerfile and .dockerignore for production container builds.
+   - Container targets (\`cloudrun\`, \`agent_engine\`) ALWAYS require Dockerfile and .dockerignore for production container builds (even if legacy \`includeDocker=false\` is present in the JSON).
 
 Severity Guidelines:
-- CRITICAL: A defined agent node, Pydantic output model, custom tool, or tester scenario is completely missing or silently omitted; code targets the wrong deployment environment.
-- MAJOR: Hyperparameters (temperature, maxIterations) are omitted or defaulted; prompt constraints are severely diluted; test assertions do not verify expected outputs.
+- CRITICAL: A defined agent node, Pydantic output model class, custom tool, or tester scenario is completely missing or silently omitted; code targets the wrong deployment environment.
+- MAJOR: Prompt constraints are severely diluted; test assertions do not verify expected outputs.
 - MINOR: Minor wording differences in docstrings or comments.`;
 
     const schema = {

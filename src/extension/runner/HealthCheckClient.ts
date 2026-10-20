@@ -118,7 +118,7 @@ export class HealthCheckClient {
     port: number,
     pathStr: string,
     body: any,
-    timeoutMs = 60000,
+    timeoutMs = 180000,
     externalSignal?: AbortSignal,
     extraHeaders?: Record<string, string>
   ): Promise<{ ok: boolean; status: number; data: any; text: string }> {
@@ -136,9 +136,9 @@ export class HealthCheckClient {
 
     // 1. Primary: Use global fetch
     for (const targetUrl of candidateUrls) {
+      const timeoutSignal = AbortSignal.timeout(timeoutMs);
       try {
         if (typeof fetch === 'function') {
-          const timeoutSignal = AbortSignal.timeout(timeoutMs);
           const activeSignal =
             typeof (AbortSignal as any).any === 'function' && externalSignal
               ? (AbortSignal as any).any([timeoutSignal, externalSignal])
@@ -178,6 +178,10 @@ export class HealthCheckClient {
       } catch (err: any) {
         if (externalSignal?.aborted || err?.name === 'AbortError') {
           throw new Error('HTTP request was aborted by user.');
+        }
+        // Fail fast on per-request timeout so we do not fire duplicate POSTs to 127.0.0.1 / socket fallback
+        if (timeoutSignal.aborted || err?.name === 'TimeoutError') {
+          throw new Error(`HTTP request timed out after ${timeoutMs}ms`);
         }
       }
     }
