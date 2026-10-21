@@ -174,7 +174,14 @@ export const ToolDrawer: React.FC<ToolDrawerProps> = (props) => {
   }
 
   // 9. Model Context Protocol (MCP) Server Drawer
-  if (tool.type === 'mcp' || tool.mcpConfig !== undefined || tool.id.startsWith('tool_mcp_')) {
+  if (
+    tool.type === 'mcp' ||
+    tool.type === 'MCP' ||
+    tool.mcpConfig !== undefined ||
+    tool.id.startsWith('tool_mcp_') ||
+    tool.id.startsWith('workspace_mcp_') ||
+    tool.id.startsWith('gcp_mcp_')
+  ) {
     return <McpToolDrawer {...props} />;
   }
 

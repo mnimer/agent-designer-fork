@@ -80,6 +80,7 @@ import { PATTERN_DEFINITIONS, BASIC_AGENT_TYPES, CORE_AGENT_TYPES, FLOW_CONTROL_
 import { TRIGGER_CATALOG, TriggerCatalogItem } from '../../data/triggerDefinitions';
 import { categorizeTools, isNativeAdkTool } from '../../data/builtinTools';
 import { GOOGLE_CLOUD_MCP_DOMAINS, GOOGLE_CLOUD_MCP_SERVERS, GoogleCloudDomainMeta } from '../../data/googleCloudMcpServers';
+import { GOOGLE_WORKSPACE_MCP_SERVERS, getGoogleWorkspaceMcpServerById } from '../../data/googleWorkspaceMcpServers';
 import { isDatabricksMcpTool } from '../../data/databricksMcpServers';
 import { isSnowflakeMcpTool } from '../../data/snowflakeMcpServers';
 import { PatternType, AgentKind, ToolDefinition, AgentData, TriggerType, SampleWorkflowDefinition, GoogleCloudLaunchStage } from '../../types';
@@ -145,6 +146,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   const [openToolCategories, setOpenToolCategories] = useState<Record<string, boolean>>({
     native_adk: false,
     google_cloud_mcp: false,
+    google_workspace_mcp: false,
     mcp: false,
     custom: false,
     grounding: false,
@@ -286,6 +288,9 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   };
 
   const getToolIcon = (tool: ToolDefinition) => {
+    if (tool.category === 'google_workspace_mcp' || tool.id.startsWith('workspace_mcp_')) {
+      return <Globe className="w-3.5 h-3.5 text-emerald-400" />;
+    }
     if (tool.category === 'google_cloud_mcp') {
       switch (tool.icon) {
         case 'Database': return <Database className="w-3.5 h-3.5 text-amber-400" />;
@@ -971,15 +976,27 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                 tools: categorized.native_adk,
                 badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
                 isGcpGroup: false,
+                isWorkspaceGroup: false,
               },
               {
                 id: 'google_cloud_mcp',
                 title: 'Google Cloud MCP Servers',
-                subtitle: 'Official Remote Google Cloud & Workspace MCP Servers',
+                subtitle: 'Official Remote Google Cloud MCP Servers',
                 icon: <Cloud className="w-3.5 h-3.5 text-sky-400" />,
                 tools: categorized.google_cloud_mcp,
                 badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
                 isGcpGroup: true,
+                isWorkspaceGroup: false,
+              },
+              {
+                id: 'google_workspace_mcp',
+                title: 'Google Workspace MCP',
+                subtitle: 'Official Remote Google Workspace MCP Servers (HTTP + OAuth)',
+                icon: <Globe className="w-3.5 h-3.5 text-emerald-400" />,
+                tools: categorized.google_workspace_mcp,
+                badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+                isGcpGroup: false,
+                isWorkspaceGroup: true,
               },
               {
                 id: 'mcp',
@@ -989,15 +1006,17 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                 tools: categorized.mcp,
                 badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
                 isGcpGroup: false,
+                isWorkspaceGroup: false,
               },
               {
                 id: 'custom',
                 title: 'Custom & External Tools',
                 subtitle: 'REST APIs & External Integrations',
                 icon: <Radio className="w-3.5 h-3.5 text-amber-400" />,
-                tools: categorized.custom.filter((t) => !isNativeAdkTool(t) && t.type !== 'mcp' && !t.mcpConfig && !t.id.startsWith('tool_mcp_') && t.category !== 'google_cloud_mcp'),
+                tools: categorized.custom.filter((t) => !isNativeAdkTool(t) && t.type !== 'mcp' && !t.mcpConfig && !t.id.startsWith('tool_mcp_') && t.category !== 'google_cloud_mcp' && t.category !== 'google_workspace_mcp'),
                 badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
                 isGcpGroup: false,
+                isWorkspaceGroup: false,
               },
             ];
 
@@ -1028,7 +1047,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                         type="button"
                         onClick={() => toggleToolCategory(section.id)}
                         className="w-full flex items-center justify-between text-left hover:text-white transition-colors cursor-pointer group select-none"
-                        data-testid={`toggle-tool-section-${section.id}`}
+                        data-testid={section.id === 'google_workspace_mcp' ? 'tool-category-toggle-google_workspace_mcp' : `toggle-tool-section-${section.id}`}
                       >
                         <div className="flex items-center gap-1.5 min-w-0">
                           {isExpanded ? (
@@ -1098,20 +1117,24 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                             key={t.id}
                                             draggable
                                             onDragStart={(e) => handleDragStartTool(e, t)}
-                                            className="group relative flex items-start gap-2 p-2 bg-[#0d1117] hover:bg-[#161b22] border border-[#30363d] hover:border-sky-500/50 rounded-lg transition-all cursor-grab active:cursor-grabbing shadow-xs"
+                                            title={t.name}
+                                            className="group relative flex items-start gap-2 p-2 bg-[#0d1117] hover:bg-[#161b22] border border-[#30363d] hover:border-sky-400 rounded-lg transition-all cursor-grab active:cursor-grabbing shadow-xs hover:shadow-md hover:shadow-sky-950/30"
                                             data-testid={`gcp-mcp-tool-${t.id}`}
                                           >
-                                            <div className="mt-0.5 text-gray-500 group-hover:text-gray-300">
+                                            <div className="mt-0.5 text-gray-500 group-hover:text-sky-400 transition-colors">
                                               <GripVertical className="w-3 h-3" />
                                             </div>
 
-                                            <div className="p-1 rounded bg-[#161b22] border border-[#30363d] shrink-0 mt-0.5">
+                                            <div className="p-1 rounded bg-[#161b22] border border-[#30363d] group-hover:border-sky-500/40 shrink-0 mt-0.5 transition-colors">
                                               {getToolIcon(t)}
                                             </div>
 
                                             <div className="min-w-0 flex-1">
                                               <div className="flex items-center justify-between gap-1">
-                                                <span className="text-[11px] font-bold text-gray-200 group-hover:text-white truncate">
+                                                <span
+                                                  title={t.name}
+                                                  className="text-[11px] font-bold text-gray-200 group-hover:text-sky-300 truncate transition-colors"
+                                                >
                                                   {t.name}
                                                 </span>
                                                 <div className="flex items-center gap-1 shrink-0">
@@ -1153,6 +1176,75 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                               );
                             })}
                           </div>
+                        ) : section.isWorkspaceGroup ? (
+                          /* Dedicated list of Google Workspace MCP Servers */
+                          <div className="space-y-1.5 pl-1 pt-1 border-t border-[#30363d]/40">
+                            {section.tools.map((t) => {
+                              const isAttached = selectedAgent?.tools?.some((at) => at.id === t.id);
+
+                              return (
+                                <div
+                                  key={t.id}
+                                  draggable
+                                  onDragStart={(e) => handleDragStartTool(e, t)}
+                                  onClick={() => onOpenEditTool(t)}
+                                  title={t.name}
+                                  className="group relative flex items-start gap-2 p-2 bg-[#0d1117] hover:bg-[#161b22] border border-[#30363d] hover:border-emerald-400 rounded-lg transition-all cursor-grab active:cursor-grabbing shadow-xs hover:shadow-md hover:shadow-emerald-950/30"
+                                  data-testid={`workspace-mcp-tool-${t.id}`}
+                                >
+                                  <div className="mt-0.5 text-gray-500 group-hover:text-emerald-400 transition-colors">
+                                    <GripVertical className="w-3 h-3" />
+                                  </div>
+
+                                  <div className="p-1 rounded bg-[#161b22] border border-[#30363d] group-hover:border-emerald-500/40 shrink-0 mt-0.5 transition-colors">
+                                    {getToolIcon(t)}
+                                  </div>
+
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span
+                                        title={t.name}
+                                        className="text-[11px] font-bold text-gray-200 group-hover:text-emerald-300 truncate transition-colors"
+                                      >
+                                        {t.name}
+                                      </span>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        {renderLaunchStageBadge(t.mcpConfig?.launchStage || 'Preview')}
+                                        {isAttached && (
+                                          <span className="text-[8px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold shrink-0">
+                                            Attached
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    {t.mcpConfig?.serverUrl && (
+                                      <div className="text-[9px] font-mono text-emerald-400/90 truncate mt-0.5">
+                                        {t.mcpConfig.serverUrl}
+                                      </div>
+                                    )}
+                                    <p className="text-[10px] text-gray-400 line-clamp-2 leading-tight mt-0.5">
+                                      {t.description}
+                                    </p>
+                                  </div>
+
+                                  {/* Quick Actions */}
+                                  <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onOpenEditTool(t);
+                                      }}
+                                      className="p-1 rounded text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"
+                                      title="Configure tool properties"
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         ) : (
                           <div className="space-y-2 pt-1 border-t border-[#30363d]/40">
                             {section.tools.map((t) => {
@@ -1170,7 +1262,8 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                   key={t.id}
                                   draggable
                                   onDragStart={(e) => handleDragStartTool(e, t)}
-                                  className={`group relative flex items-start gap-2 p-2 bg-[#0d1117] hover:bg-[#161b22] border border-[#30363d] ${hoverBorderClass} rounded-lg transition-all cursor-grab active:cursor-grabbing shadow-xs`}
+                                  title={t.name}
+                                  className={`group relative flex items-start gap-2 p-2 bg-[#0d1117] hover:bg-[#161b22] border border-[#30363d] ${hoverBorderClass} rounded-lg transition-all cursor-grab active:cursor-grabbing shadow-xs hover:shadow-md`}
                                   data-testid={`tool-item-${t.id}`}
                                 >
                                   <div className="mt-0.5 text-gray-500 group-hover:text-gray-300">
@@ -1183,7 +1276,10 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
 
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-center justify-between gap-1">
-                                      <span className="text-[11px] font-bold text-gray-200 group-hover:text-white truncate">
+                                      <span
+                                        title={t.name}
+                                        className="text-[11px] font-bold text-gray-200 group-hover:text-white truncate"
+                                      >
                                         {t.name}
                                       </span>
                                       <div className="flex items-center gap-1 shrink-0">

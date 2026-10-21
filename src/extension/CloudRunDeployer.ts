@@ -97,6 +97,7 @@ export interface CloudRunDeployOptions {
   projectId: string;
   region?: string;
   serviceName?: string;
+  serviceAccount?: string;
   cpu?: string;
   memory?: string;
   minInstances?: number;
@@ -414,6 +415,7 @@ export class CloudRunDeployer {
       projectId,
       region,
       serviceName,
+      serviceAccount: options.serviceAccount,
       cpu,
       memory,
       minInstances,
@@ -517,6 +519,8 @@ export class CloudRunDeployer {
             description: options.document?.description,
             deployedResourceUri: cloudRunResourceUri,
             serviceUrl,
+            serviceAccount: options.serviceAccount,
+            document: options.document,
             governance: options.governance,
             onLog: (text, stream) => this.emitLog(targetDir, bridge, text, stream),
           });

@@ -165,7 +165,7 @@
 | [**TASK-248**](#task-248) | v1.2.0 | Samples / Retail Merchandising A2UI | Retail Vendor Onboarding & Trade Promotion Deal Desk A2UI Sample (`resource/samples/retail_vendor_deal_desk_a2ui/`) | **Complete** | TASK-215, TASK-221, TASK-222 |
 | [**TASK-249**](#task-249) | v1.2.0 | Interactive Chat | Interactive Chat GFM Markdown Table Rendering Support (`ChatMessageRenderer.tsx`) | **Complete** | TASK-110 |
 | [**TASK-250**](#task-250) | v1.2.0 | Samples & A2UI | Standardize Default A2UI Configuration Across A2UI Samples & Sub-Agents (`A2UIConfigSection`, `A2UISurfaceRenderer`, `LocalRunnerScriptProvider`) | **Complete** | TASK-221, TASK-222, TASK-241 |
-| [**TASK-251**](#task-251) | v1.2.0 | MCP / Workspace | Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom) | **Not Started** | TASK-120, TASK-130, TASK-135 |
+| [**TASK-251**](#task-251) | v1.2.0 | MCP / Workspace | Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom) | **Completed** | TASK-120, TASK-130, TASK-135 |
 | [**TASK-252**](#task-252) | v1.2.0 | MCP / GitHub | Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth) | **Not Started** | TASK-120, TASK-130, TASK-135 |
 
 ---
@@ -5864,7 +5864,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 <a id="task-251"></a>
 
 ### [TASK-251] Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom)
-* **Status**: **Not Started**
+* **Status**: **Completed**
 * **Release**: `v1.2.0`
 * **Category / Group**: MCP / Google Workspace Tools (`developers.google.com/workspace/guides/configure-mcp-servers`)
 * **Dependencies**: `TASK-120`, `TASK-130`, `TASK-135`

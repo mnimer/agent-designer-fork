@@ -1049,6 +1049,7 @@ export class WebviewMessageRouter {
         projectId: payload.projectId,
         region: payload.region,
         serviceName: payload.serviceName,
+        serviceAccount: payload.serviceAccount,
         cpu: payload.cpu,
         memory: payload.memory,
         minInstances: payload.minInstances,

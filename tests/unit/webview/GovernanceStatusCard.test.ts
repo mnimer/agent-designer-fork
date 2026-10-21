@@ -16,6 +16,8 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   hasChatTriggerNode,
   hasTestSuiteTriggerNode,
@@ -23,6 +25,8 @@ import {
   DEFAULT_SHARED_GATEWAY_ID,
   DEFAULT_MODEL_ARMOR_TEMPLATE_ID,
   DEFAULT_GEMINI_ENTERPRISE_APP_ID,
+  DEFAULT_GEMINI_ENTERPRISE_AUTH_MODE,
+  GEMINI_ENTERPRISE_OAUTH_REDIRECT_URI,
 } from '../../../src/webview/components/deployment/GovernanceStatusCard';
 import { GcpDiscoveryManager } from '../../../src/extension/GcpDiscoveryManager';
 import { AgentWorkflowDocument } from '../../../src/shared/types';
@@ -95,7 +99,7 @@ describe('GovernanceStatusCard & Enterprise Governance Logic (TASK-217 & TASK-21
     assert.equal(hasTestSuiteTriggerNode(testTriggerDoc), true);
   });
 
-  it('should default publishToGeminiEnterprise to true ONLY when a Chat Trigger exists, and runCloudEvaluation to false', () => {
+  it('should default publishToGeminiEnterprise to false (hiding Gemini Enterprise fields until checked) and auth mode to service_account', () => {
     // Without Chat Trigger -> publishToGeminiEnterprise must be false
     const govWithoutChat = createDefaultGovernanceConfig(baseDoc);
     assert.equal(govWithoutChat.enableAgentGateway, true);
@@ -103,8 +107,10 @@ describe('GovernanceStatusCard & Enterprise Governance Logic (TASK-217 & TASK-21
     assert.equal(govWithoutChat.modelArmorTemplateId, DEFAULT_MODEL_ARMOR_TEMPLATE_ID);
     assert.equal(govWithoutChat.runCloudEvaluation, false);
     assert.equal(govWithoutChat.publishToGeminiEnterprise, false);
+    assert.equal(govWithoutChat.geminiEnterpriseAuthMode, DEFAULT_GEMINI_ENTERPRISE_AUTH_MODE);
+    assert.equal(govWithoutChat.geminiEnterpriseServiceAccount, '');
 
-    // With Chat Trigger -> publishToGeminiEnterprise must default to true
+    // With Chat Trigger -> publishToGeminiEnterprise defaults to false until checked by the user
     const chatDoc: AgentWorkflowDocument = {
       ...baseDoc,
       nodes: [
@@ -124,11 +130,88 @@ describe('GovernanceStatusCard & Enterprise Governance Logic (TASK-217 & TASK-21
     assert.equal(govWithChat.agentGatewayId, 'default-shared-agent-gateway');
     assert.equal(govWithChat.modelArmorTemplateId, 'enterprise-baseline');
     assert.equal(govWithChat.runCloudEvaluation, false);
-    assert.equal(govWithChat.publishToGeminiEnterprise, true);
+    assert.equal(govWithChat.publishToGeminiEnterprise, false);
     assert.equal(govWithChat.geminiEnterpriseAppId, '');
     assert.equal(DEFAULT_GEMINI_ENTERPRISE_APP_ID, '');
     assert.equal(govWithChat.geminiEnterpriseLocation, 'global');
+    assert.equal(govWithChat.geminiEnterpriseAuthMode, 'service_account');
+    assert.equal(govWithChat.geminiEnterpriseServiceAccount, '');
     assert.equal(govWithChat.geminiEnterpriseBindGateway, true);
+    assert.equal(
+      GEMINI_ENTERPRISE_OAUTH_REDIRECT_URI,
+      'https://vertexaisearch.cloud.google.com/oauth-redirect'
+    );
+
+    // When savedGov explicitly sets publishToGeminiEnterprise: true and user_oauth, preserve it
+    const savedChatDoc: AgentWorkflowDocument = {
+      ...chatDoc,
+      deployment: {
+        target: 'agent_engine',
+        outputFolder: './agent_app/',
+        framework: 'google-adk',
+        language: 'python',
+        governance: {
+          publishToGeminiEnterprise: true,
+          geminiEnterpriseAuthMode: 'user_oauth',
+          geminiEnterpriseServiceAccount: 'custom-sa@my-proj.iam.gserviceaccount.com',
+        },
+      },
+    };
+    const govSaved = createDefaultGovernanceConfig(savedChatDoc);
+    assert.equal(govSaved.publishToGeminiEnterprise, true);
+    assert.equal(govSaved.geminiEnterpriseAuthMode, 'user_oauth');
+    assert.equal(
+      govSaved.geminiEnterpriseServiceAccount,
+      'custom-sa@my-proj.iam.gserviceaccount.com'
+    );
+  });
+
+  it('should verify GovernanceStatusCard and Deploy Tabs render Authentication Mode, Service Account dropdown, and OAuth Redirect Instructions Modal', () => {
+    const govCardPath = path.resolve(
+      __dirname,
+      '../../../src/webview/components/deployment/GovernanceStatusCard.tsx'
+    );
+    const aeTabPath = path.resolve(
+      __dirname,
+      '../../../src/webview/components/deployment/AgentEngineDeployTab.tsx'
+    );
+    const crTabPath = path.resolve(
+      __dirname,
+      '../../../src/webview/components/deployment/CloudRunDeployTab.tsx'
+    );
+
+    const govCardContent = fs.readFileSync(govCardPath, 'utf8');
+    const aeTabContent = fs.readFileSync(aeTabPath, 'utf8');
+    const crTabContent = fs.readFileSync(crTabPath, 'utf8');
+
+    assert.ok(
+      govCardContent.includes('select-gemini-enterprise-auth-mode'),
+      'GovernanceStatusCard must render Authentication Mode dropdown'
+    );
+    assert.ok(
+      govCardContent.includes('select-gemini-enterprise-service-account'),
+      'GovernanceStatusCard must render Project Service Account dropdown when service_account mode is selected'
+    );
+    assert.ok(
+      govCardContent.includes('FETCH_GCP_SERVICE_ACCOUNTS'),
+      'GovernanceStatusCard must fetch project service accounts via FETCH_GCP_SERVICE_ACCOUNTS'
+    );
+    assert.ok(
+      govCardContent.includes('gemini-oauth-redirect-instructions-modal'),
+      'GovernanceStatusCard must define GeminiOAuthRedirectInstructionsModal'
+    );
+    assert.ok(
+      govCardContent.includes('https://vertexaisearch.cloud.google.com/oauth-redirect'),
+      'GovernanceStatusCard must display the Discovery Engine OAuth redirect URI'
+    );
+    assert.ok(
+      aeTabContent.includes('GeminiOAuthRedirectInstructionsModal'),
+      'AgentEngineDeployTab must render GeminiOAuthRedirectInstructionsModal post-deploy when user_oauth is selected'
+    );
+    assert.ok(
+      crTabContent.includes('GeminiOAuthRedirectInstructionsModal'),
+      'CloudRunDeployTab must render GeminiOAuthRedirectInstructionsModal post-deploy when user_oauth is selected'
+    );
   });
 
   it('should transform raw Model Armor templates and ensure enterprise-baseline is always available first', () => {

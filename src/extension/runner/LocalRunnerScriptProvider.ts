@@ -64,6 +64,27 @@ try:
 except Exception:
     pass
 
+# Shim httpx2 / httpx AsyncClient.send for Google Remote MCP servers (*.googleapis.com/mcp)
+# Google ESF returns HTTP 403 alongside valid JSON-RPC 2.0 result bodies (e.g. tools/list or isError tool results)
+# when local ADC tokens lack Workspace OAuth scopes; normalizing status_code=200 for JSON-RPC bodies prevents
+# mcp.client.streamable_http from discarding the JSON-RPC response and raising MCPError.
+for _httpx_mod_name in ('httpx2', 'httpx'):
+    try:
+        _httpx_mod = __import__(_httpx_mod_name)
+        _orig_httpx_send = _httpx_mod.AsyncClient.send
+        def _make_mcp_send(_orig):
+            async def _mcp_jsonrpc_send(self, request, *args, **kwargs):
+                resp = await _orig(self, request, *args, **kwargs)
+                if resp.status_code in (401, 403) and '.googleapis.com/mcp' in str(getattr(request, 'url', '')):
+                    ctype = resp.headers.get('content-type', '').lower()
+                    if ctype.startswith('application/json'):
+                        resp.status_code = 200
+                return resp
+            return _mcp_jsonrpc_send
+        _httpx_mod.AsyncClient.send = _make_mcp_send(_orig_httpx_send)
+    except Exception:
+        pass
+
 _shared_session_service = None
 
 # Persistent background asyncio event loop so clients/sessions are not invalidated between HTTP requests
@@ -431,6 +452,8 @@ class TestHandler(BaseHTTPRequestHandler):
                         accum_texts = []
                         a2ui_surfaces = []
                         error_messages = []
+                        tool_error_texts = []
+                        finish_reasons = []
                         async for evt in runner.run_async(
                             user_id="test_user",
                             session_id=session.id,
@@ -438,6 +461,24 @@ class TestHandler(BaseHTTPRequestHandler):
                         ):
                             if hasattr(evt, 'error_message') and evt.error_message:
                                 error_messages.append(str(evt.error_message))
+                            if hasattr(evt, 'finish_reason') and evt.finish_reason:
+                                finish_reasons.append(str(evt.finish_reason))
+
+                            # Capture tool error responses in case the model finishes without a text summary
+                            evt_content = getattr(evt, 'content', None) if not isinstance(evt, dict) else evt.get('content')
+                            if evt_content:
+                                evt_parts = getattr(evt_content, 'parts', []) if not isinstance(evt_content, dict) else evt_content.get('parts', [])
+                                for ep in (evt_parts or []):
+                                    fresp = ep.get('function_response') if isinstance(ep, dict) else getattr(ep, 'function_response', None)
+                                    if fresp:
+                                        resp_obj = fresp.get('response') if isinstance(fresp, dict) else getattr(fresp, 'response', None)
+                                        if isinstance(resp_obj, dict):
+                                            if resp_obj.get('error'):
+                                                tool_error_texts.append(str(resp_obj['error']))
+                                            elif resp_obj.get('isError') and isinstance(resp_obj.get('content'), list):
+                                                for c_item in resp_obj['content']:
+                                                    if isinstance(c_item, dict) and c_item.get('text'):
+                                                        tool_error_texts.append(str(c_item['text']))
 
                             is_final = False
                             if hasattr(evt, 'is_final_response') and callable(getattr(evt, 'is_final_response')):
@@ -460,6 +501,10 @@ class TestHandler(BaseHTTPRequestHandler):
                             return combined_text
                         if error_messages:
                             raise RuntimeError("; ".join(error_messages))
+                        if tool_error_texts:
+                            return "Tool execution error: " + "; ".join(tool_error_texts)
+                        if any("MALFORMED_FUNCTION_CALL" in fr for fr in finish_reasons):
+                            return "The agent attempted a tool call, but its MCP toolset failed to load or lacked required OAuth scopes. Check the runner logs for authentication scope details."
                         return None
 
                     res = _run_coroutine(_run_adk_runner())

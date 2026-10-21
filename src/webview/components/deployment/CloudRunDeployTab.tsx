@@ -51,6 +51,7 @@ import { extractRuntimeSecrets } from '../../utils/runtimeSecrets';
 import { validateWorkflowMemory } from '../../../shared/memoryValidation';
 import {
   GovernanceStatusCard,
+  GeminiOAuthRedirectInstructionsModal,
   createDefaultGovernanceConfig,
 } from './GovernanceStatusCard';
 
@@ -114,8 +115,10 @@ export const CloudRunDeployTab: React.FC<CloudRunDeployTabProps> = ({
   const [logs, setLogs] = useState<Array<{ text: string; stream: string; timestamp: string }>>([]);
   const [deploymentMetadata, setDeploymentMetadata] = useState<CloudRunDeploymentMetadataRecord | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [showOAuthRedirectModal, setShowOAuthRedirectModal] = useState<boolean>(false);
 
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const deployInitiatedRef = useRef<boolean>(false);
 
   // Extract runtime secrets from canvas nodes
   const detectedSecrets = useMemo(() => {
@@ -180,13 +183,24 @@ export const CloudRunDeployTab: React.FC<CloudRunDeployTabProps> = ({
       if (payload.metadata) {
         setDeploymentMetadata(payload.metadata);
       }
+      if (payload.status === 'success' && deployInitiatedRef.current) {
+        deployInitiatedRef.current = false;
+        if (
+          governance.publishToGeminiEnterprise &&
+          governance.geminiEnterpriseAuthMode === 'user_oauth'
+        ) {
+          setShowOAuthRedirectModal(true);
+        }
+      } else if (payload.status === 'error' || payload.status === 'idle') {
+        deployInitiatedRef.current = false;
+      }
     });
 
     return () => {
       unsubLog();
       unsubStatus();
     };
-  }, [bridge]);
+  }, [bridge, governance.publishToGeminiEnterprise, governance.geminiEnterpriseAuthMode]);
 
   // Auto-scroll logs
   useEffect(() => {
@@ -208,6 +222,14 @@ export const CloudRunDeployTab: React.FC<CloudRunDeployTabProps> = ({
     setErrorMessage(null);
     setDeployStatus('building');
     setLogs([]);
+    deployInitiatedRef.current = true;
+
+    const effectiveServiceAccount =
+      governance.publishToGeminiEnterprise &&
+      governance.geminiEnterpriseAuthMode !== 'user_oauth' &&
+      governance.geminiEnterpriseServiceAccount?.trim()
+        ? governance.geminiEnterpriseServiceAccount.trim()
+        : undefined;
 
     if (bridge) {
       bridge.postMessage({
@@ -218,6 +240,7 @@ export const CloudRunDeployTab: React.FC<CloudRunDeployTabProps> = ({
           projectId: projectId.trim(),
           region: region.trim(),
           serviceName: serviceName.trim(),
+          serviceAccount: effectiveServiceAccount,
           cpu,
           memory,
           minInstances,
@@ -637,6 +660,12 @@ export const CloudRunDeployTab: React.FC<CloudRunDeployTabProps> = ({
           </div>
         </div>
       </div>
+
+      <GeminiOAuthRedirectInstructionsModal
+        isOpen={showOAuthRedirectModal}
+        onClose={() => setShowOAuthRedirectModal(false)}
+        projectId={projectId}
+      />
     </div>
   );
 };

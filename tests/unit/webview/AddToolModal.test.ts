@@ -61,7 +61,10 @@ describe('AddToolModal Logic & Tool Panel Alignment', () => {
       categorized.enterprise_search.length +
       categorized.system.length +
       categorized.custom.length +
-      categorized.google_cloud_mcp.length;
+      categorized.google_cloud_mcp.length +
+      categorized.google_workspace_mcp.length +
+      categorized.mcp.length;
+    assert.equal(categorized.google_workspace_mcp.length, 13);
     assert.equal(totalCategorized, AVAILABLE_TOOLS.length);
   });
 
@@ -111,7 +114,9 @@ describe('AddToolModal Logic & Tool Panel Alignment', () => {
         categorized.enterprise_search.length +
         categorized.system.length +
         categorized.custom.length +
-        categorized.google_cloud_mcp.length,
+        categorized.google_cloud_mcp.length +
+        categorized.google_workspace_mcp.length +
+        categorized.mcp.filter((t) => t.id.startsWith('databricks_mcp_') || t.id.startsWith('snowflake_mcp_')).length,
       dynamicTools.length
     );
   });
