@@ -12,7 +12,7 @@
  * - Spacing layout complies with 8pt grid system.
  */
 
-import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect, Suspense } from 'react';
 import {
   useNodesState,
   useEdgesState,
@@ -49,11 +49,21 @@ import { createSampleNodesAndEdges } from '../utils/sampleUtils';
 // UI Tabs & Panels
 import { CanvasTab } from './tabs/CanvasTab';
 import { CodeGenerationPanel } from './codegen/CodeGenerationPanel';
-import { SettingsPage } from './settings/SettingsPage';
-import { AddToolModal } from './inspector/AddToolModal';
-import { MissingFeaturesModal } from './insights/MissingFeaturesModal';
-import { SampleInfoModal } from './Canvas/SampleInfoModal';
 import { PanelDivider } from './Canvas/PanelDivider';
+
+// Lazy-loaded Off-Screen Views & Modals (import { SettingsPage } from './settings/SettingsPage')
+const SettingsPage = React.lazy(() =>
+  import('./settings/SettingsPage').then((m) => ({ default: m.SettingsPage }))
+);
+const AddToolModal = React.lazy(() =>
+  import('./inspector/AddToolModal').then((m) => ({ default: m.AddToolModal }))
+);
+const MissingFeaturesModal = React.lazy(() =>
+  import('./insights/MissingFeaturesModal').then((m) => ({ default: m.MissingFeaturesModal }))
+);
+const SampleInfoModal = React.lazy(() =>
+  import('./Canvas/SampleInfoModal').then((m) => ({ default: m.SampleInfoModal }))
+);
 
 // Custom Hooks
 import { useDiagramHistory } from '../hooks/useDiagramHistory';
@@ -1853,7 +1863,9 @@ export function FlowCanvas() {
   return (
     <div className="h-screen w-screen flex flex-col bg-[#0d1117] text-[#c9d1d9] select-none overflow-hidden font-sans">
       {activeEditorTab === 'settings' ? (
-        <SettingsPage />
+        <Suspense fallback={null}>
+          <SettingsPage />
+        </Suspense>
       ) : (
         /* RESIZABLE SPLIT CONTAINER (Diagram Editor on Top, Tabs at Bottom) */
         <div
@@ -1988,30 +2000,42 @@ export function FlowCanvas() {
       )}
 
       {/* Tool Attachment Modal */}
-      <AddToolModal
-        isOpen={!!toolModalAgentId}
-        onClose={() => setToolModalAgentId(null)}
-        onSelectTool={handleAttachTool}
-        existingToolIds={((targetAgentForTool?.data as AgentData)?.tools || []).map((t) => t.id)}
-        tools={tools}
-        targetAgentName={(targetAgentForTool?.data as AgentData)?.label}
-      />
+      {toolModalAgentId && (
+        <Suspense fallback={null}>
+          <AddToolModal
+            isOpen={!!toolModalAgentId}
+            onClose={() => setToolModalAgentId(null)}
+            onSelectTool={handleAttachTool}
+            existingToolIds={((targetAgentForTool?.data as AgentData)?.tools || []).map((t) => t.id)}
+            tools={tools}
+            targetAgentName={(targetAgentForTool?.data as AgentData)?.label}
+          />
+        </Suspense>
+      )}
 
       {/* Architectural Advisor Modal */}
-      <MissingFeaturesModal
-        isOpen={isAdvisorOpen}
-        onClose={() => setIsAdvisorOpen(false)}
-      />
+      {isAdvisorOpen && (
+        <Suspense fallback={null}>
+          <MissingFeaturesModal
+            isOpen={isAdvisorOpen}
+            onClose={() => setIsAdvisorOpen(false)}
+          />
+        </Suspense>
+      )}
 
       {/* Sample Information Modal Dialog */}
-      <SampleInfoModal
-        sample={activeInfoSample}
-        onClose={() => setActiveInfoSample(null)}
-        onOpenSample={(sample) => {
-          setActiveInfoSample(null);
-          handleOpenSampleInNewTab(sample);
-        }}
-      />
+      {activeInfoSample && (
+        <Suspense fallback={null}>
+          <SampleInfoModal
+            sample={activeInfoSample}
+            onClose={() => setActiveInfoSample(null)}
+            onOpenSample={(sample) => {
+              setActiveInfoSample(null);
+              handleOpenSampleInNewTab(sample);
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

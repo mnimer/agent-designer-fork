@@ -21,7 +21,7 @@
  * - Decision 10: Always-Visible '+' Quick-Add Button: All Agent cards (Core Agents, Flow & Control Agents, and Multi-Agent Patterns), Tool cards (Native ADK, Google Cloud MCP, Google Workspace MCP, MCP Servers, and Custom Tools), and Trigger cards render an always-visible 24x24px ('w-6 h-6') '+' button on the right side of the card for one-click canvas or agent attachment (Sample cards use their dedicated 'Info' and 'New File' buttons instead).
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, Suspense } from 'react';
 import { 
   Bot, 
   Workflow, 
@@ -85,7 +85,9 @@ import { GOOGLE_WORKSPACE_MCP_SERVERS, getGoogleWorkspaceMcpServerById } from '.
 import { isDatabricksMcpTool } from '../../data/databricksMcpServers';
 import { isSnowflakeMcpTool } from '../../data/snowflakeMcpServers';
 import { PatternType, AgentKind, ToolDefinition, AgentData, TriggerType, SampleWorkflowDefinition, GoogleCloudLaunchStage } from '../../types';
-import { SampleInfoModal } from './SampleInfoModal';
+const SampleInfoModal = React.lazy(() =>
+  import('./SampleInfoModal').then((m) => ({ default: m.SampleInfoModal }))
+);
 
 /**
  * Shared Tailwind CSS classes for the always-visible 24x24px ('w-6 h-6') '+' quick-add button
@@ -1758,12 +1760,14 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
   )}
 
   {/* Sample Information Modal Dialog (fallback when not mounted at root) */}
-  {!onOpenSampleInfo && (
-    <SampleInfoModal
-      sample={activeInfoSample}
-      onClose={() => setActiveInfoSample(null)}
-      onOpenSample={onOpenSample}
-    />
+  {!onOpenSampleInfo && activeInfoSample && (
+    <Suspense fallback={null}>
+      <SampleInfoModal
+        sample={activeInfoSample}
+        onClose={() => setActiveInfoSample(null)}
+        onOpenSample={onOpenSample}
+      />
+    </Suspense>
   )}
 </div>
   );

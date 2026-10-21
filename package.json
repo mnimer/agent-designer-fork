@@ -221,7 +221,7 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile:extension": "esbuild ./src/extension/extension.ts --bundle --outfile=dist/extension/extension.js --external:vscode --format=cjs --platform=node --sourcemap",
-    "compile:webview": "vite build && cat node_modules/@xyflow/react/dist/style.css >> dist/webview/assets/index.css && esbuild src/webview/main.tsx --bundle --outfile=dist/webview/assets/index.js --format=iife --platform=browser --define:process.env.NODE_ENV=\\\"production\\\" --loader:.css=empty",
+    "compile:webview": "vite build && cat node_modules/@xyflow/react/dist/style.css >> dist/webview/assets/index.css",
     "compile": "npm run compile:extension && npm run compile:webview",
     "build": "npm run compile",
     "watch:extension": "esbuild ./src/extension/extension.ts --bundle --outfile=dist/extension/extension.js --external:vscode --format=cjs --platform=node --sourcemap --watch",

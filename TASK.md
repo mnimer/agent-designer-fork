@@ -1,18 +1,24 @@
-# Active Task Tracker: TASK-251 (TASK-241) & TASK-203..TASK-212
+# Active Task Tracker: Webview Code-Splitting & Lazy Loading + TASK-251
 
-**Task**: TASK-251 / TASK-241: Google Workspace Remote MCP Servers Catalog & Gemini Enterprise User OAuth
-**Milestone**: v1.5.5 / v1.2.0 (Google Workspace Remote MCP Servers Catalog)
+**Task**: Webview Bundle Code-Splitting, Lazy Loading & Build Optimization
+**Milestone**: v1.5.5
 **Status**: Completed
 **Author**: Mike Nimer <mikenimer@google.com>
 
 ## Objective
-Add a dedicated **Google Workspace MCP Servers** catalog section to the Tools Sidebar (`PaletteCard.tsx` and `AddToolModal.tsx`) exposing all 13 official Google Workspace Remote MCP Servers (`gmailmcp`, `drivemcp`, `docsmcp`, `sheetsmcp`, `slidesmcp`, `calendarmcp`, `chatmcp`, `meetmcp`, `tasksmcp`, `people`, `formsmcp`, `keepmcp`, `classroommcp`), a **Google Workspace MCP Setup & OAuth Scope Helper** panel in `McpToolDrawer.tsx`, Gemini Enterprise User OAuth vs. Service Account deployment controls in `GovernanceStatusCard.tsx` and `AgentGovernanceProvisioner.ts`, and prompt-driven codegen/Terraform support in `resource/prompts/*.prompt.txt`.
+1. Add always-visible `24x24px` (`+`) quick-add buttons to all Agent, Tool, and Trigger palette cards (`PaletteCard.tsx` & `CanvasTab.tsx`) — **Completed & Committed (`fd188a5`)**.
+2. Split the 1.54 MB Vite / 3.1 MB esbuild webview bundle into <500 kB vendor/feature chunks (`vite.config.ts`), remove the redundant monolithic `esbuild` overwrite from `package.json`, load `assets/index.js` as an ES module (`<script type="module" nonce="..." src="...">`) in `WebviewHtmlProvider.ts`, and lazy-load off-screen drawers, modals, settings, and bottom panel sub-tabs via `React.lazy` and `Suspense` in `FlowCanvas.tsx`, `CanvasTab.tsx`, `PaletteCard.tsx`, and `CodeGenerationPanel.tsx`.
 
 ## Subtasks
-- [x] **Subtask 1: Types, Catalog Data, Categorization & Codegen Prompts**
-- [x] **Subtask 2: UI Components (`PaletteCard.tsx`, `AddToolModal.tsx`, `McpToolDrawer.tsx`, `ToolDrawerShell.tsx`) & Unit Tests**
-- [x] **Subtask 3: Gemini Enterprise Authentication Mode (`service_account` vs `user_oauth`), Project Service Account Selector & Post-Deploy OAuth Redirect URI Modal**
-- [x] **Subtask 4: Manager Review, Full Test Suite Verification & Documentation Sync**
+- [x] **Subtask 1: Quick-Add (`+`) Button on Agent, Tool, and Trigger Cards (`fd188a5`)**
+- [x] **Subtask 2: Create Isolated Failing Unit Test (`tests/unit/webview/WebviewCodeSplitting.test.ts`)**
+- [x] **Subtask 3: Configure `vite.config.ts`, `package.json`, and `WebviewHtmlProvider.ts` for ES Module Chunking**
+- [x] **Subtask 4: Lazy-Load Off-Screen Drawers, Modals, Settings, and Bottom Tabs (`FlowCanvas.tsx`, `CanvasTab.tsx`, `PaletteCard.tsx`, `CodeGenerationPanel.tsx`)**
+- [x] **Subtask 5: Build Verification (<500 kB per chunk, zero warnings) & Unit Test Suite Verification**
+
+---
+
+## Previously Completed: TASK-251 (TASK-241) Google Workspace Remote MCP Servers Catalog & Gemini Enterprise User OAuth
 
 ---
 

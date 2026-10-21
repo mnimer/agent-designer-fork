@@ -4,14 +4,16 @@
  * Purpose:
  * Renders the bottom workbench split panel in the agent designer webview.
  * Coordinates tab selection between Code Generation, Deployment, Test Runner,
- * and Interactive Chat, delegating specific rendering to dedicated sub-components.
+ * and Interactive Chat, delegating specific rendering to dedicated lazy-loaded sub-components.
  *
  * Architectural Decisions:
+ * - Author: Mike Nimer <mikenimer@google.com>
  * - Modular design following "Props In, Events Up" paradigm.
  * - Spacing layout complies with 8pt grid system.
+ * - Lazy-loads sub-tabs via React.lazy and Suspense to reduce initial bundle load time.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import {
   Code2,
   Server,
@@ -25,13 +27,21 @@ import {
 
 import { AgentData, GeneratedFile, GenerationConfig } from '../../types';
 import { AgentWorkflowDocument } from '../../../shared/types';
-import { DeploymentTab } from '../deployment/DeploymentTab';
 import { useOptionalPluginSettings } from '../../context/SettingsContext';
 
-// Decomposed Sub-Tabs
-import { CodePreviewTab } from '../tabs/CodePreviewTab';
-import { ChatTab } from '../tabs/ChatTab';
-import { EvaluationTab } from '../tabs/EvaluationTab';
+// Lazy-loaded Decomposed Sub-Tabs
+const CodePreviewTab = React.lazy(() =>
+  import('../tabs/CodePreviewTab').then((m) => ({ default: m.CodePreviewTab }))
+);
+const DeploymentTab = React.lazy(() =>
+  import('../deployment/DeploymentTab').then((m) => ({ default: m.DeploymentTab }))
+);
+const ChatTab = React.lazy(() =>
+  import('../tabs/ChatTab').then((m) => ({ default: m.ChatTab }))
+);
+const EvaluationTab = React.lazy(() =>
+  import('../tabs/EvaluationTab').then((m) => ({ default: m.EvaluationTab }))
+);
 
 interface CodeGenerationPanelProps {
   config: GenerationConfig;
@@ -265,55 +275,57 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
 
       {/* Main Tab Content */}
       <div className="flex-1 overflow-hidden relative min-h-0 w-full">
-        {/* Code Generation Tab */}
-        <div className={activeTab === 'codegen' ? 'h-full w-full' : 'hidden'}>
-          <CodePreviewTab
-            config={config}
-            onChangeConfig={onChangeConfig}
-            onGenerateCode={onGenerateCode}
-            onStopGenerate={onStopGenerate}
-            generatedFiles={generatedFiles}
-            isGenerating={isGenerating}
-            tokenUsage={tokenUsage}
-            onOpenMissingAdvisor={onOpenMissingAdvisor}
-          />
-        </div>
+        <Suspense fallback={null}>
+          {/* Code Generation Tab */}
+          <div className={activeTab === 'codegen' ? 'h-full w-full' : 'hidden'}>
+            <CodePreviewTab
+              config={config}
+              onChangeConfig={onChangeConfig}
+              onGenerateCode={onGenerateCode}
+              onStopGenerate={onStopGenerate}
+              generatedFiles={generatedFiles}
+              isGenerating={isGenerating}
+              tokenUsage={tokenUsage}
+              onOpenMissingAdvisor={onOpenMissingAdvisor}
+            />
+          </div>
 
-        {/* Deployment Tab */}
-        <div className={activeTab === 'deployment' ? 'h-full w-full flex flex-col min-h-0' : 'hidden'}>
-          <DeploymentTab
-            generationConfig={config}
-            generatedFiles={generatedFiles}
-            agents={agents}
-            document={workflowDoc}
-            onUpdateGenerationConfig={onChangeConfig}
-          />
-        </div>
+          {/* Deployment Tab */}
+          <div className={activeTab === 'deployment' ? 'h-full w-full flex flex-col min-h-0' : 'hidden'}>
+            <DeploymentTab
+              generationConfig={config}
+              generatedFiles={generatedFiles}
+              agents={agents}
+              document={workflowDoc}
+              onUpdateGenerationConfig={onChangeConfig}
+            />
+          </div>
 
-        {/* Test Runner Tab */}
-        <div className={activeTab === 'test_runner' ? 'h-full w-full' : 'hidden'}>
-          <EvaluationTab
-            testPrompts={testPrompts}
-            agents={agents}
-            config={config}
-            document={workflowDoc}
-            onNavigateToDeployment={() => handleSelectTab('deployment')}
-            hasChatTrigger={hasChatTrigger}
-            onOpenPromptInChat={handleOpenPromptInChat}
-          />
-        </div>
+          {/* Test Runner Tab */}
+          <div className={activeTab === 'test_runner' ? 'h-full w-full' : 'hidden'}>
+            <EvaluationTab
+              testPrompts={testPrompts}
+              agents={agents}
+              config={config}
+              document={workflowDoc}
+              onNavigateToDeployment={() => handleSelectTab('deployment')}
+              hasChatTrigger={hasChatTrigger}
+              onOpenPromptInChat={handleOpenPromptInChat}
+            />
+          </div>
 
-        {/* Interactive Chat Tab */}
-        <div className={activeTab === 'chat' ? 'h-full w-full' : 'hidden'}>
-          <ChatTab
-            document={workflowDoc}
-            config={config}
-            chatConfig={chatConfig}
-            agents={agents}
-            onNavigateToDeployment={() => handleSelectTab('deployment')}
-            externalPrompt={pendingChatPrompt}
-          />
-        </div>
+          {/* Interactive Chat Tab */}
+          <div className={activeTab === 'chat' ? 'h-full w-full' : 'hidden'}>
+            <ChatTab
+              document={workflowDoc}
+              config={config}
+              chatConfig={chatConfig}
+              agents={agents}
+              onNavigateToDeployment={() => handleSelectTab('deployment')}
+              externalPrompt={pendingChatPrompt}
+            />
+          </div>
+        </Suspense>
       </div>
     </div>
   );
