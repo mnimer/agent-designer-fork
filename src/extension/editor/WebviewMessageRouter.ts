@@ -44,6 +44,8 @@ import {
   DEFAULT_MODEL_ARMOR_TEMPLATES_FALLBACK,
   DEFAULT_GEMINI_ENTERPRISE_APPS_FALLBACK,
 } from '../GcpDiscoveryManager';
+import { DEFAULT_MODEL_GARDEN_CATALOG } from '../../webview/data/modelCatalog';
+import { formatSkillMarkdownWithFrontmatter } from '../../webview/data/defaultSkills';
 import { UnifiedDeployRunner } from '../deployer/UnifiedDeployRunner';
 import {
   WebviewToExtensionMessage,
@@ -209,6 +211,16 @@ export class WebviewMessageRouter {
             },
           });
         }
+
+        const providerClass = this.provider?.constructor as any;
+        if (providerClass?.pendingOpenSettingsMenu) {
+          const menuToOpen = providerClass.pendingOpenSettingsMenu;
+          providerClass.pendingOpenSettingsMenu = null;
+          await bridge.postMessage({
+            type: 'OPEN_PLUGIN_SETTINGS',
+            payload: { menu: menuToOpen },
+          });
+        }
       } catch (err) {
         console.error('[AgentEditorProvider] Error in READY handler:', err);
       }
@@ -293,14 +305,44 @@ export class WebviewMessageRouter {
         bridge
       );
 
+      const selectedCodeGenModel =
+        (typeof payload.codeGenModel === 'string' && payload.codeGenModel.trim().length > 0
+          ? payload.codeGenModel.trim()
+          : undefined) || 'gemini-3.8-flash';
+
       const secretsProvider = SecretsProvider.getInstance();
-      const apiKey = (await secretsProvider.getGeminiApiKey()) || process.env.GEMINI_API_KEY || '';
+      const useAdcMode = payload.authMode === 'adc' || selectedCodeGenModel.endsWith('-maas') || selectedCodeGenModel.startsWith('publishers/');
+      let apiKey = '';
+      if (!useAdcMode) {
+        if (selectedCodeGenModel.startsWith('claude-')) {
+          apiKey =
+            (await secretsProvider.getProviderApiKey('anthropic')) ||
+            process.env.ANTHROPIC_API_KEY ||
+            '';
+        } else if (
+          (selectedCodeGenModel.startsWith('openai/') &&
+            !selectedCodeGenModel.endsWith('-maas')) ||
+          selectedCodeGenModel.startsWith('gpt-') ||
+          selectedCodeGenModel.startsWith('o3-')
+        ) {
+          apiKey =
+            (await secretsProvider.getProviderApiKey('openai')) ||
+            process.env.OPENAI_API_KEY ||
+            '';
+        } else if (selectedCodeGenModel.startsWith('grok-')) {
+          apiKey =
+            (await secretsProvider.getProviderApiKey('grok')) ||
+            process.env.XAI_API_KEY ||
+            '';
+        } else if (selectedCodeGenModel.startsWith('gemini-')) {
+          apiKey = (await secretsProvider.getGeminiApiKey()) || process.env.GEMINI_API_KEY || '';
+        }
+      }
 
       const targetDirPath = this.documentSyncManager.resolveTargetDirectory(document, payload.outputFolder);
       const targetDir = vscode.Uri.file(targetDirPath);
 
       this.runnerManager?.clearRunnerLogs?.();
-      await this.documentSyncManager.cleanTargetDirectory(targetDirPath, document);
 
       const deploymentTarget =
         payload.deploymentTarget ||
@@ -313,9 +355,39 @@ export class WebviewMessageRouter {
         language: payload.targetLanguage,
         deploymentTarget: deploymentTarget,
         apiKey: apiKey,
-        model: 'gemini-3.8-flash',
+        model: selectedCodeGenModel,
         signal: abortController.signal,
       });
+
+      // Synthesize skills/<skill.name>/SKILL.md files for any skills attached to agents in the workflow
+      if (result.success && Array.isArray(payload.document?.nodes)) {
+        const existingPaths = new Set(result.files.map((f) => f.path));
+        for (const node of payload.document.nodes) {
+          const attachedSkills = (node as any)?.data?.skills;
+          if (Array.isArray(attachedSkills)) {
+            for (const skill of attachedSkills) {
+              if (skill && typeof skill.name === 'string' && skill.name.trim().length > 0) {
+                const skillPath = `skills/${skill.name.trim()}/SKILL.md`;
+                if (!existingPaths.has(skillPath)) {
+                  existingPaths.add(skillPath);
+                  result.files.push({
+                    path: skillPath,
+                    language: 'markdown',
+                    content: formatSkillMarkdownWithFrontmatter({
+                      id: skill.id || `skill-${skill.name.trim()}`,
+                      name: skill.name.trim(),
+                      title: skill.title || skill.name.trim(),
+                      description: skill.description || `${skill.title || skill.name} skill`,
+                      instructions: skill.instructions || `# ${skill.title || skill.name}\n`,
+                      scope: skill.scope || 'agent',
+                    }),
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
 
       // If code generation was cancelled, suppress file writes and notify webview
       if (abortController.signal.aborted || result.cancelled) {
@@ -339,6 +411,7 @@ export class WebviewMessageRouter {
       }
 
       if (result.success && result.files.length > 0) {
+        await this.documentSyncManager.cleanTargetDirectory(targetDirPath, document);
         try {
           for (const file of result.files) {
             const fileUri = vscode.Uri.joinPath(targetDir, file.path);
@@ -363,6 +436,7 @@ export class WebviewMessageRouter {
               files: result.files,
               targetDirectory: targetDir.fsPath,
               modelUsed: result.modelUsed,
+              tokenUsage: result.tokenUsage,
             },
           });
         } catch (writeErr: any) {
@@ -594,6 +668,9 @@ export class WebviewMessageRouter {
       try {
         const secretsProvider = SecretsProvider.getInstance();
         const apiKeySet = await secretsProvider.hasGeminiApiKey();
+        const anthropicKeySet = await secretsProvider.hasProviderApiKey('anthropic');
+        const openaiKeySet = await secretsProvider.hasProviderApiKey('openai');
+        const grokKeySet = await secretsProvider.hasProviderApiKey('grok');
         let parsedDoc: any = {};
         try {
           parsedDoc = JSON.parse(document.getText() || '{}');
@@ -603,6 +680,9 @@ export class WebviewMessageRouter {
           type: 'SETTINGS_SYNC',
           payload: {
             geminiApiKeySet: apiKeySet || Boolean(process.env.GEMINI_API_KEY),
+            anthropicApiKeySet: anthropicKeySet || Boolean(process.env.ANTHROPIC_API_KEY),
+            openaiApiKeySet: openaiKeySet || Boolean(process.env.OPENAI_API_KEY),
+            grokApiKeySet: grokKeySet || Boolean(process.env.XAI_API_KEY),
             targetFramework: parsedDoc.framework || 'google-adk',
             targetLanguage: parsedDoc.language || 'python',
           },
@@ -616,18 +696,47 @@ export class WebviewMessageRouter {
       if (!payload) return;
       try {
         const secretsProvider = SecretsProvider.getInstance();
+        let updatedAnySecret = false;
+
         if (payload.geminiApiKey !== undefined) {
+          updatedAnySecret = true;
           if (payload.geminiApiKey === '') {
             await secretsProvider.deleteGeminiApiKey();
           } else {
             await secretsProvider.setGeminiApiKey(payload.geminiApiKey);
           }
+        }
+        if (payload.anthropicApiKey !== undefined) {
+          updatedAnySecret = true;
+          await secretsProvider.setProviderApiKey('anthropic', payload.anthropicApiKey);
+        }
+        if (payload.openaiApiKey !== undefined) {
+          updatedAnySecret = true;
+          await secretsProvider.setProviderApiKey('openai', payload.openaiApiKey);
+        }
+        if (payload.grokApiKey !== undefined) {
+          updatedAnySecret = true;
+          await secretsProvider.setProviderApiKey('grok', payload.grokApiKey);
+        }
 
+        if (
+          updatedAnySecret ||
+          payload.authMode !== undefined ||
+          payload.codeGenDefaultModel !== undefined
+        ) {
           const apiKeySet = await secretsProvider.hasGeminiApiKey();
+          const anthropicKeySet = await secretsProvider.hasProviderApiKey('anthropic');
+          const openaiKeySet = await secretsProvider.hasProviderApiKey('openai');
+          const grokKeySet = await secretsProvider.hasProviderApiKey('grok');
           await bridge.postMessage({
             type: 'SETTINGS_SYNC',
             payload: {
               geminiApiKeySet: apiKeySet || Boolean(process.env.GEMINI_API_KEY),
+              anthropicApiKeySet: anthropicKeySet || Boolean(process.env.ANTHROPIC_API_KEY),
+              openaiApiKeySet: openaiKeySet || Boolean(process.env.OPENAI_API_KEY),
+              grokApiKeySet: grokKeySet || Boolean(process.env.XAI_API_KEY),
+              authMode: payload.authMode,
+              codeGenDefaultModel: payload.codeGenDefaultModel,
               targetFramework: payload.targetFramework || 'google-adk',
               targetLanguage: payload.targetLanguage || 'python',
             },
@@ -1424,6 +1533,89 @@ export class WebviewMessageRouter {
             error: err?.message || String(err),
           },
         });
+      }
+    });
+
+    bridge.onMessage('FETCH_MODEL_GARDEN_MODELS', async (payload: any, rawMessage?: any) => {
+      try {
+        const projectId = payload?.projectId;
+        const forceRefresh = payload?.forceRefresh || false;
+        const result = await this.gcpDiscoveryManager.getModelGardenModels(projectId, forceRefresh);
+        await bridge.postMessage({
+          type: 'MODEL_GARDEN_MODELS_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            models: result.models,
+            source: result.source,
+            projectId: result.projectId,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'MODEL_GARDEN_MODELS_RESPONSE',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            models: DEFAULT_MODEL_GARDEN_CATALOG,
+            source: 'fallback',
+            projectId: payload?.projectId,
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('ENABLE_MODEL_GARDEN_MODEL', async (payload: any, rawMessage?: any) => {
+      try {
+        const modelId = payload?.modelId || '';
+        const publisherModel = payload?.publisherModel;
+        const enabled = payload?.enabled !== false;
+        const projectId = payload?.projectId;
+        const result = await this.gcpDiscoveryManager.enableModelGardenModel(
+          modelId,
+          publisherModel,
+          enabled,
+          projectId
+        );
+        await bridge.postMessage({
+          type: 'MODEL_GARDEN_MODEL_ENABLED',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            success: result.success,
+            modelId: result.modelId,
+            publisherModel: result.publisherModel,
+            enabled: result.enabled,
+            verified: result.verified,
+            consoleUrl: result.consoleUrl,
+            source: result.source,
+            error: result.error,
+          },
+        });
+      } catch (err: any) {
+        await bridge.postMessage({
+          type: 'MODEL_GARDEN_MODEL_ENABLED',
+          correlationId: rawMessage?.correlationId,
+          payload: {
+            success: false,
+            modelId: payload?.modelId || '',
+            publisherModel: payload?.publisherModel,
+            enabled: false,
+            source: 'fallback',
+            error: err?.message || String(err),
+          },
+        });
+      }
+    });
+
+    bridge.onMessage('OPEN_EXTERNAL_URL', async (payload: any) => {
+      const targetUrl = typeof payload?.url === 'string' ? payload.url.trim() : '';
+      if (targetUrl && (targetUrl.startsWith('https://') || targetUrl.startsWith('http://'))) {
+        try {
+          await vscode.env.openExternal(vscode.Uri.parse(targetUrl));
+        } catch (err: any) {
+          this.outputChannel?.appendLine(
+            `[AgentEditorProvider] Failed to open external URL ${targetUrl}: ${err?.message || err}`
+          );
+        }
       }
     });
 

@@ -97,6 +97,7 @@ export interface UseExtensionSyncOptions {
   setGeneratedFiles: React.Dispatch<React.SetStateAction<GeneratedFile[]>>;
   setHasGeneratedCode: (hasCode: boolean) => void;
   setIsGenerating: (generating: boolean) => void;
+  setCodeGenTokenUsage?: (usage: { inputTokens: number; outputTokens: number } | null) => void;
   recordSnapshot: (nodes: Node<any>[], edges: Edge[], options?: { description?: string }) => void;
   setDiscoveredSamples?: React.Dispatch<React.SetStateAction<SampleWorkflowDefinition[]>>;
 }
@@ -122,6 +123,7 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
     setGeneratedFiles,
     setHasGeneratedCode,
     setIsGenerating,
+    setCodeGenTokenUsage,
     recordSnapshot,
     setDiscoveredSamples,
   } = options;
@@ -387,9 +389,11 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
       if (payload.success && payload.files && payload.files.length > 0) {
         setGeneratedFiles(payload.files);
         setHasGeneratedCode(true);
+        setCodeGenTokenUsage?.(payload.tokenUsage || null);
       } else {
         setGeneratedFiles([]);
         setHasGeneratedCode(false);
+        setCodeGenTokenUsage?.(null);
       }
     });
 

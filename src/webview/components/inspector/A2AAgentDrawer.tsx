@@ -63,6 +63,7 @@ import {
   ADK_DELEGATION_PATTERNS,
   ToolDefinition
 } from '../../types';
+import { AgentSkillsSection } from './AgentSkillsSection';
 import { parseA2AAgentCard } from '../../../shared/a2aCardParser';
 import { validateAgentIdentifier, sanitizeAgentIdentifier } from '../../../shared/identifierValidation';
 
@@ -783,6 +784,14 @@ export const A2AAgentDrawer: React.FC<A2AAgentDrawerProps> = ({
                   No capabilities detected yet. Auto-detected from agent-card.json when parsed.
                 </div>
               )}
+            </div>
+
+            {/* SECTION 3: Attached Agent Skills (Global / Agent-Scoped) */}
+            <div className="pt-3 border-t border-[#30363d]">
+              <AgentSkillsSection
+                skills={agent.skills || []}
+                onChangeSkills={(skills) => onUpdateAgent({ skills })}
+              />
             </div>
           </div>
         )}

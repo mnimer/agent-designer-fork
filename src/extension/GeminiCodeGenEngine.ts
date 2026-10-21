@@ -21,7 +21,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
-import { GeneratedFile, CodeGenRequest, CodeGenResult } from '../shared/codegen/types';
+import { GeneratedFile, CodeGenRequest, CodeGenResult, CodeGenTokenUsage } from '../shared/codegen/types';
 import { sanitizeAgentIdentifier } from '../shared/identifierValidation';
 
 export interface AssertionEvaluationRequest {
@@ -41,6 +41,7 @@ export interface AssertionEvaluationResult {
 
 export class GeminiCodeGenEngine {
   private extensionPath: string;
+  private lastTokenUsage?: CodeGenTokenUsage;
 
   constructor(extensionPath: string) {
     this.extensionPath = extensionPath;
@@ -53,12 +54,18 @@ export class GeminiCodeGenEngine {
    * @returns Result containing the array of generated source files or error details.
    */
   public async generateCode(request: CodeGenRequest): Promise<CodeGenResult> {
+    this.lastTokenUsage = undefined;
     const doc = request.document;
     const framework = request.framework || doc.framework || 'google-adk';
     const language = request.language || doc.language || 'python';
     const target = request.deploymentTarget || doc.metadata?.deploymentTarget || 'agent-engine';
     const model = request.model || 'gemini-3.8-flash';
-    const apiKey = request.apiKey || process.env.GEMINI_API_KEY || '';
+    const apiKey =
+      request.apiKey !== undefined
+        ? request.apiKey
+        : model.startsWith('gemini-')
+        ? process.env.GEMINI_API_KEY || ''
+        : '';
 
     if (request.signal?.aborted) {
       return {
@@ -117,11 +124,26 @@ export class GeminiCodeGenEngine {
       // 4. Finalize generated files: ensure dependencies, extract agent cards, and sanitize Python source
       const finalizedFiles = this.finalizeGeneratedFiles(doc, postProcessedFiles);
 
+      const estimatedInputTokens = Math.max(1, Math.ceil(interpolatedPrompt.length / 4));
+      const totalOutputChars = finalizedFiles.reduce((acc, f) => acc + (f.content?.length || 0), 0);
+      const estimatedOutputTokens = Math.max(1, Math.ceil(totalOutputChars / 4));
+      const tokenUsage: CodeGenTokenUsage = {
+        inputTokens:
+          this.lastTokenUsage && this.lastTokenUsage.inputTokens > 0
+            ? this.lastTokenUsage.inputTokens
+            : estimatedInputTokens,
+        outputTokens:
+          this.lastTokenUsage && this.lastTokenUsage.outputTokens > 0
+            ? this.lastTokenUsage.outputTokens
+            : estimatedOutputTokens,
+      };
+
       return {
         success: true,
         files: finalizedFiles,
         modelUsed: model,
         timestamp: new Date().toISOString(),
+        tokenUsage,
       };
     } catch (err: any) {
       if (request.signal?.aborted || err?.name === 'AbortError') {
@@ -373,23 +395,122 @@ export class GeminiCodeGenEngine {
   };
 
   /**
-   * Calls Gemini REST API using an API key.
+   * Calls Direct Provider REST API using an API key (Gemini API, Anthropic, OpenAI, or xAI Grok).
    *
    * @param prompt Prompt string
    * @param apiKey API key
    * @param model Model name
    */
   private async callGeminiWithApiKey(prompt: string, apiKey: string, model: string, signal?: AbortSignal): Promise<GeneratedFile[]> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const jsonInstructionSuffix =
+      '\n\nOutput format: Return ONLY a raw JSON array of file objects (starting immediately with `[` and ending with `]`, with no introductory prose, no architectural summary, and no markdown code fences), where each object has "path", "description", and "content" properties.';
+
+    // 1. Direct Anthropic API Key
+    if (model.startsWith('claude-') || apiKey.startsWith('sk-ant-')) {
+      const cleanModel = model.replace(/^publishers\/anthropic\/models\//, '');
+      const supportsAdaptiveThinking =
+        cleanModel.includes('fable-5') ||
+        cleanModel.includes('opus-5') ||
+        cleanModel.includes('sonnet-5') ||
+        cleanModel.includes('haiku-5') ||
+        cleanModel.includes('opus-4-6') ||
+        cleanModel.includes('sonnet-4-6');
+      const anthropicBody: Record<string, any> = {
+        model: cleanModel,
+        max_tokens: 64000,
+        stream: true,
+        messages: [{ role: 'user', content: prompt + jsonInstructionSuffix }],
+      };
+      if (supportsAdaptiveThinking) {
+        anthropicBody.thinking = { type: 'adaptive' };
+        anthropicBody.output_config = { effort: 'low' };
+      }
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(anthropicBody),
+        signal,
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Anthropic API error (${response.status}): ${errText}`);
+      }
+      const candidateText = await this.extractAnthropicResponseText(response);
+      if (!candidateText) {
+        throw new Error('Anthropic API returned empty content.');
+      }
+      return this.parseGeminiResponse(candidateText);
+    }
+
+    // 2. Direct OpenAI or xAI Grok API Key
+    if (
+      model.startsWith('openai/') ||
+      model.startsWith('gpt-') ||
+      model.startsWith('o3-') ||
+      model.startsWith('grok-') ||
+      apiKey.startsWith('xai-')
+    ) {
+      const isGrok = model.startsWith('grok-') || apiKey.startsWith('xai-');
+      const endpoint = isGrok
+        ? 'https://api.x.ai/v1/chat/completions'
+        : 'https://api.openai.com/v1/chat/completions';
+      const cleanModel = model.replace(/^openai\//, '');
+      const isReasoningModel = cleanModel.startsWith('o3-') || cleanModel.startsWith('o1-');
+
+      const requestPayload: Record<string, any> = {
+        model: cleanModel,
+        stream: true,
+        messages: [{ role: 'user', content: prompt + jsonInstructionSuffix }],
+      };
+      if (!isReasoningModel) {
+        requestPayload.temperature = 0.2;
+      }
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestPayload),
+        signal,
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`${isGrok ? 'xAI Grok' : 'OpenAI'} API error (${response.status}): ${errText}`);
+      }
+      const candidateText = await this.extractOpenAiResponseText(response);
+      if (!candidateText) {
+        throw new Error(`${isGrok ? 'xAI Grok' : 'OpenAI'} API returned empty content.`);
+      }
+      return this.parseGeminiResponse(candidateText);
+    }
+
+    // 3. Google Gemini REST API (SSE streaming avoids Node undici 300s headersTimeout on large multi-agent repos)
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+    const generationConfig: Record<string, any> = {
+      temperature: 0.2,
+      maxOutputTokens: 65536,
+      responseMimeType: 'application/json',
+      responseSchema: this.fileArraySchema,
+    };
+    if (model.includes('gemini-4')) {
+      generationConfig.thinkingConfig = {
+        thinkingLevel: 'LOW',
+      };
+    }
 
     const requestBody = {
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 65536,
-        responseMimeType: 'application/json',
-        responseSchema: this.fileArraySchema,
-      },
+      generationConfig,
     };
 
     const response = await fetch(url, {
@@ -404,8 +525,7 @@ export class GeminiCodeGenEngine {
       throw new Error(`Gemini API error (${response.status}): ${errText}`);
     }
 
-    const data: any = await response.json();
-    const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const candidateText = await this.extractGeminiResponseText(response);
     if (!candidateText) {
       throw new Error('Gemini API returned empty candidate content.');
     }
@@ -434,7 +554,11 @@ export class GeminiCodeGenEngine {
   }
 
   /**
-   * Invokes Vertex AI Gemini endpoint using Google ADC OAuth access token.
+   * Invokes Vertex AI endpoint using Google ADC OAuth access token.
+   * Supports:
+   * 1. Google Gemini Foundation Models (`publishers/google/models/{model}:generateContent`)
+   * 2. Anthropic Claude Partner Models (`publishers/anthropic/models/{model}:rawPredict`)
+   * 3. Vertex AI Model Garden MaaS Models (`/endpoints/openapi/chat/completions` for Qwen, DeepSeek, OpenAI OSS, Llama)
    *
    * @param prompt Prompt text
    * @param model Model name
@@ -448,9 +572,269 @@ export class GeminiCodeGenEngine {
     projectId: string,
     signal?: AbortSignal
   ): Promise<GeneratedFile[]> {
-    const location = process.env.GOOGLE_CLOUD_LOCATION || process.env.GOOGLE_CLOUD_REGION || process.env.CLOUD_ML_REGION || 'global';
+    const jsonInstructionSuffix =
+      '\n\nOutput format: Return ONLY a raw JSON array of file objects (starting immediately with `[` and ending with `]`, with no introductory prose, no architectural summary, and no markdown code fences), where each object has "path", "description", and "content" properties.';
+
+    // Route 1: Anthropic Claude Partner Models on Vertex AI (:streamRawPredict)
+    // NOTE: On Vertex AI, :rawPredict is a unary RPC that buffers the entire response until completion
+    // (exceeding Node.js undici's 300s headersTimeout on large multi-agent repositories that take ~350-400s).
+    // :streamRawPredict returns HTTP 200 headers in ~1s and streams SSE events (including 30s keepalive pings)
+    // continuously until all files finish generating.
+    if (model.startsWith('claude-') || model.includes('publishers/anthropic/models/')) {
+      const shortClaudeModel = model.replace(/^publishers\/anthropic\/models\//, '');
+      const supportsAdaptiveThinking =
+        shortClaudeModel.includes('fable-5') ||
+        shortClaudeModel.includes('opus-5') ||
+        shortClaudeModel.includes('sonnet-5') ||
+        shortClaudeModel.includes('haiku-5') ||
+        shortClaudeModel.includes('opus-4-6') ||
+        shortClaudeModel.includes('sonnet-4-6');
+      const candidateLocations = ['global', 'us-east5', 'us-central1'];
+      let primaryErrorText = '';
+      let primaryStatus = 404;
+
+      for (const loc of candidateLocations) {
+        const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
+        const url = `https://${host}/v1/projects/${projectId}/locations/${loc}/publishers/anthropic/models/${shortClaudeModel}:streamRawPredict`;
+
+        const requestPayload: Record<string, any> = {
+          anthropic_version: 'vertex-2023-10-16',
+          max_tokens: 64000,
+          stream: true,
+          messages: [
+            {
+              role: 'user',
+              content: prompt + jsonInstructionSuffix,
+            },
+          ],
+        };
+        if (supportsAdaptiveThinking) {
+          requestPayload.thinking = { type: 'adaptive' };
+          requestPayload.output_config = { effort: 'low' };
+        }
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Goog-User-Project': projectId,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestPayload),
+          signal,
+        });
+
+        if (response.ok) {
+          const candidateText = await this.extractAnthropicResponseText(response);
+          if (!candidateText) {
+            throw new Error(`Vertex AI Anthropic model "${shortClaudeModel}" returned empty content.`);
+          }
+          return this.parseGeminiResponse(candidateText);
+        }
+
+        const errText = await response.text();
+        if (response.status === 400) {
+          throw new Error(
+            `Vertex AI Anthropic model "${shortClaudeModel}" request error (HTTP 400): ${errText}`
+          );
+        }
+        if (!primaryErrorText || primaryStatus === 404) {
+          primaryStatus = response.status;
+          primaryErrorText = errText;
+        }
+      }
+
+      if (
+        primaryStatus === 429 ||
+        primaryErrorText.includes('RESOURCE_EXHAUSTED') ||
+        primaryErrorText.includes('Quota exceeded')
+      ) {
+        throw new Error(
+          `Vertex AI Anthropic model "${shortClaudeModel}" exceeded per-minute token or request quota in GCP project "${projectId}" (HTTP 429 RESOURCE_EXHAUSTED). Wait 60 seconds and retry, request a quota increase for "online_prediction_input_tokens_per_minute_per_base_model" in Google Cloud Console (https://console.cloud.google.com/iam-admin/quotas?project=${projectId}), or switch to Gemini 3.8 Flash / Gemini 4 Argon.`
+        );
+      }
+
+      if (primaryStatus === 404 || primaryStatus === 403 || primaryErrorText.includes('NOT_FOUND') || primaryErrorText.includes('PERMISSION_DENIED')) {
+        throw new Error(
+          `Vertex AI Partner Model "${shortClaudeModel}" (publishers/anthropic/models/${shortClaudeModel}) is not enabled in GCP project "${projectId}" (HTTP ${primaryStatus}). Partner models like Anthropic Claude must first be enabled in the Google Cloud Console Model Garden (https://console.cloud.google.com/vertex-ai/model-garden?project=${projectId}) before use, or switch to an enabled MaaS / Gemini model.`
+        );
+      }
+
+      throw new Error(
+        `Vertex AI Anthropic model "${shortClaudeModel}" error in GCP project "${projectId}" (HTTP ${primaryStatus}): ${primaryErrorText}`
+      );
+    }
+
+    // Route 2a: Mistral AI Partner Models on Vertex AI (:streamRawPredict / :rawPredict)
+    if (model.startsWith('mistralai/') || model.includes('publishers/mistralai/models/')) {
+      const shortMistralModel = model
+        .replace(/^publishers\/mistralai\/models\//, '')
+        .replace(/^mistralai\//, '');
+      const candidateLocations = ['us-central1', 'europe-west4', 'global'];
+      let primaryErrorText = '';
+      let primaryStatus = 404;
+
+      for (const loc of candidateLocations) {
+        const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
+        const url = `https://${host}/v1/projects/${projectId}/locations/${loc}/publishers/mistralai/models/${shortMistralModel}:streamRawPredict`;
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Goog-User-Project': projectId,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: shortMistralModel,
+            max_tokens: 32768,
+            temperature: 0.2,
+            stream: true,
+            messages: [
+              {
+                role: 'user',
+                content: prompt + jsonInstructionSuffix,
+              },
+            ],
+          }),
+          signal,
+        });
+
+        if (response.ok) {
+          const candidateText = await this.extractOpenAiResponseText(response);
+          if (!candidateText) {
+            throw new Error(`Vertex AI Mistral model "${shortMistralModel}" returned empty content.`);
+          }
+          return this.parseGeminiResponse(candidateText);
+        }
+
+        const errText = await response.text();
+        if (response.status === 400) {
+          throw new Error(
+            `Vertex AI Mistral model "${shortMistralModel}" request error (HTTP 400): ${errText}`
+          );
+        }
+        if (!primaryErrorText || primaryStatus === 404) {
+          primaryStatus = response.status;
+          primaryErrorText = errText;
+        }
+      }
+
+      throw new Error(
+        `Vertex AI Model Garden model "mistralai/${shortMistralModel}" is not enabled or accessible in GCP project "${projectId}" (HTTP ${primaryStatus}): ${primaryErrorText}`
+      );
+    }
+
+    // Route 2b: Vertex AI Model Garden Open-Weights / MaaS Models (Qwen, DeepSeek, OpenAI OSS, Meta Llama)
+    // NOTE: OpenMaaS models (such as deepseek-ai/deepseek-v3.2-maas and deepseek-ai/deepseek-r1-0528-maas)
+    // generate at ~15-25 tokens/sec (taking ~300-750s for a full 19-file repository), so `stream: true`
+    // is mandatory to return HTTP 200 headers in ~2-9s and avoid Node.js undici's 300s headersTimeout.
+    // We also omit an explicit `max_tokens` cap so Vertex AI Dynamic Shared Quota (DSQ) does not reject
+    // ~33k-token prompts due to upfront `input_tokens + max_tokens` reservation, and pass `frequency_penalty: 0.2`
+    // to prevent autoregressive token repetition loops inside `.dockerignore` / `.gitignore`.
+    if (model.includes('/') || model.endsWith('-maas')) {
+      const maasModelId =
+        model === 'qwen/qwen-2.5-coder-32b-instruct'
+          ? 'qwen/qwen3-coder-480b-a35b-instruct-maas'
+          : model;
+      const candidateLocations =
+        maasModelId.includes('deepseek-r1') || maasModelId.startsWith('meta/')
+          ? ['us-central1', 'global']
+          : ['global', 'us-central1'];
+
+      let primaryErrorText = '';
+      let primaryStatus = 404;
+
+      for (const loc of candidateLocations) {
+        const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
+        const url = `https://${host}/v1beta1/projects/${projectId}/locations/${loc}/endpoints/openapi/chat/completions`;
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Goog-User-Project': projectId,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: maasModelId,
+            temperature: 0.2,
+            frequency_penalty: 0.2,
+            stream: true,
+            messages: [
+              {
+                role: 'user',
+                content: prompt + jsonInstructionSuffix,
+              },
+            ],
+          }),
+          signal,
+        });
+
+        if (response.ok) {
+          const candidateText = await this.extractOpenAiResponseText(response);
+          if (!candidateText) {
+            throw new Error(`Vertex AI Model Garden MaaS model "${maasModelId}" returned empty content.`);
+          }
+          return this.parseGeminiResponse(candidateText);
+        }
+
+        const errText = await response.text();
+        if (response.status === 400) {
+          throw new Error(
+            `Vertex AI Model Garden MaaS model "${maasModelId}" request error (HTTP 400): ${errText}`
+          );
+        }
+        if (!primaryErrorText || primaryStatus === 404) {
+          primaryStatus = response.status;
+          primaryErrorText = errText;
+        }
+      }
+
+      if (
+        primaryStatus === 429 ||
+        primaryErrorText.includes('RESOURCE_EXHAUSTED') ||
+        primaryErrorText.includes('Resource exhausted')
+      ) {
+        throw new Error(
+          `Vertex AI Model Garden MaaS model "${maasModelId}" encountered Dynamic Shared Quota (DSQ) exhaustion in GCP project "${projectId}" (HTTP 429 RESOURCE_EXHAUSTED). Please wait 30-60 seconds and retry, or switch to Gemini 3.8 Flash / Gemini 4 Argon.`
+        );
+      }
+
+      throw new Error(
+        `Vertex AI Model Garden model "${maasModelId}" is not enabled or accessible in GCP project "${projectId}" (HTTP ${primaryStatus}): ${primaryErrorText}`
+      );
+    }
+
+    // Route 3: Google Gemini Foundation Models (:streamGenerateContent?alt=sse)
+    // NOTE: gemini-3.8-flash, gemini-3.7-flash, and gemini-4-argon are hosted on the 'global'
+    // Vertex AI endpoint and return 404 NOT_FOUND on regional endpoints like 'us-central1'.
+    // Using SSE streaming (:streamGenerateContent?alt=sse) ensures initial HTTP 200 headers return
+    // in ~2-4s and prevents Node.js undici's 300s headersTimeout from aborting large multi-agent generations.
+    const requiresGlobalEndpoint =
+      model.includes('gemini-3.8') ||
+      model.includes('gemini-3.7') ||
+      model.includes('gemini-4');
+    const location = requiresGlobalEndpoint
+      ? 'global'
+      : process.env.GOOGLE_CLOUD_LOCATION ||
+        process.env.GOOGLE_CLOUD_REGION ||
+        process.env.CLOUD_ML_REGION ||
+        'global';
     const host = location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`;
-    const url = `https://${host}/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
+    const url = `https://${host}/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:streamGenerateContent?alt=sse`;
+
+    const generationConfig: Record<string, any> = {
+      temperature: 0.2,
+      maxOutputTokens: 65536,
+      responseMimeType: 'application/json',
+      responseSchema: this.fileArraySchema,
+    };
+    if (model.includes('gemini-4')) {
+      generationConfig.thinkingConfig = {
+        thinkingLevel: 'LOW',
+      };
+    }
 
     const requestBody = {
       contents: [
@@ -459,12 +843,7 @@ export class GeminiCodeGenEngine {
           parts: [{ text: prompt }],
         },
       ],
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 65536,
-        responseMimeType: 'application/json',
-        responseSchema: this.fileArraySchema,
-      },
+      generationConfig,
     };
 
     const response = await fetch(url, {
@@ -482,13 +861,359 @@ export class GeminiCodeGenEngine {
       throw new Error(`Vertex AI Gemini API error (${response.status}): ${errText}`);
     }
 
-    const data: any = await response.json();
-    const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const candidateText = await this.extractGeminiResponseText(response);
     if (!candidateText) {
       throw new Error('Vertex AI Gemini returned empty candidate content.');
     }
 
     return this.parseGeminiResponse(candidateText);
+  }
+
+  /**
+   * Reads a raw HTTP Response body (either as a ReadableStream or via response.text()/response.json()).
+   */
+  private async readResponseStreamOrText(response: any): Promise<{ rawText?: string; jsonData?: any }> {
+    if (response?.body && typeof response.body.getReader === 'function') {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        if (value) {
+          accumulated += decoder.decode(value, { stream: true });
+        }
+      }
+      accumulated += decoder.decode();
+      return { rawText: accumulated };
+    }
+    if (typeof response?.text === 'function') {
+      return { rawText: await response.text() };
+    }
+    if (typeof response?.json === 'function') {
+      return { jsonData: await response.json() };
+    }
+    return {};
+  }
+
+  /**
+   * Records token usage metadata from Google Gemini responses (`usageMetadata`).
+   */
+  private recordGeminiUsageMetadata(usageMetadata: any): void {
+    if (!usageMetadata || typeof usageMetadata !== 'object') {
+      return;
+    }
+    const inputTokens =
+      typeof usageMetadata.promptTokenCount === 'number' && usageMetadata.promptTokenCount > 0
+        ? usageMetadata.promptTokenCount
+        : this.lastTokenUsage?.inputTokens ?? 0;
+    const candidatesTokens =
+      typeof usageMetadata.candidatesTokenCount === 'number'
+        ? usageMetadata.candidatesTokenCount
+        : 0;
+    const thoughtsTokens =
+      typeof usageMetadata.thoughtsTokenCount === 'number'
+        ? usageMetadata.thoughtsTokenCount
+        : 0;
+    const outputTokens =
+      candidatesTokens + thoughtsTokens > 0
+        ? candidatesTokens + thoughtsTokens
+        : typeof usageMetadata.totalTokenCount === 'number' && inputTokens > 0
+        ? Math.max(0, usageMetadata.totalTokenCount - inputTokens)
+        : this.lastTokenUsage?.outputTokens ?? 0;
+
+    if (inputTokens > 0 || outputTokens > 0) {
+      this.lastTokenUsage = { inputTokens, outputTokens };
+    }
+  }
+
+  /**
+   * Records token usage metadata from Anthropic Claude responses (`usage`).
+   */
+  private recordAnthropicUsage(usage: any): void {
+    if (!usage || typeof usage !== 'object') {
+      return;
+    }
+    const prevInput = this.lastTokenUsage?.inputTokens ?? 0;
+    const prevOutput = this.lastTokenUsage?.outputTokens ?? 0;
+    const rawInput =
+      (typeof usage.input_tokens === 'number' ? usage.input_tokens : 0) +
+      (typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : 0) +
+      (typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0);
+    const inputTokens = rawInput > 0 ? rawInput : prevInput;
+    const outputTokens =
+      typeof usage.output_tokens === 'number' && usage.output_tokens > 0
+        ? usage.output_tokens
+        : prevOutput;
+    if (inputTokens > 0 || outputTokens > 0) {
+      this.lastTokenUsage = { inputTokens, outputTokens };
+    }
+  }
+
+  /**
+   * Records token usage metadata from OpenAI-compatible responses (`usage.prompt_tokens` / `usage.completion_tokens`).
+   */
+  private recordOpenAiCompatibleUsage(usage: any): void {
+    if (!usage || typeof usage !== 'object') {
+      return;
+    }
+    const inputTokens =
+      typeof usage.prompt_tokens === 'number'
+        ? usage.prompt_tokens
+        : typeof usage.input_tokens === 'number'
+        ? usage.input_tokens
+        : this.lastTokenUsage?.inputTokens ?? 0;
+    const outputTokens =
+      typeof usage.completion_tokens === 'number'
+        ? usage.completion_tokens
+        : typeof usage.output_tokens === 'number'
+        ? usage.output_tokens
+        : this.lastTokenUsage?.outputTokens ?? 0;
+    if (inputTokens > 0 || outputTokens > 0) {
+      this.lastTokenUsage = { inputTokens, outputTokens };
+    }
+  }
+
+  /**
+   * Extracts non-thought text content from either a Gemini SSE stream (:streamGenerateContent?alt=sse)
+   * or a standard unary Gemini JSON response (:generateContent).
+   */
+  private async extractGeminiResponseText(response: any): Promise<string> {
+    const { rawText, jsonData } = await this.readResponseStreamOrText(response);
+
+    if (jsonData !== undefined) {
+      this.recordGeminiUsageMetadata(jsonData?.usageMetadata);
+      const parts = jsonData?.candidates?.[0]?.content?.parts;
+      const textPart = Array.isArray(parts)
+        ? parts.find((p: any) => typeof p?.text === 'string' && !p?.thought) || parts[0]
+        : undefined;
+      return textPart?.text || '';
+    }
+
+    const trimmed = (rawText || '').trim();
+    if (!trimmed) {
+      return '';
+    }
+
+    // 1. SSE stream format (`data: {...}`)
+    if (trimmed.startsWith('data:') || trimmed.includes('\ndata:')) {
+      let accumulatedText = '';
+      const lines = trimmed.split(/\r?\n/);
+      for (const line of lines) {
+        if (!line.startsWith('data:')) {
+          continue;
+        }
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') {
+          continue;
+        }
+        try {
+          const chunk = JSON.parse(payload);
+          if (chunk?.usageMetadata) {
+            this.recordGeminiUsageMetadata(chunk.usageMetadata);
+          }
+          const parts = chunk?.candidates?.[0]?.content?.parts;
+          if (Array.isArray(parts)) {
+            for (const p of parts) {
+              if (typeof p?.text === 'string' && !p?.thought) {
+                accumulatedText += p.text;
+              }
+            }
+          }
+        } catch {
+          // Ignore malformed SSE lines
+        }
+      }
+      if (accumulatedText) {
+        return accumulatedText;
+      }
+    }
+
+    // 2. Fallback: Unary JSON object or JSON array of chunks
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        let joined = '';
+        for (const item of parsed) {
+          if (item?.usageMetadata) {
+            this.recordGeminiUsageMetadata(item.usageMetadata);
+          }
+          const parts = item?.candidates?.[0]?.content?.parts;
+          if (Array.isArray(parts)) {
+            for (const p of parts) {
+              if (typeof p?.text === 'string' && !p?.thought) {
+                joined += p.text;
+              }
+            }
+          }
+        }
+        return joined;
+      }
+      if (parsed?.usageMetadata) {
+        this.recordGeminiUsageMetadata(parsed.usageMetadata);
+      }
+      const parts = parsed?.candidates?.[0]?.content?.parts;
+      const textPart = Array.isArray(parts)
+        ? parts.find((p: any) => typeof p?.text === 'string' && !p?.thought) || parts[0]
+        : undefined;
+      return textPart?.text || '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Extracts text content from either an Anthropic SSE stream (`stream: true` on `:rawPredict` or `/v1/messages`)
+   * or a standard unary Anthropic Messages JSON response, skipping adaptive thinking blocks.
+   */
+  private async extractAnthropicResponseText(response: any): Promise<string> {
+    const { rawText, jsonData } = await this.readResponseStreamOrText(response);
+
+    if (jsonData !== undefined) {
+      this.recordAnthropicUsage(jsonData?.usage);
+      const textBlock = Array.isArray(jsonData?.content)
+        ? jsonData.content.find((b: any) => b && b.type === 'text' && typeof b.text === 'string')
+        : undefined;
+      return textBlock?.text || jsonData?.content?.[0]?.text || '';
+    }
+
+    const trimmed = (rawText || '').trim();
+    if (!trimmed) {
+      return '';
+    }
+
+    // 1. SSE stream format (`event: ...\ndata: {...}`)
+    if (trimmed.startsWith('event:') || trimmed.startsWith('data:') || trimmed.includes('\ndata:')) {
+      let accumulatedText = '';
+      const lines = trimmed.split(/\r?\n/);
+      for (const line of lines) {
+        if (!line.startsWith('data:')) {
+          continue;
+        }
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') {
+          continue;
+        }
+        try {
+          const evt = JSON.parse(payload);
+          if (evt?.type === 'error') {
+            throw new Error(evt?.error?.message || JSON.stringify(evt.error || evt));
+          }
+          if (evt?.usage) {
+            this.recordAnthropicUsage(evt.usage);
+          }
+          if (evt?.message?.usage) {
+            this.recordAnthropicUsage(evt.message.usage);
+          }
+          if (
+            evt?.type === 'content_block_delta' &&
+            evt?.delta?.type === 'text_delta' &&
+            typeof evt.delta.text === 'string'
+          ) {
+            accumulatedText += evt.delta.text;
+          } else if (
+            evt?.type === 'content_block_start' &&
+            evt?.content_block?.type === 'text' &&
+            typeof evt.content_block.text === 'string'
+          ) {
+            accumulatedText += evt.content_block.text;
+          }
+        } catch (err: any) {
+          if (err instanceof Error && !err.message.includes('Unexpected token') && !err.message.includes('JSON')) {
+            throw err;
+          }
+        }
+      }
+      if (accumulatedText) {
+        return accumulatedText;
+      }
+    }
+
+    // 2. Fallback: Unary JSON response
+    try {
+      const data = JSON.parse(trimmed);
+      if (data?.usage) {
+        this.recordAnthropicUsage(data.usage);
+      }
+      const textBlock = Array.isArray(data?.content)
+        ? data.content.find((b: any) => b && b.type === 'text' && typeof b.text === 'string')
+        : undefined;
+      return textBlock?.text || data?.content?.[0]?.text || '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Extracts text content from either an OpenAI-compatible SSE stream (`stream: true` on
+   * `/endpoints/openapi/chat/completions`, `:streamRawPredict`, or `/v1/chat/completions`)
+   * or a standard unary OpenAI Chat Completions JSON response (`choices[0].message.content`).
+   */
+  private async extractOpenAiResponseText(response: any): Promise<string> {
+    const { rawText, jsonData } = await this.readResponseStreamOrText(response);
+
+    if (jsonData !== undefined) {
+      this.recordOpenAiCompatibleUsage(jsonData?.usage);
+      return jsonData?.choices?.[0]?.message?.content || '';
+    }
+
+    const trimmed = (rawText || '').trim();
+    if (!trimmed) {
+      return '';
+    }
+
+    // 1. SSE stream format (`data: {"choices":[{"delta":{"content":"..."}}]}`)
+    if (trimmed.startsWith('data:') || trimmed.includes('\ndata:')) {
+      let accumulatedText = '';
+      const lines = trimmed.split(/\r?\n/);
+      for (const line of lines) {
+        if (!line.startsWith('data:')) {
+          continue;
+        }
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') {
+          continue;
+        }
+        try {
+          const chunk = JSON.parse(payload);
+          if (chunk?.error) {
+            throw new Error(chunk.error?.message || JSON.stringify(chunk.error));
+          }
+          if (chunk?.usage) {
+            this.recordOpenAiCompatibleUsage(chunk.usage);
+          }
+          const deltaContent = chunk?.choices?.[0]?.delta?.content;
+          if (typeof deltaContent === 'string') {
+            accumulatedText += deltaContent;
+          } else {
+            const messageContent = chunk?.choices?.[0]?.message?.content;
+            if (typeof messageContent === 'string') {
+              accumulatedText += messageContent;
+            }
+          }
+        } catch (err: any) {
+          if (err instanceof Error && !err.message.includes('Unexpected token') && !err.message.includes('JSON')) {
+            throw err;
+          }
+        }
+      }
+      if (accumulatedText) {
+        return accumulatedText;
+      }
+    }
+
+    // 2. Fallback: Unary JSON response
+    try {
+      const data = JSON.parse(trimmed);
+      if (data?.usage) {
+        this.recordOpenAiCompatibleUsage(data.usage);
+      }
+      return data?.choices?.[0]?.message?.content || '';
+    } catch {
+      return '';
+    }
   }
 
   /**
@@ -557,10 +1282,28 @@ export class GeminiCodeGenEngine {
    */
   public parseGeminiResponse(rawResponse: string): GeneratedFile[] {
     let clean = rawResponse.trim();
+    // Strip <think>...</think> blocks emitted by reasoning models (e.g. DeepSeek R1, Qwen)
+    clean = clean.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
     if (clean.startsWith('```json')) {
       clean = clean.replace(/^```json\s*/, '').replace(/\s*```$/, '');
     } else if (clean.startsWith('```')) {
       clean = clean.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    } else {
+      // Use greedy match for the outer JSON array inside code fences so inner ``` inside markdown/docstrings do not truncate
+      const greedyFenceMatch = clean.match(/```(?:json)?\s*(\[\s*\{[\s\S]*\}\s*\])\s*```/);
+      const nonGreedyFenceMatch = !greedyFenceMatch ? clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/) : null;
+      const fenceMatch = greedyFenceMatch || nonGreedyFenceMatch;
+      if (fenceMatch && fenceMatch[1].trim().startsWith('[')) {
+        clean = fenceMatch[1].trim();
+      } else if (!clean.startsWith('[') && clean.includes('[')) {
+        const arrayStartMatch = clean.match(/\[\s*\{/);
+        const firstBracket = arrayStartMatch?.index !== undefined ? arrayStartMatch.index : clean.indexOf('[');
+        const lastBracket = clean.lastIndexOf(']');
+        if (firstBracket >= 0 && lastBracket > firstBracket) {
+          clean = clean.slice(firstBracket, lastBracket + 1);
+        }
+      }
     }
 
     try {
@@ -909,13 +1652,29 @@ Instructions:
       throw new Error('Missing ADC credentials or project ID.');
     }
 
-    const location =
-      process.env.GOOGLE_CLOUD_LOCATION ||
-      process.env.GOOGLE_CLOUD_REGION ||
-      process.env.CLOUD_ML_REGION ||
-      'global';
+    const requiresGlobalEndpoint =
+      model.includes('gemini-3.8') ||
+      model.includes('gemini-3.7') ||
+      model.includes('gemini-4');
+    const location = requiresGlobalEndpoint
+      ? 'global'
+      : process.env.GOOGLE_CLOUD_LOCATION ||
+        process.env.GOOGLE_CLOUD_REGION ||
+        process.env.CLOUD_ML_REGION ||
+        'global';
     const host = location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`;
     const url = `https://${host}/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
+
+    const generationConfig: Record<string, any> = {
+      temperature: 0.1,
+      responseMimeType: 'application/json',
+      responseSchema: this.assertionSchema,
+    };
+    if (model.includes('gemini-4')) {
+      generationConfig.thinkingConfig = {
+        thinkingLevel: 'LOW',
+      };
+    }
 
     const requestBody = {
       contents: [
@@ -924,11 +1683,7 @@ Instructions:
           parts: [{ text: prompt }],
         },
       ],
-      generationConfig: {
-        temperature: 0.1,
-        responseMimeType: 'application/json',
-        responseSchema: this.assertionSchema,
-      },
+      generationConfig,
     };
 
     const response = await fetch(url, {
@@ -946,7 +1701,11 @@ Instructions:
     }
 
     const data: any = await response.json();
-    const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const parts = data.candidates?.[0]?.content?.parts;
+    const textPart = Array.isArray(parts)
+      ? parts.find((p: any) => typeof p?.text === 'string' && !p?.thought) || parts[0]
+      : undefined;
+    const candidateText = textPart?.text;
     if (!candidateText) {
       throw new Error('Vertex AI Gemini returned empty candidate content.');
     }
@@ -1203,6 +1962,20 @@ Instructions:
     const hasPostgres = nodes.some((n: any) => n.data?.memoryConfig?.type === 'postgres' || n.data?.memoryConfig?.type === 'cloud_sql') || memType === 'postgres' || memType === 'cloud_sql';
     const hasSpanner = nodes.some((n: any) => n.data?.memoryConfig?.type === 'spanner') || memType === 'spanner';
     const hasRedis = nodes.some((n: any) => n.data?.memoryConfig?.type === 'redis') || memType === 'redis';
+    const hasClaudeModel = nodes.some(
+      (n: any) =>
+        typeof n.data?.model === 'string' &&
+        (n.data.model.startsWith('claude-') || n.data.model.includes('anthropic'))
+    );
+    const hasLiteLlmModel = nodes.some(
+      (n: any) =>
+        typeof n.data?.model === 'string' &&
+        (n.data.model.includes('/') ||
+          n.data.model.startsWith('gpt-') ||
+          n.data.model.startsWith('o3-') ||
+          n.data.model.startsWith('grok-')) &&
+        !n.data.model.includes('publishers/anthropic')
+    );
 
     // 1. Ensure requirements.txt includes the appropriate backend driver packages
     const reqIndex = updatedFiles.findIndex(
@@ -1229,6 +2002,12 @@ Instructions:
       }
       if (hasRedis && !reqContent.includes('redis')) {
         additions.push('redis>=5.0.0');
+      }
+      if (hasClaudeModel && !reqContent.includes('anthropic')) {
+        additions.push('anthropic[vertex]>=0.49.0');
+      }
+      if (hasLiteLlmModel && !reqContent.includes('litellm')) {
+        additions.push('litellm>=1.60.0');
       }
 
       if (additions.length > 0) {

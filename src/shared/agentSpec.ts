@@ -92,6 +92,40 @@ export interface ModelConfig {
   plannerConfig?: PlannerConfig;
 }
 
+export type ModelAuthMode = 'adc' | 'api_keys';
+
+export type ApiKeyProviderId = 'gemini' | 'anthropic' | 'openai' | 'grok';
+
+export interface ModelCatalogItem {
+  id: string;
+  name: string;
+  company: string;
+  description: string;
+  alwaysOn?: boolean;
+  source?: 'adc_gemini' | 'model_garden' | 'api_key';
+  providerId?: ApiKeyProviderId;
+  gardenPublisherModel?: string;
+  enabledInGarden?: boolean;
+}
+
+export interface ApiKeyProviderConfig {
+  providerId: ApiKeyProviderId;
+  enabled: boolean;
+  apiKey: string;
+  enabledModels: string[];
+}
+
+export interface AgentSkillDefinition {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  instructions: string;
+  scope: 'global' | 'agent';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // ============================================================================
 // 3. Trigger Configurations & QA Test Suites
 // ============================================================================
@@ -1231,6 +1265,7 @@ export interface AgentNodeData {
   inputSchema?: StructuredInputSchema;
   standardConfig?: any; // Compatibility alias
   tools?: ToolDefinition[];
+  skills?: AgentSkillDefinition[];
   subAgents?: SubAgentRef[];
   subAgentPattern?: DelegationPattern;
   memoryType?: AgentMemoryType | MemoryType;
@@ -1340,6 +1375,7 @@ export interface GenerationConfig {
   includeTests: boolean;
   includeDocker: boolean;
   useStreaming: boolean;
+  codeGenModel?: string;
   deploymentTarget?: 'cloud_run' | 'agent_engine' | 'gke' | 'local';
   deployedResourceId?: string;
   serviceUrl?: string;

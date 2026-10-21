@@ -10,8 +10,6 @@
  * - Author: Mike Nimer <mikenimer@google.com>
  * - Modular design following "Props In, Events Up" paradigm.
  * - Spacing layout complies with 8pt grid system.
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
@@ -51,6 +49,7 @@ import { createSampleNodesAndEdges } from '../utils/sampleUtils';
 // UI Tabs & Panels
 import { CanvasTab } from './tabs/CanvasTab';
 import { CodeGenerationPanel } from './codegen/CodeGenerationPanel';
+import { SettingsPage } from './settings/SettingsPage';
 import { AddToolModal } from './inspector/AddToolModal';
 import { MissingFeaturesModal } from './insights/MissingFeaturesModal';
 import { SampleInfoModal } from './Canvas/SampleInfoModal';
@@ -86,8 +85,18 @@ export const isTriggerNode = (node?: { type?: string; data?: any }) =>
 
 export function FlowCanvas() {
   const bridge = useBridgeContext();
-  const { settings, activeEditorTab, setActiveEditorTab } = usePluginSettings();
+  const { settings, activeEditorTab, setActiveEditorTab, openSettings } = usePluginSettings();
   const { fitView, zoomOut, screenToFlowPosition } = useReactFlow();
+
+  // Listen for extension host command to open Plugin Settings (Models & Skills)
+  useEffect(() => {
+    const unsubOpenSettings = bridge.subscribe('OPEN_PLUGIN_SETTINGS', (payload: any) => {
+      openSettings(payload?.menu === 'skills' ? 'skills' : 'models');
+    });
+    return () => {
+      unsubOpenSettings();
+    };
+  }, [bridge, openSettings]);
 
   // Synchronous document pre-hydration from injected window.__INITIAL_AGENT_DOCUMENT__
   const initialInjectedDoc: AgentWorkflowDocument | null =
@@ -206,6 +215,7 @@ export function FlowCanvas() {
   const [generatedFiles, setGeneratedFiles] = useState<GeneratedFile[]>([]);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [hasGeneratedCode, setHasGeneratedCode] = useState<boolean>(false);
+  const [codeGenTokenUsage, setCodeGenTokenUsage] = useState<{ inputTokens: number; outputTokens: number } | null>(null);
 
   // ---------------------------------------------------------------------------
   // 4. Custom Hooks (Tabs, Tools, Resizing, Shortcuts, Extension Sync)
@@ -242,8 +252,6 @@ export function FlowCanvas() {
   /**
    * Dispatches CREATE_FILE_FROM_SAMPLE message to the VS Code extension host.
    * Stops any active local deployment before opening the new agent workflow.
-   *
-   * @author Mike Nimer <mikenimer@google.com>
    */
   const handleOpenSampleInNewTab = useCallback(
     (sample: SampleWorkflowDefinition) => {
@@ -425,6 +433,7 @@ export function FlowCanvas() {
     setGeneratedFiles,
     setHasGeneratedCode,
     setIsGenerating,
+    setCodeGenTokenUsage,
     recordSnapshot,
     setDiscoveredSamples,
   });
@@ -1652,6 +1661,7 @@ export function FlowCanvas() {
 
     setGeneratedFiles([]);
     setHasGeneratedCode(false);
+    setCodeGenTokenUsage(null);
     setIsGenerating(true);
 
     // NOTE: Auto-save the .agent document before initiating code generation
@@ -1671,12 +1681,15 @@ export function FlowCanvas() {
         targetLanguage: currentWorkflowDocument.language,
         deploymentTarget: config.deploymentTarget || 'agent_engine',
         outputFolder: config.outputFolder,
+        codeGenModel: config.codeGenModel || settings.codeGenDefaultModel || 'gemini-3.8-flash',
+        authMode: settings.authMode,
       },
     });
-  }, [currentWorkflowDocument, config.outputFolder, config.deploymentTarget, bridge, isPanelMaximized, bottomPanelHeight, setBottomPanelHeight, panelContainerRef]);
+  }, [currentWorkflowDocument, config.outputFolder, config.deploymentTarget, config.codeGenModel, settings.codeGenDefaultModel, settings.authMode, bridge, isPanelMaximized, bottomPanelHeight, setBottomPanelHeight, panelContainerRef]);
 
   const handleStopGenerate = useCallback(() => {
     setIsGenerating(false);
+    setCodeGenTokenUsage(null);
     bridge.postMessage({
       type: 'CANCEL_CODE_GENERATION',
     });
@@ -1954,6 +1967,7 @@ export function FlowCanvas() {
               onStopGenerate={handleStopGenerate}
               generatedFiles={generatedFiles}
               isGenerating={isGenerating}
+              tokenUsage={codeGenTokenUsage}
               onOpenMissingAdvisor={() => setIsAdvisorOpen(true)}
               hasTestSuite={hasTestSuite}
               hasGeneratedCode={hasGeneratedCode}

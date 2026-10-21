@@ -40,6 +40,100 @@ try:
 except Exception:
     pass
 
+# Ensure GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION are populated in os.environ
+# (Required by google.adk.models.anthropic_llm.Claude and Vertex AI OpenMaaS endpoints)
+if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
+    try:
+        import google.auth
+        _, _detected_project = google.auth.default()
+        if _detected_project:
+            os.environ["GOOGLE_CLOUD_PROJECT"] = _detected_project
+    except Exception:
+        pass
+os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+
+# Shim 3rd-party LLM providers in Google ADK (Anthropic Claude, Vertex AI OpenMaaS, OpenAI, xAI Grok)
+try:
+    from google.adk.models.anthropic_llm import AnthropicLlm as _AdkAnthropicLlm
+    _orig_build_anthropic_kwargs = _AdkAnthropicLlm._build_anthropic_kwargs
+    def _safe_build_anthropic_kwargs(self, *args, **kwargs):
+        built = _orig_build_anthropic_kwargs(self, *args, **kwargs)
+        model_id = str(built.get("model", "") or getattr(self, "model", ""))
+        if (
+            "fable-5" in model_id
+            or "opus-5" in model_id
+            or "sonnet-5" in model_id
+            or "haiku-5" in model_id
+        ):
+            built.pop("temperature", None)
+            built.pop("top_p", None)
+            built.pop("top_k", None)
+        return built
+    _AdkAnthropicLlm._build_anthropic_kwargs = _safe_build_anthropic_kwargs
+except Exception:
+    pass
+
+try:
+    from google.adk.models.registry import LLMRegistry as _AdkLLMRegistry
+    from google.adk.integrations.openai import OpenAILlm as _AdkOpenAILlm
+    import google.auth as _gauth
+    from google.auth.transport.requests import Request as _GAuthRequest
+
+    def _get_vertex_maas_access_token() -> str:
+        creds, proj = _gauth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        if not creds.valid:
+            creds.refresh(_GAuthRequest())
+        if proj and not os.environ.get("GOOGLE_CLOUD_PROJECT"):
+            os.environ["GOOGLE_CLOUD_PROJECT"] = proj
+        return creds.token or ""
+
+    class _VertexMaasOpenAILlm(_AdkOpenAILlm):
+        def __init__(self, model: str = "deepseek-ai/deepseek-v3.2-maas", **kwargs):
+            if not kwargs.get("base_url"):
+                proj = os.environ.get("GOOGLE_CLOUD_PROJECT") or ""
+                if not proj:
+                    try:
+                        _, proj = _gauth.default()
+                    except Exception:
+                        proj = ""
+                loc = "us-central1" if ("r1-0528" in model or "llama-3.3" in model) else ("us-east5" if "llama-4" in model else "global")
+                host = "aiplatform.googleapis.com" if loc == "global" else f"{loc}-aiplatform.googleapis.com"
+                kwargs["base_url"] = f"https://{host}/v1beta1/projects/{proj}/locations/{loc}/endpoints/openapi"
+            if not kwargs.get("api_key"):
+                kwargs["api_key"] = _get_vertex_maas_access_token
+            super().__init__(model=model, **kwargs)
+
+        @classmethod
+        def supported_models(cls) -> list[str]:
+            return [
+                r"deepseek-ai/.*",
+                r"qwen/.*",
+                r"meta/.*",
+                r"mistralai/.*",
+                r"openai/.*-maas",
+            ]
+
+    class _DirectPrefixedOpenAILlm(_AdkOpenAILlm):
+        def __init__(self, model: str = "gpt-4o", **kwargs):
+            clean_model = model[len("openai/"):] if model.startswith("openai/") else model
+            if clean_model.startswith("grok-") and not kwargs.get("base_url"):
+                kwargs["base_url"] = "https://api.x.ai/v1"
+                if not kwargs.get("api_key") and os.environ.get("XAI_API_KEY"):
+                    kwargs["api_key"] = os.environ.get("XAI_API_KEY")
+            super().__init__(model=clean_model, **kwargs)
+
+        @classmethod
+        def supported_models(cls) -> list[str]:
+            return [
+                r"openai/(?!.*-maas).*",
+                r"grok-.*",
+            ]
+
+    _AdkLLMRegistry.register(_VertexMaasOpenAILlm)
+    _AdkLLMRegistry.register(_DirectPrefixedOpenAILlm)
+except Exception:
+    pass
+
 # Shim common import discrepancies from LLM code generation for Google ADK built-in tools
 try:
     import google.adk.tools.google_search_tool

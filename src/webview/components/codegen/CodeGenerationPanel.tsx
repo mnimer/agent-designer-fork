@@ -9,8 +9,6 @@
  * Architectural Decisions:
  * - Modular design following "Props In, Events Up" paradigm.
  * - Spacing layout complies with 8pt grid system.
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 
 import React, { useState, useEffect } from 'react';
@@ -22,11 +20,13 @@ import {
   Lock,
   Maximize2,
   Minimize2,
+  Settings,
 } from 'lucide-react';
 
 import { AgentData, GeneratedFile, GenerationConfig } from '../../types';
 import { AgentWorkflowDocument } from '../../../shared/types';
 import { DeploymentTab } from '../deployment/DeploymentTab';
+import { useOptionalPluginSettings } from '../../context/SettingsContext';
 
 // Decomposed Sub-Tabs
 import { CodePreviewTab } from '../tabs/CodePreviewTab';
@@ -40,6 +40,7 @@ interface CodeGenerationPanelProps {
   onStopGenerate?: () => void;
   generatedFiles: GeneratedFile[];
   isGenerating: boolean;
+  tokenUsage?: { inputTokens: number; outputTokens: number } | null;
   onOpenMissingAdvisor?: () => void;
   hasTestSuite?: boolean;
   hasGeneratedCode?: boolean;
@@ -60,6 +61,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   onStopGenerate,
   generatedFiles,
   isGenerating,
+  tokenUsage,
   onOpenMissingAdvisor,
   hasTestSuite = false,
   hasGeneratedCode = false,
@@ -73,6 +75,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   chatConfig,
 }) => {
   const [activeTab, setActiveTab] = useState<'codegen' | 'deployment' | 'test_runner' | 'chat'>('codegen');
+  const settingsCtx = useOptionalPluginSettings();
   const [pendingChatPrompt, setPendingChatPrompt] = useState<{ text: string; timestamp: number } | null>(null);
 
   /**
@@ -229,8 +232,20 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
           )}
         </div>
 
-        {/* Panel Resizing Window Actions */}
+        {/* Panel Resizing & Settings Window Actions */}
         <div className="flex items-center gap-2">
+          {settingsCtx && (
+            <button
+              type="button"
+              onClick={() => settingsCtx.openSettings('models')}
+              title="Open Plugin Settings (Models & Skills)"
+              data-testid="bottom-panel-settings-button"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-xs font-semibold text-gray-300 hover:text-white transition-colors cursor-pointer"
+            >
+              <Settings className="w-3.5 h-3.5 text-blue-400" />
+              <span>Settings</span>
+            </button>
+          )}
           {onToggleMaximize && (
             <button
               type="button"
@@ -259,6 +274,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
             onStopGenerate={onStopGenerate}
             generatedFiles={generatedFiles}
             isGenerating={isGenerating}
+            tokenUsage={tokenUsage}
             onOpenMissingAdvisor={onOpenMissingAdvisor}
           />
         </div>

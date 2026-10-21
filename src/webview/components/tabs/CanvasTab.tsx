@@ -9,8 +9,6 @@
  * - Author: Mike Nimer <mikenimer@google.com>
  * - Modular design following "Props In, Events Up" paradigm.
  * - Spacing layout complies with 8pt grid system.
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 
 import React, { useRef } from 'react';

@@ -13,6 +13,7 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
 - You MUST generate the COMPLETE repository and emit EVERY required file in the output JSON array.
 - Emitting only a partial project or omitting core files like `agent.py` or `session_store.py` is strictly forbidden and breaks testing and deployment.
 - Every response MUST include the full project manifest: `agent.py` (with `root_agent`), `session_store.py`, FastAPI server (`server.py`), packaging, CLI runner, test suite, evaluation dataset and script, dependencies (`requirements.txt`), Dockerfile, CI/CD pipeline, Terraform infrastructure, and documentation.
+- **CONCISE IGNORE FILES RULE (ANTI-REPETITION MANDATE)**: Keep `.gitignore`, `.dockerignore`, and `.gcloudignore` strictly concise (at most 10–15 lines per file). Use a single wildcard `.env*` line (and `!.env.example` where appropriate) — NEVER enumerate individual `.env.*` suffixes (`.env.backup`, `.env.tmp`, `.env.1`, `.env.old`, etc.).
 
 ### SESSION MEMORY & PRODUCTION CHECKPOINTERS:
 - Inspect `{{WORKFLOW_JSON}}` for session memory configuration (`memoryConfig` on nodes or workflow metadata).
@@ -25,6 +26,7 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
   * `'redis'`: Cloud Memorystore (Redis / Valkey) Checkpointer (`RedisSessionStore` using `redis` client). Must support configurable `ttl_seconds` (default 86400) and execute `set(key, json.dumps(state), ex=ttl_seconds)` or `expire(key, ttl_seconds)` for session TTL management, resolving connection host/port/auth from environment variables (`REDIS_HOST`, `REDIS_PORT`, `REDIS_AUTH_SECRET`, `REDIS_PASSWORD`).
   * `'none'`: Stateless (`StatelessSessionStore`)
 - You MUST generate `session_store.py` providing `BaseSessionStore`, `StatelessSessionStore`, `InMemorySessionStore`, `SqliteSessionStore`, `FirestoreSessionStore`, `CloudSqlSessionStore`, `SpannerSessionStore`, `RedisSessionStore`, and a factory function `get_session_store(backend: Optional[str] = None) -> BaseSessionStore`.
+- **CRITICAL completeness rule for `session_store.py`**: NEVER stub `FirestoreSessionStore`, `CloudSqlSessionStore`, `SpannerSessionStore`, or `RedisSessionStore` by delegating to `InMemorySessionStore()` or `pass`. Every session store class in `session_store.py` MUST contain a complete, real production implementation using its respective driver (`google-cloud-firestore`, `sqlalchemy` + `psycopg2`, `google-cloud-spanner`, `redis`) with lazy client initialization.
 - In `server.py` and `agent.py`, import `from session_store import get_session_store` and use `session_store = get_session_store()` to persist session history and state between FastAPI request turns.
 - In `requirements.txt`, include the corresponding driver packages:
   * For Firestore: `google-cloud-firestore>=2.16.0`
@@ -105,8 +107,13 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
           * For hierarchical delegation, instantiate child `Agent(...)` instances first, then wire them into the parent's `sub_agents=[...]`.
         - Graph Workflow with Routing Edges:
           * When workflow nodes are connected via conditional or routing edges, use Google ADK's `Workflow` primitive defining explicit state transition tuples `(from_node, to_node, condition)`.
-    - Tool Definition:
+    - Tool Definition & Dual-Mode Execution Pattern:
       * Implement tools as native, type-annotated Python functions with descriptive docstrings detailing parameter purposes and return schemas so Gemini's function calling engine can accurately plan tool use.
+      * **No Default Parameter Values in Tool Signatures**: All tool functions in `tools/*.py` MUST use explicit primitive type annotations (`str`, `int`, `float`, `bool`) and MUST NOT declare default values in their function signatures (e.g. write `def query_inventory(sku_id: str) -> dict:`, NEVER `def query_inventory(sku_id: str = "SKU-1") -> dict:`). Vertex AI / ADK function calling rejects default parameter values.
+      * **Dual-Mode Tool Pattern (Live Cloud SDK + Local Zero-Config Fallback)**: Every custom tool that integrates with an external database or backend (such as AlloyDB / PostgreSQL via `ALLOYDB_URL`, Cloud Spanner via `SPANNER_INSTANCE` & `SPANNER_DATABASE`, BigQuery via `BQ_LAKEHOUSE_DATASET`, or external REST APIs) MUST implement both modes:
+        - **Live Cloud Mode**: When the connection environment variable (`ALLOYDB_URL`, `SPANNER_INSTANCE`, `BQ_LAKEHOUSE_DATASET`, etc.) is set in `os.environ`, execute the real parameterized SDK query (`psycopg2`, `google.cloud.spanner`, `google.cloud.bigquery`, `httpx`).
+        - **Local Zero-Config / Seed Fallback Mode**: When running locally in the VS Code Chat Runner, `make dev`, or `pytest` without external database environment variables configured (or when `./data/<target>/*.json` local seed files exist), gracefully fall back to rich, domain-accurate deterministic records covering all workflow entities and `testScenarios` (including all `expectedOutput` tokens) instead of raising `RuntimeError("... must be set")` when env vars are absent.
+      * **Python Syntax & Streaming Integrity Guardrail (`ast.parse` clean)**: Every generated `.py` file MUST be 100% valid Python 3.11 syntax. NEVER emit inline mid-stream typo corrections such as `if dc_ key in (...) if False else dc_key in (...):` — an identifier with a space before `if False else` is a fatal `SyntaxError` at import time!
       * ADK automatically converts typed Python functions into tool declarations and dispatches calls during the agent loop.
 
     - Structured Input Schemas (`inputSchema` / Pydantic v2 `BaseModel` for inputs):
@@ -124,7 +131,22 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
       * **Tool Observability**: In custom tool functions (`tools/*.py`), log activity using `logger.info(...)` or `logger.debug(...)` rather than `print()`.
 
 2. **File Structure to Generate**:
-   - `agent.py`: Core ADK agent module defining `root_agent` (`Agent`, `SequentialAgent`, `ParallelAgent`, `LoopAgent`, or `Workflow`) with sub-agents, system instructions, tools, and output schemas. Dynamically prepend its own directory to `sys.path` (via `Path(__file__).parent.resolve()`) before importing local sibling modules (e.g. `pydantic_models`, `tools`), and programmatically configure `os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "true")` and `os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")` at the top of `agent.py` to guarantee global Vertex AI endpoint resolution across local CLI, test suites, and container environments.
+   - `agent.py`: Core ADK agent module defining `root_agent` (`Agent`, `SequentialAgent`, `ParallelAgent`, `LoopAgent`, or `Workflow`) with sub-agents, system instructions, tools, and output schemas. Dynamically prepend its own directory to `sys.path` (via `Path(__file__).parent.resolve()`) before importing local sibling modules (e.g. `pydantic_models`, `tools`), programmatically configure `os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"` and `os.environ["GOOGLE_CLOUD_LOCATION"] = "global"` at the top of `agent.py`, and auto-discover `GOOGLE_CLOUD_PROJECT` via `google.auth.default()` if `os.environ.get("GOOGLE_CLOUD_PROJECT")` is unset so Vertex AI Anthropic / Model Garden clients always have a project ID:
+     ```python
+     os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"
+     os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
+     if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
+         try:
+             import google.auth
+             _, _default_project = google.auth.default()
+             if _default_project:
+                 os.environ["GOOGLE_CLOUD_PROJECT"] = _default_project
+         except Exception:
+             pass
+     ```
+     * **3rd-Party Model Support in `agent.py` (Anthropic Claude & Vertex AI Model Garden / OpenAI / Grok)**:
+       - **Anthropic Claude (`claude-*`)**: Google ADK (`google.adk.models.anthropic_llm.Claude`) resolves `claude-.*` models automatically when `anthropic[vertex]>=0.49.0` is installed. Whenever ANY root agent or sub-agent node uses a `claude-*` model: (1) include `anthropic[vertex]>=0.49.0` in `requirements.txt`, (2) strip any `publishers/anthropic/models/` prefix so `model="claude-opus-5-5"` is passed to `Agent(...)`, (3) never pass `temperature` in `generate_content_config` for `claude-opus-5-5` (deprecated on `claude-opus-5-5` and causes HTTP 400), and (4) keep any sub-agent that uses built-in `GoogleSearchTool` on `gemini-3.8-flash` (since `google_search` is Gemini-only).
+       - **Vertex AI Model Garden OpenMaaS (`deepseek-ai/*`, `qwen/*`, `meta/*`, `mistralai/*`, `openai/*-maas`) & OpenAI / xAI Grok (`openai/*`, `gpt-*`, `o3-*`, `grok-*`)**: Whenever ANY root agent or sub-agent node uses one of these models: (1) include `openai>=1.60.0` in `requirements.txt`, (2) import `from google.adk.integrations.openai import OpenAILlm` in `agent.py`, and (3) for Vertex AI OpenMaaS models (`deepseek-ai/*`, `qwen/*`, `meta/*`, `mistralai/*`, `openai/*-maas`), pass `model=OpenAILlm(model="<model_id>", base_url=f"https://aiplatform.googleapis.com/v1beta1/projects/{os.environ.get('GOOGLE_CLOUD_PROJECT', '')}/locations/global/endpoints/openapi", api_key=_get_vertex_maas_token)` where `_get_vertex_maas_token()` returns a fresh `google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])` access token; for direct OpenAI / Grok models, pass `model=OpenAILlm(model="<bare_model_id>")` (with `base_url="https://api.x.ai/v1", api_key=os.environ.get("XAI_API_KEY")` for `grok-*`).
    - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs and typed input schemas (`inputSchema`) (when defined in nodes). If `outputFormat` is `"text"` and no `inputSchema` is configured, DO NOT invent artificial Pydantic schema models or result classes.
    - **ZERO TEST-SUITE LEAKAGE (CRITICAL MANDATE)**: `triggerNode`, `testPrompts`, `testPayload`, and `expectedOutput` are strictly for test suites and evaluation. NEVER leak or incorporate test queries, expected assertions, or specific test entities (e.g. stock tickers, sample names) into `agent.py`, `server.py`, or agent instructions. Agent instructions must strictly reflect ONLY the node's `systemPrompt`.
    - `tools/*.py`: Tool definitions (e.g., Google Search, custom functions, MCP tools). Group tools logically by category/source. Use standard `logging.getLogger(__name__)`.
@@ -174,7 +196,7 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
       * Core ADK & Model Frameworks: `google-adk>=2.0.0`, `google-genai>=1.0.0`, `google-cloud-aiplatform[evaluation]>=1.60.0`, `pandas>=2.0.0`.
       * Web Service & Serialization: `fastapi>=0.110.0`, `uvicorn[standard]>=0.28.0`, `pydantic>=2.0.0`.
       * Test & Environment Tooling: `pytest>=8.0.0`, `pytest-asyncio>=0.23.0`, `python-dotenv>=1.0.0`.
-      * Conditional Packages: Include `google-adk[a2a]>=2.0.0` and `a2a-sdk[http-server]>=0.3.4` if A2A agent nodes exist; include tool-specific packages (e.g. `google-cloud-secret-manager>=2.16.0`, `httpx>=0.27.0`) when enabled.
+      * Conditional Packages: Include `google-adk[a2a]>=2.0.0` and `a2a-sdk[http-server]>=0.3.4` if A2A agent nodes exist; include `anthropic[vertex]>=0.49.0` if any root agent or sub-agent uses a `claude-*` model; include `openai>=1.60.0` if any root agent or sub-agent uses a Vertex AI Model Garden OpenMaaS model (`deepseek-ai/*`, `qwen/*`, `meta/*`, `mistralai/*`, `openai/*-maas`) or OpenAI / xAI Grok model (`openai/*`, `gpt-*`, `o3-*`, `grok-*`); include tool-specific packages (e.g. `google-cloud-secret-manager>=2.16.0`, `httpx>=0.27.0`) when enabled.
     - `Dockerfile`: Production container definition for Google Cloud Run:
       * Base Image: Use an official slim Python runtime (e.g., `python:3.11-slim`).
       * Environment Settings: Configure `PYTHONUNBUFFERED=1`, `GOOGLE_GENAI_USE_VERTEXAI=true`, and `GOOGLE_CLOUD_LOCATION=global`, and establish an application working directory (e.g., `/app`).
@@ -268,6 +290,8 @@ You MUST output EVERY single one of the following files in the returned JSON arr
      * When using type annotations in `test_agent.py` (such as mock signatures `async def mock_run(ctx) -> AsyncGenerator[Any, None]:`), ALWAYS import `Any` alongside `AsyncGenerator` (`from typing import Any, AsyncGenerator, Dict, List, Optional`), or place `from __future__ import annotations` at the very top of `test_agent.py`. Omitting `Any` from typing imports when type annotations are evaluated causes an immediate runtime `NameError: name 'Any' is not defined` during pytest collection.
    - **Python Syntax for Multiline `with` Statements**: When generating multi-context manager `with` statements in `test_agent.py` or other Python source files (such as multiple `patch.object(...)` calls), ALWAYS wrap the context expressions in enclosing parentheses: `with (\n    patch.object(...),\n    patch.object(...)\n):` or use explicit backslash line continuation (`\\`). Never emit an unparenthesized multiline `with` statement ending with a comma, as this triggers a fatal `SyntaxError: invalid syntax`.
    - **Strict Test Assertions**: In `test_agent.py`, test assertions MUST strictly verify the exact `expectedOutput` or `expectedOutputPattern` specified in `testScenarios` (e.g., `assert 'LockbitC2' in final_response_text`). NEVER weaken or bypass assertions by appending fallback conditions such as `or len(final_response_text) > 0` or `or True`, which make test failures impossible.
+   - **Tool & Assertion Alignment (CRITICAL)**: When testing custom tools directly for a test scenario, ensure that the tool's returned dictionary explicitly contains the scenario's `expectedOutput` substring, and assert `expectedOutput in json.dumps(result)` (rather than asserting against a single dictionary key whose value might be `"ACTIVE"` instead of `"VIP"`).
+   - **Optional Live Integration Test (`RUN_LIVE_TESTS=1`)**: Also include a `@pytest.mark.skipif(os.getenv("RUN_LIVE_TESTS") != "1", reason="Set RUN_LIVE_TESTS=1 for live Vertex AI integration")` async test using `InMemoryRunner(app=agent.app)` to verify live end-to-end ADK execution when credentials are active.
 6. `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios.
 7. `evaluate.py`: Vertex AI Agent Evaluation script using vertexai.evaluation.EvalTask.
 8. `requirements.txt`: Complete pinned dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
@@ -318,7 +342,7 @@ def get_weather(city: str) -> dict:
 
 root_agent = Agent(
     name="my_agent",
-    model="gemini-3.7-flash",
+    model="gemini-3.8-flash",
     instruction="You are a helpful assistant that ...",
     tools=[get_weather],
 )
@@ -373,7 +397,7 @@ def get_weather(city: str) -> dict:
 
 my_agent = Agent(
     name="weather_agent",
-    model="gemini-3.7-flash",
+    model="gemini-3.8-flash",
     instruction="You help users check the weather. Use the get_weather tool.",
     description="Provides weather information.",  # Important for multi-agent delegation
     tools=[get_weather]
@@ -447,7 +471,7 @@ class Evaluation(BaseModel):
 
 evaluator = Agent(
     name="evaluator",
-    model="gemini-3.7-flash",
+    model="gemini-3.8-flash",
     instruction="Evaluate the input and provide structured feedback.",
     output_schema=Evaluation,
     output_key="evaluation_result",
@@ -584,13 +608,13 @@ For a production LoopAgent with EscalationChecker, BuiltInPlanner, and grounding
 
     researcher = Agent(
         name="researcher",
-        model="gemini-3.7-flash",
+        model="gemini-3.8-flash",
         mode="task",                        # 'chat' (default) | 'task' | 'single_turn'
         output_schema=ResearchOutput,
         description="Researches a topic.",  # required for delegation
         instruction="Research the topic, then call finish_task.",
     )
-    coordinator = Agent(name="coordinator", model="gemini-3.7-flash", sub_agents=[researcher])
+    coordinator = Agent(name="coordinator", model="gemini-3.8-flash", sub_agents=[researcher])
     ```
     Modes: `task` (multi-turn, structured I/O) · `single_turn` (autonomous, no user turn). Sub-agents need a `description`; default I/O schemas (`goal`/`background` in, `result` out) are used if none set. Disabled inside graph `Workflow`s.
 
@@ -692,7 +716,7 @@ When a workflow node has `agentKind: "synthesizer"` (or is configured with `synt
      ```python
      synthesizer_agent = Agent(
          name="<synthesizer_identifier>",
-         model="gemini-3.7-flash",
+         model="gemini-3.8-flash",
          instruction="Consolidate and synthesize upstream state outputs into the structured output schema.",
          output_schema=<SynthesizerName>Output,
          tools=[]
@@ -1043,7 +1067,7 @@ When an agent exposes another agent as a callable function tool:
      ```python
      coordinator_agent = Agent(
          name="coordinator_agent",
-         model="gemini-3.7-flash",
+         model="gemini-3.8-flash",
          instruction="Decompose user requests and delegate specialized SQL queries using generate_sql_query.",
          tools=[generate_sql_query]
      )
@@ -1067,7 +1091,7 @@ When an agent exposes another agent as a callable function tool:
 # Vertex AI (prod)
 # Set: GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GOOGLE_GENAI_USE_VERTEXAI=True
 
-agent = Agent(model="gemini-3.7-flash", ...)
+agent = Agent(model="gemini-3.8-flash", ...)
 ```
 
 ### Other Models via LiteLLM
@@ -1086,7 +1110,7 @@ agent = Agent(model=LiteLlm(model="ollama_chat/llama3:instruct"), ...)
 from google.adk.models import Gemini
 
 # Vertex AI hosted Gemini (set GOOGLE_GENAI_USE_VERTEXAI=True)
-agent = Agent(model=Gemini(model="gemini-3.7-flash"), ...)
+agent = Agent(model=Gemini(model="gemini-3.8-flash"), ...)
 ```
 
 Provider guides: [Anthropic](https://adk.dev/agents/models/anthropic/index.md), [Ollama](https://adk.dev/agents/models/ollama/index.md), [vLLM](https://adk.dev/agents/models/vllm/index.md), [LiteLLM](https://adk.dev/agents/models/litellm/index.md)
@@ -1590,7 +1614,7 @@ app = App(
         token_threshold=32000,   # compact once prompt tokens reach this
         event_retention_size=5,  # keep the last 5 raw events un-compacted
         # Optional: custom summarizer model
-        summarizer=LlmEventSummarizer(llm=Gemini(model="gemini-3.7-flash")),
+        summarizer=LlmEventSummarizer(llm=Gemini(model="gemini-3.8-flash")),
     ),
 )
 ```
@@ -1764,7 +1788,7 @@ manager = A2uiSchemaManager(...)        # loads catalog(s) + few-shot examples
 instruction = manager.generate_system_prompt(...)
 
 # 2. Use it as the agent instruction
-root_agent = Agent(name="ui_agent", model="gemini-3.7-flash", instruction=instruction)
+root_agent = Agent(name="ui_agent", model="gemini-3.8-flash", instruction=instruction)
 
 # 3. Validate the model's JSON output, then wrap as an A2A DataPart
 #    (MIME application/a2ui+json) via a2ui.a2a before streaming to the client.
@@ -2149,7 +2173,7 @@ class DraftOutput(BaseModel):
 
 writer = LlmAgent(
     name="writer",
-    model="gemini-3.7-flash",
+    model="gemini-3.8-flash",
     instruction="Write a draft based on the user's request.",
     output_schema=DraftOutput,  # Always set for structured output
     output_key="draft",         # Also store in state['draft']

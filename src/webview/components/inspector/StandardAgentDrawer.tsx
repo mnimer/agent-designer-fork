@@ -75,6 +75,7 @@ import { AdkRunnerPluginsPanel } from '../deployment/DeploymentPanel';
 import { DrawerSection } from '../drawers/primitives/DrawerSection';
 import { DrawerField } from '../drawers/primitives/DrawerField';
 import { ModelSelector } from '../drawers/primitives/ModelSelector';
+import { AgentSkillsSection } from './AgentSkillsSection';
 import { validateAgentIdentifier, sanitizeAgentIdentifier } from '../../../shared/identifierValidation';
 import {
   PlannerConfig,
@@ -786,6 +787,14 @@ export const StandardAgentDrawer: React.FC<StandardAgentDrawerProps> = ({
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* GLOBAL & AGENT-SCOPED SKILLS SELECTOR */}
+            <div className="pt-3 border-t border-[#30363d]">
+              <AgentSkillsSection
+                skills={agent.skills || []}
+                onChangeSkills={(skills) => onUpdateAgent({ skills })}
+              />
             </div>
 
             {/* AGENT SKILLS SECTION (TASK-223) */}

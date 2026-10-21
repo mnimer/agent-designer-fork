@@ -19,6 +19,7 @@ import {
   AgentGovernanceConfig,
   ModelArmorTemplateItem,
   GeminiEnterpriseAppItem,
+  ModelCatalogItem,
 } from './types';
 import { GeneratedFile } from './codegen/types';
 
@@ -47,6 +48,7 @@ export type WebviewToExtensionMessage =
         targetLanguage?: LanguageTarget;
         deploymentTarget?: string;
         outputFolder?: string;
+        codeGenModel?: string;
       };
     }
   | {
@@ -131,6 +133,9 @@ export type WebviewToExtensionMessage =
       type: 'UPDATE_SETTINGS';
       payload: {
         geminiApiKey?: string;
+        anthropicApiKey?: string;
+        openaiApiKey?: string;
+        grokApiKey?: string;
         targetFramework?: FrameworkTarget;
         targetLanguage?: LanguageTarget;
       };
@@ -420,6 +425,28 @@ export type WebviewToExtensionMessage =
         sampleName?: string;
         sample?: SampleWorkflowDefinition;
       };
+    }
+  | {
+      type: 'FETCH_MODEL_GARDEN_MODELS';
+      payload?: {
+        projectId?: string;
+        forceRefresh?: boolean;
+      };
+    }
+  | {
+      type: 'ENABLE_MODEL_GARDEN_MODEL';
+      payload: {
+        modelId: string;
+        publisherModel?: string;
+        projectId?: string;
+        enabled: boolean;
+      };
+    }
+  | {
+      type: 'OPEN_EXTERNAL_URL';
+      payload: {
+        url: string;
+      };
     };
 
 // Extension Host -> Webview Events
@@ -462,6 +489,10 @@ export type ExtensionToWebviewMessage =
         targetDirectory?: string;
         modelUsed?: string;
         error?: string;
+        tokenUsage?: {
+          inputTokens: number;
+          outputTokens: number;
+        };
       };
     }
   | {
@@ -517,6 +548,9 @@ export type ExtensionToWebviewMessage =
       type: 'SETTINGS_SYNC';
       payload: {
         geminiApiKeySet: boolean;
+        anthropicApiKeySet?: boolean;
+        openaiApiKeySet?: boolean;
+        grokApiKeySet?: boolean;
         targetFramework: FrameworkTarget;
         targetLanguage: LanguageTarget;
       };
@@ -797,6 +831,28 @@ export type ExtensionToWebviewMessage =
         success: boolean;
         geminiEnterpriseAgentUri?: string;
         geminiEnterpriseConsoleUrl?: string;
+        error?: string;
+      };
+    }
+  | {
+      type: 'MODEL_GARDEN_MODELS_RESPONSE';
+      payload: {
+        models: ModelCatalogItem[];
+        source: 'gcloud' | 'fallback';
+        projectId?: string;
+        error?: string;
+      };
+    }
+  | {
+      type: 'MODEL_GARDEN_MODEL_ENABLED';
+      payload: {
+        success: boolean;
+        modelId: string;
+        publisherModel?: string;
+        enabled: boolean;
+        verified?: boolean;
+        consoleUrl?: string;
+        source: 'gcloud' | 'fallback';
         error?: string;
       };
     };

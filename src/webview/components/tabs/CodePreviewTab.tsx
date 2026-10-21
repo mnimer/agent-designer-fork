@@ -9,8 +9,8 @@
  * - Author: Mike Nimer <mikenimer@google.com>
  * - Modular design following "Props In, Events Up" paradigm.
  * - Spacing layout complies with 8pt grid system.
- *
- * @author Mike Nimer <mikenimer@google.com>
+ * - Includes Code Generation Model selector populated from enabled models in Plugin Settings
+ *   and a vertical file explorer list down the left side of the code preview viewer.
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -31,6 +31,7 @@ import {
   Check,
   Download,
   Code2,
+  Cpu,
 } from 'lucide-react';
 
 import { GeneratedFile, GenerationConfig } from '../../types';
@@ -38,6 +39,8 @@ import { AgentWorkflowDocument } from '../../../shared/types';
 import { validateTargetFolder } from '../../../shared/folderValidation';
 import { getFileColorInfo } from '../codegen/fileTypeColors';
 import { FindInFilesBar } from '../codegen/FindInFilesBar';
+import { useOptionalPluginSettings } from '../../context/SettingsContext';
+import { ADC_CORE_GEMINI_MODELS } from '../../data/modelCatalog';
 
 /**
  * Renders file text with highlighted search occurrences.
@@ -113,6 +116,7 @@ interface CodePreviewTabProps {
   onStopGenerate?: () => void;
   generatedFiles: GeneratedFile[];
   isGenerating: boolean;
+  tokenUsage?: { inputTokens: number; outputTokens: number } | null;
   onOpenMissingAdvisor?: () => void;
 }
 
@@ -123,8 +127,21 @@ export const CodePreviewTab: React.FC<CodePreviewTabProps> = ({
   onStopGenerate,
   generatedFiles,
   isGenerating,
+  tokenUsage,
   onOpenMissingAdvisor,
 }) => {
+  const settingsCtx = useOptionalPluginSettings();
+  const enabledModels =
+    settingsCtx && settingsCtx.enabledModels.length > 0
+      ? settingsCtx.enabledModels
+      : ADC_CORE_GEMINI_MODELS;
+  const defaultCodeGenModel =
+    settingsCtx?.settings.codeGenDefaultModel || 'gemini-3.8-flash';
+  const selectedCodeGenModel =
+    config.codeGenModel && enabledModels.some((m) => m.id === config.codeGenModel)
+      ? config.codeGenModel
+      : defaultCodeGenModel;
+
   const [activeFileIndex, setActiveFileIndex] = useState<number>(0);
   const [copied, setCopied] = useState(false);
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
@@ -261,6 +278,32 @@ export const CodePreviewTab: React.FC<CodePreviewTabProps> = ({
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#0d1117] text-gray-400 font-mono border border-[#30363d]">
               v2.4
             </span>
+          </div>
+
+          {/* Code Generation Model Dropdown (Populated from Enabled Models, Defaulted to Settings Radio Selection) */}
+          <div className="space-y-1.5" data-testid="codegen-model-section">
+            <label className="text-[11px] text-gray-400 font-bold uppercase tracking-tight flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-gray-200">
+                <Cpu className="w-3.5 h-3.5 text-blue-400" />
+                <span>Code Generation Model</span>
+              </span>
+              <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-500/15 text-blue-300 font-mono border border-blue-500/30">
+                {selectedCodeGenModel === defaultCodeGenModel ? 'Default' : 'Override'}
+              </span>
+            </label>
+            <select
+              data-testid="codegen-model-select"
+              value={selectedCodeGenModel}
+              onChange={(e) => onChangeConfig({ codeGenModel: e.target.value })}
+              className="w-full bg-[#0d1117] border border-[#30363d] text-xs font-mono text-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-blue-500 cursor-pointer"
+            >
+              {enabledModels.map((model) => (
+                <option key={model.id} value={model.id}>
+                  [{model.company}] {model.name} ({model.id})
+                  {model.id === defaultCodeGenModel ? ' ★ Default' : ''}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Radio Group: Google ADK vs LangGraph */}
@@ -448,73 +491,71 @@ export const CodePreviewTab: React.FC<CodePreviewTabProps> = ({
         </div>
 
         {/* Generate Code & Stop Buttons */}
-        <div className="pt-3 border-t border-[#30363d] flex items-center gap-2 shrink-0 mt-2">
-          <button
-            type="button"
-            onClick={onGenerateCode}
-            disabled={isGenerating}
-            title="Synthesize production repository using Gemini LLM"
-            className={`w-3/4 py-2.5 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg ${
-              isGenerating
-                ? 'bg-blue-600/40 text-blue-200 border-blue-500/50 cursor-wait'
-                : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400 hover:shadow-emerald-500/20 active:scale-[0.98]'
-            }`}
-          >
-            {isGenerating ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin text-blue-200" />
-                <span>Generating...</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4 fill-current text-white" />
-                <span>Generate Code</span>
-              </>
-            )}
-          </button>
+        <div className="pt-3 border-t border-[#30363d] shrink-0 mt-2 space-y-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onGenerateCode}
+              disabled={isGenerating}
+              title="Synthesize production repository using Gemini LLM"
+              className={`w-3/4 py-2.5 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg ${
+                isGenerating
+                  ? 'bg-blue-600/40 text-blue-200 border-blue-500/50 cursor-wait'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400 hover:shadow-emerald-500/20 active:scale-[0.98]'
+              }`}
+            >
+              {isGenerating ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-blue-200" />
+                  <span>Generating...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 fill-current text-white" />
+                  <span>Generate Code</span>
+                </>
+              )}
+            </button>
 
-          <button
-            type="button"
-            onClick={onStopGenerate}
-            disabled={!isGenerating}
-            className="w-1/4 py-2.5 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg bg-rose-600 hover:bg-rose-500 text-white border-rose-500 hover:shadow-rose-500/20 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Square className="w-3.5 h-3.5 fill-current" />
-            <span>Stop</span>
-          </button>
+            <button
+              type="button"
+              onClick={onStopGenerate}
+              disabled={!isGenerating}
+              className="w-1/4 py-2.5 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg bg-rose-600 hover:bg-rose-500 text-white border-rose-500 hover:shadow-rose-500/20 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Square className="w-3.5 h-3.5 fill-current" />
+              <span>Stop</span>
+            </button>
+          </div>
+
+          {!isGenerating && tokenUsage && (
+            <div
+              data-testid="codegen-token-usage"
+              className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[#0d1117] border border-[#30363d] text-[11px] font-mono text-gray-400"
+            >
+              <span data-testid="codegen-input-tokens">
+                Input Tokens: <strong className="text-blue-300">{tokenUsage.inputTokens.toLocaleString()}</strong>
+              </span>
+              <span data-testid="codegen-output-tokens">
+                Output Tokens: <strong className="text-emerald-300">{tokenUsage.outputTokens.toLocaleString()}</strong>
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* RIGHT 2/3: Code Preview Editor */}
+      {/* RIGHT 2/3: Code Preview Editor with Vertical File List Down the Left Side */}
       <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117] border border-[#30363d] rounded-xl overflow-hidden shadow-xl">
         {!isGenerating && generatedFiles.length > 0 && (
-          <div className="flex items-center justify-between px-3 bg-[#161b22] border-b border-[#30363d] overflow-x-auto shrink-0 h-9">
-            <div className="flex items-center gap-1">
-              {generatedFiles.map((file, idx) => {
-                const colorInfo = getFileColorInfo(file.name);
-                const isActive = activeFileIndex === idx;
-
-                return (
-                  <button
-                    key={file.name}
-                    onClick={() => {
-                      setActiveFileIndex(idx);
-                      setActiveMatchIndex(0);
-                    }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono rounded-t transition-colors cursor-pointer group ${
-                      isActive
-                        ? colorInfo.tabActiveClass
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-[#21262d]'
-                    }`}
-                  >
-                    <FileCode className={`w-3.5 h-3.5 ${colorInfo.iconColor}`} />
-                    <span>{file.name}</span>
-                    <span className={`text-[9px] px-1 py-0.2 rounded uppercase font-mono border ${colorInfo.badgeClass}`}>
-                      {colorInfo.badgeLabel}
-                    </span>
-                  </button>
-                );
-              })}
+          <div className="flex items-center justify-between px-3 bg-[#161b22] border-b border-[#30363d] shrink-0 h-10">
+            <div className="flex items-center gap-2 min-w-0">
+              <FileCode className="w-4 h-4 text-blue-400 shrink-0" />
+              <span className="text-xs font-mono font-bold text-gray-200 truncate">
+                {currentFile?.name || currentFile?.path || 'agent.py'}
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                Model: {selectedCodeGenModel}
+              </span>
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
@@ -594,48 +635,103 @@ export const CodePreviewTab: React.FC<CodePreviewTabProps> = ({
           activeFileIndex={activeFileIndex}
         />
 
-        <div className="flex-1 p-4 overflow-auto bg-[#0d1117] font-mono text-xs text-[#c9d1d9] select-text leading-relaxed relative">
-          <div className="absolute top-2 right-3 text-[10px] text-gray-400 uppercase font-bold tracking-wider pointer-events-none">
-            {isGenerating ? 'Generating' : 'Preview'}
-          </div>
-          {isGenerating ? (
-            <div className="h-full flex flex-col items-center justify-center text-blue-400 gap-3 py-12">
-              <RefreshCw className="w-8 h-8 animate-spin text-blue-400" />
-              <span className="text-sm font-semibold text-gray-200">Generating code with Gemini...</span>
-              <span className="text-xs text-gray-400 font-sans">Cleaning target directory & synthesizing agent files</span>
-            </div>
-          ) : generatedFiles.length > 0 && currentFile ? (
-            <div className="relative">
-              {(() => {
-                const fileColor = getFileColorInfo(currentFile.name);
+        {/* Split Body: Vertical File List on Left + Code Viewer on Right */}
+        <div className="flex-1 flex min-h-0 overflow-hidden">
+          {!isGenerating && generatedFiles.length > 0 && (
+            <aside
+              data-testid="generated-files-sidebar-list"
+              className="w-56 border-r border-[#30363d] bg-[#161b22] overflow-y-auto shrink-0 p-2 space-y-1 select-none"
+            >
+              <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                Generated Files ({generatedFiles.length})
+              </div>
+              {generatedFiles.map((file, idx) => {
+                const fileName = file.name || file.path || `file_${idx}`;
+                const colorInfo = getFileColorInfo(fileName);
+                const isActive = activeFileIndex === idx;
+
                 return (
-                  <div className="text-[10px] text-gray-400 mb-2 pb-1 border-b border-[#21262d] flex items-center justify-between font-sans">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[9px] font-mono uppercase px-1.5 py-0.2 rounded border ${fileColor.badgeClass}`}>
-                        {fileColor.badgeLabel}
-                      </span>
-                      <span>{currentFile.description}</span>
+                  <button
+                    key={fileName}
+                    type="button"
+                    data-testid={`generated-file-item-${fileName}`}
+                    onClick={() => {
+                      setActiveFileIndex(idx);
+                      setActiveMatchIndex(0);
+                    }}
+                    className={`w-full text-left flex items-center justify-between gap-2 px-2.5 py-2 text-xs font-mono rounded-lg transition-colors cursor-pointer ${
+                      isActive
+                        ? 'bg-blue-600/20 text-blue-300 border border-blue-500/40 font-semibold'
+                        : 'text-gray-400 hover:text-gray-200 hover:bg-[#21262d] border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileCode className={`w-3.5 h-3.5 shrink-0 ${colorInfo.iconColor}`} />
+                      <span className="truncate">{fileName}</span>
                     </div>
-                    <span className="font-mono text-gray-400">{config.outputFolder}{currentFile.name}</span>
-                  </div>
+                    <span
+                      className={`text-[9px] px-1 py-0.2 rounded uppercase font-mono border shrink-0 ${colorInfo.badgeClass}`}
+                    >
+                      {colorInfo.badgeLabel}
+                    </span>
+                  </button>
                 );
-              })()}
-              <pre className="text-gray-300 whitespace-pre font-mono selection:bg-blue-900 selection:text-white">
-                {renderHighlightedCode(
-                  currentFile.content,
-                  isFindOpen ? searchQuery : '',
-                  isCaseSensitive,
-                  isWholeWord,
-                  activeMatchIndex
-                )}
-              </pre>
-            </div>
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-2">
-              <Code2 className="w-8 h-8 text-gray-600" />
-              <span className="text-sm font-medium">No generated files in target folder</span>
-            </div>
+              })}
+            </aside>
           )}
+
+          <div className="flex-1 p-4 overflow-auto bg-[#0d1117] font-mono text-xs text-[#c9d1d9] select-text leading-relaxed relative">
+            <div className="absolute top-2 right-3 text-[10px] text-gray-400 uppercase font-bold tracking-wider pointer-events-none">
+              {isGenerating ? 'Generating' : 'Preview'}
+            </div>
+            {isGenerating ? (
+              <div className="h-full flex flex-col items-center justify-center text-blue-400 gap-3 py-12">
+                <RefreshCw className="w-8 h-8 animate-spin text-blue-400" />
+                <span className="text-sm font-semibold text-gray-200">
+                  Generating code with {selectedCodeGenModel}...
+                </span>
+                <span className="text-xs text-gray-400 font-sans">
+                  Cleaning target directory &amp; synthesizing agent files
+                </span>
+              </div>
+            ) : generatedFiles.length > 0 && currentFile ? (
+              <div className="relative">
+                {(() => {
+                  const fileColor = getFileColorInfo(currentFile.name);
+                  return (
+                    <div className="text-[10px] text-gray-400 mb-2 pb-1 border-b border-[#21262d] flex items-center justify-between font-sans">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-[9px] font-mono uppercase px-1.5 py-0.2 rounded border ${fileColor.badgeClass}`}
+                        >
+                          {fileColor.badgeLabel}
+                        </span>
+                        <span>{currentFile.description}</span>
+                      </div>
+                      <span className="font-mono text-gray-400">
+                        {config.outputFolder}
+                        {currentFile.name}
+                      </span>
+                    </div>
+                  );
+                })()}
+                <pre className="text-gray-300 whitespace-pre font-mono selection:bg-blue-900 selection:text-white">
+                  {renderHighlightedCode(
+                    currentFile.content,
+                    isFindOpen ? searchQuery : '',
+                    isCaseSensitive,
+                    isWholeWord,
+                    activeMatchIndex
+                  )}
+                </pre>
+              </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-2">
+                <Code2 className="w-8 h-8 text-gray-600" />
+                <span className="text-sm font-medium">No generated files in target folder</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

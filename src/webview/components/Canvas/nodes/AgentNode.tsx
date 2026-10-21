@@ -280,8 +280,6 @@ const getThemeStyles = (
  * Custom comparison function for React.memo to prevent unnecessary AgentNode re-renders.
  * Ensures the node only re-renders when its identity, selection state, dragging state,
  * or data values change, ignoring stable helper function reference updates.
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 export function areEqual(prevProps: any, nextProps: any): boolean {
   if (prevProps.id !== nextProps.id) return false;
@@ -1283,6 +1281,29 @@ export const AgentNode = memo(({ id, data, selected }: NodeProps & { data: Agent
                 )}
               </div>
             </div>
+
+            {/* Attached Skills Section on Node Card */}
+            {data.skills && data.skills.length > 0 && (
+              <div className="space-y-1 pt-1 border-t border-[#30363d]" data-testid="agent-node-skills-section">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1 text-[10px] font-bold tracking-wider text-purple-400 uppercase">
+                    <FileText className="w-3 h-3 text-purple-400" />
+                    <span>Skills ({data.skills.length})</span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {data.skills.map((skill) => (
+                    <span
+                      key={skill.id || skill.name}
+                      className="px-1.5 py-0.5 rounded bg-purple-950/40 border border-purple-500/30 text-[9px] text-purple-300 font-mono truncate max-w-[130px]"
+                      title={`${skill.title || skill.name} (${skill.scope === 'agent' ? 'Agent Only' : 'Global'})`}
+                    >
+                      {skill.title || skill.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Sub-Agents Section with Pattern Dropdown Above the Orderable List (only rendered if child agents are connected) */}
             {subAgents.length > 0 && (

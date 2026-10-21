@@ -118,10 +118,19 @@
         "command": "agentFlow.clearGeminiApiKey",
         "title": "Agent Flow: Clear Gemini API Key",
         "category": "Agent Flow"
+      },
+      {
+        "command": "agentFlow.openSettings",
+        "title": "Open Plugin Settings (Models & Skills)",
+        "category": "Agent Flow",
+        "icon": "$(gear)"
       }
     ],
     "menus": {
       "commandPalette": [
+        {
+          "command": "agentFlow.openSettings"
+        },
         {
           "command": "agentFlow.createWorkflow"
         },
@@ -160,6 +169,11 @@
           "command": "agentFlow.sidebar.refreshWorkflows",
           "when": "view == agentFlow.views.workflows",
           "group": "navigation@2"
+        },
+        {
+          "command": "agentFlow.openSettings",
+          "when": "view == agentFlow.views.workflows",
+          "group": "navigation@3"
         },
         {
           "command": "agentFlow.sidebar.refreshDeployments",

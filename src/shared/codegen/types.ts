@@ -27,6 +27,11 @@ export interface CodeGenRequest {
   signal?: AbortSignal;
 }
 
+export interface CodeGenTokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface CodeGenResult {
   success: boolean;
   files: GeneratedFile[];
@@ -34,6 +39,7 @@ export interface CodeGenResult {
   cancelled?: boolean;
   modelUsed?: string;
   timestamp?: string;
+  tokenUsage?: CodeGenTokenUsage;
 }
 
 export interface CodeExportPayload {

@@ -44,6 +44,8 @@ import { sanitizeFolderBaseName } from '../shared/folderValidation';
 export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'agentFlow.editor';
   public static activeProviders = new Set<AgentEditorProvider>();
+  public static activeBridges = new Set<WebviewBridge>();
+  public static pendingOpenSettingsMenu: 'models' | 'skills' | null = null;
 
   public readonly context: vscode.ExtensionContext;
   public readonly codeGenEngine: GeminiCodeGenEngine;
@@ -114,6 +116,25 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       provider.dispose();
     }
     AgentEditorProvider.activeProviders.clear();
+    AgentEditorProvider.activeBridges.clear();
+    AgentEditorProvider.pendingOpenSettingsMenu = null;
+  }
+
+  /**
+   * Broadcasts an OPEN_PLUGIN_SETTINGS message to all active webview bridges.
+   * Returns true if at least one active webview bridge received the message.
+   */
+  public static openPluginSettingsInActiveWebview(menu: 'models' | 'skills' = 'models'): boolean {
+    if (AgentEditorProvider.activeBridges.size === 0) {
+      return false;
+    }
+    for (const bridge of AgentEditorProvider.activeBridges) {
+      bridge.postMessage({
+        type: 'OPEN_PLUGIN_SETTINGS',
+        payload: { menu },
+      });
+    }
+    return true;
   }
 
   public static getAllActiveRunners(): Array<{ id: string; pid?: number; port?: number; status: string }> {
@@ -170,6 +191,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
       );
 
       const bridge = new WebviewBridge(webviewPanel, this.outputChannel);
+      AgentEditorProvider.activeBridges.add(bridge);
 
       // 1. Configure webview permissions and local resource roots
       const extensionUri = this.context.extensionUri || vscode.Uri.file(this.context.extensionPath || '');
@@ -345,6 +367,7 @@ export class AgentEditorProvider implements vscode.CustomTextEditorProvider {
           : { dispose: () => {} };
 
       webviewPanel.onDidDispose(async () => {
+        AgentEditorProvider.activeBridges.delete(bridge);
         await stopRunnerForClosedDocument('Webview panel disposed');
         themeChangeSub.dispose();
         docChangeSub.dispose();

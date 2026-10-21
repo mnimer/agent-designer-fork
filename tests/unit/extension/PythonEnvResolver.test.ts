@@ -201,4 +201,43 @@ describe('PythonEnvResolver', () => {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it('should detect 3rd-party model dependencies (Anthropic Claude, OpenAI/OpenMaaS/Grok, LiteLLM) from requirements.txt and agent.py', () => {
+    const resolver = new PythonEnvResolver();
+    const tempDir = path.join('/tmp', `thirdparty_detect_test_${Date.now()}`);
+    const fs = require('fs');
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    try {
+      assert.equal(resolver.requiresAnthropicDependencies(tempDir), false);
+      assert.equal(resolver.requiresOpenAiDependencies(tempDir), false);
+      assert.equal(resolver.requiresLiteLlmDependencies(tempDir), false);
+
+      // Claude model in agent.py
+      fs.writeFileSync(
+        path.join(tempDir, 'agent.py'),
+        'root_agent = Agent(name="root_agent", model="claude-opus-5-5", instruction="test")\n'
+      );
+      assert.equal(resolver.requiresAnthropicDependencies(tempDir), true);
+      assert.ok(resolver.getRequiredImportModules(tempDir).includes('anthropic'));
+
+      // DeepSeek / OpenMaaS model in sub-agent in agent.py
+      fs.writeFileSync(
+        path.join(tempDir, 'agent.py'),
+        'sub_agent = Agent(name="sub", model="deepseek-ai/deepseek-v3.2-maas", instruction="test")\n'
+      );
+      assert.equal(resolver.requiresOpenAiDependencies(tempDir), true);
+      assert.ok(resolver.getRequiredImportModules(tempDir).includes('openai'));
+
+      // LiteLlm in agent.py
+      fs.writeFileSync(
+        path.join(tempDir, 'agent.py'),
+        'from google.adk.models.lite_llm import LiteLlm\n'
+      );
+      assert.equal(resolver.requiresLiteLlmDependencies(tempDir), true);
+      assert.ok(resolver.getRequiredImportModules(tempDir).includes('litellm'));
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
