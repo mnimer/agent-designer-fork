@@ -272,8 +272,11 @@ export const CanvasTab: React.FC<CanvasTabProps> = ({
           if (selectedAgentId) {
             handleAddSpecificTool(selectedAgentId, tool);
           } else if (nodes.length > 0) {
-            const firstAgent = nodes.find((n) => n.type === 'agentNode');
-            if (firstAgent) handleAddSpecificTool(firstAgent.id, tool);
+            const targetAgent =
+              nodes.find(
+                (n) => (n.type === 'agentNode' || n.type === 'agent') && (n.data as AgentData)?.isStartNode
+              ) || nodes.find((n) => n.type === 'agentNode' || n.type === 'agent');
+            if (targetAgent) handleAddSpecificTool(targetAgent.id, tool);
           }
         }}
       />

@@ -18,6 +18,7 @@
  * - Decision 7: Collapsible Sample Categories: Groups sample workflows by domain category (e.g. Retail, SDLC, Finance) into collapsible accordion sections that are collapsed by default.
  * - Decision 8: Collapsible Agent Categories: Core Agents, Flow & Control Agents, and Multi-Agent Patterns in the Agents catalog are collapsible accordion sections with count badges. Core Agents defaults expanded, while Flow & Control Agents and Multi-Agent Patterns default collapsed.
  * - Decision 9: Multi-Agent Patterns in the Agents catalog render with dedicated visual palette badges and theme styles (Debate in pink, Loop in purple, Review & Critique in rose) and quick-add '+' buttons for rapid canvas insertion.
+ * - Decision 10: Always-Visible '+' Quick-Add Button: All Agent cards (Core Agents, Flow & Control Agents, and Multi-Agent Patterns), Tool cards (Native ADK, Google Cloud MCP, Google Workspace MCP, MCP Servers, and Custom Tools), and Trigger cards render an always-visible 24x24px ('w-6 h-6') '+' button on the right side of the card for one-click canvas or agent attachment (Sample cards use their dedicated 'Info' and 'New File' buttons instead).
  */
 
 import React, { useState, useMemo } from 'react';
@@ -85,6 +86,13 @@ import { isDatabricksMcpTool } from '../../data/databricksMcpServers';
 import { isSnowflakeMcpTool } from '../../data/snowflakeMcpServers';
 import { PatternType, AgentKind, ToolDefinition, AgentData, TriggerType, SampleWorkflowDefinition, GoogleCloudLaunchStage } from '../../types';
 import { SampleInfoModal } from './SampleInfoModal';
+
+/**
+ * Shared Tailwind CSS classes for the always-visible 24x24px ('w-6 h-6') '+' quick-add button
+ * rendered on the right side of Agent, Tool, and Trigger palette cards.
+ */
+const PALETTE_CARD_ADD_BUTTON_CLASS =
+  'w-6 h-6 rounded flex items-center justify-center bg-[#2d333b] hover:bg-[#3d444d] text-[#c9d1d9] hover:text-[#f0f6fc] border border-[#3d444d] transition-colors shrink-0 self-center cursor-pointer';
 
 interface PaletteCardProps {
   tools: ToolDefinition[];
@@ -713,11 +721,11 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                       draggable
                       onDragStart={(e) => handleDragStartAgent(e, agentType.kind, false, agentType.kind)}
                       onClick={() => onAddAgent(agentType.kind)}
-                      className={`group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] ${styles.border} cursor-grab active:cursor-grabbing hover:bg-[#30363d] shadow-sm transition-all`}
+                      className={`group relative flex items-start justify-between gap-2 p-2.5 rounded-lg border bg-[#21262d] ${styles.border} cursor-grab active:cursor-grabbing hover:bg-[#30363d] shadow-sm transition-all`}
                       title={`Drag and drop ${agentType.name} onto canvas`}
                       data-testid={`palette-agent-${agentType.kind}`}
                     >
-                      <div className="flex items-start gap-2.5 min-w-0">
+                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
                         <GripVertical className={`w-3.5 h-3.5 text-gray-400 ${styles.hoverGrip} shrink-0 mt-1`} />
                         <div className={`p-1.5 rounded-md bg-[#0d1117] ${styles.iconBorder} shrink-0 mt-0.5 border shadow-xs`}>
                           {getAgentTypeIcon(agentType.iconName)}
@@ -736,6 +744,19 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                           </p>
                         </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAddAgent(agentType.kind);
+                        }}
+                        className={PALETTE_CARD_ADD_BUTTON_CLASS}
+                        title={`Add ${agentType.name} to canvas`}
+                        aria-label={`Add ${agentType.name}`}
+                        data-testid={`palette-agent-add-${agentType.kind}`}
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   );
                 })}
@@ -777,11 +798,11 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                       draggable
                       onDragStart={(e) => handleDragStartAgent(e, agentType.kind, false, agentType.kind)}
                       onClick={() => onAddAgent(agentType.kind)}
-                      className={`group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] ${styles.border} cursor-grab active:cursor-grabbing hover:bg-[#30363d] shadow-sm transition-all`}
+                      className={`group relative flex items-start justify-between gap-2 p-2.5 rounded-lg border bg-[#21262d] ${styles.border} cursor-grab active:cursor-grabbing hover:bg-[#30363d] shadow-sm transition-all`}
                       title={`Drag and drop ${agentType.name} onto canvas`}
                       data-testid={`palette-agent-${agentType.kind}`}
                     >
-                      <div className="flex items-start gap-2.5 min-w-0">
+                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
                         <GripVertical className={`w-3.5 h-3.5 text-gray-400 ${styles.hoverGrip} shrink-0 mt-1`} />
                         <div className={`p-1.5 rounded-md bg-[#0d1117] ${styles.iconBorder} shrink-0 mt-0.5 border shadow-xs`}>
                           {getAgentTypeIcon(agentType.iconName)}
@@ -800,6 +821,19 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                           </p>
                         </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAddAgent(agentType.kind);
+                        }}
+                        className={PALETTE_CARD_ADD_BUTTON_CLASS}
+                        title={`Add ${agentType.name} to canvas`}
+                        aria-label={`Add ${agentType.name}`}
+                        data-testid={`palette-agent-add-${agentType.kind}`}
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   );
                 })}
@@ -841,11 +875,11 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                       draggable
                       onDragStart={(e) => handleDragStartPattern(e, pattern.type)}
                       onClick={() => onAddPattern(pattern.type)}
-                      className={`group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] ${styles.border} cursor-grab active:cursor-grabbing hover:bg-[#30363d] shadow-sm transition-all`}
+                      className={`group relative flex items-start justify-between gap-2 p-2.5 rounded-lg border bg-[#21262d] ${styles.border} cursor-grab active:cursor-grabbing hover:bg-[#30363d] shadow-sm transition-all`}
                       title={`Drag and drop ${pattern.name} pattern onto canvas`}
                       data-testid={`palette-pattern-${pattern.type}`}
                     >
-                      <div className="flex items-start gap-2.5 min-w-0">
+                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
                         <GripVertical className={`w-3.5 h-3.5 text-gray-400 ${styles.hoverGrip} shrink-0 mt-1`} />
                         <div className={`p-1.5 rounded-md bg-[#0d1117] ${styles.iconBorder} shrink-0 mt-0.5 border shadow-xs`}>
                           {getPatternIcon(pattern.iconName)}
@@ -870,8 +904,9 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                           e.stopPropagation();
                           onAddPattern(pattern.type);
                         }}
-                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-[#30363d] text-gray-400 hover:text-white transition-all shrink-0 cursor-pointer"
+                        className={PALETTE_CARD_ADD_BUTTON_CLASS}
                         title={`Add ${pattern.name} to canvas`}
+                        aria-label={`Add ${pattern.name}`}
                         data-testid={`palette-pattern-add-${pattern.type}`}
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -1157,7 +1192,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                             </div>
 
                                             {/* Quick Actions */}
-                                            <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0">
+                                            <div className="flex items-center gap-1.5 self-center shrink-0">
                                               <button
                                                 type="button"
                                                 onClick={() => onOpenEditTool(t)}
@@ -1165,6 +1200,19 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                                 title="Configure tool properties"
                                               >
                                                 <Edit2 className="w-3 h-3" />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  onAddToolToAgent(t);
+                                                }}
+                                                className={PALETTE_CARD_ADD_BUTTON_CLASS}
+                                                title={`Add ${t.name} to agent`}
+                                                aria-label={`Add ${t.name}`}
+                                                data-testid={`palette-tool-add-${t.id}`}
+                                              >
+                                                <Plus className="w-3.5 h-3.5" />
                                               </button>
                                             </div>
                                           </div>
@@ -1228,7 +1276,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                   </div>
 
                                   {/* Quick Actions */}
-                                  <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0">
+                                  <div className="flex items-center gap-1.5 self-center shrink-0">
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -1239,6 +1287,19 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                       title="Configure tool properties"
                                     >
                                       <Edit2 className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onAddToolToAgent(t);
+                                      }}
+                                      className={PALETTE_CARD_ADD_BUTTON_CLASS}
+                                      title={`Add ${t.name} to agent`}
+                                      aria-label={`Add ${t.name}`}
+                                      data-testid={`palette-tool-add-${t.id}`}
+                                    >
+                                      <Plus className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
                                 </div>
@@ -1313,7 +1374,7 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                   </div>
 
                                   {/* Hover / Quick Actions */}
-                                  <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0">
+                                  <div className="flex items-center gap-1.5 self-center shrink-0">
                                     <button
                                       type="button"
                                       onClick={() => onOpenEditTool(t)}
@@ -1321,6 +1382,19 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                       title="Configure tool properties"
                                     >
                                       <Edit2 className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onAddToolToAgent(t);
+                                      }}
+                                      className={PALETTE_CARD_ADD_BUTTON_CLASS}
+                                      title={`Add ${t.name} to agent`}
+                                      aria-label={`Add ${t.name}`}
+                                      data-testid={`palette-tool-add-${t.id}`}
+                                    >
+                                      <Plus className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
                                 </div>
@@ -1420,10 +1494,12 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                             <div
                               draggable
                               onDragStart={(e) => handleDragStartTrigger(e, section.trigger!)}
-                              className="group relative flex items-start justify-between p-2.5 bg-[#21262d] border border-orange-500/40 rounded-lg cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-orange-400 shadow-sm transition-all shadow-orange-950/20"
+                              onClick={() => onAddTrigger(section.trigger!.type)}
+                              className="group relative flex items-start justify-between gap-2 p-2.5 bg-[#21262d] border border-orange-500/40 rounded-lg cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-orange-400 shadow-sm transition-all shadow-orange-950/20"
                               title={`Drag and drop ${section.trigger.name} onto canvas`}
+                              data-testid={`palette-trigger-${section.trigger.type}`}
                             >
-                              <div className="flex items-start gap-2.5 min-w-0">
+                              <div className="flex items-start gap-2.5 min-w-0 flex-1">
                                 <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-orange-400 shrink-0 mt-1" />
                                 <div className="p-1.5 rounded-md bg-[#0d1117] border border-orange-500/30 shrink-0 mt-0.5 shadow-xs">
                                   {getTriggerIcon(section.trigger.type)}
@@ -1442,6 +1518,19 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                   </p>
                                 </div>
                               </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onAddTrigger(section.trigger!.type);
+                                }}
+                                className={PALETTE_CARD_ADD_BUTTON_CLASS}
+                                title={`Add ${section.trigger.name} to canvas`}
+                                aria-label={`Add ${section.trigger.name}`}
+                                data-testid={`palette-trigger-add-${section.trigger.type}`}
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           )}
 
@@ -1452,10 +1541,12 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                   key={trigger.id}
                                   draggable
                                   onDragStart={(e) => handleDragStartTrigger(e, trigger)}
-                                  className="group relative flex items-start justify-between p-2.5 rounded-lg border bg-[#21262d] border-orange-500/40 cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-orange-400 shadow-sm transition-all shadow-orange-950/20"
+                                  onClick={() => onAddTrigger(trigger.type)}
+                                  className="group relative flex items-start justify-between gap-2 p-2.5 rounded-lg border bg-[#21262d] border-orange-500/40 cursor-grab active:cursor-grabbing hover:bg-[#30363d] hover:border-orange-400 shadow-sm transition-all shadow-orange-950/20"
                                   title={`Drag and drop ${trigger.name} onto canvas`}
+                                  data-testid={`palette-trigger-${trigger.type}`}
                                 >
-                                  <div className="flex items-start gap-2.5 min-w-0">
+                                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
                                     <GripVertical className="w-3.5 h-3.5 text-gray-400 group-hover:text-orange-400 shrink-0 mt-1" />
                                     <div className="p-1.5 rounded-md bg-[#0d1117] shrink-0 mt-0.5 border border-orange-500/30 shadow-xs">
                                       {getTriggerIcon(trigger.type)}
@@ -1474,6 +1565,19 @@ export const PaletteCard: React.FC<PaletteCardProps> = ({
                                       </p>
                                     </div>
                                   </div>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onAddTrigger(trigger.type);
+                                    }}
+                                    className={PALETTE_CARD_ADD_BUTTON_CLASS}
+                                    title={`Add ${trigger.name} to canvas`}
+                                    aria-label={`Add ${trigger.name}`}
+                                    data-testid={`palette-trigger-add-${trigger.type}`}
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                  </button>
                                 </div>
                               ))}
                             </div>
