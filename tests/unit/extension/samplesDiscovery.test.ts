@@ -15,6 +15,7 @@ import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { AgentEditorProvider } from '../../../src/extension/AgentEditorProvider';
 
 describe('AgentEditorProvider Samples Discovery (TASK-128)', { concurrency: 1 }, () => {
@@ -303,6 +304,50 @@ describe('AgentEditorProvider Samples Discovery (TASK-128)', { concurrency: 1 },
 
       assert.ok(hasTesterTrigger, `Sample "${sample.id}" must include a Test Runner trigger`);
       assert.ok(hasOperationalTrigger, `Sample "${sample.id}" must include an operational trigger`);
+    }
+  });
+
+  it('should not exclude resource/samples/**, *.agent, or resource/icons/** in .vscodeignore when packaging VSIX', () => {
+    // Section 1: Load .vscodeignore and package.json from project root
+    const projectRoot = path.resolve(__dirname, '../../..');
+    const vscodeIgnorePath = path.join(projectRoot, '.vscodeignore');
+    const packageJsonPath = path.join(projectRoot, 'package.json');
+
+    const vscodeIgnoreLines = fs
+      .readFileSync(vscodeIgnorePath, 'utf-8')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith('#'));
+
+    // Section 2: Verify blanket patterns that strip samples or icons are not present
+    assert.ok(
+      !vscodeIgnoreLines.includes('resource/**'),
+      '.vscodeignore must not contain blanket "resource/**" exclusion that strips resource/samples and resource/icons'
+    );
+    assert.ok(
+      !vscodeIgnoreLines.includes('*.agent'),
+      '.vscodeignore must not contain blanket "*.agent" exclusion that strips bundled sample .agent files'
+    );
+    assert.ok(
+      !vscodeIgnoreLines.includes('resource/samples/**'),
+      '.vscodeignore must not exclude resource/samples/**'
+    );
+    assert.ok(
+      !vscodeIgnoreLines.includes('resource/icons/**'),
+      '.vscodeignore must not exclude resource/icons/**'
+    );
+
+    // Section 3: Verify Activity Bar icon referenced in package.json exists on disk
+    const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+    const activityBarContainers = pkg.contributes?.viewsContainers?.activitybar || [];
+    assert.ok(activityBarContainers.length > 0, 'package.json must declare an activitybar viewContainer');
+    for (const container of activityBarContainers) {
+      assert.ok(container.icon, `Activity bar container "${container.id}" must declare an icon path`);
+      const iconFullPath = path.join(projectRoot, container.icon);
+      assert.ok(
+        fs.existsSync(iconFullPath),
+        `Activity bar icon "${container.icon}" must exist at ${iconFullPath}`
+      );
     }
   });
 });

@@ -2,6 +2,7 @@
 .git/**
 .github/**
 .gemini/**
+.agent/**
 .vscode/**
 .gitignore
 
@@ -19,9 +20,12 @@ tailwind.config.js
 postcss.config.js
 vite.config.ts
 vitest.config.ts
+vitest.integration.config.mts
 
 # Documentation & specifications
+AGENTS.md
 RELEASE_PLAN.md
+TASK.md
 TASKS.md
 DESIGN.md
 DESIGN_DOC.md
@@ -30,20 +34,24 @@ ARCHITECTURE.md
 SUMMARY.md
 2026-08-28_DRIFT_REPORT.md
 
-# Development & sample files
-*.agent
+# Development & temporary files
+sample_support.agent
 *.log
 *.tsbuildinfo
+*.vsix
 
-# Dependencies
+# Dependencies & Python artifacts
 node_modules/**
+.venv/**
+venv/**
+env/**
+**/__pycache__/**
+**/*.pyc
 
-# Non-runtime resource assets
-resource/**
+# Non-runtime scaffolding assets
+resource/scaffolding/**
 
 # Include runtime production artifacts
 !dist/**
 !package.json
 !README.md
-!resources/**
-!resource/prompts/**
