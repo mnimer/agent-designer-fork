@@ -29,97 +29,34 @@ import {
 
 /**
  * Master catalog of official Snowflake Managed & Cortex MCP Server definitions.
+ * Collapsed into a single unified Snowflake Managed & Cortex MCP tool whose toolType
+ * (Cortex Analyst, Cortex Search, Cortex Agent, SQL Warehouse, or Custom Procedure)
+ * is selected in the property drawer dropdown.
  */
 export const SNOWFLAKE_MCP_SERVERS: SnowflakeMcpServerDefinition[] = [
-  // 1. Cortex Analyst MCP
   {
-    id: 'snowflake_mcp_cortex_analyst',
-    name: 'Snowflake Cortex Analyst MCP',
-    serviceName: 'Cortex Analyst',
+    id: 'snowflake_mcp',
+    name: 'Snowflake Managed & Cortex MCP',
+    serviceName: 'Snowflake Cortex & SQL',
     toolType: 'CORTEX_ANALYST_MESSAGE',
     endpointTemplate: 'https://{account_url}/api/v2/databases/{database}/schemas/{schema}/mcp-servers/{mcp_server_name}',
-    description: 'Natural language structured data question-answering powered by Snowflake Cortex Analyst and Semantic Models.',
-    icon: 'Sparkles',
-    defaultConfig: {
-      deploymentMode: 'managed_http',
-      accountUrl: '',
-      database: '',
-      schema: '',
-      mcpServerName: 'cortex_analyst_server',
-      toolType: 'CORTEX_ANALYST_MESSAGE',
-      semanticView: '',
-      warehouse: 'COMPUTE_WH',
-      role: 'ANALYST',
-    },
-    sampleTools: ['cortex_analyst_message'],
-  },
-
-  // 2. Cortex Search MCP
-  {
-    id: 'snowflake_mcp_cortex_search',
-    name: 'Snowflake Cortex Search MCP',
-    serviceName: 'Cortex Search',
-    toolType: 'CORTEX_SEARCH_SERVICE_QUERY',
-    endpointTemplate: 'https://{account_url}/api/v2/databases/{database}/schemas/{schema}/mcp-servers/{mcp_server_name}',
-    description: 'Vector and hybrid lexical search against enterprise document chunks indexed by Snowflake Cortex Search.',
+    description: 'Connect to Snowflake Cortex Analyst, Cortex Search, Cortex Agent, SQL Warehouses, or custom Stored Procedures over Managed MCP or stdio.',
     icon: 'Database',
     defaultConfig: {
       deploymentMode: 'managed_http',
       accountUrl: '',
       database: '',
       schema: '',
-      mcpServerName: 'cortex_search_server',
-      toolType: 'CORTEX_SEARCH_SERVICE_QUERY',
+      mcpServerName: 'cortex_mcp_server',
+      toolType: 'CORTEX_ANALYST_MESSAGE',
+      semanticView: '',
       searchServiceName: '',
-      warehouse: 'COMPUTE_WH',
-      role: 'ANALYST',
-    },
-    sampleTools: ['cortex_search_query'],
-  },
-
-  // 3. Cortex Agent MCP
-  {
-    id: 'snowflake_mcp_cortex_agent',
-    name: 'Snowflake Cortex Agent MCP',
-    serviceName: 'Cortex Agent',
-    toolType: 'CORTEX_AGENT_RUN',
-    endpointTemplate: 'https://{account_url}/api/v2/databases/{database}/schemas/{schema}/mcp-servers/{mcp_server_name}',
-    description: 'Autonomous multi-step conversational agent orchestrating Cortex Search and Analyst services.',
-    icon: 'Bot',
-    defaultConfig: {
-      deploymentMode: 'managed_http',
-      accountUrl: '',
-      database: '',
-      schema: '',
-      mcpServerName: 'cortex_agent_server',
-      toolType: 'CORTEX_AGENT_RUN',
       cortexAgentName: '',
+      procedureName: '',
       warehouse: 'COMPUTE_WH',
       role: 'ANALYST',
     },
-    sampleTools: ['cortex_agent_run'],
-  },
-
-  // 4. SQL & Custom Tools MCP
-  {
-    id: 'snowflake_mcp_sql_and_tools',
-    name: 'Snowflake SQL & Custom Tools MCP',
-    serviceName: 'SQL & Custom Procedures',
-    toolType: 'SYSTEM_EXECUTE_SQL',
-    endpointTemplate: 'https://{account_url}/api/v2/databases/{database}/schemas/{schema}/mcp-servers/{mcp_server_name}',
-    description: 'Execute ANSI SQL statements, call stored procedures, and run user-defined functions on Snowflake.',
-    icon: 'Terminal',
-    defaultConfig: {
-      deploymentMode: 'managed_http',
-      accountUrl: '',
-      database: '',
-      schema: '',
-      mcpServerName: 'sql_tools_server',
-      toolType: 'SYSTEM_EXECUTE_SQL',
-      warehouse: 'COMPUTE_WH',
-      role: 'SYSADMIN',
-    },
-    sampleTools: ['execute_sql', 'call_procedure'],
+    sampleTools: ['cortex_analyst_message', 'cortex_search_query', 'cortex_agent_run', 'execute_sql'],
   },
 ];
 
@@ -371,9 +308,9 @@ export const SNOWFLAKE_MCP_DEFAULT_TOOLS: ToolDefinition[] = SNOWFLAKE_MCP_SERVE
 export function isSnowflakeMcpTool(toolOrId?: ToolDefinition | string | null): boolean {
   if (!toolOrId) return false;
   if (typeof toolOrId === 'string') {
-    return toolOrId.startsWith('snowflake_mcp_');
+    return toolOrId === 'snowflake_mcp' || toolOrId.startsWith('snowflake_mcp_');
   }
-  if (toolOrId.id && toolOrId.id.startsWith('snowflake_mcp_')) {
+  if (toolOrId.id && (toolOrId.id === 'snowflake_mcp' || toolOrId.id.startsWith('snowflake_mcp_'))) {
     return true;
   }
   if (toolOrId.mcpConfig?.snowflakeConfig !== undefined) {

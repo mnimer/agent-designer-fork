@@ -28,85 +28,32 @@ import {
 
 /**
  * Master catalog of official Databricks Managed MCP Server definitions.
+ * Collapsed into a single unified Databricks Managed MCP tool whose serviceType
+ * (Genie Space, Vector Search, Unity Catalog Functions, or Databricks SQL) is selected
+ * in the property drawer dropdown.
  */
 export const DATABRICKS_MCP_SERVERS: DatabricksMcpServerDefinition[] = [
-  // 1. Databricks Genie Space MCP
   {
-    id: 'databricks_mcp_genie',
-    name: 'Databricks Genie Space MCP',
-    serviceName: 'Genie Space',
+    id: 'databricks_mcp',
+    name: 'Databricks Managed MCP',
+    serviceName: 'Databricks Managed MCP',
     serviceType: 'genie',
     unityGatewayName: 'system.ai.genie_one_mcp',
     oauthScope: 'genie',
     endpointTemplate: 'https://{workspace_hostname}/api/2.0/mcp/genie/{genie_space_id}',
-    description: 'Query enterprise tabular datasets and metrics conversationally using Databricks Genie spaces and AI/BI rooms.',
+    description: 'Connect to Databricks Genie spaces, Vector Search indexes, Unity Catalog Functions, or Databricks SQL Warehouses over Managed MCP.',
     icon: 'Sparkles',
     defaultConfig: {
       workspaceHostname: '',
       serviceType: 'genie',
       genieSpaceId: '',
-    },
-    sampleTools: ['query_genie_space', 'get_genie_space_status'],
-  },
-
-  // 2. Databricks Vector Search MCP
-  {
-    id: 'databricks_mcp_vector_search',
-    name: 'Databricks Vector Search MCP',
-    serviceName: 'Vector Search',
-    serviceType: 'vector_search',
-    unityGatewayName: 'system.ai.vector_search',
-    oauthScope: 'vector-search',
-    endpointTemplate: 'https://{workspace_hostname}/api/2.0/mcp/vector-search/{catalog}/{schema}/{index_name}',
-    description: 'Execute similarity search and hybrid lexical/vector queries against Databricks Vector Search indexes.',
-    icon: 'Database',
-    defaultConfig: {
-      workspaceHostname: '',
-      serviceType: 'vector_search',
       catalog: 'main',
       schema: 'default',
       indexName: '',
-    },
-    sampleTools: ['vector_search_query', 'vector_search_sync'],
-  },
-
-  // 3. Databricks Unity Catalog Functions MCP
-  {
-    id: 'databricks_mcp_uc_functions',
-    name: 'Databricks Unity Catalog Functions MCP',
-    serviceName: 'Unity Catalog Functions',
-    serviceType: 'uc_functions',
-    oauthScope: 'unity-catalog',
-    endpointTemplate: 'https://{workspace_hostname}/api/2.0/mcp/functions/{catalog}/{schema}',
-    description: 'Discover and execute governed SQL and Python UDFs and tools defined in Databricks Unity Catalog.',
-    icon: 'Code',
-    defaultConfig: {
-      workspaceHostname: '',
-      serviceType: 'uc_functions',
-      catalog: 'main',
-      schema: 'default',
       functionName: '',
-    },
-    sampleTools: ['execute_function', 'list_functions'],
-  },
-
-  // 4. Databricks SQL Warehouse MCP
-  {
-    id: 'databricks_mcp_dbsql',
-    name: 'Databricks SQL Warehouse MCP',
-    serviceName: 'Databricks SQL',
-    serviceType: 'dbsql',
-    unityGatewayName: 'system.ai.dbsql',
-    oauthScope: 'sql',
-    endpointTemplate: 'https://{workspace_hostname}/api/2.0/mcp/sql',
-    description: 'Run ANSI SQL queries, explore data catalogs, and fetch results from Databricks Serverless SQL Warehouses.',
-    icon: 'Terminal',
-    defaultConfig: {
-      workspaceHostname: '',
-      serviceType: 'dbsql',
       warehouseId: '',
     },
-    sampleTools: ['execute_sql_query', 'get_statement_status'],
+    sampleTools: ['query_genie_space', 'vector_search_query', 'execute_function', 'execute_sql_query'],
   },
 ];
 
@@ -272,9 +219,9 @@ export const DATABRICKS_MCP_DEFAULT_TOOLS: ToolDefinition[] = DATABRICKS_MCP_SER
 export function isDatabricksMcpTool(toolOrId?: ToolDefinition | string | null): boolean {
   if (!toolOrId) return false;
   if (typeof toolOrId === 'string') {
-    return toolOrId.startsWith('databricks_mcp_');
+    return toolOrId === 'databricks_mcp' || toolOrId.startsWith('databricks_mcp_');
   }
-  if (toolOrId.id && toolOrId.id.startsWith('databricks_mcp_')) {
+  if (toolOrId.id && (toolOrId.id === 'databricks_mcp' || toolOrId.id.startsWith('databricks_mcp_'))) {
     return true;
   }
   if (toolOrId.mcpConfig?.databricksConfig !== undefined) {

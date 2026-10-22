@@ -33,17 +33,12 @@ import { categorizeTools } from '../../../src/webview/data/builtinTools';
 import { SnowflakeMcpConfig, ToolDefinition } from '../../../src/shared/types';
 
 describe('Snowflake Managed & Cortex MCP Servers Registry', () => {
-  it('should register all 4 official Snowflake Managed MCP servers', () => {
-    expect(SNOWFLAKE_MCP_SERVERS).toHaveLength(4);
-    expect(SNOWFLAKE_MCP_DEFAULT_TOOLS).toHaveLength(4);
+  it('should register 1 unified Snowflake Managed MCP server', () => {
+    expect(SNOWFLAKE_MCP_SERVERS).toHaveLength(1);
+    expect(SNOWFLAKE_MCP_DEFAULT_TOOLS).toHaveLength(1);
 
     const ids = SNOWFLAKE_MCP_SERVERS.map((s) => s.id);
-    expect(ids).toEqual([
-      'snowflake_mcp_cortex_analyst',
-      'snowflake_mcp_cortex_search',
-      'snowflake_mcp_cortex_agent',
-      'snowflake_mcp_sql_and_tools',
-    ]);
+    expect(ids).toEqual(['snowflake_mcp']);
   });
 
   it('should ensure each server definition has valid metadata and unique IDs', () => {
@@ -53,7 +48,7 @@ describe('Snowflake Managed & Cortex MCP Servers Registry', () => {
       expect(seenIds.has(server.id)).toBe(false);
       seenIds.add(server.id);
 
-      expect(server.id.startsWith('snowflake_mcp_')).toBe(true);
+      expect(server.id === 'snowflake_mcp' || server.id.startsWith('snowflake_mcp_')).toBe(true);
       expect(server.name.trim().length).toBeGreaterThan(0);
       expect(server.serviceName.trim().length).toBeGreaterThan(0);
       expect(server.description.trim().length).toBeGreaterThan(0);
@@ -212,7 +207,7 @@ describe('Snowflake Managed & Cortex MCP Servers Registry', () => {
 
   describe('createToolDefinitionFromSnowflakeMcpServer', () => {
     it('should instantiate ToolDefinition for managed_http mode', () => {
-      const serverDef = SNOWFLAKE_MCP_SERVERS.find((s) => s.id === 'snowflake_mcp_cortex_analyst')!;
+      const serverDef = SNOWFLAKE_MCP_SERVERS.find((s) => s.id === 'snowflake_mcp')!;
       const tool = createToolDefinitionFromSnowflakeMcpServer(serverDef, {
         accountUrl: 'myorg_sales',
         database: 'SALES_DB',
@@ -221,7 +216,7 @@ describe('Snowflake Managed & Cortex MCP Servers Registry', () => {
         role: 'FINANCE_ROLE',
       });
 
-      expect(tool.id).toBe('snowflake_mcp_cortex_analyst');
+      expect(tool.id).toBe('snowflake_mcp');
       expect(tool.type).toBe('mcp');
       expect(tool.authType).toBe('bearer');
       expect(tool.secretName).toBe('snowflake-mcp-token');
@@ -237,7 +232,7 @@ describe('Snowflake Managed & Cortex MCP Servers Registry', () => {
     });
 
     it('should configure stdio transport for stdio_labs mode', () => {
-      const serverDef = SNOWFLAKE_MCP_SERVERS.find((s) => s.id === 'snowflake_mcp_sql_and_tools')!;
+      const serverDef = SNOWFLAKE_MCP_SERVERS.find((s) => s.id === 'snowflake_mcp')!;
       const tool = createToolDefinitionFromSnowflakeMcpServer(serverDef, {
         deploymentMode: 'stdio_labs',
       });
@@ -256,15 +251,17 @@ describe('Snowflake Managed & Cortex MCP Servers Registry', () => {
 
   describe('isSnowflakeMcpTool', () => {
     it('should identify Snowflake MCP tools by ID string or ToolDefinition', () => {
+      expect(isSnowflakeMcpTool('snowflake_mcp')).toBe(true);
       expect(isSnowflakeMcpTool('snowflake_mcp_cortex_analyst')).toBe(true);
       expect(isSnowflakeMcpTool('snowflake_mcp_cortex_search')).toBe(true);
+      expect(isSnowflakeMcpTool('databricks_mcp')).toBe(false);
       expect(isSnowflakeMcpTool('databricks_mcp_genie')).toBe(false);
       expect(isSnowflakeMcpTool('gcp_mcp_bigquery')).toBe(false);
       expect(isSnowflakeMcpTool(null)).toBe(false);
       expect(isSnowflakeMcpTool(undefined)).toBe(false);
 
       const toolWithId: ToolDefinition = {
-        id: 'snowflake_mcp_custom',
+        id: 'snowflake_mcp',
         name: 'Custom',
         type: 'mcp',
         description: 'Test',
@@ -303,7 +300,7 @@ describe('Snowflake Managed & Cortex MCP Servers Registry', () => {
   it('should categorize Snowflake MCP tools into mcp category via categorizeTools', () => {
     const categorized = categorizeTools(SNOWFLAKE_MCP_DEFAULT_TOOLS);
 
-    expect(categorized.mcp).toHaveLength(4);
+    expect(categorized.mcp).toHaveLength(1);
     expect(categorized.google_cloud_mcp).toHaveLength(0);
     expect(categorized.native_adk).toHaveLength(0);
   });
@@ -311,7 +308,7 @@ describe('Snowflake Managed & Cortex MCP Servers Registry', () => {
   describe('Snowflake McpToolDrawer state updates & live interpolation', () => {
     it('should update serverUrl and oauthConfig when accountUrl or role changes', () => {
       const tool = createToolDefinitionFromSnowflakeMcpServer(
-        SNOWFLAKE_MCP_SERVERS.find((s) => s.id === 'snowflake_mcp_cortex_analyst')!
+        SNOWFLAKE_MCP_SERVERS.find((s) => s.id === 'snowflake_mcp')!
       );
 
       const updatedConfig: SnowflakeMcpConfig = {
@@ -346,7 +343,7 @@ describe('Snowflake Managed & Cortex MCP Servers Registry', () => {
         deploymentMode: 'managed_http',
       };
 
-      const serverDef = SNOWFLAKE_MCP_SERVERS.find((s) => s.id === 'snowflake_mcp_sql_and_tools')!;
+      const serverDef = SNOWFLAKE_MCP_SERVERS.find((s) => s.id === 'snowflake_mcp')!;
       const httpTool = createToolDefinitionFromSnowflakeMcpServer(serverDef, httpConfig);
       expect(httpTool.mcpConfig?.transport).toBe('http');
       expect(httpTool.mcpConfig?.serverUrl).toBeDefined();

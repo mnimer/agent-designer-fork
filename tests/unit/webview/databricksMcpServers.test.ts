@@ -31,17 +31,12 @@ import { categorizeTools } from '../../../src/webview/data/builtinTools';
 import { DatabricksMcpConfig, ToolDefinition } from '../../../src/shared/types';
 
 describe('Databricks Managed MCP Servers Registry', () => {
-  it('should register all 4 official Databricks Managed MCP servers', () => {
-    expect(DATABRICKS_MCP_SERVERS).toHaveLength(4);
-    expect(DATABRICKS_MCP_DEFAULT_TOOLS).toHaveLength(4);
+  it('should register 1 unified Databricks Managed MCP server', () => {
+    expect(DATABRICKS_MCP_SERVERS).toHaveLength(1);
+    expect(DATABRICKS_MCP_DEFAULT_TOOLS).toHaveLength(1);
 
     const ids = DATABRICKS_MCP_SERVERS.map((s) => s.id);
-    expect(ids).toEqual([
-      'databricks_mcp_genie',
-      'databricks_mcp_vector_search',
-      'databricks_mcp_uc_functions',
-      'databricks_mcp_dbsql',
-    ]);
+    expect(ids).toEqual(['databricks_mcp']);
   });
 
   it('should ensure each server definition has valid metadata and unique IDs', () => {
@@ -51,7 +46,7 @@ describe('Databricks Managed MCP Servers Registry', () => {
       expect(seenIds.has(server.id)).toBe(false);
       seenIds.add(server.id);
 
-      expect(server.id.startsWith('databricks_mcp_')).toBe(true);
+      expect(server.id === 'databricks_mcp' || server.id.startsWith('databricks_mcp_')).toBe(true);
       expect(server.name.trim().length).toBeGreaterThan(0);
       expect(server.serviceName.trim().length).toBeGreaterThan(0);
       expect(server.description.trim().length).toBeGreaterThan(0);
@@ -162,14 +157,14 @@ describe('Databricks Managed MCP Servers Registry', () => {
 
   describe('createToolDefinitionFromDatabricksMcpServer', () => {
     it('should instantiate ToolDefinition with bearer auth, secrets, and overrides', () => {
-      const serverDef = DATABRICKS_MCP_SERVERS.find((s) => s.id === 'databricks_mcp_genie')!;
+      const serverDef = DATABRICKS_MCP_SERVERS.find((s) => s.id === 'databricks_mcp')!;
       const tool = createToolDefinitionFromDatabricksMcpServer(serverDef, {
         workspaceHostname: 'my-corp.cloud.databricks.com',
         genieSpaceId: 'space-999',
       });
 
-      expect(tool.id).toBe('databricks_mcp_genie');
-      expect(tool.name).toBe('Databricks Genie Space MCP');
+      expect(tool.id).toBe('databricks_mcp');
+      expect(tool.name).toBe('Databricks Managed MCP');
       expect(tool.type).toBe('mcp');
       expect(tool.category).toBe('mcp');
       expect(tool.authType).toBe('bearer');
@@ -190,15 +185,17 @@ describe('Databricks Managed MCP Servers Registry', () => {
 
   describe('isDatabricksMcpTool', () => {
     it('should identify Databricks MCP tools by ID string or ToolDefinition', () => {
+      expect(isDatabricksMcpTool('databricks_mcp')).toBe(true);
       expect(isDatabricksMcpTool('databricks_mcp_genie')).toBe(true);
       expect(isDatabricksMcpTool('databricks_mcp_vector_search')).toBe(true);
+      expect(isDatabricksMcpTool('snowflake_mcp')).toBe(false);
       expect(isDatabricksMcpTool('snowflake_mcp_cortex_analyst')).toBe(false);
       expect(isDatabricksMcpTool('gcp_mcp_bigquery')).toBe(false);
       expect(isDatabricksMcpTool(null)).toBe(false);
       expect(isDatabricksMcpTool(undefined)).toBe(false);
 
       const toolWithId: ToolDefinition = {
-        id: 'databricks_mcp_custom',
+        id: 'databricks_mcp',
         name: 'Custom',
         type: 'mcp',
         description: 'Test',
@@ -234,7 +231,7 @@ describe('Databricks Managed MCP Servers Registry', () => {
   it('should categorize Databricks MCP tools into mcp category via categorizeTools', () => {
     const categorized = categorizeTools(DATABRICKS_MCP_DEFAULT_TOOLS);
 
-    expect(categorized.mcp).toHaveLength(4);
+    expect(categorized.mcp).toHaveLength(1);
     expect(categorized.google_cloud_mcp).toHaveLength(0);
     expect(categorized.native_adk).toHaveLength(0);
   });
@@ -242,7 +239,7 @@ describe('Databricks Managed MCP Servers Registry', () => {
   describe('Databricks McpToolDrawer state updates & live interpolation', () => {
     it('should update serverUrl and oauthConfig when workspaceHostname changes', () => {
       const tool = createToolDefinitionFromDatabricksMcpServer(
-        DATABRICKS_MCP_SERVERS.find((s) => s.id === 'databricks_mcp_genie')!
+        DATABRICKS_MCP_SERVERS.find((s) => s.id === 'databricks_mcp')!
       );
 
       const updatedConfig: DatabricksMcpConfig = {

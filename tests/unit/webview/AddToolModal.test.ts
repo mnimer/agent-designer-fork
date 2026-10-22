@@ -116,7 +116,7 @@ describe('AddToolModal Logic & Tool Panel Alignment', () => {
         categorized.custom.length +
         categorized.google_cloud_mcp.length +
         categorized.google_workspace_mcp.length +
-        categorized.mcp.filter((t) => t.id.startsWith('databricks_mcp_') || t.id.startsWith('snowflake_mcp_')).length,
+        categorized.mcp.filter((t) => t.id === 'databricks_mcp' || t.id.startsWith('databricks_mcp_') || t.id === 'snowflake_mcp' || t.id.startsWith('snowflake_mcp_')).length,
       dynamicTools.length
     );
   });
