@@ -101,10 +101,15 @@ describe('Webview Code-Splitting & Lazy Loading', () => {
     );
   });
 
-  it('should emit dist/webview/assets/index.js and split chunks under 500 kB each', () => {
+  it('should emit dist/webview/assets/index.js and split chunks under 500 kB each', async () => {
     const assetsDir = path.join(ROOT_DIR, 'dist/webview/assets');
     const chunksDir = path.join(assetsDir, 'chunks');
     const entryJsPath = path.join(assetsDir, 'index.js');
+
+    if (!fs.existsSync(entryJsPath) || !fs.existsSync(chunksDir)) {
+      const { execSync } = await import('node:child_process');
+      execSync('npm run compile:webview', { cwd: ROOT_DIR, stdio: 'pipe' });
+    }
 
     assert.ok(fs.existsSync(entryJsPath), 'dist/webview/assets/index.js must exist after build');
     assert.ok(fs.existsSync(chunksDir), 'dist/webview/assets/chunks/ directory must exist after build');
