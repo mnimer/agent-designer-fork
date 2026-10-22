@@ -321,6 +321,14 @@ export const DEPRECATED_MOCK_TOOL_IDS = new Set<string>([
   'mcp_brave_search',
   'mcp_memory_graph',
   'mcp_remote_sse',
+  'databricks_mcp_genie',
+  'databricks_mcp_vector_search',
+  'databricks_mcp_uc_functions',
+  'databricks_mcp_dbsql',
+  'snowflake_mcp_cortex_analyst',
+  'snowflake_mcp_cortex_search',
+  'snowflake_mcp_cortex_agent',
+  'snowflake_mcp_sql_and_tools',
 ]);
 
 /**
