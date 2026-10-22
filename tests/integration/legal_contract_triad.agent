@@ -1,0 +1,238 @@
+{
+  "version": "1.0.0",
+  "name": "legal_contract_triad",
+  "description": "Enterprise Legal Contract Compliance Triad with Sequential Review and Critique, Vertex AI Precedent Search, Cloud SQL Checkpointer, and Pydantic Structured Output",
+  "framework": "google-adk",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "agent_legal_author",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 336
+      },
+      "data": {
+        "id": "agent_legal_author",
+        "name": "contract_drafting_author",
+        "label": "Contract Drafting Author",
+        "role": "Commercial Contract Authoring Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "isStartNode": true,
+        "subAgentPattern": "review_critique",
+        "outputKey": "initial_draft",
+        "systemPrompt": "Drafts initial enterprise commercial contract clauses grounded in the legal precedent knowledge base via Vertex AI Search. Writes the initial draft clause into state key initial_draft and delegates sequentially through the adversarial critic and final polish editor.",
+        "memoryType": "cloud_sql",
+        "memoryConfig": {
+          "type": "cloud_sql",
+          "instanceConnectionName": "corp-legal:us-central1:legal-db",
+          "databaseName": "contracts_db",
+          "databaseUrlSecret": "LEGAL_DB_SECRET",
+          "tableName": "legal_contract_sessions"
+        },
+        "tools": [
+          {
+            "id": "tool_legal_corpus_search",
+            "name": "Legal Precedent Knowledge Base",
+            "type": "search",
+            "builtinType": "vertex_ai_search",
+            "description": "Searches enterprise legal precedent repository and regulatory templates",
+            "vertexAiSearchConfig": {
+              "dataStoreId": "projects/corp-legal/locations/global/collections/default_collection/dataStores/legal-corpus-ds"
+            }
+          }
+        ],
+        "subAgents": [
+          {
+            "agentId": "agent_legal_critic",
+            "name": "adversarial_compliance_critic",
+            "delegationType": "review_critique"
+          },
+          {
+            "agentId": "agent_legal_editor",
+            "name": "final_polish_editor",
+            "delegationType": "review_critique"
+          }
+        ]
+      }
+    },
+    {
+      "id": "agent_legal_critic",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 952
+      },
+      "data": {
+        "id": "agent_legal_critic",
+        "name": "adversarial_compliance_critic",
+        "label": "Adversarial Critic",
+        "role": "Adversarial Contract Compliance Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "outputKey": "critique_rubric",
+        "systemPrompt": "Rigorously examines initial_draft against GDPR, indemnification, and liability cap compliance standards. Identifies liability loopholes, ambiguous definitions, and jurisdictional conflicts, and writes the structured critique into state key critique_rubric.",
+        "tools": [],
+        "subAgents": []
+      }
+    },
+    {
+      "id": "agent_legal_editor",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 1432
+      },
+      "data": {
+        "id": "agent_legal_editor",
+        "name": "final_polish_editor",
+        "label": "Final Polish Editor",
+        "role": "Legal Contract Synthesis & Final Polish Editor",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "systemPrompt": "Consumes initial_draft and critique_rubric from session state, resolves all identified compliance vulnerabilities, and outputs the finalized contract clause conforming strictly to FinalizedContractClause schema.",
+        "tools": [],
+        "subAgents": [],
+        "structuredOutput": {
+          "enabled": true,
+          "name": "FinalizedContractClause",
+          "formatType": "pydantic",
+          "fields": [
+            {
+              "name": "clause_title",
+              "type": "string",
+              "required": true,
+              "description": "Formal title of the contract clause"
+            },
+            {
+              "name": "clause_text",
+              "type": "string",
+              "required": true,
+              "description": "Complete legally binding text of the clause"
+            },
+            {
+              "name": "risk_rating",
+              "type": "string",
+              "required": true,
+              "description": "Compliance risk rating: Low, Medium, or High"
+            },
+            {
+              "name": "addressed_critiques",
+              "type": "array",
+              "arrayItemType": "string",
+              "required": true,
+              "description": "List of adversarial critiques resolved in the final text"
+            },
+            {
+              "name": "governing_jurisdiction",
+              "type": "string",
+              "required": true,
+              "description": "Governing legal jurisdiction (e.g. State of Delaware, EU GDPR)"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "trigger_chat_legal",
+      "type": "triggerNode",
+      "position": {
+        "x": 488,
+        "y": 48
+      },
+      "data": {
+        "id": "trigger_chat_legal",
+        "label": "Enterprise Legal Chat Interface",
+        "triggerType": "chat",
+        "description": "Interactive legal advisory chat trigger",
+        "config": {
+          "initialMessage": "Enterprise Legal Contract Compliance Triad ready. Specify the contract clause to draft and audit.",
+          "streaming": true,
+          "sessionMemory": "cloud_sql"
+        },
+        "targetRootAgentId": "agent_legal_author"
+      }
+    },
+    {
+      "id": "trigger_tester_legal",
+      "type": "triggerNode",
+      "position": {
+        "x": 48,
+        "y": 376
+      },
+      "data": {
+        "id": "trigger_tester_legal",
+        "label": "Legal Compliance Test Suite",
+        "triggerType": "tester",
+        "description": "QA validation suite for GDPR indemnification and mutual limitation of liability clauses",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "scenario_saas_gdpr_indemnification",
+              "name": "SaaS GDPR & Liability Cap Compliance Scenario",
+              "prompt": "Draft and audit a SaaS Data Processing & GDPR Indemnification Clause with a 12-month liability cap.",
+              "expectedOutput": "clause_title",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario_mutual_liability_delaware",
+              "name": "Delaware Mutual Liability Clause Scenario",
+              "prompt": "Generate a Mutual Limitation of Liability and IP Indemnification clause under Delaware law.",
+              "expectedOutput": "{\"type\": \"object\", \"required\": [\"clause_title\", \"clause_text\", \"risk_rating\", \"addressed_critiques\", \"governing_jurisdiction\"]}",
+              "assertionType": "json_schema"
+            }
+          ]
+        },
+        "targetRootAgentId": "agent_legal_author"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_chat_to_author",
+      "source": "trigger_chat_legal",
+      "target": "agent_legal_author",
+      "sourceHandle": "trigger_out_bottom",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_tester_to_author",
+      "source": "trigger_tester_legal",
+      "target": "agent_legal_author",
+      "sourceHandle": "trigger_out_right",
+      "targetHandle": "input_left",
+      "animated": true
+    },
+    {
+      "id": "edge_author_to_critic",
+      "source": "agent_legal_author",
+      "target": "agent_legal_critic",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_critic_to_editor",
+      "source": "agent_legal_critic",
+      "target": "agent_legal_editor",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-10-20T22:47:13.556Z"
+  },
+  "deployment": {
+    "target": "agent_engine",
+    "deploymentTarget": "agent_engine",
+    "outputFolder": "./legal_contract_triad/",
+    "framework": "google-adk",
+    "language": "python",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true
+  }
+}

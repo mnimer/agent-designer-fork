@@ -144,8 +144,11 @@ describe('Collapsible Tool Sections - Logic & State', () => {
       categorized.enterprise_search.length +
       categorized.system.length +
       categorized.custom.length +
-      categorized.google_cloud_mcp.length;
+      categorized.google_cloud_mcp.length +
+      categorized.google_workspace_mcp.length +
+      categorized.mcp.length;
     
+    assert.equal(categorized.google_workspace_mcp.length, 13, 'Must have 13 Google Workspace MCP servers');
     assert.equal(totalCategorized, AVAILABLE_TOOLS.length, 'All available tools must be categorized');
   });
 

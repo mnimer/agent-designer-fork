@@ -26,7 +26,7 @@ describe('Autonomous Multi-Agent Code Reviewer Sample (.agent)', () => {
     const workflow: AgentWorkflowDocument = JSON.parse(rawContent);
 
     assert.equal(workflow.version, '1.0.0');
-    assert.equal(workflow.name, 'Autonomous Multi-Agent Code Reviewer');
+    assert.equal(workflow.name, 'Code Reviewing Agent');
     assert.equal(workflow.framework, 'google-adk');
     assert.equal(workflow.language, 'python');
   });

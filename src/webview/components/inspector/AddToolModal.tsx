@@ -65,6 +65,9 @@ export interface AddToolModalProps {
  * Resolves the appropriate Lucide icon component based on tool definition
  */
 const getToolIcon = (tool: ToolDefinition) => {
+  if (tool.category === 'google_workspace_mcp' || tool.id.startsWith('workspace_mcp_')) {
+    return <Globe className="w-4 h-4 text-emerald-400" />;
+  }
   if (tool.category === 'google_cloud_mcp') {
     switch (tool.icon) {
       case 'Database': return <Database className="w-4 h-4 text-amber-400" />;
@@ -153,6 +156,7 @@ export const AddToolModal: React.FC<AddToolModalProps> = ({
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
     native_adk: false,
     google_cloud_mcp: false,
+    google_workspace_mcp: false,
     mcp: false,
     custom: false,
     grounding: false,
@@ -247,15 +251,27 @@ export const AddToolModal: React.FC<AddToolModalProps> = ({
       tools: categorized.native_adk,
       badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
       isGcpGroup: false,
+      isWorkspaceGroup: false,
     },
     {
       id: 'google_cloud_mcp',
       title: 'Google Cloud MCP Servers',
-      subtitle: 'Official Remote Google Cloud & Workspace MCP Servers',
+      subtitle: 'Official Remote Google Cloud MCP Servers',
       icon: <Cloud className="w-3.5 h-3.5 text-sky-400" />,
       tools: categorized.google_cloud_mcp,
       badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
       isGcpGroup: true,
+      isWorkspaceGroup: false,
+    },
+    {
+      id: 'google_workspace_mcp',
+      title: 'Google Workspace MCP Servers',
+      subtitle: 'Official Remote Google Workspace MCP Servers (HTTP + OAuth)',
+      icon: <Globe className="w-3.5 h-3.5 text-emerald-400" />,
+      tools: categorized.google_workspace_mcp,
+      badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+      isGcpGroup: false,
+      isWorkspaceGroup: true,
     },
     {
       id: 'mcp',
@@ -265,15 +281,17 @@ export const AddToolModal: React.FC<AddToolModalProps> = ({
       tools: categorized.mcp,
       badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
       isGcpGroup: false,
+      isWorkspaceGroup: false,
     },
     {
       id: 'custom',
       title: 'Custom & External Tools',
       subtitle: 'REST APIs & External Integrations',
       icon: <Radio className="w-3.5 h-3.5 text-amber-400" />,
-      tools: categorized.custom.filter((t) => !isNativeAdkTool(t) && t.type !== 'mcp' && !t.mcpConfig && !t.id.startsWith('tool_mcp_') && t.category !== 'google_cloud_mcp'),
+      tools: categorized.custom.filter((t) => !isNativeAdkTool(t) && t.type !== 'mcp' && !t.mcpConfig && !t.id.startsWith('tool_mcp_') && t.category !== 'google_cloud_mcp' && t.category !== 'google_workspace_mcp'),
       badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
       isGcpGroup: false,
+      isWorkspaceGroup: false,
     },
   ];
 
@@ -359,7 +377,7 @@ export const AddToolModal: React.FC<AddToolModalProps> = ({
                     type="button"
                     onClick={() => toggleCategory(section.id)}
                     className="w-full flex items-center justify-between text-left hover:text-white transition-colors cursor-pointer group select-none"
-                    data-testid={`toggle-modal-tool-section-${section.id}`}
+                    data-testid={section.id === 'google_workspace_mcp' ? 'modal-category-google_workspace_mcp' : `toggle-modal-tool-section-${section.id}`}
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
                       {isExpanded ? (
@@ -431,6 +449,7 @@ export const AddToolModal: React.FC<AddToolModalProps> = ({
                                     return (
                                       <div
                                         key={tool.id}
+                                        title={tool.name}
                                         onClick={() => {
                                           if (!isAlreadyAdded) {
                                             onSelectTool(tool);
@@ -440,17 +459,20 @@ export const AddToolModal: React.FC<AddToolModalProps> = ({
                                         className={`flex items-start justify-between p-2 rounded-lg border transition-all ${
                                           isAlreadyAdded
                                             ? 'bg-[#0d1117]/60 border-[#30363d] opacity-60 cursor-default'
-                                            : 'bg-[#0d1117] border-[#30363d] hover:border-sky-500/60 hover:bg-[#161b22] cursor-pointer shadow-sm group'
+                                            : 'bg-[#0d1117] border-[#30363d] hover:border-sky-400 hover:bg-[#161b22] cursor-pointer shadow-sm hover:shadow-md hover:shadow-sky-950/30 group'
                                         }`}
                                         data-testid={`modal-gcp-mcp-tool-${tool.id}`}
                                       >
                                         <div className="flex items-start gap-2 min-w-0 flex-1">
-                                          <div className="p-1.5 rounded-md bg-[#161b22] border border-[#30363d] shrink-0 mt-0.5">
+                                          <div className="p-1.5 rounded-md bg-[#161b22] border border-[#30363d] group-hover:border-sky-500/40 shrink-0 mt-0.5 transition-colors">
                                             {getToolIcon(tool)}
                                           </div>
                                           <div className="min-w-0 flex-1 pr-2">
                                             <div className="flex items-center gap-1.5 flex-wrap">
-                                              <span className="text-xs font-bold text-gray-200 group-hover:text-white">
+                                              <span
+                                                title={tool.name}
+                                                className="text-xs font-bold text-gray-200 group-hover:text-sky-300 transition-colors"
+                                              >
                                                 {tool.name}
                                               </span>
                                               {renderLaunchStageBadge(tool.mcpConfig?.launchStage)}
@@ -492,6 +514,79 @@ export const AddToolModal: React.FC<AddToolModalProps> = ({
                                   })}
                                 </div>
                               )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : section.isWorkspaceGroup ? (
+                      /* Google Workspace Remote MCP Servers */
+                      <div className="space-y-1.5 pt-1 border-t border-[#30363d]/40">
+                        {section.tools.map((tool) => {
+                          const isAlreadyAdded = existingToolIds.includes(tool.id);
+
+                          return (
+                            <div
+                              key={tool.id}
+                              title={tool.name}
+                              onClick={() => {
+                                if (!isAlreadyAdded) {
+                                  onSelectTool(tool);
+                                  onClose();
+                                }
+                              }}
+                              className={`flex items-start justify-between p-2 rounded-lg border transition-all ${
+                                isAlreadyAdded
+                                  ? 'bg-[#0d1117]/60 border-[#30363d] opacity-60 cursor-default'
+                                  : 'bg-[#0d1117] border-[#30363d] hover:border-emerald-400 hover:bg-[#161b22] cursor-pointer shadow-sm hover:shadow-md hover:shadow-emerald-950/30 group'
+                              }`}
+                              data-testid={`modal-workspace-mcp-tool-${tool.id}`}
+                            >
+                              <div className="flex items-start gap-2 min-w-0 flex-1">
+                                <div className="p-1.5 rounded-md bg-[#161b22] border border-[#30363d] group-hover:border-emerald-500/40 shrink-0 mt-0.5 transition-colors">
+                                  {getToolIcon(tool)}
+                                </div>
+                                <div className="min-w-0 flex-1 pr-2">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span
+                                      title={tool.name}
+                                      className="text-xs font-bold text-gray-200 group-hover:text-emerald-300 transition-colors"
+                                    >
+                                      {tool.name}
+                                    </span>
+                                    {renderLaunchStageBadge(tool.mcpConfig?.launchStage || 'Preview')}
+                                  </div>
+                                  {tool.mcpConfig?.serverUrl && (
+                                    <div className="text-[9px] font-mono text-emerald-400/80 truncate mt-0.5">
+                                      {tool.mcpConfig.serverUrl}
+                                    </div>
+                                  )}
+                                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                                    {tool.description}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="ml-2 shrink-0 self-center">
+                                {isAlreadyAdded ? (
+                                  <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-950/30 px-2 py-1 rounded border border-emerald-500/30">
+                                    <Check className="w-3 h-3" />
+                                    Attached
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onSelectTool(tool);
+                                      onClose();
+                                    }}
+                                    className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-xs transition-colors cursor-pointer"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                    <span>Add</span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           );
                         })}

@@ -1,22 +1,29 @@
 /**
  * ModelSelector - Modular drop-down model selector with reasoning budget controls.
  *
- * This component standardizes model picking and exposes specialized controls 
- * such as collapsible temperature, token budgets, and adaptive thinking (reasoning budget)
- * for advanced models like Gemini 3.8 and Gemini 3.7 Flash.
+ * Dynamically populates the available models from the user's enabled models
+ * in Plugin Settings (`SettingsContext`), allowing users to select different
+ * enabled models (e.g. Anthropic Claude on Root Agent, Gemini 3.8 Flash on Sub-Agents),
+ * and exposes specialized controls such as collapsible temperature, token budgets,
+ * and adaptive thinking (reasoning budget) for advanced models.
  *
  * Architectural Decisions:
- * 1. Cohesive AI Parameters: Group model-specific switches within the same container.
- * 2. 8pt Grid Compliant: Utilizes gap-4 (16px), space-y-4 (16px), and p-3 (12px) spacings.
- * 3. Collapsible Creative Temperature: Collapsed by default since users rarely adjust it,
+ * 1. Dynamic Settings-Backed Catalog: Reads `enabledModels` from `useOptionalPluginSettings()`
+ *    and falls back to core Gemini models when rendered outside a provider in unit tests.
+ * 2. Cohesive AI Parameters: Group model-specific switches within the same container.
+ * 3. 8pt Grid Compliant: Utilizes gap-4 (16px), space-y-4 (16px), and p-3 (12px) spacings.
+ * 4. Collapsible Creative Temperature: Collapsed by default since users rarely adjust it,
  *    while displaying the active value badge in the header.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Cpu, Sliders, ChevronDown, ChevronRight } from 'lucide-react';
 import { DrawerField } from './DrawerField';
+import { useOptionalPluginSettings } from '../../../context/SettingsContext';
+import { ADC_CORE_GEMINI_MODELS } from '../../../data/modelCatalog';
+import { ModelCatalogItem } from '../../../types';
 
 /**
  * ModelSelectorProps - Properties for the ModelSelector primitive component
@@ -33,26 +40,21 @@ export interface ModelSelectorProps {
   className?: string;
 }
 
-const SUPPORTED_MODELS = [
-  { 
-    id: 'gemini-3.8-flash', 
-    name: 'Gemini 3.8 Flash (Recommended)', 
-    desc: 'Next-gen hybrid reasoning with adaptive thinking (location="global")' 
+const FALLBACK_MODELS: ModelCatalogItem[] = [
+  ...ADC_CORE_GEMINI_MODELS,
+  {
+    id: 'gemini-3.6-flash',
+    name: 'Gemini 3.6 Flash',
+    company: 'Google',
+    description: 'Advanced multimodal reasoning',
+    source: 'adc_gemini',
   },
-  { 
-    id: 'gemini-3.7-flash', 
-    name: 'Gemini 3.7 Flash', 
-    desc: 'Hybrid reasoning with adaptive thinking (location="global")' 
-  },
-  { 
-    id: 'gemini-3.6-flash', 
-    name: 'Gemini 3.6 Flash', 
-    desc: 'Advanced multimodal reasoning' 
-  },
-  { 
-    id: 'gemini-3.5-flash', 
-    name: 'Gemini 3.5 Flash', 
-    desc: 'Fast, lightweight multimodal reasoning' 
+  {
+    id: 'gemini-3.5-flash',
+    name: 'Gemini 3.5 Flash',
+    company: 'Google',
+    description: 'Fast, lightweight multimodal reasoning',
+    source: 'adc_gemini',
   },
 ];
 
@@ -67,12 +69,39 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   onChangeThinkingBudget,
   className = '',
 }) => {
+  const settingsCtx = useOptionalPluginSettings();
   const [isTempExpanded, setIsTempExpanded] = useState(false);
   const currentModel = selectedModel || value || 'gemini-3.7-flash';
   const handleModelChangeCallback = onChangeModel || onChange || (() => {});
 
-  // Determine if the current model supports a reasoning budget (e.g., Gemini 3.8, Gemini 3.7)
-  const supportsReasoning = Boolean(currentModel && (currentModel.includes('3.8') || currentModel.includes('3.7')));
+  const availableModels = useMemo(() => {
+    const baseList =
+      settingsCtx && settingsCtx.enabledModels.length > 0
+        ? settingsCtx.enabledModels
+        : FALLBACK_MODELS;
+
+    if (currentModel && !baseList.some((m) => m.id === currentModel)) {
+      return [
+        ...baseList,
+        {
+          id: currentModel,
+          name: `${currentModel} (Current)`,
+          company: 'Custom',
+          description: 'Currently configured model on this agent node.',
+          source: 'adc_gemini' as const,
+        },
+      ];
+    }
+    return baseList;
+  }, [settingsCtx, currentModel]);
+
+  // Determine if the current model supports a numeric token reasoning budget (Gemini 3.8, Gemini 3.7).
+  // Note: gemini-4-argon uses thinkingLevel ('LOW' | 'MEDIUM' | 'HIGH') and rejects numeric thinkingBudget.
+  const supportsReasoning = Boolean(
+    currentModel &&
+      (currentModel.includes('3.8') ||
+        currentModel.includes('3.7'))
+  );
   const isReasoningEnabled = thinkingBudget !== undefined && thinkingBudget > 0;
 
   const handleReasoningToggle = (enabled: boolean) => {
@@ -85,19 +114,25 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const nextModel = e.target.value;
     handleModelChangeCallback(nextModel);
-    
-    // Automatically disable reasoning budget if moving to a model that does not support it
-    if (!nextModel.includes('3.8') && !nextModel.includes('3.7') && onChangeThinkingBudget) {
+
+    // Automatically disable reasoning budget if moving to a model that does not support numeric thinkingBudget
+    if (
+      !nextModel.includes('3.8') &&
+      !nextModel.includes('3.7') &&
+      onChangeThinkingBudget
+    ) {
       onChangeThinkingBudget(0);
     }
   };
 
+  const activeModelMeta = availableModels.find((m) => m.id === currentModel);
+
   return (
     <div className={`space-y-3 ${className}`}>
       {/* 1. Model Dropdown Select */}
-      <DrawerField 
-        label="AI Foundation Model" 
-        subLabel="The foundational Gemini model used for reasoning and orchestration."
+      <DrawerField
+        label="AI Foundation Model"
+        subLabel="Select from models enabled in Plugin Settings (ADC / Model Garden / API Keys)."
         tooltip="Gemini 3.8 Flash is recommended for its powerful multi-agent coordination capabilities."
       >
         <div className="relative">
@@ -108,9 +143,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             className="w-full pl-9 pr-8 py-2 bg-[#161b22] border border-[#30363d] rounded text-xs text-gray-200 focus:outline-none focus:border-emerald-500 appearance-none font-mono cursor-pointer"
             data-testid="model-select"
           >
-            {SUPPORTED_MODELS.map((m) => (
+            {availableModels.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.name}
+                {m.company ? `[${m.company}] ${m.name} (${m.id})` : m.name}
               </option>
             ))}
           </select>
@@ -122,7 +157,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
       {/* 2. Reasoning / Thinking Budget Panel (only visible when onChangeThinkingBudget is passed) */}
       {supportsReasoning && onChangeThinkingBudget && (
-        <div 
+        <div
           className="p-3.5 bg-[#161b22] border border-[#30363d] rounded-lg space-y-3"
           data-testid="reasoning-panel"
         >

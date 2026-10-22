@@ -105,7 +105,7 @@ describe('TASK-173: Travel Concierge Sample & Info Dialog Suite', () => {
 
     // Validate JSON schema of .agent file
     const parsed = JSON.parse(fs.readFileSync(agentFile, 'utf-8'));
-    assert.equal(parsed.name, 'TravelConcierge');
+    assert.equal(parsed.name, 'Travel Concierge');
     assert.ok(Array.isArray(parsed.nodes) && parsed.nodes.length >= 8);
     assert.ok(Array.isArray(parsed.edges) && parsed.edges.length >= 7);
 

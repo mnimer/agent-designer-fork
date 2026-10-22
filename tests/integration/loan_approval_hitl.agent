@@ -1,0 +1,283 @@
+{
+  "version": "1.0.0",
+  "name": "commercial_loan_approval_hitl",
+  "description": "Commercial Loan Approval HITL Gate with Cloud SQL PostgreSQL Checkpointing",
+  "framework": "google-adk",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "agent_underwriter",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 336
+      },
+      "data": {
+        "id": "agent_underwriter",
+        "name": "automated_underwriter",
+        "label": "Automated Underwriter",
+        "role": "Commercial Loan Automated Underwriter",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "agentKind": "standard",
+        "systemPrompt": "Evaluates commercial loan application financials including debt-to-income ratio, credit score, annual revenue, and collateral value. Calculates risk_tier ('LOW', 'MODERATE', 'ELEVATED') and approved_credit_limit, and writes these values into session state for downstream approval gate routing.",
+        "isStartNode": true,
+        "subAgentPattern": "sequential",
+        "memoryType": "cloud_sql",
+        "memoryConfig": {
+          "type": "cloud_sql",
+          "instanceConnectionName": "project:region:loan-pg-instance",
+          "databaseName": "loan_db",
+          "databaseUrlSecret": "LOAN_DB_SECRET",
+          "tableName": "commercial_loan_sessions"
+        },
+        "inputSchema": {
+          "enabled": true,
+          "name": "LoanApplicationInput",
+          "fields": [
+            {
+              "name": "business_name",
+              "type": "string",
+              "required": true,
+              "description": "Legal business entity name applying for commercial credit"
+            },
+            {
+              "name": "loan_amount",
+              "type": "number",
+              "required": true,
+              "description": "Requested commercial loan amount in USD"
+            },
+            {
+              "name": "annual_revenue",
+              "type": "number",
+              "required": true,
+              "description": "Verified annual business revenue in USD"
+            },
+            {
+              "name": "debt_to_income_ratio",
+              "type": "number",
+              "required": true,
+              "description": "Debt-to-income ratio as a decimal fraction (e.g. 0.32)"
+            },
+            {
+              "name": "credit_score",
+              "type": "number",
+              "required": true,
+              "description": "Commercial FICO or SBSS credit score"
+            }
+          ]
+        },
+        "subAgents": [
+          {
+            "agentId": "hitl_loan_officer",
+            "name": "hitl_loan_officer",
+            "delegationType": "sequential"
+          }
+        ],
+        "tools": []
+      }
+    },
+    {
+      "id": "trigger_pubsub_loan",
+      "type": "triggerNode",
+      "position": {
+        "x": 488,
+        "y": 48
+      },
+      "data": {
+        "id": "trigger_pubsub_loan",
+        "label": "Loan Application PubSub Trigger",
+        "triggerType": "pubsub",
+        "description": "Ingests real-time commercial loan applications from Google Cloud Pub/Sub topic.",
+        "config": {
+          "topicName": "loan-applications",
+          "subscriptionName": "loan-sub",
+          "messageFormat": "json"
+        },
+        "targetRootAgentId": "agent_underwriter"
+      }
+    },
+    {
+      "id": "trigger_tester_loan",
+      "type": "triggerNode",
+      "position": {
+        "x": 48,
+        "y": 344
+      },
+      "data": {
+        "id": "trigger_tester_loan",
+        "label": "Loan Approval Test Suite",
+        "triggerType": "tester",
+        "description": "Automated QA scenarios for small loan auto-approval vs large loan HITL escalation.",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "scenario_small_loan_auto",
+              "name": "Small Business Auto-Approval Under Threshold",
+              "prompt": "Process commercial loan application for Apex Retail LLC: loan_amount=45000, risk_tier='LOW', annual_revenue=650000, debt_to_income_ratio=0.18, credit_score=780.",
+              "inputQuery": "Process commercial loan application for Apex Retail LLC: loan_amount=45000, risk_tier='LOW', annual_revenue=650000, debt_to_income_ratio=0.18, credit_score=780.",
+              "expectedOutput": "disbursement",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario_large_loan_hitl",
+              "name": "Large Commercial Loan HITL Escalation",
+              "prompt": "Process commercial loan application for Titan Logistics Inc: loan_amount=250000, risk_tier='ELEVATED', annual_revenue=1400000, debt_to_income_ratio=0.45, credit_score=630.",
+              "inputQuery": "Process commercial loan application for Titan Logistics Inc: loan_amount=250000, risk_tier='ELEVATED', annual_revenue=1400000, debt_to_income_ratio=0.45, credit_score=630.",
+              "expectedOutput": "manual underwriter sign-off",
+              "assertionType": "contains"
+            }
+          ]
+        },
+        "targetRootAgentId": "agent_underwriter"
+      }
+    },
+    {
+      "id": "hitl_loan_officer",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 880
+      },
+      "data": {
+        "id": "hitl_loan_officer",
+        "name": "hitl_loan_officer",
+        "label": "HITL Approval Gate",
+        "role": "Senior Commercial Credit Approval Gate",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "agentKind": "hitl",
+        "systemPrompt": "Evaluates commercial loan application risk and checks approval thresholds. Pauses workflow execution to request human underwriter sign-off when loan amount exceeds $100,000 or risk tier is ELEVATED. Dispatches approved applications to disbursement specialist and rejected applications to rejection notice specialist.",
+        "hitlConfig": {
+          "approvalCondition": "state.loan_amount > 100000 or state.risk_tier == 'ELEVATED'",
+          "timeoutHours": 48,
+          "autoRejectOnTimeout": true,
+          "approverRoles": [
+            "senior_credit_officer",
+            "risk_compliance_director"
+          ],
+          "requestPrompt": "Commercial loan application of ${loan_amount} for {business_name} requires manual underwriter sign-off.",
+          "approvedAgentId": "agent_disbursement",
+          "rejectedAgentId": "agent_rejection_notice"
+        },
+        "tools": [
+          {
+            "id": "tool_request_input",
+            "name": "request_input",
+            "type": "builtin",
+            "builtinType": "request_input",
+            "description": "Pauses workflow execution to request interactive human approval sign-off",
+            "enabled": true
+          }
+        ],
+        "subAgents": [
+          {
+            "agentId": "agent_disbursement",
+            "name": "disbursement_specialist",
+            "delegationType": "hitl_approved"
+          },
+          {
+            "agentId": "agent_rejection_notice",
+            "name": "rejection_notice_specialist",
+            "delegationType": "hitl_rejected"
+          }
+        ]
+      }
+    },
+    {
+      "id": "agent_disbursement",
+      "type": "agentNode",
+      "position": {
+        "x": 256,
+        "y": 1496
+      },
+      "data": {
+        "id": "agent_disbursement",
+        "name": "disbursement_specialist",
+        "label": "Disbursement Agent",
+        "role": "Loan Disbursement & Closing Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "agentKind": "standard",
+        "systemPrompt": "Generates ACH wire disbursement instructions, disbursement schedules, and loan covenant contracts for approved commercial credit facilities.",
+        "tools": [],
+        "subAgents": []
+      }
+    },
+    {
+      "id": "agent_rejection_notice",
+      "type": "agentNode",
+      "position": {
+        "x": 664,
+        "y": 1496
+      },
+      "data": {
+        "id": "agent_rejection_notice",
+        "name": "rejection_notice_specialist",
+        "label": "Rejection Notice Agent",
+        "role": "Adverse Action Compliance Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "agentKind": "standard",
+        "systemPrompt": "Formulates formal Adverse Action notices complying with Equal Credit Opportunity Act (ECOA) and Dodd-Frank regulatory disclosure rules for declined commercial loan applications.",
+        "tools": [],
+        "subAgents": []
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_pubsub_to_underwriter",
+      "source": "trigger_pubsub_loan",
+      "target": "agent_underwriter",
+      "sourceHandle": "trigger_out_bottom",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_tester_to_underwriter",
+      "source": "trigger_tester_loan",
+      "target": "agent_underwriter",
+      "sourceHandle": "trigger_out_right",
+      "targetHandle": "input_left",
+      "animated": true
+    },
+    {
+      "id": "edge_underwriter_to_hitl",
+      "source": "agent_underwriter",
+      "target": "hitl_loan_officer",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_hitl_to_disbursement",
+      "source": "hitl_loan_officer",
+      "target": "agent_disbursement",
+      "sourceHandle": "approved",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_hitl_to_rejection",
+      "source": "hitl_loan_officer",
+      "target": "agent_rejection_notice",
+      "sourceHandle": "rejected",
+      "targetHandle": "input",
+      "animated": true
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-10-20T23:05:27.176Z"
+  },
+  "deployment": {
+    "target": "agent_engine",
+    "deploymentTarget": "agent_engine",
+    "outputFolder": "./loan_approval_hitl/",
+    "framework": "google-adk",
+    "language": "python",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true
+  }
+}

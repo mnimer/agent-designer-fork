@@ -92,6 +92,40 @@ export interface ModelConfig {
   plannerConfig?: PlannerConfig;
 }
 
+export type ModelAuthMode = 'adc' | 'api_keys';
+
+export type ApiKeyProviderId = 'gemini' | 'anthropic' | 'openai' | 'grok';
+
+export interface ModelCatalogItem {
+  id: string;
+  name: string;
+  company: string;
+  description: string;
+  alwaysOn?: boolean;
+  source?: 'adc_gemini' | 'model_garden' | 'api_key';
+  providerId?: ApiKeyProviderId;
+  gardenPublisherModel?: string;
+  enabledInGarden?: boolean;
+}
+
+export interface ApiKeyProviderConfig {
+  providerId: ApiKeyProviderId;
+  enabled: boolean;
+  apiKey: string;
+  enabledModels: string[];
+}
+
+export interface AgentSkillDefinition {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  instructions: string;
+  scope: 'global' | 'agent';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // ============================================================================
 // 3. Trigger Configurations & QA Test Suites
 // ============================================================================
@@ -262,11 +296,13 @@ export interface TriggerData extends Record<string, unknown> {
 
 export type McpTransportType = 'stdio' | 'sse' | 'http';
 
-export type McpAuthProviderType = 'none' | 'google_credentials' | 'bearer_token';
+export type McpAuthProviderType = 'none' | 'google_credentials' | 'bearer_token' | 'google_cloud_oauth';
 
 export interface McpOAuthConfig {
+  serviceName?: string;
   scopes?: string[];
   projectId?: string;
+  useAdc?: boolean;
 }
 
 export interface McpSecretConfig {
@@ -284,7 +320,7 @@ export interface McpSecretConfig {
 }
 
 export interface McpToolConfig {
-  serverName: string;
+  serverName?: string;
   transport: McpTransportType;
   transportType?: McpTransportType;
   command?: string;
@@ -297,6 +333,8 @@ export interface McpToolConfig {
   autoApproveTools?: string[];
   timeoutSeconds?: number;
   timeout?: number;
+  authType?: string;
+  toolFilter?: string[];
   authProviderType?: McpAuthProviderType;
   oauthConfig?: McpOAuthConfig;
   secretConfig?: McpSecretConfig;
@@ -304,6 +342,8 @@ export interface McpToolConfig {
   region?: string;
   selectedToolset?: string;
   launchStage?: GoogleCloudLaunchStage;
+  /** Google Workspace Remote MCP Server specific configuration (companion APIs, scope presets, user project) */
+  workspaceConfig?: GoogleWorkspaceMcpConfig;
   databricksConfig?: DatabricksMcpConfig;
   snowflakeConfig?: SnowflakeMcpConfig;
 }
@@ -332,6 +372,87 @@ export interface GoogleCloudMcpServerDefinition {
   icon?: string;
   defaultScopes?: string[];
   isMultiEndpoint?: boolean;
+}
+
+/**
+ * Scope preset mode for Google Workspace Remote MCP Servers.
+ * - 'read_only': Includes only read-only OAuth 2.0 scopes (least privilege default).
+ * - 'read_write': Includes both read-only and read/write OAuth 2.0 scopes.
+ */
+export type GoogleWorkspaceScopePreset = 'read_only' | 'read_write';
+
+/**
+ * Caller authentication strategy for user-scoped Google Workspace Remote MCP Servers.
+ * - 'caller_oauth': Uses the calling user's OAuth 2.0 Bearer token from ADK session state
+ *   (e.g., `ctx.session.state["user_access_token"]`), falling back to local `gcloud` user ADC in local dev.
+ * - 'interactive_3lo': Uses ADK's native 3-Legged OAuth consent flow (`auth_scheme` + `auth_credential`)
+ *   to prompt the calling user with a Google OAuth 2.0 sign-in card and store their token per session.
+ * - 'dwd_impersonation': Uses Service Account Domain-Wide Delegation (`credentials.with_subject(user_email)`)
+ *   to impersonate the calling user's email (`ctx.session.user_id` or `ctx.session.state["user_email"]`).
+ */
+export type GoogleWorkspaceCallerAuthMode =
+  | 'caller_oauth'
+  | 'interactive_3lo'
+  | 'dwd_impersonation';
+
+/**
+ * Configuration metadata for a Google Workspace Remote MCP Server tool.
+ */
+export interface GoogleWorkspaceMcpConfig {
+  /** Catalog ID of the Google Workspace MCP server (e.g., 'workspace_mcp_gmail') */
+  serviceId: string;
+  /** Companion Google Workspace REST API service name (e.g., 'gmail.googleapis.com') */
+  companionRestApi: string;
+  /** Managed MCP server service name (e.g., 'gmailmcp.googleapis.com') */
+  mcpServiceName: string;
+  /** Selected OAuth 2.0 scope preset ('read_only' | 'read_write') */
+  scopePreset: GoogleWorkspaceScopePreset;
+  /** Least-privilege read-only OAuth 2.0 scopes for this Workspace MCP server */
+  readOnlyScopes: string[];
+  /** Full read/write OAuth 2.0 scopes for this Workspace MCP server */
+  readWriteScopes: string[];
+  /** How the agent authenticates on behalf of the calling user (default: 'caller_oauth') */
+  callerAuthMode?: GoogleWorkspaceCallerAuthMode;
+  /** Session state key holding the caller's OAuth 2.0 access token (default: 'user_access_token') */
+  tokenStateKey?: string;
+  /** Optional Google Cloud billing/quota project ID passed in X-Goog-User-Project header */
+  userProject?: string;
+  /** Optional OAuth 2.0 Client ID for user-delegated Workspace authentication */
+  oauthClientId?: string;
+  /** Optional OAuth 2.0 Client Secret for Gemini Enterprise ServerSideOAuth2 / 3LO registration */
+  oauthClientSecret?: string;
+  /** Optional environment variable name storing the OAuth 2.0 Client Secret for 3LO consent (default: 'WORKSPACE_OAUTH_CLIENT_SECRET') */
+  oauthClientSecretEnvVar?: string;
+  /** Optional default Workspace user email for Domain-Wide Delegation fallback */
+  subjectEmail?: string;
+}
+
+/**
+ * Metadata definition for a Google Workspace Remote MCP Server in the catalog.
+ */
+export interface GoogleWorkspaceMcpServerDefinition {
+  /** Unique catalog identifier (e.g., 'workspace_mcp_gmail') */
+  id: string;
+  /** Human-readable display name (e.g., 'Gmail MCP Server') */
+  name: string;
+  /** Detailed description of exposed MCP tools and capabilities */
+  description: string;
+  /** Companion Google Workspace REST API service name (e.g., 'gmail.googleapis.com') */
+  companionRestApi: string;
+  /** Managed MCP server service name (e.g., 'gmailmcp.googleapis.com') */
+  mcpServiceName: string;
+  /** Official Streamable HTTP MCP endpoint URL (e.g., 'https://gmailmcp.googleapis.com/mcp/v1') */
+  defaultEndpoint: string;
+  /** Least-privilege read-only OAuth 2.0 scopes */
+  readOnlyScopes: string[];
+  /** Read/write OAuth 2.0 scopes */
+  readWriteScopes: string[];
+  /** Release launch stage ('GA' | 'Preview' | 'Experimental') */
+  launchStage: 'GA' | 'Preview' | 'Experimental';
+  /** Official Google Workspace Developer documentation URL */
+  docUrl: string;
+  /** Representative tool names exposed by this Workspace MCP server */
+  sampleTools: string[];
 }
 
 // ============================================================================
@@ -420,7 +541,10 @@ export type ToolCategory =
   | 'code' 
   | 'rag' 
   | 'builtin'
-  | 'google_cloud_mcp';
+  | 'google_cloud_mcp'
+  | 'google_workspace_mcp'
+  | 'databricks_mcp'
+  | 'snowflake_mcp';
 
 export type AdkBuiltinToolType = 
   | 'google_search' 
@@ -1141,6 +1265,7 @@ export interface AgentNodeData {
   inputSchema?: StructuredInputSchema;
   standardConfig?: any; // Compatibility alias
   tools?: ToolDefinition[];
+  skills?: AgentSkillDefinition[];
   subAgents?: SubAgentRef[];
   subAgentPattern?: DelegationPattern;
   memoryType?: AgentMemoryType | MemoryType;
@@ -1250,6 +1375,7 @@ export interface GenerationConfig {
   includeTests: boolean;
   includeDocker: boolean;
   useStreaming: boolean;
+  codeGenModel?: string;
   deploymentTarget?: 'cloud_run' | 'agent_engine' | 'gke' | 'local';
   deployedResourceId?: string;
   serviceUrl?: string;
@@ -1278,6 +1404,8 @@ export interface GeminiEnterpriseAppItem {
   solutionType?: string;
 }
 
+export type GeminiEnterpriseAuthMode = 'service_account' | 'user_oauth';
+
 /**
  * Enterprise Agent Governance & Gemini Enterprise App Publishing Configuration (TASK-217 & TASK-218).
  */
@@ -1296,12 +1424,16 @@ export interface AgentGovernanceConfig {
   agentGatewayId?: string;
   /** Run Vertex AI Cloud Evaluation (`EvalTask` via `eval_dataset.jsonl`) post-deploy. Defaults to false. */
   runCloudEvaluation?: boolean;
-  /** Publish to Gemini Enterprise App (`discoveryengine.googleapis.com`). Only shown when Chat Trigger is present; defaults to true when shown. */
+  /** Publish to Gemini Enterprise App (`discoveryengine.googleapis.com`). Only shown when Chat Trigger is present; defaults to false until checked by user. */
   publishToGeminiEnterprise?: boolean;
   /** Target Gemini Enterprise App (`engine_id`) for publishing. */
   geminiEnterpriseAppId?: string;
   /** Discovery Engine location ('global' | 'us' | 'eu'). Defaults to 'global'. */
   geminiEnterpriseLocation?: 'global' | 'us' | 'eu' | string;
+  /** Authentication mode when invoked from Gemini Enterprise ('service_account' | 'user_oauth'). Defaults to 'service_account'. */
+  geminiEnterpriseAuthMode?: GeminiEnterpriseAuthMode;
+  /** Optional custom GCP IAM Service Account email when geminiEnterpriseAuthMode === 'service_account'. Empty string means Gemini Enterprise default service account. */
+  geminiEnterpriseServiceAccount?: string;
   /** Bind the Shared Regional Agent Gateway to the Gemini Enterprise App registration. Defaults to true. */
   bindGatewayToGeminiEnterprise?: boolean;
   /** Alias for bindGatewayToGeminiEnterprise. */

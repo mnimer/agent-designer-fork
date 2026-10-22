@@ -1,0 +1,238 @@
+{
+  "version": "1.0.0",
+  "name": "procurement_b2b_a2a_orchestrator",
+  "description": "Procurement B2B A2A Protocol Agent with JSON-RPC 2.0 and Google Cloud IAM OIDC Authentication",
+  "framework": "google-adk",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "agent_procurement_orchestrator",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 336
+      },
+      "data": {
+        "id": "agent_procurement_orchestrator",
+        "name": "procurement_orchestrator",
+        "label": "Procurement Orchestrator",
+        "role": "B2B Hardware Procurement Coordinator",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "agentKind": "standard",
+        "isStartNode": true,
+        "subAgentPattern": "sequential",
+        "systemPrompt": "Coordinates end-to-end B2B enterprise procurement workflows across internal warehouse inventory, external vendor catalog via A2A protocol, and purchase order confirmation dispatch. Coordinates stock checks, wholesale quote requests, and formal purchase order generation.",
+        "memoryType": "firestore",
+        "memoryConfig": {
+          "type": "firestore",
+          "collectionName": "procurement_sessions",
+          "databaseId": "(default)",
+          "projectId": "gcp-project-test"
+        },
+        "subAgents": [
+          {
+            "agentId": "agent_inventory",
+            "name": "inventory_agent",
+            "delegationType": "sequential"
+          },
+          {
+            "agentId": "a2a_vendor_catalog",
+            "name": "vendor_catalog_a2a",
+            "delegationType": "sequential"
+          },
+          {
+            "agentId": "agent_confirmation",
+            "name": "confirmation_dispatcher",
+            "delegationType": "sequential"
+          }
+        ],
+        "tools": []
+      }
+    },
+    {
+      "id": "agent_inventory",
+      "type": "agentNode",
+      "position": {
+        "x": 48,
+        "y": 952
+      },
+      "data": {
+        "id": "agent_inventory",
+        "name": "inventory_agent",
+        "label": "Inventory Agent",
+        "role": "Warehouse Inventory Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "agentKind": "standard",
+        "systemPrompt": "Checks local warehouse stock levels, backorder thresholds, and calculates required restock quantities for requested hardware SKUs.",
+        "tools": [],
+        "subAgents": []
+      }
+    },
+    {
+      "id": "a2a_vendor_catalog",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 952
+      },
+      "data": {
+        "id": "a2a_vendor_catalog",
+        "name": "vendor_catalog_a2a",
+        "label": "Vendor A2A Node",
+        "role": "External Vendor A2A Gateway",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "agentKind": "a2a",
+        "systemPrompt": "Interacts with external vendor catalog over Agent-to-Agent (A2A) JSON-RPC 2.0 protocol using Google Cloud IAM OIDC service-to-service authentication. Queries bulk hardware pricing, requests quotes, and places purchase orders.",
+        "a2aConfig": {
+          "endpoint": "https://catalog-service.vendor-corp.internal/a2a/v1",
+          "protocolVersion": "1.0.0-a2a",
+          "agentCardUrl": "https://catalog-service.vendor-corp.internal/.well-known/agent-card.json",
+          "authType": "google_iam",
+          "targetAudience": "https://catalog-service.vendor-corp.internal",
+          "timeoutSeconds": 45,
+          "maxRetries": 3,
+          "capabilities": [
+            "search_sku",
+            "check_bulk_availability",
+            "request_formal_quote",
+            "place_purchase_order"
+          ],
+          "delegationPrompt": "Query vendor catalog for wholesale hardware pricing and request formal pricing quotes for SKUs exceeding threshold."
+        },
+        "tools": [],
+        "subAgents": []
+      }
+    },
+    {
+      "id": "agent_confirmation",
+      "type": "agentNode",
+      "position": {
+        "x": 872,
+        "y": 952
+      },
+      "data": {
+        "id": "agent_confirmation",
+        "name": "confirmation_dispatcher",
+        "label": "Confirmation Dispatcher",
+        "role": "ERP Purchase Order Dispatcher",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "agentKind": "standard",
+        "systemPrompt": "Formulates vendor Purchase Order (PO) documents, records ERP transaction confirmation numbers, and summarizes order commitments after A2A vendor quotes are retrieved.",
+        "tools": [],
+        "subAgents": []
+      }
+    },
+    {
+      "id": "trigger_pubsub_procurement",
+      "type": "triggerNode",
+      "position": {
+        "x": 488,
+        "y": 48
+      },
+      "data": {
+        "id": "trigger_pubsub_procurement",
+        "label": "B2B Procurement Orders PubSub Trigger",
+        "triggerType": "pubsub",
+        "description": "Ingests real-time B2B hardware procurement requests from Google Cloud Pub/Sub topic.",
+        "config": {
+          "topicName": "b2b-procurement-orders",
+          "subscriptionName": "procurement-worker-sub",
+          "messageFormat": "json"
+        },
+        "targetRootAgentId": "agent_procurement_orchestrator"
+      }
+    },
+    {
+      "id": "trigger_tester_procurement",
+      "type": "triggerNode",
+      "position": {
+        "x": 48,
+        "y": 384
+      },
+      "data": {
+        "id": "trigger_tester_procurement",
+        "label": "Procurement Test Suite Trigger",
+        "triggerType": "tester",
+        "description": "Test suite verifying B2B inventory checking, A2A vendor quotes, and purchase order confirmation.",
+        "targetRootAgentId": "agent_procurement_orchestrator",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "test_sku_quote",
+              "name": "Wholesale SKU Quote Retrieval",
+              "description": "Tests checking inventory and delegating to vendor A2A agent for wholesale hardware quote.",
+              "inputQuery": "Check inventory and request vendor quote for 500 units of SKU-SERVER-RACK-42U",
+              "expectedOutput": "quote"
+            },
+            {
+              "id": "test_po_confirmation",
+              "name": "Purchase Order Confirmation",
+              "description": "Tests executing purchase order and generating ERP confirmation document.",
+              "inputQuery": "Execute formal purchase order for 200 units of SKU-SWITCH-48PORT at approved price",
+              "expectedOutput": "Purchase Order"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_pubsub_to_orchestrator",
+      "source": "trigger_pubsub_procurement",
+      "target": "agent_procurement_orchestrator",
+      "sourceHandle": "trigger_out_bottom",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_tester_to_orchestrator",
+      "source": "trigger_tester_procurement",
+      "target": "agent_procurement_orchestrator",
+      "sourceHandle": "trigger_out_right",
+      "targetHandle": "input_left",
+      "animated": true
+    },
+    {
+      "id": "edge_orchestrator_to_inventory",
+      "source": "agent_procurement_orchestrator",
+      "target": "agent_inventory",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_orchestrator_to_a2a",
+      "source": "agent_procurement_orchestrator",
+      "target": "a2a_vendor_catalog",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_orchestrator_to_confirmation",
+      "source": "agent_procurement_orchestrator",
+      "target": "agent_confirmation",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-10-20T23:18:47.914Z"
+  },
+  "deployment": {
+    "target": "agent_engine",
+    "deploymentTarget": "agent_engine",
+    "outputFolder": "./procurement_a2a/",
+    "framework": "google-adk",
+    "language": "python",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true
+  }
+}

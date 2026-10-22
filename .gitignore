@@ -36,6 +36,9 @@ Thumbs.db
 
 # temporary files
 test-report.md
+*.db
+tests/integration/*/
+!tests/integration/evaluators/
 
 # Python artifacts
 __pycache__/

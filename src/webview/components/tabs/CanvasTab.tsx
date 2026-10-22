@@ -9,11 +9,9 @@
  * - Author: Mike Nimer <mikenimer@google.com>
  * - Modular design following "Props In, Events Up" paradigm.
  * - Spacing layout complies with 8pt grid system.
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 
-import React, { useRef } from 'react';
+import React, { useRef, Suspense } from 'react';
 import { ReactFlow, Connection, Edge, Node } from '@xyflow/react';
 
 // Domain Types
@@ -26,11 +24,17 @@ import {
   SampleWorkflowDefinition,
 } from '../../types';
 
-// UI Panels & Drawers
+// UI Panels & Lazy-Loaded Drawers
 import { PaletteCard } from '../Canvas/PaletteCard';
-import { AgentDrawer } from '../inspector/AgentDrawer';
-import { TriggerDrawer } from '../inspector/TriggerDrawer';
-import { ToolPropertyDrawer } from '../inspector/ToolPropertyDrawer';
+const AgentDrawer = React.lazy(() =>
+  import('../inspector/AgentDrawer').then((m) => ({ default: m.AgentDrawer }))
+);
+const TriggerDrawer = React.lazy(() =>
+  import('../inspector/TriggerDrawer').then((m) => ({ default: m.TriggerDrawer }))
+);
+const ToolPropertyDrawer = React.lazy(() =>
+  import('../inspector/ToolPropertyDrawer').then((m) => ({ default: m.ToolPropertyDrawer }))
+);
 
 // Modular Canvas Widgets
 import { CanvasToolbar } from '../Canvas/CanvasToolbar';
@@ -274,84 +278,99 @@ export const CanvasTab: React.FC<CanvasTabProps> = ({
           if (selectedAgentId) {
             handleAddSpecificTool(selectedAgentId, tool);
           } else if (nodes.length > 0) {
-            const firstAgent = nodes.find((n) => n.type === 'agentNode');
-            if (firstAgent) handleAddSpecificTool(firstAgent.id, tool);
+            const targetAgent =
+              nodes.find(
+                (n) => (n.type === 'agentNode' || n.type === 'agent') && (n.data as AgentData)?.isStartNode
+              ) || nodes.find((n) => n.type === 'agentNode' || n.type === 'agent');
+            if (targetAgent) handleAddSpecificTool(targetAgent.id, tool);
           }
         }}
       />
 
       {/* Slide-out Agent Inspector Drawer */}
-      <AgentDrawer
-        agent={
-          selectedAgentNode &&
-          selectedAgentNode.type !== 'triggerNode' &&
-          selectedAgentNode.type !== 'trigger' &&
-          !(selectedAgentNode.data as any)?.triggerType &&
-          !(selectedAgentNode.data as any)?.triggerKind
-            ? {
-                ...(selectedAgentNode.data as AgentData),
-                id: (selectedAgentNode.data as AgentData)?.id || selectedAgentNode.id,
-              }
-            : null
-        }
-        allAgents={agentNodes}
-        edges={edges}
-        isOpen={!!selectedAgentId && !isToolDrawerOpen && !isTriggerDrawerOpen}
-        onClose={() => setSelectedAgentId(null)}
-        onUpdateAgent={onUpdateAgent}
-        onOpenAddTool={() => selectedAgentId && setToolModalAgentId(selectedAgentId)}
-        onRemoveTool={(toolId) => selectedAgentId && handleRemoveTool(selectedAgentId, toolId)}
-        onEditTool={(tool) => selectedAgentId && handleOpenEditAgentTool(selectedAgentId, tool)}
-        onSelectAgent={(agentId) => setSelectedAgentId(agentId)}
-      />
+      {selectedAgentId && !isToolDrawerOpen && !isTriggerDrawerOpen && (
+        <Suspense fallback={null}>
+          <AgentDrawer
+            agent={
+              selectedAgentNode &&
+              selectedAgentNode.type !== 'triggerNode' &&
+              selectedAgentNode.type !== 'trigger' &&
+              !(selectedAgentNode.data as any)?.triggerType &&
+              !(selectedAgentNode.data as any)?.triggerKind
+                ? {
+                    ...(selectedAgentNode.data as AgentData),
+                    id: (selectedAgentNode.data as AgentData)?.id || selectedAgentNode.id,
+                  }
+                : null
+            }
+            allAgents={agentNodes}
+            edges={edges}
+            isOpen={!!selectedAgentId && !isToolDrawerOpen && !isTriggerDrawerOpen}
+            onClose={() => setSelectedAgentId(null)}
+            onUpdateAgent={onUpdateAgent}
+            onOpenAddTool={() => selectedAgentId && setToolModalAgentId(selectedAgentId)}
+            onRemoveTool={(toolId) => selectedAgentId && handleRemoveTool(selectedAgentId, toolId)}
+            onEditTool={(tool) => selectedAgentId && handleOpenEditAgentTool(selectedAgentId, tool)}
+            onSelectAgent={(agentId) => setSelectedAgentId(agentId)}
+          />
+        </Suspense>
+      )}
 
       {/* Slide-out Trigger Inspector Drawer */}
-      <TriggerDrawer
-        trigger={selectedTriggerNode ? (selectedTriggerNode.data as TriggerData) : null}
-        availableAgents={agentNodes}
-        isOpen={isTriggerDrawerOpen && !!selectedTriggerNode}
-        onClose={() => {
-          setSelectedTriggerId(null);
-          setIsTriggerDrawerOpen(false);
-        }}
-        onUpdateTrigger={(partial) => {
-          if (selectedTriggerId) handleUpdateTriggerData(selectedTriggerId, partial);
-        }}
-        onDeleteTrigger={() => {
-          if (selectedTriggerId) handleDeleteTrigger(selectedTriggerId);
-        }}
-        onReconnectToRoot={reconnectTriggersToRoot}
-      />
+      {isTriggerDrawerOpen && selectedTriggerNode && (
+        <Suspense fallback={null}>
+          <TriggerDrawer
+            trigger={selectedTriggerNode ? (selectedTriggerNode.data as TriggerData) : null}
+            availableAgents={agentNodes}
+            isOpen={isTriggerDrawerOpen && !!selectedTriggerNode}
+            onClose={() => {
+              setSelectedTriggerId(null);
+              setIsTriggerDrawerOpen(false);
+            }}
+            onUpdateTrigger={(partial) => {
+              if (selectedTriggerId) handleUpdateTriggerData(selectedTriggerId, partial);
+            }}
+            onDeleteTrigger={() => {
+              if (selectedTriggerId) handleDeleteTrigger(selectedTriggerId);
+            }}
+            onReconnectToRoot={reconnectTriggersToRoot}
+          />
+        </Suspense>
+      )}
 
       {/* Slide-out Tool Definition Property Panel */}
-      <ToolPropertyDrawer
-        tool={editingTool}
-        isOpen={isToolDrawerOpen}
-        onClose={() => {
-          setIsToolDrawerOpen(false);
-          setEditingToolScope(null);
-        }}
-        onSaveTool={handleSaveTool}
-        onUpdateTool={handleUpdateTool}
-        onDeleteTool={handleDeleteTool}
-        scope={editingToolScope?.type || 'global'}
-        agentName={
-          editingToolScope?.type === 'agent'
-            ? (nodes.find((n) => n.id === editingToolScope.agentId)?.data as AgentData)?.label
-            : undefined
-        }
-        selectedAgent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
-        targetLanguage={config.language || 'python'}
-        onTestMcpHandshake={handleTestMcpHandshake}
-        onStartOAuthFlow={handleStartOAuthFlow}
-        onSaveMcpSecret={handleSaveMcpSecret}
-        onGetMcpSecret={handleGetMcpSecret}
-        onAttachToAgent={(agentId, tool) => {
-          handleAddSpecificTool(agentId, tool);
-          setIsToolDrawerOpen(false);
-          setEditingToolScope(null);
-        }}
-      />
+      {isToolDrawerOpen && (
+        <Suspense fallback={null}>
+          <ToolPropertyDrawer
+            tool={editingTool}
+            isOpen={isToolDrawerOpen}
+            onClose={() => {
+              setIsToolDrawerOpen(false);
+              setEditingToolScope(null);
+            }}
+            onSaveTool={handleSaveTool}
+            onUpdateTool={handleUpdateTool}
+            onDeleteTool={handleDeleteTool}
+            scope={editingToolScope?.type || 'global'}
+            agentName={
+              editingToolScope?.type === 'agent'
+                ? (nodes.find((n) => n.id === editingToolScope.agentId)?.data as AgentData)?.label
+                : undefined
+            }
+            selectedAgent={selectedAgentNode ? (selectedAgentNode.data as AgentData) : null}
+            targetLanguage={config.language || 'python'}
+            onTestMcpHandshake={handleTestMcpHandshake}
+            onStartOAuthFlow={handleStartOAuthFlow}
+            onSaveMcpSecret={handleSaveMcpSecret}
+            onGetMcpSecret={handleGetMcpSecret}
+            onAttachToAgent={(agentId, tool) => {
+              handleAddSpecificTool(agentId, tool);
+              setIsToolDrawerOpen(false);
+              setEditingToolScope(null);
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

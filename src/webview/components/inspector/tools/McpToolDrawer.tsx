@@ -28,17 +28,33 @@ import {
   ExternalLink,
   Lock,
   Copy,
-  Database
+  Globe,
+  Shield,
+  Database,
 } from 'lucide-react';
-import { ToolDefinition, AgentData, McpToolConfig, McpTransportType } from '../../../types';
+import { 
+  ToolDefinition, 
+  AgentData, 
+  McpToolConfig, 
+  McpTransportType,
+  GoogleWorkspaceMcpConfig,
+  GoogleWorkspaceScopePreset,
+} from '../../../types';
 import {
   DatabricksMcpConfig,
   DatabricksMcpServiceType,
+  GoogleWorkspaceCallerAuthMode,
   SnowflakeMcpConfig,
   SnowflakeMcpDeploymentMode,
   SnowflakeMcpToolType,
 } from '../../../../shared/types';
 import { GOOGLE_CLOUD_MCP_SERVERS } from '../../../data/googleCloudMcpServers';
+import {
+  getGoogleWorkspaceMcpServerById,
+  getWorkspaceScopesForPreset,
+  getWorkspaceGcloudEnableCommand,
+  getWorkspaceAdcLoginCommand,
+} from '../../../data/googleWorkspaceMcpServers';
 import {
   isDatabricksMcpTool,
   buildDatabricksMcpEndpoint,
@@ -143,6 +159,7 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [isSavingSecret, setIsSavingSecret] = useState(false);
   const [secretSaveMessage, setSecretSaveMessage] = useState<string | null>(null);
+  const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
 
   // Snowflake DDL state
   const [copiedDdl, setCopiedDdl] = useState(false);
@@ -172,6 +189,17 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
         ? 'SNOWFLAKE_MCP_TOKEN'
         : (serverName.toUpperCase().replace(/[^A-Z0-9_]/g, '_') + '_TOKEN');
 
+      const wsDef = getGoogleWorkspaceMcpServerById(tool.mcpConfig?.workspaceConfig?.serviceId || tool.id);
+      const initialWorkspaceConfig: GoogleWorkspaceMcpConfig | undefined = tool.mcpConfig?.workspaceConfig || (wsDef ? {
+        serviceId: wsDef.id,
+        companionRestApi: wsDef.companionRestApi,
+        mcpServiceName: wsDef.mcpServiceName,
+        scopePreset: 'read_only' as GoogleWorkspaceScopePreset,
+        readOnlyScopes: [...wsDef.readOnlyScopes],
+        readWriteScopes: [...wsDef.readWriteScopes],
+        userProject: '${GOOGLE_CLOUD_PROJECT}',
+      } : undefined);
+
       setFormData({
         ...tool,
         type: 'mcp',
@@ -188,13 +216,16 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
           exposedTools: tool.mcpConfig?.exposedTools || ['*'],
           autoApproveTools: tool.mcpConfig?.autoApproveTools || [],
           authProviderType: tool.mcpConfig?.authProviderType || (isDatabricks || isSnowflake ? 'bearer_token' : 'google_credentials'),
-          oauthConfig: tool.mcpConfig?.oauthConfig || {
-            scopes: [
+          oauthConfig: {
+            scopes: tool.mcpConfig?.oauthConfig?.scopes || (wsDef ? wsDef.readOnlyScopes : [
               'https://www.googleapis.com/auth/cloud-platform',
               'https://www.googleapis.com/auth/bigquery',
-            ],
-            projectId: '',
+            ]),
+            projectId: tool.mcpConfig?.oauthConfig?.projectId || (wsDef ? '${GOOGLE_CLOUD_PROJECT}' : ''),
+            serviceName: tool.mcpConfig?.oauthConfig?.serviceName || (wsDef ? wsDef.mcpServiceName : undefined),
+            useAdc: tool.mcpConfig?.oauthConfig?.useAdc ?? true,
           },
+          workspaceConfig: initialWorkspaceConfig,
           secretConfig: {
             secretName: tool.mcpConfig?.secretConfig?.secretName || defaultSecretName,
             envVar: tool.mcpConfig?.secretConfig?.envVar || defaultEnvVar,
@@ -510,6 +541,81 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
   const isSnowflake = Boolean(isSnowflakeMcpTool(formData) || mcpConfig.snowflakeConfig);
   const launchStage = gcpServerDef?.launchStage || mcpConfig.launchStage || 'GA';
 
+  const isWorkspaceMcp = Boolean(
+    formData.category === 'google_workspace_mcp' ||
+    formData.id.startsWith('workspace_mcp_') ||
+    Boolean(formData.mcpConfig?.workspaceConfig) ||
+    tool?.category === 'google_workspace_mcp' ||
+    tool?.id.startsWith('workspace_mcp_')
+  );
+  const workspaceServerDef = getGoogleWorkspaceMcpServerById(
+    formData.mcpConfig?.workspaceConfig?.serviceId || formData.id || tool?.id || ''
+  );
+
+  const handleCopy = (text: string, id: string) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+      setCopiedCmd(id);
+      setTimeout(() => setCopiedCmd(null), 2000);
+    }
+  };
+
+  const updateWorkspaceConfig = (updates: Partial<GoogleWorkspaceMcpConfig>) => {
+    const currentWs: GoogleWorkspaceMcpConfig = mcpConfig.workspaceConfig || (workspaceServerDef ? {
+      serviceId: workspaceServerDef.id,
+      companionRestApi: workspaceServerDef.companionRestApi,
+      mcpServiceName: workspaceServerDef.mcpServiceName,
+      scopePreset: 'read_only' as GoogleWorkspaceScopePreset,
+      readOnlyScopes: [...workspaceServerDef.readOnlyScopes],
+      readWriteScopes: [...workspaceServerDef.readWriteScopes],
+      callerAuthMode: 'caller_oauth',
+      tokenStateKey: 'user_access_token',
+      userProject: '${GOOGLE_CLOUD_PROJECT}',
+    } : {
+      serviceId: formData?.id || '',
+      companionRestApi: '',
+      mcpServiceName: '',
+      scopePreset: 'read_only' as GoogleWorkspaceScopePreset,
+      readOnlyScopes: [],
+      readWriteScopes: [],
+      callerAuthMode: 'caller_oauth',
+      tokenStateKey: 'user_access_token',
+      userProject: '${GOOGLE_CLOUD_PROJECT}',
+    });
+
+    const nextWs: GoogleWorkspaceMcpConfig = {
+      ...currentWs,
+      ...updates,
+    };
+
+    // Determine new scopes if scopePreset changed
+    let newScopes = mcpConfig.oauthConfig?.scopes;
+    if (updates.scopePreset) {
+      newScopes = updates.scopePreset === 'read_write'
+        ? [...(nextWs.readWriteScopes || workspaceServerDef?.readWriteScopes || [])]
+        : [...(nextWs.readOnlyScopes || workspaceServerDef?.readOnlyScopes || [])];
+    }
+
+    // Determine updated headers and projectId if userProject changed
+    const updatedHeaders = mcpConfig.headers ? { ...mcpConfig.headers } : {};
+    let updatedProjectId = mcpConfig.oauthConfig?.projectId;
+
+    if (updates.userProject !== undefined) {
+      updatedHeaders['X-Goog-User-Project'] = updates.userProject;
+      updatedProjectId = updates.userProject;
+    }
+
+    handleUpdateMcpConfig({
+      workspaceConfig: nextWs,
+      headers: updatedHeaders,
+      oauthConfig: {
+        ...(mcpConfig.oauthConfig || { serviceName: nextWs.mcpServiceName, useAdc: true }),
+        scopes: newScopes || mcpConfig.oauthConfig?.scopes || [],
+        projectId: updatedProjectId,
+      },
+    });
+  };
+
   // Resolved Databricks & Snowflake configurations with safe defaults
   const databricksConfig: DatabricksMcpConfig = mcpConfig.databricksConfig || {
     workspaceHostname: '',
@@ -537,7 +643,15 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
     border: 'border-purple-500/40',
   };
 
-  if (isGcpMcp) {
+  if (isWorkspaceMcp) {
+    typeBadge = {
+      label: 'Workspace MCP',
+      subLabel: 'Preview',
+      color: 'text-emerald-400',
+      bg: 'bg-emerald-500/20',
+      border: 'border-emerald-500/40',
+    };
+  } else if (isGcpMcp) {
     typeBadge = {
       label: 'Google Cloud MCP',
       subLabel: launchStage,
@@ -563,7 +677,9 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
     };
   }
 
-  const toolIcon = isGcpMcp ? (
+  const toolIcon = isWorkspaceMcp ? (
+    <Globe className="w-4 h-4 text-emerald-400" />
+  ) : isGcpMcp ? (
     <Cloud className="w-4 h-4 text-sky-400" />
   ) : isDatabricks ? (
     <Sparkles className="w-4 h-4 text-orange-400" />
@@ -597,7 +713,9 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
     >
       {/* MCP SERVER DEDICATED CONFIGURATION */}
       <div className={`space-y-4 bg-[#0d1117] p-4 rounded-lg border shadow-sm ${
-        isDatabricks
+        isWorkspaceMcp
+          ? 'border-emerald-500/40'
+          : isDatabricks
           ? 'border-orange-500/40'
           : isSnowflake
           ? 'border-cyan-500/40'
@@ -608,7 +726,9 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
         {/* Panel Header */}
         <div className="flex items-center justify-between">
           <div className={`flex items-center gap-1.5 font-bold text-xs ${
-            isDatabricks
+            isWorkspaceMcp
+              ? 'text-emerald-300'
+              : isDatabricks
               ? 'text-orange-300'
               : isSnowflake
               ? 'text-cyan-300'
@@ -618,7 +738,9 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
           }`}>
             {toolIcon}
             <span>
-              {isGcpMcp
+              {isWorkspaceMcp
+                ? 'Google Workspace Remote MCP Server'
+                : isGcpMcp
                 ? 'Google Cloud Remote MCP Server'
                 : isDatabricks
                 ? 'Databricks Managed MCP Server'
@@ -628,7 +750,9 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
             </span>
           </div>
           <span className={`text-[9px] px-2 py-0.5 rounded border font-mono font-bold ${
-            isGcpMcp
+            isWorkspaceMcp
+              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+              : isGcpMcp
               ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
               : isDatabricks
               ? 'bg-orange-500/20 text-orange-300 border-orange-500/30'
@@ -636,7 +760,9 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
               ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
               : 'bg-purple-500/20 text-purple-300 border-purple-500/30'
           }`}>
-            {isGcpMcp
+            {isWorkspaceMcp
+              ? 'Remote (Preview)'
+              : isGcpMcp
               ? `Remote (${launchStage})`
               : isDatabricks
               ? 'Managed HTTP'
@@ -645,6 +771,384 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
               : 'Streamable HTTP'}
           </span>
         </div>
+
+        {/* Google Workspace MCP Setup & OAuth Scope Helper Panel */}
+        {isWorkspaceMcp && (
+          <div
+            className="space-y-3 bg-[#0a1f18]/40 border border-emerald-500/40 rounded-lg p-3 text-xs shadow-xs"
+            data-testid="google-workspace-mcp-setup-panel"
+          >
+            {/* Header: Emerald/Teal banner */}
+            <div className="flex items-center justify-between border-b border-emerald-500/30 pb-2">
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-emerald-400 shrink-0" />
+                <div>
+                  <div className="font-bold text-emerald-200">
+                    Google Workspace Remote MCP Server
+                  </div>
+                  <div className="text-[10px] text-emerald-300/70 font-mono">
+                    {workspaceServerDef?.name || formData.name}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[8.5px] px-1.5 py-0.5 rounded font-mono font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  Preview
+                </span>
+                <a
+                  href="https://developers.google.com/workspace/mcp"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-emerald-400 hover:text-emerald-200 flex items-center gap-1 hover:underline"
+                >
+                  Documentation <ExternalLink className="w-2.5 h-2.5" />
+                </a>
+              </div>
+            </div>
+
+            {/* Description */}
+            <p className="text-[11px] text-gray-300 leading-relaxed">
+              {workspaceServerDef?.description || formData.description}
+            </p>
+
+            {/* Companion APIs Enablement Box */}
+            <div className="p-2.5 bg-[#0d1117] border border-emerald-500/30 rounded-md space-y-2">
+              <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-300">
+                <span>Required Cloud APIs</span>
+                <span className="text-[9px] font-mono text-gray-400">gcloud CLI</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div className="p-1.5 rounded bg-[#161b22] border border-[#30363d]">
+                  <div className="text-gray-400 text-[9px] uppercase font-bold">1. Companion REST API</div>
+                  <div className="font-mono text-emerald-400 font-medium truncate mt-0.5">
+                    {mcpConfig.workspaceConfig?.companionRestApi || workspaceServerDef?.companionRestApi || 'workspace.googleapis.com'}
+                  </div>
+                </div>
+                <div className="p-1.5 rounded bg-[#161b22] border border-[#30363d]">
+                  <div className="text-gray-400 text-[9px] uppercase font-bold">2. Remote MCP Service</div>
+                  <div className="font-mono text-emerald-400 font-medium truncate mt-0.5">
+                    {mcpConfig.workspaceConfig?.mcpServiceName || workspaceServerDef?.mcpServiceName || 'mcp.googleapis.com'}
+                  </div>
+                </div>
+              </div>
+              {/* gcloud services enable command */}
+              <div>
+                <div className="text-[9px] text-gray-400 mb-1">
+                  Enable both services in your Google Cloud project:
+                </div>
+                {(() => {
+                  const companionApi = mcpConfig.workspaceConfig?.companionRestApi || workspaceServerDef?.companionRestApi || '';
+                  const mcpService = mcpConfig.workspaceConfig?.mcpServiceName || workspaceServerDef?.mcpServiceName || '';
+                  const userProj = mcpConfig.workspaceConfig?.userProject && !mcpConfig.workspaceConfig.userProject.includes('${')
+                    ? mcpConfig.workspaceConfig.userProject
+                    : undefined;
+                  const enableCmd = getWorkspaceGcloudEnableCommand(companionApi, mcpService, userProj);
+
+                  return (
+                    <div className="flex items-center gap-1.5 p-1.5 rounded bg-[#161b22] border border-emerald-500/30">
+                      <code
+                        className="flex-1 font-mono text-[10px] text-emerald-300 break-all select-all"
+                        data-testid="workspace-gcloud-enable-cmd"
+                      >
+                        {enableCmd}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(enableCmd, 'enable-cmd')}
+                        className="p-1 rounded bg-[#21262d] hover:bg-[#30363d] text-gray-300 hover:text-white border border-[#30363d] shrink-0 text-[10px] flex items-center gap-1 cursor-pointer"
+                        title="Copy CLI command"
+                      >
+                        {copiedCmd === 'enable-cmd' ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span className="text-emerald-400 font-bold">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* OAuth 2.0 Scope Preset Selector (Read-Only vs Read/Write) */}
+            <div className="space-y-1.5 pt-1">
+              <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center justify-between">
+                <span>OAuth 2.0 Scope Preset</span>
+                <span className="text-[9px] text-emerald-400 font-mono">
+                  {mcpConfig.workspaceConfig?.scopePreset === 'read_write' ? 'Full Access' : 'Least Privilege'}
+                </span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  data-testid="workspace-scope-preset-read-only"
+                  onClick={() => updateWorkspaceConfig({ scopePreset: 'read_only' })}
+                  className={`py-1.5 px-2.5 rounded-md text-[11px] font-medium border text-left flex items-center justify-between cursor-pointer transition-colors ${
+                    (mcpConfig.workspaceConfig?.scopePreset || 'read_only') === 'read_only'
+                      ? 'bg-emerald-600/30 text-emerald-200 border-emerald-500 shadow-xs'
+                      : 'bg-[#161b22] text-gray-400 border-[#30363d] hover:bg-[#21262d] hover:text-gray-200'
+                  }`}
+                >
+                  <span className="font-semibold">Read-Only (Least Privilege)</span>
+                  {(mcpConfig.workspaceConfig?.scopePreset || 'read_only') === 'read_only' && (
+                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  data-testid="workspace-scope-preset-read-write"
+                  onClick={() => updateWorkspaceConfig({ scopePreset: 'read_write' })}
+                  className={`py-1.5 px-2.5 rounded-md text-[11px] font-medium border text-left flex items-center justify-between cursor-pointer transition-colors ${
+                    mcpConfig.workspaceConfig?.scopePreset === 'read_write'
+                      ? 'bg-emerald-600/30 text-emerald-200 border-emerald-500 shadow-xs'
+                      : 'bg-[#161b22] text-gray-400 border-[#30363d] hover:bg-[#21262d] hover:text-gray-200'
+                  }`}
+                >
+                  <span className="font-semibold">Read / Write</span>
+                  {mcpConfig.workspaceConfig?.scopePreset === 'read_write' && (
+                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  )}
+                </button>
+              </div>
+
+              {/* Active Scope URL Pills */}
+              <div className="space-y-1 pt-1">
+                <div className="text-[9px] text-gray-400">Active OAuth 2.0 Scopes:</div>
+                <div className="flex flex-wrap gap-1">
+                  {(mcpConfig.oauthConfig?.scopes || workspaceServerDef?.readOnlyScopes || []).map((scopeUri) => (
+                    <span
+                      key={scopeUri}
+                      className="text-xs font-mono px-2 py-0.5 rounded bg-[#161b22] text-emerald-300 border border-emerald-500/30 truncate max-w-full"
+                      title={scopeUri}
+                    >
+                      {scopeUri}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Billing & Quota Project (X-Goog-User-Project Header) */}
+            <div className="space-y-1 pt-1">
+              <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center justify-between">
+                <span>Billing & Quota Project (X-Goog-User-Project)</span>
+                <span className="text-[9px] text-emerald-400 font-mono">Routing Header</span>
+              </label>
+              <input
+                type="text"
+                data-testid="workspace-user-project-input"
+                value={mcpConfig.workspaceConfig?.userProject ?? mcpConfig.headers?.['X-Goog-User-Project'] ?? '${GOOGLE_CLOUD_PROJECT}'}
+                onChange={(e) => updateWorkspaceConfig({ userProject: e.target.value })}
+                placeholder="${GOOGLE_CLOUD_PROJECT}"
+                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-emerald-400 rounded text-[11px] font-mono text-emerald-200 focus:outline-none"
+              />
+              <p className="text-[9px] text-gray-400">
+                Identifies the Google Cloud project to bill and check quota against for remote Workspace MCP calls.
+              </p>
+            </div>
+
+            {/* Caller Identity & User Credentials Strategy */}
+            <div className="space-y-2 pt-1 border-t border-emerald-500/20">
+              <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center justify-between">
+                <span>Caller Identity &amp; User Credentials</span>
+                <span className="text-[9px] text-emerald-400 font-mono">Acts on Behalf of Caller</span>
+              </label>
+
+              <select
+                data-testid="workspace-caller-auth-mode"
+                value={mcpConfig.workspaceConfig?.callerAuthMode || 'caller_oauth'}
+                onChange={(e) =>
+                  updateWorkspaceConfig({
+                    callerAuthMode: e.target.value as GoogleWorkspaceCallerAuthMode,
+                  })
+                }
+                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-emerald-400 rounded text-[11px] text-emerald-100 focus:outline-none"
+              >
+                <option value="caller_oauth">
+                  Per-Caller Session OAuth Token + Local ADC (Recommended)
+                </option>
+                <option value="interactive_3lo">
+                  Interactive User OAuth 2.0 Consent Card (3LO)
+                </option>
+                <option value="dwd_impersonation">
+                  Service Account Domain-Wide Delegation (Impersonate Caller Email)
+                </option>
+              </select>
+
+              {/* Mode description */}
+              {(mcpConfig.workspaceConfig?.callerAuthMode || 'caller_oauth') === 'caller_oauth' && (
+                <div className="p-2 bg-[#161b22] border border-emerald-500/20 rounded text-[10px] text-gray-300 space-y-2">
+                  <div>
+                    <strong className="text-emerald-300">Runtime + Local Dev:</strong> Reads the calling user&apos;s OAuth 2.0 Bearer token from{' '}
+                    <code className="text-emerald-300 font-mono">
+                      ctx.session.state[&quot;{mcpConfig.workspaceConfig?.tokenStateKey || 'user_access_token'}&quot;]
+                    </code>{' '}
+                    so every tool call executes with that user&apos;s permissions. Automatically falls back to your local{' '}
+                    <code className="text-emerald-300 font-mono">gcloud auth</code> user credentials during IDE testing.
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] uppercase font-bold text-gray-400 flex items-center justify-between">
+                      <span>Caller Token Session State Key</span>
+                      <span className="text-[9px] text-gray-500 font-mono">ctx.session.state</span>
+                    </label>
+                    <input
+                      type="text"
+                      data-testid="workspace-token-state-key-input"
+                      value={mcpConfig.workspaceConfig?.tokenStateKey ?? 'user_access_token'}
+                      onChange={(e) => updateWorkspaceConfig({ tokenStateKey: e.target.value })}
+                      placeholder="user_access_token"
+                      className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-emerald-400 rounded text-[10px] font-mono text-emerald-200 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {mcpConfig.workspaceConfig?.callerAuthMode === 'interactive_3lo' && (
+                <div className="p-2 bg-[#161b22] border border-emerald-500/20 rounded text-[10px] text-gray-300 space-y-2">
+                  <div>
+                    <strong className="text-emerald-300">Interactive 3-Legged OAuth (3LO):</strong> Prompts the calling user in chat with an ADK OAuth 2.0 Consent Card on first tool invocation and stores their personal Workspace token per session.
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] uppercase font-bold text-gray-400 flex items-center justify-between">
+                      <span>OAuth Client Secret Env Var</span>
+                      <span className="text-[9px] text-gray-500 font-mono">Secret Manager / .env</span>
+                    </label>
+                    <input
+                      type="text"
+                      data-testid="workspace-oauth-client-secret-env-input"
+                      value={mcpConfig.workspaceConfig?.oauthClientSecretEnvVar ?? 'WORKSPACE_OAUTH_CLIENT_SECRET'}
+                      onChange={(e) => updateWorkspaceConfig({ oauthClientSecretEnvVar: e.target.value })}
+                      placeholder="WORKSPACE_OAUTH_CLIENT_SECRET"
+                      className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-emerald-400 rounded text-[10px] font-mono text-emerald-200 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {mcpConfig.workspaceConfig?.callerAuthMode === 'dwd_impersonation' && (
+                <div className="p-2 bg-[#161b22] border border-emerald-500/20 rounded text-[10px] text-gray-300 space-y-2">
+                  <div>
+                    <strong className="text-emerald-300">Domain-Wide Delegation:</strong> Uses the agent Service Account to impersonate the calling user&apos;s Workspace email (<code className="text-emerald-300 font-mono">ctx.session.user_id</code> or <code className="text-emerald-300 font-mono">ctx.session.state[&quot;user_email&quot;]</code>) via <code className="text-emerald-300 font-mono">credentials.with_subject(email)</code>.
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] uppercase font-bold text-gray-400 flex items-center justify-between">
+                      <span>Fallback Subject Email (Optional)</span>
+                      <span className="text-[9px] text-gray-500 font-mono">with_subject()</span>
+                    </label>
+                    <input
+                      type="text"
+                      data-testid="workspace-subject-email-input"
+                      value={mcpConfig.workspaceConfig?.subjectEmail || ''}
+                      onChange={(e) => updateWorkspaceConfig({ subjectEmail: e.target.value })}
+                      placeholder="e.g. user@yourdomain.com"
+                      className="w-full px-2 py-1 bg-[#0d1117] border border-[#30363d] focus:border-emerald-400 rounded text-[10px] font-mono text-emerald-200 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* OAuth 2.0 Client ID, Client Secret & Local ADC Login Helper */}
+            <div className="space-y-1.5 pt-1">
+              <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center justify-between">
+                <span>OAuth 2.0 Client ID {mcpConfig.workspaceConfig?.callerAuthMode === 'interactive_3lo' ? '(Required for 3LO)' : '(Gemini Enterprise / 3LO)'}</span>
+                <span className="text-[9px] text-gray-500 font-mono">Google Auth Platform</span>
+              </label>
+              <input
+                type="text"
+                data-testid="workspace-oauth-client-id-input"
+                value={mcpConfig.workspaceConfig?.oauthClientId || ''}
+                onChange={(e) => updateWorkspaceConfig({ oauthClientId: e.target.value })}
+                placeholder="e.g. 1234567890-abc.apps.googleusercontent.com"
+                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-emerald-400 rounded text-[11px] font-mono text-emerald-200 focus:outline-none"
+              />
+
+              <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center justify-between pt-1">
+                <span>OAuth 2.0 Client Secret (Gemini Enterprise User OAuth)</span>
+                <span className="text-[9px] text-gray-500 font-mono">Auto-detects ~/.config/gcloud/workspace_client_secret.json</span>
+              </label>
+              <input
+                type="password"
+                data-testid="workspace-oauth-client-secret-input"
+                value={mcpConfig.workspaceConfig?.oauthClientSecret || ''}
+                onChange={(e) => updateWorkspaceConfig({ oauthClientSecret: e.target.value })}
+                placeholder="GOCSPX-... (or auto-loaded from ~/.config/gcloud/workspace_client_secret.json)"
+                className="w-full px-2.5 py-1.5 bg-[#161b22] border border-[#30363d] focus:border-emerald-400 rounded text-[11px] font-mono text-emerald-200 focus:outline-none"
+              />
+              <p className="text-[9px] text-gray-400">
+                When publishing to Gemini Enterprise, an <code className="text-emerald-300 font-mono">Authorization</code> resource (<code className="text-emerald-300 font-mono">serverSideOauth2</code>) is automatically provisioned so Gemini Enterprise prompts each user to sign in with their own Google Workspace account.
+              </p>
+
+              {/* Local ADC login CLI command */}
+              <div className="pt-1">
+                <div className="text-[9px] text-gray-400 mb-1">
+                  Local Workstation ADC Login Helper:
+                </div>
+                {(() => {
+                  const scopes = mcpConfig.oauthConfig?.scopes || workspaceServerDef?.readOnlyScopes || [];
+                  const userProj = mcpConfig.workspaceConfig?.userProject && !mcpConfig.workspaceConfig.userProject.includes('${')
+                    ? mcpConfig.workspaceConfig.userProject
+                    : undefined;
+                  const adcCmd = getWorkspaceAdcLoginCommand(scopes, userProj);
+
+                  return (
+                    <div className="flex items-center gap-1.5 p-1.5 rounded bg-[#161b22] border border-emerald-500/30">
+                      <code
+                        className="flex-1 font-mono text-[10px] text-emerald-300 break-all select-all"
+                        data-testid="workspace-adc-login-cmd"
+                      >
+                        {adcCmd}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(adcCmd, 'adc-cmd')}
+                        className="p-1 rounded bg-[#21262d] hover:bg-[#30363d] text-gray-300 hover:text-white border border-[#30363d] shrink-0 text-[10px] flex items-center gap-1 cursor-pointer"
+                        title="Copy ADC login command"
+                      >
+                        {copiedCmd === 'adc-cmd' ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span className="text-emerald-400 font-bold">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Sample Exposed MCP Tools Preview */}
+            {workspaceServerDef?.sampleTools && workspaceServerDef.sampleTools.length > 0 && (
+              <div className="space-y-1 pt-1 border-t border-emerald-500/20">
+                <div className="text-[9px] uppercase font-bold text-gray-400">
+                  Representative Exposed Tools ({workspaceServerDef.sampleTools.length})
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {workspaceServerDef.sampleTools.map((toolName) => (
+                    <span
+                      key={toolName}
+                      className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#161b22] text-emerald-300 border border-[#30363d]"
+                    >
+                      {toolName}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* GCP MCP Info Banner */}
         {isGcpMcp && (
@@ -1486,7 +1990,8 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
           </div>
         )}
 
-        {/* 3. Authentication Provider & Headers */}
+        {/* 3. Authentication Provider & Headers (Hidden for Google Workspace MCP since it uses the dedicated Workspace Caller Identity panel above) */}
+        {!isWorkspaceMcp && (
         <div className="space-y-2 pt-2 border-t border-[#30363d]">
           <label className="text-[10px] uppercase font-bold tracking-tight text-gray-400 flex items-center justify-between">
             <span>Authentication Provider</span>
@@ -1960,6 +2465,7 @@ export const McpToolDrawer: React.FC<McpToolDrawerProps> = ({
                 </div>
               )}
             </div>
+        )}
 
         {/* 4. Auto-Approve Tools Configuration */}
         <div className="space-y-2 pt-2 border-t border-[#30363d]">

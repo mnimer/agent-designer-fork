@@ -118,10 +118,19 @@
         "command": "agentFlow.clearGeminiApiKey",
         "title": "Agent Flow: Clear Gemini API Key",
         "category": "Agent Flow"
+      },
+      {
+        "command": "agentFlow.openSettings",
+        "title": "Open Plugin Settings (Models & Skills)",
+        "category": "Agent Flow",
+        "icon": "$(gear)"
       }
     ],
     "menus": {
       "commandPalette": [
+        {
+          "command": "agentFlow.openSettings"
+        },
         {
           "command": "agentFlow.createWorkflow"
         },
@@ -160,6 +169,11 @@
           "command": "agentFlow.sidebar.refreshWorkflows",
           "when": "view == agentFlow.views.workflows",
           "group": "navigation@2"
+        },
+        {
+          "command": "agentFlow.openSettings",
+          "when": "view == agentFlow.views.workflows",
+          "group": "navigation@3"
         },
         {
           "command": "agentFlow.sidebar.refreshDeployments",
@@ -207,7 +221,7 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile:extension": "esbuild ./src/extension/extension.ts --bundle --outfile=dist/extension/extension.js --external:vscode --format=cjs --platform=node --sourcemap",
-    "compile:webview": "vite build && cat node_modules/@xyflow/react/dist/style.css >> dist/webview/assets/index.css && esbuild src/webview/main.tsx --bundle --outfile=dist/webview/assets/index.js --format=iife --platform=browser --define:process.env.NODE_ENV=\\\"production\\\" --loader:.css=empty",
+    "compile:webview": "vite build && cat node_modules/@xyflow/react/dist/style.css >> dist/webview/assets/index.css",
     "compile": "npm run compile:extension && npm run compile:webview",
     "build": "npm run compile",
     "watch:extension": "esbuild ./src/extension/extension.ts --bundle --outfile=dist/extension/extension.js --external:vscode --format=cjs --platform=node --sourcemap --watch",
@@ -217,9 +231,9 @@
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
-    "test:integration": "npx tsx --test tests/integration/*.test.ts",
+    "test:integration": "bash -c '(( $# == 0 )) && set -- tests/integration/*.test.ts; for f in \"$@\"; do npx tsx \"$f\" || exit 1; done' --",
     "test:integration:vitest": "vitest run --config vitest.integration.config.mts",
-    "test:node": "npx tsx --test --test-concurrency=1 tests/unit/**/*.test.ts"
+    "test:node": "bash -c '(( $# == 0 )) && set -- tests/unit/**/*.test.ts; for f in \"$@\"; do npx tsx \"$f\" || exit 1; done' --"
   },
   "dependencies": {
     "@google/genai": "^2.22.0",

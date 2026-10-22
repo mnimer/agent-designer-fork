@@ -4,16 +4,16 @@
  * Purpose:
  * Renders the bottom workbench split panel in the agent designer webview.
  * Coordinates tab selection between Code Generation, Deployment, Test Runner,
- * and Interactive Chat, delegating specific rendering to dedicated sub-components.
+ * and Interactive Chat, delegating specific rendering to dedicated lazy-loaded sub-components.
  *
  * Architectural Decisions:
+ * - Author: Mike Nimer <mikenimer@google.com>
  * - Modular design following "Props In, Events Up" paradigm.
  * - Spacing layout complies with 8pt grid system.
- *
- * @author Mike Nimer <mikenimer@google.com>
+ * - Lazy-loads sub-tabs via React.lazy and Suspense to reduce initial bundle load time.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import {
   Code2,
   Server,
@@ -22,16 +22,26 @@ import {
   Lock,
   Maximize2,
   Minimize2,
+  Settings,
 } from 'lucide-react';
 
 import { AgentData, GeneratedFile, GenerationConfig } from '../../types';
 import { AgentWorkflowDocument } from '../../../shared/types';
-import { DeploymentTab } from '../deployment/DeploymentTab';
+import { useOptionalPluginSettings } from '../../context/SettingsContext';
 
-// Decomposed Sub-Tabs
-import { CodePreviewTab } from '../tabs/CodePreviewTab';
-import { ChatTab } from '../tabs/ChatTab';
-import { EvaluationTab } from '../tabs/EvaluationTab';
+// Lazy-loaded Decomposed Sub-Tabs
+const CodePreviewTab = React.lazy(() =>
+  import('../tabs/CodePreviewTab').then((m) => ({ default: m.CodePreviewTab }))
+);
+const DeploymentTab = React.lazy(() =>
+  import('../deployment/DeploymentTab').then((m) => ({ default: m.DeploymentTab }))
+);
+const ChatTab = React.lazy(() =>
+  import('../tabs/ChatTab').then((m) => ({ default: m.ChatTab }))
+);
+const EvaluationTab = React.lazy(() =>
+  import('../tabs/EvaluationTab').then((m) => ({ default: m.EvaluationTab }))
+);
 
 interface CodeGenerationPanelProps {
   config: GenerationConfig;
@@ -40,6 +50,7 @@ interface CodeGenerationPanelProps {
   onStopGenerate?: () => void;
   generatedFiles: GeneratedFile[];
   isGenerating: boolean;
+  tokenUsage?: { inputTokens: number; outputTokens: number } | null;
   onOpenMissingAdvisor?: () => void;
   hasTestSuite?: boolean;
   hasGeneratedCode?: boolean;
@@ -60,6 +71,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   onStopGenerate,
   generatedFiles,
   isGenerating,
+  tokenUsage,
   onOpenMissingAdvisor,
   hasTestSuite = false,
   hasGeneratedCode = false,
@@ -73,6 +85,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   chatConfig,
 }) => {
   const [activeTab, setActiveTab] = useState<'codegen' | 'deployment' | 'test_runner' | 'chat'>('codegen');
+  const settingsCtx = useOptionalPluginSettings();
   const [pendingChatPrompt, setPendingChatPrompt] = useState<{ text: string; timestamp: number } | null>(null);
 
   /**
@@ -229,8 +242,20 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
           )}
         </div>
 
-        {/* Panel Resizing Window Actions */}
+        {/* Panel Resizing & Settings Window Actions */}
         <div className="flex items-center gap-2">
+          {settingsCtx && (
+            <button
+              type="button"
+              onClick={() => settingsCtx.openSettings('models')}
+              title="Open Plugin Settings (Models & Skills)"
+              data-testid="bottom-panel-settings-button"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-xs font-semibold text-gray-300 hover:text-white transition-colors cursor-pointer"
+            >
+              <Settings className="w-3.5 h-3.5 text-blue-400" />
+              <span>Settings</span>
+            </button>
+          )}
           {onToggleMaximize && (
             <button
               type="button"
@@ -250,54 +275,57 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
 
       {/* Main Tab Content */}
       <div className="flex-1 overflow-hidden relative min-h-0 w-full">
-        {/* Code Generation Tab */}
-        <div className={activeTab === 'codegen' ? 'h-full w-full' : 'hidden'}>
-          <CodePreviewTab
-            config={config}
-            onChangeConfig={onChangeConfig}
-            onGenerateCode={onGenerateCode}
-            onStopGenerate={onStopGenerate}
-            generatedFiles={generatedFiles}
-            isGenerating={isGenerating}
-            onOpenMissingAdvisor={onOpenMissingAdvisor}
-          />
-        </div>
+        <Suspense fallback={null}>
+          {/* Code Generation Tab */}
+          <div className={activeTab === 'codegen' ? 'h-full w-full' : 'hidden'}>
+            <CodePreviewTab
+              config={config}
+              onChangeConfig={onChangeConfig}
+              onGenerateCode={onGenerateCode}
+              onStopGenerate={onStopGenerate}
+              generatedFiles={generatedFiles}
+              isGenerating={isGenerating}
+              tokenUsage={tokenUsage}
+              onOpenMissingAdvisor={onOpenMissingAdvisor}
+            />
+          </div>
 
-        {/* Deployment Tab */}
-        <div className={activeTab === 'deployment' ? 'h-full w-full flex flex-col min-h-0' : 'hidden'}>
-          <DeploymentTab
-            generationConfig={config}
-            generatedFiles={generatedFiles}
-            agents={agents}
-            document={workflowDoc}
-            onUpdateGenerationConfig={onChangeConfig}
-          />
-        </div>
+          {/* Deployment Tab */}
+          <div className={activeTab === 'deployment' ? 'h-full w-full flex flex-col min-h-0' : 'hidden'}>
+            <DeploymentTab
+              generationConfig={config}
+              generatedFiles={generatedFiles}
+              agents={agents}
+              document={workflowDoc}
+              onUpdateGenerationConfig={onChangeConfig}
+            />
+          </div>
 
-        {/* Test Runner Tab */}
-        <div className={activeTab === 'test_runner' ? 'h-full w-full' : 'hidden'}>
-          <EvaluationTab
-            testPrompts={testPrompts}
-            agents={agents}
-            config={config}
-            document={workflowDoc}
-            onNavigateToDeployment={() => handleSelectTab('deployment')}
-            hasChatTrigger={hasChatTrigger}
-            onOpenPromptInChat={handleOpenPromptInChat}
-          />
-        </div>
+          {/* Test Runner Tab */}
+          <div className={activeTab === 'test_runner' ? 'h-full w-full' : 'hidden'}>
+            <EvaluationTab
+              testPrompts={testPrompts}
+              agents={agents}
+              config={config}
+              document={workflowDoc}
+              onNavigateToDeployment={() => handleSelectTab('deployment')}
+              hasChatTrigger={hasChatTrigger}
+              onOpenPromptInChat={handleOpenPromptInChat}
+            />
+          </div>
 
-        {/* Interactive Chat Tab */}
-        <div className={activeTab === 'chat' ? 'h-full w-full' : 'hidden'}>
-          <ChatTab
-            document={workflowDoc}
-            config={config}
-            chatConfig={chatConfig}
-            agents={agents}
-            onNavigateToDeployment={() => handleSelectTab('deployment')}
-            externalPrompt={pendingChatPrompt}
-          />
-        </div>
+          {/* Interactive Chat Tab */}
+          <div className={activeTab === 'chat' ? 'h-full w-full' : 'hidden'}>
+            <ChatTab
+              document={workflowDoc}
+              config={config}
+              chatConfig={chatConfig}
+              agents={agents}
+              onNavigateToDeployment={() => handleSelectTab('deployment')}
+              externalPrompt={pendingChatPrompt}
+            />
+          </div>
+        </Suspense>
       </div>
     </div>
   );

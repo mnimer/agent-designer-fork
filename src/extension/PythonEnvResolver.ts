@@ -230,15 +230,20 @@ export class PythonEnvResolver {
   }
 
   /**
-   * Ensures that required runtime packages (fastapi, uvicorn, google-genai, requirements.txt)
-   * are installed within the target virtual environment.
+   * Ensures that all dependencies declared in `requirements.txt` (plus any 3rd-party model SDKs
+   * required by `agent.py`) are installed within the target virtual environment on every run.
+   *
+   * Because `.venv` is preserved across code regenerations for performance, running
+   * `pip install -r requirements.txt` on every startup guarantees that any newly added packages
+   * (such as `anthropic[vertex]`, `openai`, database drivers, or A2A extras when switching models
+   * or tools) are always installed while already-installed packages are satisfied quickly from cache.
    *
    * Logic Flow:
-   * 1. Detects whether A2A (Agent-to-Agent) protocol dependencies are required.
-   * 2. Tests if core dependencies (fastapi, uvicorn, google-genai, pydantic, and a2a if needed) can be imported.
-   * 3. If import succeeds, returns immediately to maintain low latency on startup.
-   * 4. If import fails, runs 'pip install' with requirements.txt, core framework packages, and A2A extras.
-   * 5. Streams real-time progress logs via the optional onLog callback.
+   * 1. Validates that `requirements.txt` exists in `targetDir` (failing fast if missing).
+   * 2. Validates that A2A dependencies are declared in `requirements.txt` when A2A is used.
+   * 3. Runs `pip install -r requirements.txt` (appending `anthropic[vertex]`, `openai`, or `litellm`
+   *    if referenced in `agent.py` but omitted from `requirements.txt`).
+   * 4. Streams real-time progress logs via the optional `onLog` callback.
    *
    * @param pythonBin Path to python binary inside virtual environment
    * @param targetDir Target workspace or agent directory
@@ -250,72 +255,216 @@ export class PythonEnvResolver {
     onLog?: (msg: string, stream?: 'stdout' | 'stderr' | 'system') => Promise<void> | void
   ): Promise<void> {
     const needsA2A = this.requiresA2ADependencies(targetDir);
-    const needsAdk = this.requiresAdkDependencies(targetDir);
+    const needsAnthropic = this.requiresAnthropicDependencies(targetDir);
+    const needsOpenAi = this.requiresOpenAiDependencies(targetDir);
+    const needsLiteLlm = this.requiresLiteLlmDependencies(targetDir);
 
-    try {
-      // Step 1: Quick import check for all core packages (including google.adk and a2a when needed)
-      const requiredModules = ['fastapi', 'uvicorn', 'pydantic', 'google.genai'];
-      if (needsAdk) {
-        requiredModules.push('google.adk');
-      }
-      if (needsA2A) {
-        requiredModules.push('a2a');
-      }
-      const importCheck = `import ${requiredModules.join(', ')}`;
-      await execFileAsync(pythonBin, ['-c', importCheck], { cwd: targetDir });
-      return; // All required packages are already installed
-    } catch {
-      // Step 2: Check if target directory requires dependencies
-      const reqPath = path.join(targetDir, 'requirements.txt');
-      const serverPyPath = path.join(targetDir, 'server.py');
-      const hasReqs = fs.existsSync(reqPath);
-      let needsFastApi = false;
-      if (fs.existsSync(serverPyPath)) {
-        try {
-          const content = fs.readFileSync(serverPyPath, 'utf-8');
-          needsFastApi = content.includes('fastapi') || content.includes('uvicorn');
-        } catch {}
-      }
+    const reqPath = path.join(targetDir, 'requirements.txt');
+    const hasReqs = fs.existsSync(reqPath);
 
-      if (!hasReqs) {
-        // FAIL FAST: Never fall back to guessing or installing packages without requirements.txt
+    if (!hasReqs) {
+      // FAIL FAST: Never fall back to guessing or installing packages without requirements.txt
+      throw new Error(
+        `[Validation Error] 'requirements.txt' not found in ${targetDir}. All agent projects must have a valid requirements.txt before running or deploying.`
+      );
+    }
+
+    const reqText = fs.readFileSync(reqPath, 'utf-8');
+
+    // FAIL FAST: If A2A is required, verify requirements.txt explicitly declares A2A packages
+    if (needsA2A) {
+      if (!reqText.includes('google-adk[a2a]') && !reqText.includes('a2a-sdk')) {
         throw new Error(
-          `[Validation Error] 'requirements.txt' not found in ${targetDir}. All agent projects must have a valid requirements.txt before running or deploying.`
+          `[Validation Error] Agent-to-Agent (A2A) protocol detected in agent code, but 'requirements.txt' is missing required A2A dependencies ('google-adk[a2a]' and/or 'a2a-sdk[http-server]'). Failing fast before run or deployment.`
         );
-      }
-
-      // FAIL FAST: If A2A is required, verify requirements.txt explicitly declares A2A packages
-      if (needsA2A) {
-        const reqText = fs.readFileSync(reqPath, 'utf-8');
-        if (!reqText.includes('google-adk[a2a]') && !reqText.includes('a2a-sdk')) {
-          throw new Error(
-            `[Validation Error] Agent-to-Agent (A2A) protocol detected in agent code, but 'requirements.txt' is missing required A2A dependencies ('google-adk[a2a]' and/or 'a2a-sdk[http-server]'). Failing fast before run or deployment.`
-          );
-        }
-      }
-
-      if (onLog) {
-        await onLog(`[Local Runner] Installing dependencies from requirements.txt into .venv...`, 'system');
-      }
-
-      try {
-        await execFileAsync(
-          pythonBin,
-          ['-m', 'pip', 'install', '-r', reqPath],
-          { cwd: targetDir }
-        );
-
-        if (onLog) {
-          await onLog(`[Local Runner] Dependencies installed successfully into .venv.`, 'system');
-        }
-      } catch (installErr: any) {
-        const errorMsg = `[Local Runner Warning] Failed to install dependencies via pip: ${installErr?.message || installErr}`;
-        if (onLog) {
-          await onLog(errorMsg, 'stderr');
-        }
-        throw new Error(errorMsg);
       }
     }
+
+    if (onLog) {
+      await onLog(`[Local Runner] Installing dependencies from requirements.txt into .venv...`, 'system');
+    }
+
+    const pipArgs = ['-m', 'pip', 'install', '-r', reqPath];
+    if (needsAnthropic && !/\banthropic\b/i.test(reqText)) {
+      pipArgs.push('anthropic[vertex]>=0.49.0');
+    }
+    if (needsOpenAi && !/\bopenai\b/i.test(reqText)) {
+      pipArgs.push('openai>=1.60.0');
+    }
+    if (needsLiteLlm && !/\blitellm\b/i.test(reqText)) {
+      pipArgs.push('litellm>=1.75.5');
+    }
+
+    try {
+      await execFileAsync(pythonBin, pipArgs, { cwd: targetDir });
+
+      if (onLog) {
+        await onLog(`[Local Runner] Dependencies installed successfully into .venv.`, 'system');
+      }
+    } catch (installErr: any) {
+      const errorMsg = `[Local Runner Warning] Failed to install dependencies via pip: ${installErr?.message || installErr}`;
+      if (onLog) {
+        await onLog(errorMsg, 'stderr');
+      }
+      throw new Error(errorMsg);
+    }
+  }
+
+  /**
+   * Computes the complete list of Python import module names required by the target directory
+   * based on `requirements.txt` and `agent.py` (including 3rd-party model SDKs like `anthropic`,
+   * `openai`, and `litellm`, plus database/session drivers).
+   * Ensures that when `.venv` is preserved across code regenerations and a user switches an agent
+   * or sub-agent to a 3rd-party model (e.g., Claude, DeepSeek, Qwen, Llama, OpenAI, Grok),
+   * `ensureDependenciesInstalled` detects the missing SDK and installs `requirements.txt`.
+   *
+   * @param targetDir Target workspace directory
+   * @returns Deduplicated array of Python module names to verify via `import`
+   */
+  public getRequiredImportModules(targetDir: string): string[] {
+    const modules = new Set<string>(['fastapi', 'uvicorn', 'pydantic', 'google.genai']);
+
+    if (this.requiresAdkDependencies(targetDir)) {
+      modules.add('google.adk');
+    }
+    if (this.requiresA2ADependencies(targetDir)) {
+      modules.add('a2a');
+    }
+    if (this.requiresAnthropicDependencies(targetDir)) {
+      modules.add('anthropic');
+    }
+    if (this.requiresOpenAiDependencies(targetDir)) {
+      modules.add('openai');
+    }
+    if (this.requiresLiteLlmDependencies(targetDir)) {
+      modules.add('litellm');
+    }
+
+    try {
+      const reqPath = path.join(targetDir, 'requirements.txt');
+      if (fs.existsSync(reqPath)) {
+        const reqContent = fs.readFileSync(reqPath, 'utf-8');
+        const packageToImportMap: Array<[RegExp, string]> = [
+          [/^\s*anthropic(?:\[.*?\])?(?:[><=~!]|$)/im, 'anthropic'],
+          [/^\s*openai(?:\[.*?\])?(?:[><=~!]|$)/im, 'openai'],
+          [/^\s*litellm(?:\[.*?\])?(?:[><=~!]|$)/im, 'litellm'],
+          [/^\s*google-cloud-firestore(?:\[.*?\])?(?:[><=~!]|$)/im, 'google.cloud.firestore'],
+          [/^\s*google-cloud-spanner(?:\[.*?\])?(?:[><=~!]|$)/im, 'google.cloud.spanner'],
+          [/^\s*google-cloud-bigquery(?:\[.*?\])?(?:[><=~!]|$)/im, 'google.cloud.bigquery'],
+          [/^\s*psycopg2(?:-binary)?(?:[><=~!]|$)/im, 'psycopg2'],
+          [/^\s*sqlalchemy(?:\[.*?\])?(?:[><=~!]|$)/im, 'sqlalchemy'],
+          [/^\s*redis(?:\[.*?\])?(?:[><=~!]|$)/im, 'redis'],
+        ];
+        for (const [pattern, importName] of packageToImportMap) {
+          if (pattern.test(reqContent)) {
+            modules.add(importName);
+          }
+        }
+      }
+    } catch {}
+
+    return Array.from(modules);
+  }
+
+  /**
+   * Scans target directory to detect if Anthropic Claude (`anthropic[vertex]`) dependencies are required
+   * by any root agent or sub-agent in the project.
+   *
+   * @param targetDir Target workspace directory
+   * @returns boolean true if `anthropic` package is required
+   */
+  public requiresAnthropicDependencies(targetDir: string): boolean {
+    try {
+      const reqPath = path.join(targetDir, 'requirements.txt');
+      if (fs.existsSync(reqPath)) {
+        const reqContent = fs.readFileSync(reqPath, 'utf-8');
+        if (/\banthropic\b/i.test(reqContent)) {
+          return true;
+        }
+      }
+
+      const pyFiles = ['agent.py', 'server.py', 'agent_workflow.py', 'main.py'];
+      for (const file of pyFiles) {
+        const filePath = path.join(targetDir, file);
+        if (fs.existsSync(filePath)) {
+          const content = fs.readFileSync(filePath, 'utf-8');
+          if (
+            /\bclaude-[a-z0-9._@-]+/i.test(content) ||
+            /\bpublishers\/anthropic\/models\//i.test(content) ||
+            /\bfrom\s+anthropic\b|\bimport\s+anthropic\b|\bAnthropicLlm\b|\bClaude\b/.test(content)
+          ) {
+            return true;
+          }
+        }
+      }
+    } catch {}
+    return false;
+  }
+
+  /**
+   * Scans target directory to detect if OpenAI / Vertex AI OpenMaaS / xAI Grok (`openai`) dependencies
+   * are required by any root agent or sub-agent in the project (`OpenAILlm`, `deepseek-ai/*`, `qwen/*`,
+   * `meta/llama*`, `mistralai/*`, `openai/*`, `gpt-*`, `o1-*`, `o3-*`, `grok-*`).
+   *
+   * @param targetDir Target workspace directory
+   * @returns boolean true if `openai` package is required
+   */
+  public requiresOpenAiDependencies(targetDir: string): boolean {
+    try {
+      const reqPath = path.join(targetDir, 'requirements.txt');
+      if (fs.existsSync(reqPath)) {
+        const reqContent = fs.readFileSync(reqPath, 'utf-8');
+        if (/^\s*openai(?:\[.*?\])?(?:[><=~!\s]|$)/im.test(reqContent)) {
+          return true;
+        }
+      }
+
+      const pyFiles = ['agent.py', 'server.py', 'agent_workflow.py', 'main.py'];
+      for (const file of pyFiles) {
+        const filePath = path.join(targetDir, file);
+        if (fs.existsSync(filePath)) {
+          const content = fs.readFileSync(filePath, 'utf-8');
+          if (
+            /\bOpenAILlm\b|\bfrom\s+openai\b|\bimport\s+openai\b/.test(content) ||
+            /["'](?:deepseek-ai|qwen|meta|mistralai|openai)\/[a-z0-9._-]+["']/i.test(content) ||
+            /["'](?:gpt-\d|o[134]-|grok-)[a-z0-9._-]*["']/i.test(content)
+          ) {
+            return true;
+          }
+        }
+      }
+    } catch {}
+    return false;
+  }
+
+  /**
+   * Scans target directory to detect if LiteLLM (`litellm`) dependencies are required.
+   *
+   * @param targetDir Target workspace directory
+   * @returns boolean true if `litellm` package is required
+   */
+  public requiresLiteLlmDependencies(targetDir: string): boolean {
+    try {
+      const reqPath = path.join(targetDir, 'requirements.txt');
+      if (fs.existsSync(reqPath)) {
+        const reqContent = fs.readFileSync(reqPath, 'utf-8');
+        if (/\blitellm\b/i.test(reqContent)) {
+          return true;
+        }
+      }
+
+      const pyFiles = ['agent.py', 'server.py', 'agent_workflow.py', 'main.py'];
+      for (const file of pyFiles) {
+        const filePath = path.join(targetDir, file);
+        if (fs.existsSync(filePath)) {
+          const content = fs.readFileSync(filePath, 'utf-8');
+          if (/\bLiteLlm\b|\bfrom\s+litellm\b|\bimport\s+litellm\b/.test(content)) {
+            return true;
+          }
+        }
+      }
+    } catch {}
+    return false;
   }
 
   /**

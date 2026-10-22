@@ -51,6 +51,7 @@ import { isValidAgentEngineId } from '../../../shared/identifierValidation';
 import { validateWorkflowMemory } from '../../../shared/memoryValidation';
 import {
   GovernanceStatusCard,
+  GeminiOAuthRedirectInstructionsModal,
   createDefaultGovernanceConfig,
 } from './GovernanceStatusCard';
 
@@ -172,8 +173,10 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
   // Copy Feedback
   const [copiedUrl, setCopiedUrl] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<boolean>(false);
+  const [showOAuthRedirectModal, setShowOAuthRedirectModal] = useState<boolean>(false);
 
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const deployInitiatedRef = useRef<boolean>(false);
 
   // Auto-scroll logs
   useEffect(() => {
@@ -229,13 +232,24 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
           )
         );
       }
+      if (payload.status === 'success' && deployInitiatedRef.current) {
+        deployInitiatedRef.current = false;
+        if (
+          governance.publishToGeminiEnterprise &&
+          governance.geminiEnterpriseAuthMode === 'user_oauth'
+        ) {
+          setShowOAuthRedirectModal(true);
+        }
+      } else if (payload.status === 'error' || payload.status === 'idle') {
+        deployInitiatedRef.current = false;
+      }
     });
 
     return () => {
       unsubLog();
       unsubStatus();
     };
-  }, [bridge]);
+  }, [bridge, governance.publishToGeminiEnterprise, governance.geminiEnterpriseAuthMode]);
 
   const isProjectIdValid = Boolean(projectId && projectId.trim());
 
@@ -272,6 +286,14 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
     setErrorMessage(null);
     setDeployStatus('building');
     setLogs([]);
+    deployInitiatedRef.current = true;
+
+    const effectiveServiceAccount =
+      governance.publishToGeminiEnterprise &&
+      governance.geminiEnterpriseAuthMode !== 'user_oauth' &&
+      governance.geminiEnterpriseServiceAccount?.trim()
+        ? governance.geminiEnterpriseServiceAccount.trim()
+        : serviceAccount.trim() || undefined;
 
     bridge.postMessage({
       type: 'DEPLOY_TO_AGENT_ENGINE',
@@ -280,7 +302,7 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
         targetDirectory: currentFolder,
         projectId: projectId.trim(),
         region,
-        serviceAccount: serviceAccount.trim() || undefined,
+        serviceAccount: effectiveServiceAccount,
         networkAttachment: networkAttachment.trim() || undefined,
         stagingBucket: stagingBucket.trim() || undefined,
         forceNew,
@@ -663,6 +685,12 @@ export const AgentEngineDeployTab: React.FC<AgentEngineDeployTabProps> = ({
           )}
         </div>
       </div>
+
+      <GeminiOAuthRedirectInstructionsModal
+        isOpen={showOAuthRedirectModal}
+        onClose={() => setShowOAuthRedirectModal(false)}
+        projectId={projectId}
+      />
     </div>
   );
 };

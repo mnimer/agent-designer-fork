@@ -21,7 +21,7 @@ import os
 import json
 import threading
 import asyncio
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 
 # Disable OpenTelemetry exporter loops during local testing to avoid 400 Bad Request export spam
 os.environ.setdefault("OTEL_SDK_DISABLED", "true")
@@ -37,6 +37,100 @@ os.environ.setdefault("OTEL_SDK_DISABLED", "true")
 try:
     from dotenv import load_dotenv
     load_dotenv()
+except Exception:
+    pass
+
+# Ensure GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION are populated in os.environ
+# (Required by google.adk.models.anthropic_llm.Claude and Vertex AI OpenMaaS endpoints)
+if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
+    try:
+        import google.auth
+        _, _detected_project = google.auth.default()
+        if _detected_project:
+            os.environ["GOOGLE_CLOUD_PROJECT"] = _detected_project
+    except Exception:
+        pass
+os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+
+# Shim 3rd-party LLM providers in Google ADK (Anthropic Claude, Vertex AI OpenMaaS, OpenAI, xAI Grok)
+try:
+    from google.adk.models.anthropic_llm import AnthropicLlm as _AdkAnthropicLlm
+    _orig_build_anthropic_kwargs = _AdkAnthropicLlm._build_anthropic_kwargs
+    def _safe_build_anthropic_kwargs(self, *args, **kwargs):
+        built = _orig_build_anthropic_kwargs(self, *args, **kwargs)
+        model_id = str(built.get("model", "") or getattr(self, "model", ""))
+        if (
+            "fable-5" in model_id
+            or "opus-5" in model_id
+            or "sonnet-5" in model_id
+            or "haiku-5" in model_id
+        ):
+            built.pop("temperature", None)
+            built.pop("top_p", None)
+            built.pop("top_k", None)
+        return built
+    _AdkAnthropicLlm._build_anthropic_kwargs = _safe_build_anthropic_kwargs
+except Exception:
+    pass
+
+try:
+    from google.adk.models.registry import LLMRegistry as _AdkLLMRegistry
+    from google.adk.integrations.openai import OpenAILlm as _AdkOpenAILlm
+    import google.auth as _gauth
+    from google.auth.transport.requests import Request as _GAuthRequest
+
+    def _get_vertex_maas_access_token() -> str:
+        creds, proj = _gauth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        if not creds.valid:
+            creds.refresh(_GAuthRequest())
+        if proj and not os.environ.get("GOOGLE_CLOUD_PROJECT"):
+            os.environ["GOOGLE_CLOUD_PROJECT"] = proj
+        return creds.token or ""
+
+    class _VertexMaasOpenAILlm(_AdkOpenAILlm):
+        def __init__(self, model: str = "deepseek-ai/deepseek-v3.2-maas", **kwargs):
+            if not kwargs.get("base_url"):
+                proj = os.environ.get("GOOGLE_CLOUD_PROJECT") or ""
+                if not proj:
+                    try:
+                        _, proj = _gauth.default()
+                    except Exception:
+                        proj = ""
+                loc = "us-central1" if ("r1-0528" in model or "llama-3.3" in model) else ("us-east5" if "llama-4" in model else "global")
+                host = "aiplatform.googleapis.com" if loc == "global" else f"{loc}-aiplatform.googleapis.com"
+                kwargs["base_url"] = f"https://{host}/v1beta1/projects/{proj}/locations/{loc}/endpoints/openapi"
+            if not kwargs.get("api_key"):
+                kwargs["api_key"] = _get_vertex_maas_access_token
+            super().__init__(model=model, **kwargs)
+
+        @classmethod
+        def supported_models(cls) -> list[str]:
+            return [
+                r"deepseek-ai/.*",
+                r"qwen/.*",
+                r"meta/.*",
+                r"mistralai/.*",
+                r"openai/.*-maas",
+            ]
+
+    class _DirectPrefixedOpenAILlm(_AdkOpenAILlm):
+        def __init__(self, model: str = "gpt-4o", **kwargs):
+            clean_model = model[len("openai/"):] if model.startswith("openai/") else model
+            if clean_model.startswith("grok-") and not kwargs.get("base_url"):
+                kwargs["base_url"] = "https://api.x.ai/v1"
+                if not kwargs.get("api_key") and os.environ.get("XAI_API_KEY"):
+                    kwargs["api_key"] = os.environ.get("XAI_API_KEY")
+            super().__init__(model=clean_model, **kwargs)
+
+        @classmethod
+        def supported_models(cls) -> list[str]:
+            return [
+                r"openai/(?!.*-maas).*",
+                r"grok-.*",
+            ]
+
+    _AdkLLMRegistry.register(_VertexMaasOpenAILlm)
+    _AdkLLMRegistry.register(_DirectPrefixedOpenAILlm)
 except Exception:
     pass
 
@@ -63,6 +157,27 @@ try:
     _AdkApp.__init__ = _safe_app_init
 except Exception:
     pass
+
+# Shim httpx2 / httpx AsyncClient.send for Google Remote MCP servers (*.googleapis.com/mcp)
+# Google ESF returns HTTP 403 alongside valid JSON-RPC 2.0 result bodies (e.g. tools/list or isError tool results)
+# when local ADC tokens lack Workspace OAuth scopes; normalizing status_code=200 for JSON-RPC bodies prevents
+# mcp.client.streamable_http from discarding the JSON-RPC response and raising MCPError.
+for _httpx_mod_name in ('httpx2', 'httpx'):
+    try:
+        _httpx_mod = __import__(_httpx_mod_name)
+        _orig_httpx_send = _httpx_mod.AsyncClient.send
+        def _make_mcp_send(_orig):
+            async def _mcp_jsonrpc_send(self, request, *args, **kwargs):
+                resp = await _orig(self, request, *args, **kwargs)
+                if resp.status_code in (401, 403) and '.googleapis.com/mcp' in str(getattr(request, 'url', '')):
+                    ctype = resp.headers.get('content-type', '').lower()
+                    if ctype.startswith('application/json'):
+                        resp.status_code = 200
+                return resp
+            return _mcp_jsonrpc_send
+        _httpx_mod.AsyncClient.send = _make_mcp_send(_orig_httpx_send)
+    except Exception:
+        pass
 
 _shared_session_service = None
 
@@ -431,6 +546,8 @@ class TestHandler(BaseHTTPRequestHandler):
                         accum_texts = []
                         a2ui_surfaces = []
                         error_messages = []
+                        tool_error_texts = []
+                        finish_reasons = []
                         async for evt in runner.run_async(
                             user_id="test_user",
                             session_id=session.id,
@@ -438,6 +555,24 @@ class TestHandler(BaseHTTPRequestHandler):
                         ):
                             if hasattr(evt, 'error_message') and evt.error_message:
                                 error_messages.append(str(evt.error_message))
+                            if hasattr(evt, 'finish_reason') and evt.finish_reason:
+                                finish_reasons.append(str(evt.finish_reason))
+
+                            # Capture tool error responses in case the model finishes without a text summary
+                            evt_content = getattr(evt, 'content', None) if not isinstance(evt, dict) else evt.get('content')
+                            if evt_content:
+                                evt_parts = getattr(evt_content, 'parts', []) if not isinstance(evt_content, dict) else evt_content.get('parts', [])
+                                for ep in (evt_parts or []):
+                                    fresp = ep.get('function_response') if isinstance(ep, dict) else getattr(ep, 'function_response', None)
+                                    if fresp:
+                                        resp_obj = fresp.get('response') if isinstance(fresp, dict) else getattr(fresp, 'response', None)
+                                        if isinstance(resp_obj, dict):
+                                            if resp_obj.get('error'):
+                                                tool_error_texts.append(str(resp_obj['error']))
+                                            elif resp_obj.get('isError') and isinstance(resp_obj.get('content'), list):
+                                                for c_item in resp_obj['content']:
+                                                    if isinstance(c_item, dict) and c_item.get('text'):
+                                                        tool_error_texts.append(str(c_item['text']))
 
                             is_final = False
                             if hasattr(evt, 'is_final_response') and callable(getattr(evt, 'is_final_response')):
@@ -460,6 +595,10 @@ class TestHandler(BaseHTTPRequestHandler):
                             return combined_text
                         if error_messages:
                             raise RuntimeError("; ".join(error_messages))
+                        if tool_error_texts:
+                            return "Tool execution error: " + "; ".join(tool_error_texts)
+                        if any("MALFORMED_FUNCTION_CALL" in fr for fr in finish_reasons):
+                            return "The agent attempted a tool call, but its MCP toolset failed to load or lacked required OAuth scopes. Check the runner logs for authentication scope details."
                         return None
 
                     res = _run_coroutine(_run_adk_runner())
@@ -503,27 +642,31 @@ class TestHandler(BaseHTTPRequestHandler):
                 content_str = str(res)
 
             if data.get('stream'):
-                self.send_response(200)
-                self.send_header('Content-Type', 'text/event-stream')
-                self.send_header('Cache-Control', 'no-cache')
-                self.send_header('Connection', 'close')
-                self.end_headers()
-                chunks = content_str.split(' ')
-                for i, c in enumerate(chunks):
-                    token = c + (' ' if i < len(chunks) - 1 else '')
-                    is_last = (i == len(chunks) - 1)
-                    chunk_obj = {
-                        "id": "chatcmpl-test",
-                        "object": "chat.completion.chunk",
-                        "created": 1234567890,
-                        "model": data.get("model", "gemini-flash"),
-                        "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": "stop" if is_last else None}]
-                    }
-                    self.wfile.write(f"data: {json.dumps(chunk_obj)}\\n\\n".encode('utf-8'))
+                try:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/event-stream')
+                    self.send_header('Cache-Control', 'no-cache')
+                    self.send_header('Connection', 'close')
+                    self.end_headers()
+                    chunks = content_str.split(' ')
+                    for i, c in enumerate(chunks):
+                        token = c + (' ' if i < len(chunks) - 1 else '')
+                        is_last = (i == len(chunks) - 1)
+                        chunk_obj = {
+                            "id": "chatcmpl-test",
+                            "object": "chat.completion.chunk",
+                            "created": 1234567890,
+                            "model": data.get("model", "gemini-flash"),
+                            "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": "stop" if is_last else None}]
+                        }
+                        self.wfile.write(f"data: {json.dumps(chunk_obj)}\\n\\n".encode('utf-8'))
+                        self.wfile.flush()
+                    self.wfile.write(b"data: [DONE]\\n\\n")
                     self.wfile.flush()
-                self.wfile.write(b"data: [DONE]\\n\\n")
-                self.wfile.flush()
-                self.close_connection = True
+                    self.close_connection = True
+                except (BrokenPipeError, ConnectionResetError):
+                    sys.stderr.write("[Test Server] Client disconnected before stream response completed.\\n")
+                    sys.stderr.flush()
                 return
 
             resp_payload = {
@@ -543,11 +686,20 @@ class TestHandler(BaseHTTPRequestHandler):
                 ]
             }
             resp_bytes = json.dumps(resp_payload).encode('utf-8')
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', str(len(resp_bytes)))
-            self.end_headers()
-            self.wfile.write(resp_bytes)
+            try:
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(resp_bytes)))
+                self.end_headers()
+                self.wfile.write(resp_bytes)
+            except (BrokenPipeError, ConnectionResetError):
+                sys.stderr.write("[Test Server] Client disconnected before HTTP 200 response could be written.\\n")
+                sys.stderr.flush()
+                return
+        except (BrokenPipeError, ConnectionResetError):
+            sys.stderr.write("[Test Server] Client connection closed early.\\n")
+            sys.stderr.flush()
+            return
         except Exception as err:
             import traceback
             tb = traceback.format_exc()
@@ -563,11 +715,14 @@ class TestHandler(BaseHTTPRequestHandler):
                 }
             }
             err_bytes = json.dumps(err_payload).encode('utf-8')
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', str(len(err_bytes)))
-            self.end_headers()
-            self.wfile.write(err_bytes)
+            try:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(err_bytes)))
+                self.end_headers()
+                self.wfile.write(err_bytes)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
 
 def main():
     import argparse
@@ -575,7 +730,7 @@ def main():
     parser.add_argument('--port', type=int, default=8000)
     args = parser.parse_args()
     port = int(os.environ.get('PORT', args.port))
-    server = HTTPServer(('0.0.0.0', port), TestHandler)
+    server = ThreadingHTTPServer(('0.0.0.0', port), TestHandler)
     print(f"Uvicorn running on http://0.0.0.0:{port} (Agent Test Adapter)", flush=True)
     server.serve_forever()
 

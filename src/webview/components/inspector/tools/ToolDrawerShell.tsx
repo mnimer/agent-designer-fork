@@ -14,7 +14,7 @@
  */
 
 import React from 'react';
-import { X, Check, Trash2, Plus } from 'lucide-react';
+import { X, Check, Plus } from 'lucide-react';
 import { AgentData } from '../../../types';
 
 export interface ToolDrawerShellProps {
@@ -98,15 +98,6 @@ export const ToolDrawerShell: React.FC<ToolDrawerShellProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-1">
-          {onDelete && (
-            <button
-              onClick={onDelete}
-              className="p-1 rounded-md text-gray-400 hover:text-rose-400 hover:bg-[#30363d] transition-colors cursor-pointer"
-              title={scope === 'agent' ? 'Remove Tool from Agent' : 'Delete Tool from Catalog'}
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          )}
           <button
             onClick={onClose}
             className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-[#30363d] transition-colors cursor-pointer"

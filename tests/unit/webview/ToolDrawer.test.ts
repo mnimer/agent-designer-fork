@@ -15,6 +15,8 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import React from 'react';
 import {
   ToolDrawer,
@@ -750,8 +752,14 @@ describe('Tool Drawer & Property Inspector Logic', () => {
     assert.deepEqual(lastUpdatedTool?.googleSearchConfig?.domainFilters, ['google.com', 'developer.chrome.com']);
   });
 
-  it('should render ToolDrawerShell with header delete button and without bottom Save button row', () => {
-    let deletedToolId: string | null = null;
+  it('should render ToolDrawerShell with only the Close icon in the header (no Delete icon or bottom Save button row)', () => {
+    const shellSource = fs.readFileSync(
+      path.join(__dirname, '../../../src/webview/components/inspector/tools/ToolDrawerShell.tsx'),
+      'utf-8'
+    );
+    assert.ok(!shellSource.includes('<Trash2'), 'ToolDrawerShell header must not render a Delete (Trash2) icon button');
+    assert.ok(shellSource.includes('title="Close Drawer"'), 'ToolDrawerShell header must render Close Drawer button');
+
     const shellElem = React.createElement(ToolDrawerShell, {
       isOpen: true,
       onClose: () => {},
@@ -759,21 +767,20 @@ describe('Tool Drawer & Property Inspector Logic', () => {
       onChangeName: () => {},
       description: 'A tool description',
       onChangeDescription: () => {},
-      onDelete: () => {
-        deletedToolId = 'tool-123';
+      typeBadge: {
+        label: 'Tool',
+        color: 'text-blue-400',
+        bg: 'bg-blue-500/20',
+        border: 'border-blue-500/40',
       },
+      toolIcon: React.createElement('span', null, 'icon'),
       children: React.createElement('div', { id: 'test-content' }, 'Tool Content'),
     });
 
     assert.ok(shellElem);
     assert.equal(shellElem.props.isOpen, true);
     assert.equal(shellElem.props.toolName, 'Custom Tool');
-    assert.ok(shellElem.props.onDelete);
     assert.equal(shellElem.props.onSave, undefined);
-
-    // Verify onDelete callback triggers
-    shellElem.props.onDelete();
-    assert.equal(deletedToolId, 'tool-123');
   });
 });
 

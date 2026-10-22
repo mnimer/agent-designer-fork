@@ -284,6 +284,9 @@ export class UnifiedDeployRunner {
       if (options.allowUnauthenticated !== undefined) {
         args.push(`ALLOW_UNAUTHENTICATED=${options.allowUnauthenticated}`);
       }
+      if (options.serviceAccount) {
+        args.push(`SERVICE_ACCOUNT=${options.serviceAccount}`);
+      }
       if (options.networkAttachment) {
         args.push(`NETWORK_ATTACHMENT=${options.networkAttachment}`);
       }
@@ -512,6 +515,10 @@ export class UnifiedDeployRunner {
 
     if (networkAttachment) {
       args.push(`--network-attachment=${networkAttachment}`);
+    }
+
+    if (options.serviceAccount?.trim()) {
+      args.push(`--service-account=${options.serviceAccount.trim()}`);
     }
 
     const envVars: Record<string, string> = {
@@ -1057,6 +1064,9 @@ export class UnifiedDeployRunner {
         agentRegistryResource: result.agentRegistryResource,
         geminiEnterpriseAppId: appId,
         geminiEnterpriseLocation: geminiLocation,
+        authMode: governance?.geminiEnterpriseAuthMode,
+        targetDirectory,
+        document,
         onLog,
       });
 

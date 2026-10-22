@@ -202,6 +202,11 @@ Your tasks:
 2. Ground-Truth Verification:
    - Check the reported findings against the GENERATED SOURCE FILES below.
    - If a specialist sub-agent hallucinated an issue (e.g. reported root_agent missing when it is clearly defined in agent.py), mark its finding ID in \`dismissedFindingIds\` and explain why it is a false positive.
+   - **MANDATORY FALSE-POSITIVE DISMISSALS**: Always add a finding ID to \`dismissedFindingIds\` if the finding complains about:
+     a) Differences between modern Gemini model versions (e.g., code using \`gemini-3.8-flash\` when the \`.agent\` JSON specifies \`gemini-3.7-flash\` or vice versa). Model versions evolve continuously and MUST NEVER be a failure or deduction in any test.
+     b) Omitting \`max_iterations\` on standard ADK \`Agent(...)\` or \`BaseAgent\` subclasses (only \`LoopAgent\` accepts \`max_iterations\` in Google ADK).
+     c) Omitting \`output_schema\` on an \`Agent(...)\` that has \`tools=[...]\` attached (Vertex AI Gemini forbids combining \`tools\` with \`output_schema\` on the same agent; defining the Pydantic model in \`agent.py\` and writing to \`output_key\` is the required ADK pattern).
+     d) Generating \`Dockerfile\` and \`.dockerignore\` on container targets (\`agent_engine\`, \`cloudrun\`) when \`includeDocker=false\` in the JSON, or using standard \`FROM python:3.11-slim\` tags without a SHA256 digest.
 3. Formulate Actionable Prompt Remediation Directives:
    - When confirmed defects exist, DO NOT patch the generated code. Formulate exact prompt rules targeting the prompt template file:
    - Target files: 'resource/prompts/python_adk_agent-engine.prompt.txt' or 'resource/prompts/python_adk_cloudrun.prompt.txt'

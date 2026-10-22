@@ -1022,15 +1022,26 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
         assert.ok(content.includes('make test'), `${relPath} must document make test`);
         assert.ok(content.includes('make infra'), `${relPath} must document make infra`);
         assert.ok(content.includes('make deploy'), `${relPath} must document make deploy`);
+
+        // Dual-Mode Tool Pattern, Syntax Integrity, Session Store Completeness, and Test Assertion Alignment
+        assert.ok(content.includes('Dual-Mode Tool Pattern'), `${relPath} must enforce Dual-Mode Tool Pattern`);
+        assert.ok(content.includes('No Default Parameter Values in Tool Signatures'), `${relPath} must forbid default parameter values in tool signatures`);
+        assert.ok(content.includes('ast.parse'), `${relPath} must enforce ast.parse Python syntax integrity`);
+        assert.ok(content.includes('CRITICAL completeness rule for `session_store.py`'), `${relPath} must forbid stubbing session_store.py backends`);
+        assert.ok(content.includes('Tool & Assertion Alignment'), `${relPath} must enforce tool return and test assertion alignment`);
+        assert.ok(content.includes('RUN_LIVE_TESTS'), `${relPath} must include optional live InMemoryRunner integration test rule`);
+        assert.ok(!content.includes('model="gemini-3.7-flash"'), `${relPath} must not contain stale model="gemini-3.7-flash" code snippets`);
       });
     }
 
-    it('should require .agent_engine_config.json, .ae_ignore, and pyproject.toml in python_adk_agent-engine.prompt.txt', () => {
+    it('should require .agent_engine_config.json, .ae_ignore, pyproject.toml, and reasoning_engine service_account in python_adk_agent-engine.prompt.txt', () => {
       const aePromptPath = path.resolve(extensionPath, 'resource/prompts/python_adk_agent-engine.prompt.txt');
       const aeContent = fs.readFileSync(aePromptPath, 'utf-8');
       assert.ok(aeContent.includes('.agent_engine_config.json'));
       assert.ok(aeContent.includes('.ae_ignore'));
       assert.ok(aeContent.includes('pyproject.toml'));
+      assert.ok(aeContent.includes('service_account = google_service_account.agent_sa.email'));
+      assert.ok(aeContent.includes('SHORT_SHA=tf'));
     });
   });
 });

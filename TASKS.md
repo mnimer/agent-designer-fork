@@ -33,7 +33,7 @@
 | [**TASK-120**](#task-120) | v1.0.8 | MCP | Model Context Protocol (MCP) Client & Handshake Test | **Complete** | TASK-104, TASK-107 |
 | [**TASK-121**](#task-121) | v1.0.9 | Triggers & IAM | Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise IAM OIDC Auth | **Complete** | TASK-105, TASK-111, TASK-116 |
 | [**TASK-122**](#task-122) | v1.1.0 | Framework | LangGraph Framework Support (Python StateGraph Target) | **Not Started** | TASK-106, TASK-114 |
-| [**TASK-123**](#task-123) | v1.1.1 | Runtime | TypeScript Runtime Support (@google/genai SDK & Vitest) | **Not Started** | TASK-106, TASK-122 |
+| [**TASK-123**](#task-123) | v1.1.1 | Runtime | TypeScript Runtime Support (@google/genai SDK & Vitest) | **Skipped (Deferred)** | TASK-106, TASK-122 |
 | [**TASK-124**](#task-124) | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Complete** | TASK-113, TASK-117 |
 | [**TASK-124**](#task-124) | v1.1.2 | Patterns | Advanced Cognitive Patterns (Debate, Loop, Critic Triad) | **Complete** | TASK-113, TASK-117 |
 | [**TASK-125**](#task-125) | v1.0.1 | Deployment | Native Vertex AI Agent Engine (Agent Runtime) Container Deployment & Lifecycle Management | **Complete** | TASK-106, TASK-110 |
@@ -117,16 +117,16 @@
 | [**TASK-200**](#task-200) | v1.0.3 | Memory / Redis | Cloud Memorystore (Redis/Valkey) Checkpointer & Session TTL Expiration | **Complete** | TASK-115 |
 | [**TASK-201**](#task-201) | v1.2.0 | Quality / Integration | Animal Expert Multi-Agent System (Parallel Fan-Out + Search Grounding) | **Complete** | TASK-106, TASK-113 |
 | [**TASK-202**](#task-202) | v1.2.0 | Quality / Integration | CyberGuardian SecOps Multi-Agent System (Coordinator + Eventarc Trigger) | **Complete** | TASK-106, TASK-121 |
-| [**TASK-203**](#task-203) | v1.2.0 | Quality / Integration | Financial Fraud & Services Router (Intent Classifier + State Expressions + SQLite) | **Not Started** | TASK-117, TASK-196, TASK-197 |
-| [**TASK-204**](#task-204) | v1.2.0 | Quality / Integration | Market Research Synthesizer Reducer (Parallel Fan-Out + Multi-Tool + Firestore) | **Not Started** | TASK-113, TASK-114, TASK-187 |
-| [**TASK-205**](#task-205) | v1.2.0 | Quality / Integration | Commercial Loan HITL Approval Gate (Human-in-the-Loop + Cloud SQL PostgreSQL) | **Not Started** | TASK-188, TASK-198 |
-| [**TASK-206**](#task-206) | v1.2.0 | Quality / Integration | Resilient Weather & Outage Fallback (Circuit Breaker + Memorystore Redis + Cron) | **Not Started** | TASK-189, TASK-200 |
-| [**TASK-207**](#task-207) | v1.2.0 | Quality / Integration | Healthcare Diagnostic Guardrail Shield (Bi-directional PII Gate + Cloud Spanner) | **Not Started** | TASK-190, TASK-199 |
-| [**TASK-208**](#task-208) | v1.2.0 | Quality / Integration | Procurement B2B A2A Protocol Agent (JSON-RPC 2.0 + Google Cloud IAM OIDC) | **Not Started** | TASK-116, TASK-121 |
-| [**TASK-209**](#task-209) | v1.2.0 | Quality / Integration | Autonomous Code Optimizer Loop (Evaluator-Optimizer + Thinking Budget + Sandbox) | **Not Started** | TASK-192A, TASK-192B |
-| [**TASK-210**](#task-210) | v1.2.0 | Quality / Integration | Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus) | **Not Started** | TASK-193A, TASK-193B |
-| [**TASK-211**](#task-211) | v1.2.0 | Quality / Integration | Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL) | **Not Started** | TASK-195A, TASK-195B, TASK-198 |
-| [**TASK-212**](#task-212) | v1.2.0 | Quality / Integration | Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner) | **Not Started** | TASK-129, TASK-130, TASK-199 |
+| [**TASK-203**](#task-203) | v1.2.0 | Quality / Integration | Financial Fraud & Services Router (Intent Classifier + State Expressions + SQLite) | **Complete** | TASK-117, TASK-196, TASK-197 |
+| [**TASK-204**](#task-204) | v1.2.0 | Quality / Integration | Market Research Synthesizer Reducer (Parallel Fan-Out + Multi-Tool + Firestore) | **Complete** | TASK-113, TASK-114, TASK-187 |
+| [**TASK-205**](#task-205) | v1.2.0 | Quality / Integration | Commercial Loan HITL Approval Gate (Human-in-the-Loop + Cloud SQL PostgreSQL) | **Complete** | TASK-188, TASK-198 |
+| [**TASK-206**](#task-206) | v1.2.0 | Quality / Integration | Resilient Weather & Outage Fallback (Circuit Breaker + Memorystore Redis + Cron) | **Complete** | TASK-189, TASK-200 |
+| [**TASK-207**](#task-207) | v1.2.0 | Quality / Integration | Healthcare Diagnostic Guardrail Shield (Bi-directional PII Gate + Cloud Spanner) | **Complete** | TASK-190, TASK-199 |
+| [**TASK-208**](#task-208) | v1.2.0 | Quality / Integration | Procurement B2B A2A Protocol Agent (JSON-RPC 2.0 + Google Cloud IAM OIDC) | **Complete** | TASK-116, TASK-121 |
+| [**TASK-209**](#task-209) | v1.2.0 | Quality / Integration | Autonomous Code Optimizer Loop (Evaluator-Optimizer + Thinking Budget + Sandbox) | **Complete** | TASK-192A, TASK-192B |
+| [**TASK-210**](#task-210) | v1.2.0 | Quality / Integration | Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus) | **Complete** | TASK-193A, TASK-193B |
+| [**TASK-211**](#task-211) | v1.2.0 | Quality / Integration | Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL) | **Complete** | TASK-195A, TASK-195B, TASK-198 |
+| [**TASK-212**](#task-212) | v1.2.0 | Quality / Integration | Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner) | **Complete** | TASK-129, TASK-130, TASK-199 |
 | [**TASK-213**](#task-213) | v1.2.0 | Quality / Evaluators | Multi-Agent Evaluator Optimization & Hardening (Gemini 3.8 Flash Cyber, RTM, False-Positive Veto Fix, AST Checks) | **Complete** | TASK-201, TASK-202 |
 | [**TASK-214**](#task-214) | v1.2.0 | Samples / SDLC | Autonomous Multi-Agent Code Reviewer Blueprint (resource/samples/code_reviewer/) | **Complete** | TASK-128, TASK-213 |
 | [**TASK-215**](#task-215) | v1.2.0 | Samples / Retail | Reverse Engineer `retail-data-and-ai-demo` (Unified 3-Sub-Agent Architecture + Dual-Mode Local SQLite & Asset Sync — [ADR-001](docs/adr/001-retail-data-and-ai-demo-architecture.md)) | **Deferred (See ADR-001)** | TASK-128 |
@@ -164,6 +164,9 @@
 | [**TASK-247**](#task-247) | v1.2.0 | Samples / Retail Supply Chain A2UI | Retail Omnichannel New Product Launch & Store Allocation Planner A2UI Sample (`resource/samples/retail_allocation_planner_a2ui/`) | **Complete** | TASK-215, TASK-221, TASK-222 |
 | [**TASK-248**](#task-248) | v1.2.0 | Samples / Retail Merchandising A2UI | Retail Vendor Onboarding & Trade Promotion Deal Desk A2UI Sample (`resource/samples/retail_vendor_deal_desk_a2ui/`) | **Complete** | TASK-215, TASK-221, TASK-222 |
 | [**TASK-249**](#task-249) | v1.2.0 | Interactive Chat | Interactive Chat GFM Markdown Table Rendering Support (`ChatMessageRenderer.tsx`) | **Complete** | TASK-110 |
+| [**TASK-250**](#task-250) | v1.2.0 | Samples & A2UI | Standardize Default A2UI Configuration Across A2UI Samples & Sub-Agents (`A2UIConfigSection`, `A2UISurfaceRenderer`, `LocalRunnerScriptProvider`) | **Complete** | TASK-221, TASK-222, TASK-241 |
+| [**TASK-251**](#task-251) | v1.2.0 | MCP / Workspace | Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom) | **Completed** | TASK-120, TASK-130, TASK-135 |
+| [**TASK-252**](#task-252) | v1.2.0 | MCP / GitHub | Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth) | **Not Started** | TASK-120, TASK-130, TASK-135 |
 
 ---
 
@@ -723,13 +726,14 @@
 <a id="task-123"></a>
 
 ### [TASK-123] TypeScript Runtime Support (@google/genai SDK & Vitest)
+* **Status**: **Skipped (Deferred)**
 * **Release**: `v1.1.1`
 * **Target Package/Files**:
   - `prompts/typescript-adk.prompt.txt`
   - `src/extension/GeminiCodeGenEngine.ts`
   - `src/webview/components/settings/SettingsPage.tsx`
 * **Context**:
-  Add TypeScript language target. Create `prompts/typescript-adk.prompt.txt` generating complete Node.js / TypeScript repository with `@google/genai`, `package.json`, and Vitest test suite.
+  Add TypeScript language target. Create `prompts/typescript-adk.prompt.txt` generating complete Node.js / TypeScript repository with `@google/genai`, `package.json`, and Vitest test suite. *(Deferred alongside `TASK-238` to keep code generation strictly Python-only.)*
 * **Sub-Agent Prompt**:
   ```
   Implement TypeScript code generation target.
@@ -4113,7 +4117,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-203] Integration Test: Financial Fraud & Services Router (Intent Classifier + State Expressions + SQLite)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Complete
 * **Target Package/Files**:
   - `tests/integration/financial-router.test.ts`
   - `tests/integration/financial_router.agent`
@@ -4179,7 +4183,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-204] Integration Test: Market Research Synthesizer Reducer (Parallel Fan-Out + Multi-Tool + Firestore)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Complete
 * **Target Package/Files**:
   - `tests/integration/market-research-synthesizer.test.ts`
   - `tests/integration/market_research_synthesizer.agent`
@@ -4246,7 +4250,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-205] Integration Test: Commercial Loan HITL Approval Gate (Human-in-the-Loop + Cloud SQL PostgreSQL)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Completed
 * **Target Package/Files**:
   - `tests/integration/loan-approval-hitl.test.ts`
   - `tests/integration/loan_approval_hitl.agent`
@@ -4307,7 +4311,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-206] Integration Test: Resilient Weather & Outage Fallback (Circuit Breaker + Memorystore Redis + Cron)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Completed
 * **Target Package/Files**:
   - `tests/integration/resilient-weather-fallback.test.ts`
   - `tests/integration/resilient_weather_fallback.agent`
@@ -4363,7 +4367,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-207] Integration Test: Healthcare Diagnostic Guardrail Shield (Bi-directional PII Gate + Cloud Spanner)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Completed
 * **Target Package/Files**:
   - `tests/integration/healthcare-guardrail.test.ts`
   - `tests/integration/healthcare_guardrail.agent`
@@ -4428,7 +4432,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-208] Integration Test: Procurement B2B A2A Protocol Agent (JSON-RPC 2.0 + Google Cloud IAM OIDC)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Completed
 * **Target Package/Files**:
   - `tests/integration/procurement-a2a.test.ts`
   - `tests/integration/procurement_a2a.agent`
@@ -4485,7 +4489,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-209] Integration Test: Autonomous Code Optimizer Loop (Evaluator-Optimizer + Thinking Budget + Sandbox)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Complete
 * **Target Package/Files**:
   - `tests/integration/code-optimizer-loop.test.ts`
   - `tests/integration/code_optimizer_loop.agent`
@@ -4543,7 +4547,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-210] Integration Test: Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Complete
 * **Target Package/Files**:
   - `tests/integration/policy-debate.test.ts`
   - `tests/integration/policy_debate.agent`
@@ -4602,7 +4606,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-211] Integration Test: Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Complete
 * **Target Package/Files**:
   - `tests/integration/legal-contract-triad.test.ts`
   - `tests/integration/legal_contract_triad.agent`
@@ -4660,7 +4664,7 @@ Each task specifies reverse-engineering the sample Python code into a production
 
 ### [TASK-212] Integration Test: Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner)
 * **Release**: `v1.2.0`
-* **Status**: Not Started
+* **Status**: Complete
 * **Target Package/Files**:
   - `tests/integration/enterprise-data-platform.test.ts`
   - `tests/integration/enterprise_data_platform.agent`
@@ -5854,6 +5858,144 @@ Each task specifies reverse-engineering the sample Python code into a production
   - Updated `A2UISurfaceRenderer.tsx` (`registerComponentNode`, `renderNode`, `handleButtonClick`, `extractA2UIPayloads`, `RenderTable`, `RenderExpansionPanel`) and `LocalRunnerScriptProvider.ts` to support canonical A2UI v0.9.1 widgets, line-anchored fence parsing, and `userAction` routing.
 * **Verification**:
   - Execute `npx vitest run tests/unit/extension/samplesDiscovery.test.ts tests/unit/webview/PaletteSamples.test.ts tests/unit/extension/sampleDataSync.test.ts` and `npm run build` with 100% pass rate.
+
+---
+
+<a id="task-251"></a>
+
+### [TASK-251] Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom)
+* **Status**: **Completed**
+* **Release**: `v1.2.0`
+* **Category / Group**: MCP / Google Workspace Tools (`developers.google.com/workspace/guides/configure-mcp-servers`)
+* **Dependencies**: `TASK-120`, `TASK-130`, `TASK-135`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `'google_workspace'` to `GoogleCloudMcpDomain` or `GoogleWorkspaceMcpServerDefinition` with `companionRestApi`, `mcpServiceName`, `readOnlyScopes`, and `readWriteScopes` on `GoogleCloudMcpServerDefinition` / `McpToolConfig`)
+  - `src/webview/data/googleWorkspaceMcpServers.ts` & `src/webview/data/googleCloudMcpServers.ts` (New dedicated **Google Workspace MCP Servers** catalog and domain accordion in the Tools sidebar covering all official Workspace MCP servers from `https://developers.google.com/workspace/guides/configure-mcp-servers`)
+  - `src/webview/data/defaultTools.ts` & `src/webview/data/builtinTools.ts` (Expose the dedicated **Google Workspace MCP Servers** category in the Tools Tab sidebar with search/filter support)
+  - `src/webview/components/inspector/tools/McpToolDrawer.tsx` (Add a **Google Workspace MCP Setup & OAuth Scope Helper** section displaying required companion APIs `gcloud services enable <rest_api> <mcp_api>`, **Read-Only vs. Read/Write Scope Preset** toggles, `X-Goog-User-Project` header configuration, and OAuth 2.0 Client ID / ADC login helper)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit ADK `McpToolset` + `StreamableHTTPConnectionParams` with Google Workspace OAuth 2.0 user credentials / ADC scopes, `X-Goog-User-Project` header, and Terraform `google_project_service` resources enabling both the Workspace REST API and companion `*mcp.googleapis.com` service)
+  - `tests/unit/webview/googleWorkspaceMcpServers.test.ts` (New unit test suite)
+* **Context**:
+  - **Reference Documentation**: [`https://developers.google.com/workspace/guides/configure-mcp-servers`](https://developers.google.com/workspace/guides/configure-mcp-servers)
+  - **Dedicated Google Workspace MCP Servers Catalog in the Tools Sidebar**:
+    1. **Gmail MCP (`workspace_mcp_gmail`)**:
+       - **Endpoint**: `https://gmailmcp.googleapis.com/mcp/v1` (or `/mcp`)
+       - **APIs to Enable**: `gmail.googleapis.com` + `gmailmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/gmail.readonly`, `https://www.googleapis.com/auth/gmail.compose`, `https://www.googleapis.com/auth/gmail.modify`
+       - **Capabilities**: Search threads, read messages, create drafts, send replies, and manage labels.
+    2. **Google Drive MCP (`workspace_mcp_drive`)**:
+       - **Endpoint**: `https://drivemcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `drive.googleapis.com` + `drivemcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/drive.readonly`, `https://www.googleapis.com/auth/drive.file`, `https://www.googleapis.com/auth/drive`
+       - **Capabilities**: Search files/folders, inspect metadata and permissions, read file contents, and create/copy files.
+    3. **Google Docs MCP (`workspace_mcp_docs`)**:
+       - **Endpoint**: `https://docsmcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `docs.googleapis.com` + `docsmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/documents.readonly`, `https://www.googleapis.com/auth/documents`
+       - **Capabilities**: Read document structure/tabs (`read_doc`), insert/replace text, and format Google Docs (`update_doc`).
+    4. **Google Sheets MCP (`workspace_mcp_sheets`)**:
+       - **Endpoint**: `https://sheetsmcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `sheets.googleapis.com` + `sheetsmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/spreadsheets.readonly`, `https://www.googleapis.com/auth/spreadsheets`
+       - **Capabilities**: Read/write cell ranges, append rows, create sheets, and inspect formulas/pivots.
+    5. **Google Slides MCP (`workspace_mcp_slides`)**:
+       - **Endpoint**: `https://slidesmcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `slides.googleapis.com` + `slidesmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/presentations.readonly`, `https://www.googleapis.com/auth/presentations`
+       - **Capabilities**: Inspect presentation decks, create slides, and populate text/shapes/speaker notes.
+    6. **Google Calendar MCP (`workspace_mcp_calendar`)**:
+       - **Endpoint**: `https://calendarmcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `calendar-json.googleapis.com` + `calendarmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/calendar.calendarlist.readonly`, `https://www.googleapis.com/auth/calendar.events.freebusy`, `https://www.googleapis.com/auth/calendar.events.readonly`, `https://www.googleapis.com/auth/calendar.events`
+       - **Capabilities**: Query free/busy availability, list calendars, inspect events, and schedule/update meetings.
+    7. **Google Chat MCP (`workspace_mcp_chat`)**:
+       - **Endpoint**: `https://chatmcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `chat.googleapis.com` + `chatmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/chat.spaces.readonly`, `https://www.googleapis.com/auth/chat.messages.readonly`, `https://www.googleapis.com/auth/chat.messages`
+       - **Capabilities**: List spaces, read thread history, and post messages/cards to Google Chat spaces.
+    8. **Google Meet MCP (`workspace_mcp_meet`)**:
+       - **Endpoint**: `https://meetmcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `meet.googleapis.com` + `meetmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/meetings.space.readonly`, `https://www.googleapis.com/auth/meetings.space.created`
+       - **Capabilities**: Create meeting spaces, retrieve conference records, and inspect meeting transcripts/recordings.
+    9. **Google Tasks MCP (`workspace_mcp_tasks`)**:
+       - **Endpoint**: `https://tasksmcp.googleapis.com/mcp/v1`
+       - **APIs to Enable**: `tasks.googleapis.com` + `tasksmcp.googleapis.com`
+       - **OAuth Scopes**: `https://www.googleapis.com/auth/tasks.readonly`, `https://www.googleapis.com/auth/tasks`
+       - **Capabilities**: List task lists, read to-do items, and create/complete user tasks.
+    10. **Google People & Contacts MCP (`workspace_mcp_people`)**:
+        - **Endpoint**: `https://people.googleapis.com/mcp/v1`
+        - **APIs to Enable**: `people.googleapis.com`
+        - **OAuth Scopes**: `https://www.googleapis.com/auth/contacts.readonly`, `https://www.googleapis.com/auth/directory.readonly`
+        - **Capabilities**: Search Workspace directory profiles, user contacts, emails, and reporting hierarchy.
+    11. **Google Forms MCP (`workspace_mcp_forms`)**:
+        - **Endpoint**: `https://formsmcp.googleapis.com/mcp/v1`
+        - **APIs to Enable**: `forms.googleapis.com` + `formsmcp.googleapis.com`
+        - **OAuth Scopes**: `https://www.googleapis.com/auth/forms.body.readonly`, `https://www.googleapis.com/auth/forms.body`, `https://www.googleapis.com/auth/forms.responses.readonly`
+        - **Capabilities**: Create surveys/forms, add questions, and read form responses.
+    12. **Google Keep MCP (`workspace_mcp_keep`)**:
+        - **Endpoint**: `https://keepmcp.googleapis.com/mcp/v1`
+        - **APIs to Enable**: `keep.googleapis.com` + `keepmcp.googleapis.com`
+        - **OAuth Scopes**: `https://www.googleapis.com/auth/keep.readonly`, `https://www.googleapis.com/auth/keep`
+        - **Capabilities**: List, read, and create notes and checklists in Google Keep.
+    13. **Google Classroom MCP (`workspace_mcp_classroom`)**:
+        - **Endpoint**: `https://classroommcp.googleapis.com/mcp/v1`
+        - **APIs to Enable**: `classroom.googleapis.com` + `classroommcp.googleapis.com`
+        - **OAuth Scopes**: `https://www.googleapis.com/auth/classroom.courses.readonly`, `https://www.googleapis.com/auth/classroom.coursework.students`
+        - **Capabilities**: List courses, inspect rosters, and manage coursework/assignments.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/googleWorkspaceMcpServers.test.ts` with 100% pass rate, validating all 13 Workspace MCP server definitions, dual-API metadata (`companionRestApi` + `mcpServiceName`), Read-Only vs. Read/Write OAuth scope presets, and `createToolDefinitionFromWorkspaceMcpServer()`.
+
+---
+
+<a id="task-252"></a>
+
+### [TASK-252] Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: MCP / Developer & Source Control Tools (`github.com/github/github-mcp-server`)
+* **Dependencies**: `TASK-120`, `TASK-130`, `TASK-135`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` (Add `GitHubMcpToolsetId`, `GitHubMcpDeploymentMode`: `'remote_http' | 'local_docker_stdio'`, `GitHubMcpConfig`, and optional `githubConfig?: GitHubMcpConfig` on `McpToolConfig`)
+  - `src/shared/types.ts` (Re-export GitHub MCP types)
+  - `src/webview/data/githubMcpServers.ts` (New catalog of official GitHub MCP Server presets—Full Server, Repositories & Code, Issues & PRs, GitHub Actions CI/CD, and Code & Secret Security—and `createToolDefinitionFromGitHubMcpServer()` builder)
+  - `src/webview/data/defaultTools.ts` & `src/webview/data/builtinTools.ts` (Include `GITHUB_MCP_DEFAULT_TOOLS` in `AVAILABLE_TOOLS` and route into the `MCP Servers` sidebar category)
+  - `src/webview/components/inspector/tools/McpToolDrawer.tsx` (Add a dedicated **GitHub MCP Server Configuration** panel supporting Remote Hosted HTTP `https://api.githubcopilot.com/mcp/` vs. Local Docker/Binary `stdio`, multi-select **GitHub Toolsets (`X-MCP-Toolsets` / `--toolsets`)**, **Read-Only Mode (`X-MCP-Readonly` / `--read-only`)**, **Dynamic Toolsets (`--dynamic-toolsets`)**, GitHub Enterprise Server hostname override `GITHUB_HOST`, and GitHub PAT / OAuth 2.0 `SecretStorage` integration)
+  - `resource/prompts/python_adk_agent-engine.prompt.txt` & `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit ADK `McpToolset` with `StreamableHTTPConnectionParams(url="https://api.githubcopilot.com/mcp/", headers={"Authorization": f"Bearer {os.environ['GITHUB_PERSONAL_ACCESS_TOKEN']}", "X-MCP-Toolsets": "...", "X-MCP-Readonly": "..."})` or `StdioConnectionParams` for `ghcr.io/github/github-mcp-server`, plus `google_secret_manager_secret` for `GITHUB_PERSONAL_ACCESS_TOKEN` in `main.tf`)
+  - `tests/unit/webview/githubMcpServers.test.ts` (New unit test suite)
+* **Context**:
+  - **Reference Repository**: [`https://github.com/github/github-mcp-server`](https://github.com/github/github-mcp-server)
+  - **Two Supported Connection Modes**:
+    1. **Remote Hosted GitHub MCP Server (`remote_http` — Default Recommended)**:
+       - **Default Endpoint**: `https://api.githubcopilot.com/mcp/`
+       - **Toolset-Scoped URL Shortcuts**: `https://api.githubcopilot.com/mcp/x/{toolset}` (e.g., `/mcp/x/repos`, `/mcp/x/issues`, `/mcp/x/pull_requests`, `/mcp/x/actions`, `/mcp/x/code_security`) and read-only path suffix `/readonly` (e.g., `https://api.githubcopilot.com/mcp/readonly`).
+       - **Customization Headers**:
+         - `Authorization: Bearer <GITHUB_PERSONAL_ACCESS_TOKEN>` (or OAuth 2.0 token)
+         - `X-MCP-Toolsets`: Comma-separated list of enabled toolsets to keep LLM context lean (e.g., `repos,issues,pull_requests,actions`).
+         - `X-MCP-Readonly`: `"true"` or `"false"` to strictly enforce read-only operations.
+    2. **Local Docker / Binary Server (`local_docker_stdio`)**:
+       - Runs `docker run -i --rm -e GITHUB_PERSONAL_ACCESS_TOKEN -e GITHUB_TOOLSETS=... -e GITHUB_READ_ONLY=... -e GITHUB_DYNAMIC_TOOLSETS=... -e GITHUB_HOST=... ghcr.io/github/github-mcp-server` (or `github-mcp-server stdio`).
+       - Supports **GitHub Enterprise Server / GitHub Enterprise Cloud with data residency (`*.ghe.com`)** via `GITHUB_HOST`.
+  - **Supported Official GitHub MCP Toolsets (`GitHubMcpToolsetId`)**:
+    - `context`: Current authenticated user and GitHub context metadata (strongly recommended default).
+    - `repos`: Repository browsing, file read/write, code search, branches, commits, and tags.
+    - `issues`: Issue creation, reading, updating, labeling, comments, and sub-issues.
+    - `pull_requests`: PR creation, diff inspection, code review comments, status checks, and merging.
+    - `actions`: GitHub Actions workflows, run logs, artifacts, and job re-runs.
+    - `code_security`: CodeQL / code scanning alerts and security advisories.
+    - `secret_protection`: Secret scanning alerts and push protection triage.
+    - `dependabot`: Dependabot vulnerability alerts and dependency updates.
+    - `notifications`: User notification inbox, mark-as-read, and thread subscriptions.
+    - `discussions`: GitHub Discussions categories, threads, and answers.
+    - `projects`: GitHub Projects (v2) boards, items, and status field updates.
+    - `gists`: Creating, updating, and listing GitHub Gists.
+    - `users` & `orgs`: User profile lookup and organization membership/team queries.
+  - **Authentication & Secret Storage**:
+    - Pre-populates `secretConfig` with `secretName: 'github-personal-access-token'` and `envVar: 'GITHUB_PERSONAL_ACCESS_TOKEN'`, stored locally in VS Code `SecretStorage` / `.env` and provisioned in production via Google Cloud Secret Manager (`google_secret_manager_secret` in `main.tf`).
+    - Also supports GitHub OAuth 2.0 (`https://github.com/login/oauth/authorize` and `https://github.com/login/oauth/access_token`).
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/githubMcpServers.test.ts` with 100% pass rate, validating Remote HTTP header/URL assembly (`X-MCP-Toolsets`, `X-MCP-Readonly`), Local Docker `stdio` args/env generation, toolset multi-select filtering, and `createToolDefinitionFromGitHubMcpServer()`.
+
 
 
 

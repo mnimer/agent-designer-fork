@@ -1,0 +1,265 @@
+{
+  "version": "1.0.0",
+  "name": "policy_debate_system",
+  "description": "Strategic Policy Multi-Agent Debate with Pro/Con Debaters, Google Search Grounding, and Arbiter Consensus Synthesis",
+  "framework": "google-adk",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "agent_debate_arbiter",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 336
+      },
+      "data": {
+        "id": "agent_debate_arbiter",
+        "name": "debate_moderator_arbiter",
+        "label": "Debate Moderator & Arbiter",
+        "role": "Impartial Policy Debate Moderator & Consensus Arbiter",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "isStartNode": true,
+        "isDebateNode": true,
+        "subAgentPattern": "debate",
+        "systemPrompt": "Moderates a multi-round structured policy debate between the Pro Advocate and Con Advocate for up to 3 rounds. Evaluates empirical citations, scores consensus convergence against the 0.85 threshold, and issues a balanced final Consensus Resolution.",
+        "memoryType": "in_memory",
+        "memoryConfig": {
+          "type": "in_memory"
+        },
+        "debateConfig": {
+          "maxRounds": 3,
+          "consensusThreshold": 0.85,
+          "debateStyle": "structured_rebuttal",
+          "tieBreakerStrategy": "moderator_vote",
+          "requireEvidenceCitations": true
+        },
+        "subAgents": [
+          {
+            "agentId": "agent_pro_advocate",
+            "name": "pro_policy_advocate",
+            "delegationType": "debate"
+          },
+          {
+            "agentId": "agent_con_advocate",
+            "name": "con_policy_advocate",
+            "delegationType": "debate"
+          },
+          {
+            "agentId": "agent_consensus_resolution",
+            "name": "consensus_resolution_synthesizer",
+            "delegationType": "synthesizer"
+          }
+        ],
+        "tools": []
+      }
+    },
+    {
+      "id": "agent_pro_advocate",
+      "type": "agentNode",
+      "position": {
+        "x": 48,
+        "y": 952
+      },
+      "data": {
+        "id": "agent_pro_advocate",
+        "name": "pro_policy_advocate",
+        "label": "Pro Advocate",
+        "role": "Affirmative Policy Research Advocate",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.3,
+        "outputKey": "pro_arguments",
+        "systemPrompt": "Formulates arguments in favor of the proposed policy backed by empirical economic and social research citations retrieved via Google Search. Writes arguments to state key pro_arguments.",
+        "tools": [
+          {
+            "id": "tool_search_pro",
+            "name": "Google Search Grounding",
+            "type": "search",
+            "builtinType": "google_search",
+            "description": "Retrieves empirical research and policy evidence supporting the affirmative position"
+          }
+        ],
+        "subAgents": []
+      }
+    },
+    {
+      "id": "agent_con_advocate",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 952
+      },
+      "data": {
+        "id": "agent_con_advocate",
+        "name": "con_policy_advocate",
+        "label": "Con Advocate",
+        "role": "Counter-Evidence & Fiscal Risk Advocate",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.3,
+        "outputKey": "con_arguments",
+        "systemPrompt": "Formulates fiscal risk, implementation cost, and counter-evidence arguments against the proposed policy using empirical research retrieved via Google Search. Writes rebuttals to state key con_arguments.",
+        "tools": [
+          {
+            "id": "tool_search_con",
+            "name": "Google Search Grounding",
+            "type": "search",
+            "builtinType": "google_search",
+            "description": "Retrieves empirical counter-evidence and risk analyses challenging the proposed policy"
+          }
+        ],
+        "subAgents": []
+      }
+    },
+    {
+      "id": "agent_consensus_resolution",
+      "type": "agentNode",
+      "position": {
+        "x": 48,
+        "y": 1448
+      },
+      "data": {
+        "id": "agent_consensus_resolution",
+        "name": "consensus_resolution_synthesizer",
+        "label": "Consensus Resolution",
+        "role": "Policy Consensus & Synthesis Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "agentKind": "synthesizer",
+        "systemPrompt": "Synthesizes the multi-round rebuttals from pro_arguments and con_arguments after the debate converges (>= 0.85 consensus threshold or 3 rounds) and produces a final evidence-backed policy resolution.",
+        "synthesizerConfig": {
+          "inputStateKeys": [
+            "pro_arguments",
+            "con_arguments"
+          ],
+          "reductionStrategy": "consensus_synthesis"
+        },
+        "tools": [],
+        "subAgents": []
+      }
+    },
+    {
+      "id": "trigger_chat_debate",
+      "type": "triggerNode",
+      "position": {
+        "x": 488,
+        "y": 48
+      },
+      "data": {
+        "id": "trigger_chat_debate",
+        "label": "Policy Debate Interactive Chat",
+        "triggerType": "chat",
+        "description": "Interactive conversational trigger initiating structured policy debate rounds",
+        "config": {
+          "initialMessage": "Debate the economic impacts of universal basic income vs job guarantee programs.",
+          "streaming": true,
+          "sessionMemory": "in_memory"
+        },
+        "targetRootAgentId": "agent_debate_arbiter"
+      }
+    },
+    {
+      "id": "trigger_tester_debate",
+      "type": "triggerNode",
+      "position": {
+        "x": 48,
+        "y": 384
+      },
+      "data": {
+        "id": "trigger_tester_debate",
+        "label": "Policy Debate QA Test Suite",
+        "triggerType": "tester",
+        "description": "Automated test suite verifying citation requirements and balanced synthesis across economic scenarios",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "scenario_ubi_vs_jg",
+              "name": "UBI vs Job Guarantee Debate Scenario",
+              "prompt": "Debate the economic impacts of universal basic income vs job guarantee programs.",
+              "expectedOutput": "consensus",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario_carbon_tax",
+              "name": "Carbon Border Adjustment vs Subsidies Debate Scenario",
+              "prompt": "Evaluate carbon border adjustment mechanisms vs domestic clean tech subsidies with empirical citations.",
+              "expectedOutput": "resolution",
+              "assertionType": "contains"
+            }
+          ]
+        },
+        "targetRootAgentId": "agent_debate_arbiter"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_chat_to_arbiter",
+      "source": "trigger_chat_debate",
+      "target": "agent_debate_arbiter",
+      "sourceHandle": "trigger_out_bottom",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_tester_to_arbiter",
+      "source": "trigger_tester_debate",
+      "target": "agent_debate_arbiter",
+      "sourceHandle": "trigger_out_right",
+      "targetHandle": "input_left",
+      "animated": true
+    },
+    {
+      "id": "edge_arbiter_to_pro",
+      "source": "agent_debate_arbiter",
+      "target": "agent_pro_advocate",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_arbiter_to_con",
+      "source": "agent_debate_arbiter",
+      "target": "agent_con_advocate",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_pro_to_resolution",
+      "source": "agent_pro_advocate",
+      "target": "agent_consensus_resolution",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_con_to_resolution",
+      "source": "agent_con_advocate",
+      "target": "agent_consensus_resolution",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_arbiter_to_resolution",
+      "source": "agent_debate_arbiter",
+      "target": "agent_consensus_resolution",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-10-20T23:05:58.416Z"
+  },
+  "deployment": {
+    "target": "agent_engine",
+    "deploymentTarget": "agent_engine",
+    "outputFolder": "./policy_debate/",
+    "framework": "google-adk",
+    "language": "python",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true
+  }
+}

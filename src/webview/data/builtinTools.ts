@@ -24,8 +24,24 @@
  */
 
 import { ToolDefinition, ToolCategory } from '../types';
+import {
+  GOOGLE_WORKSPACE_MCP_SERVERS,
+  GOOGLE_WORKSPACE_MCP_DEFAULT_TOOLS,
+  createToolDefinitionFromWorkspaceMcpServer,
+  getGoogleWorkspaceMcpServers,
+  getGoogleWorkspaceMcpServerById,
+} from './googleWorkspaceMcpServers';
 import { isDatabricksMcpTool } from './databricksMcpServers';
 import { isSnowflakeMcpTool } from './snowflakeMcpServers';
+
+export {
+  GOOGLE_WORKSPACE_MCP_SERVERS,
+  GOOGLE_WORKSPACE_MCP_DEFAULT_TOOLS,
+  createToolDefinitionFromWorkspaceMcpServer,
+  getGoogleWorkspaceMcpServers,
+  getGoogleWorkspaceMcpServerById,
+};
+
 export {
   ADK_EXTENDED_TOOLSETS,
   ADK_CONTROL_FLOW_TOOLS,
@@ -256,7 +272,6 @@ export function isBuiltinTool(tool: ToolDefinition): boolean {
  * Checks whether a given tool belongs to the official Google ADK tools suite
  * (including built-in ADK tools and native FunctionTool custom functions).
  *
- * @author Mike Nimer <mikenimer@google.com>
  * @param tool The tool to inspect
  * @returns boolean
  */
@@ -275,6 +290,8 @@ export function isNativeAdkTool(tool: ToolDefinition): boolean {
 export interface CategorizedTools {
   native_adk: ToolDefinition[];
   google_cloud_mcp: ToolDefinition[];
+  /** Google Workspace Remote MCP Servers (13 official *mcp.googleapis.com endpoints) */
+  google_workspace_mcp: ToolDefinition[];
   mcp: ToolDefinition[];
   custom: ToolDefinition[];
   // Backwards compatibility for existing sub-category consumers & tests
@@ -356,7 +373,6 @@ export function sanitizeToolList(tools: ToolDefinition[]): ToolDefinition[] {
  * Also maintains legacy sub-categories (grounding, enterprise_search, system, custom)
  * for backward compatibility with existing tests and sub-filtering workflows.
  *
- * @author Mike Nimer <mikenimer@google.com>
  * @param tools List of tools to categorize
  * @returns CategorizedTools object
  */
@@ -364,6 +380,7 @@ export function categorizeTools(tools: ToolDefinition[]): CategorizedTools {
   const categorized: CategorizedTools = {
     native_adk: [],
     google_cloud_mcp: [],
+    google_workspace_mcp: [],
     mcp: [],
     custom: [],
     grounding: [],
@@ -375,16 +392,18 @@ export function categorizeTools(tools: ToolDefinition[]): CategorizedTools {
 
   for (const tool of cleanTools) {
     const isGoogleCloudMcp = tool.category === 'google_cloud_mcp' || tool.id.startsWith('gcp_mcp_');
+    const isGoogleWorkspaceMcp = tool.category === 'google_workspace_mcp' || tool.id.startsWith('workspace_mcp_');
     const isDatabricksMcp = isDatabricksMcpTool(tool);
     const isSnowflakeMcp = isSnowflakeMcpTool(tool);
-    const isMcp = !isGoogleCloudMcp && (
+    const isMcp = !isGoogleCloudMcp && !isGoogleWorkspaceMcp && (
       isDatabricksMcp ||
       isSnowflakeMcp ||
       tool.type === 'mcp' ||
+      tool.type === 'MCP' ||
       tool.mcpConfig !== undefined ||
       tool.id.startsWith('tool_mcp_')
     );
-    const isAdk = !isGoogleCloudMcp && !isMcp && isNativeAdkTool(tool);
+    const isAdk = !isGoogleCloudMcp && !isGoogleWorkspaceMcp && !isMcp && isNativeAdkTool(tool);
 
     // 1. Group into Native ADK vs Google Cloud MCP vs generic MCP
     if (isGoogleCloudMcp) {
@@ -415,6 +434,8 @@ export function categorizeTools(tools: ToolDefinition[]): CategorizedTools {
       tool.type === 'code'
     ) {
       categorized.system.push(tool);
+    } else if (tool.category === 'google_workspace_mcp' || tool.id.startsWith('workspace_mcp_')) {
+      categorized.google_workspace_mcp.push(tool);
     } else if (!isGoogleCloudMcp && !isDatabricksMcp && !isSnowflakeMcp) {
       categorized.custom.push(tool);
     }

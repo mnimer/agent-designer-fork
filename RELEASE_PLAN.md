@@ -3,7 +3,7 @@
 > **Author**: Mike Nimer <mikenimer@google.com>  
 > **Status**: Approved Blueprint  
 > **Target Platform**: Visual Studio Code Extension (VS Code Desktop & Web)  
-> **Core Frameworks**: Google GenAI SDK / Google ADK (Python & TypeScript), LangGraph  
+> **Core Frameworks**: Google GenAI SDK / Google ADK (Python, TypeScript, Go & Java), LangGraph  
 
 ---
 
@@ -11,7 +11,7 @@
 
 The **Visual Studio Code Agent Flow Builder** is a visual IDE extension and canvas orchestrator designed to model, configure, test, and generate production-ready code for complex multi-agent AI systems.
 
-To ensure fast iteration, robust test coverage, and strict quality gates, engineering is structured across **13 progressive releases**. Each release builds incrementally upon the prior version—starting with single-agent foundations, adding state persistence, inter-agent A2A protocols, decision routing, tools, structured output schemas, MCP, and culminating in multi-framework support (LangGraph & TypeScript) and advanced cognitive patterns.
+To ensure fast iteration, robust test coverage, and strict quality gates, engineering is structured across **17 progressive releases**. Each release builds incrementally upon the prior version—starting with single-agent foundations, adding state persistence, inter-agent A2A protocols, decision routing, tools, structured output schemas, MCP, cognitive patterns, enterprise governance, A2UI v0.9.1 generative interfaces, complete ADK feature parity, and culminating in multi-framework/multi-language support (LangGraph, TypeScript, Go, Java, and GKE).
 
 ```
 +---------------------------------------------------------------------------------------------------------+
@@ -23,7 +23,7 @@ To ensure fast iteration, robust test coverage, and strict quality gates, engine
 |     ↓                                                                                                   |
 | [v1.0.2] Multi-Agent Topologies & Delegation Patterns (Sequential Pipeline, Parallel Fan-Out)          |
 |     ↓                                                                                                   |
-| [v1.0.3] Memory & State Checkpointing (In-Memory Buffer, Google Cloud Firestore Checkpointer)           |
+| [v1.0.3] Memory & State Checkpointing (In-Memory, SQLite, Firestore, Cloud SQL, Spanner, Redis)        |
 |     ↓                                                                                                   |
 | [v1.0.4] Agent-to-Agent (A2A) Protocol Node (A2A Agent Card, JSON-RPC Client, Bearer/API Key Auth)     |
 |     ↓                                                                                                   |
@@ -31,17 +31,21 @@ To ensure fast iteration, robust test coverage, and strict quality gates, engine
 |     ↓                                                                                                   |
 | [v1.0.6] Extended Tools (Custom REST API Builder with Secret Manager & Python Code Sandbox)             |
 |     ↓                                                                                                   |
-| [v1.0.7] Structured Output Schema Builder (Typed Schema Field Editor, Pydantic & JSON Schema Preview)  |
+| [v1.0.7] Structured Input & Output Schema Builder (Typed Schema Field Editor, Pydantic & JSON Schema)  |
 |     ↓                                                                                                   |
-| [v1.0.8] Model Context Protocol (MCP) Tool Integration (stdio subprocess, SSE, HTTP transports)         |
+| [v1.0.8] Model Context Protocol (MCP) Tool Integration (stdio, SSE, HTTP & Google Cloud Remote MCP)     |
 |     ↓                                                                                                   |
 | [v1.0.9] Event-Driven Triggers (Pub/Sub, Cron, Eventarc) & Enterprise Cloud IAM OIDC Auth               |
 |     ↓                                                                                                   |
-| [v1.1.0] LangGraph Framework Support (Python StateGraph, TypedDict State, Conditional Edges)            |
+| [v1.1.2] Advanced Cognitive Patterns (Debate, Loop, Triad, HITL, Fallback, Guardrail, Synthesizer)     |
 |     ↓                                                                                                   |
-| [v1.1.1] TypeScript Runtime Support (TypeScript @google/genai SDK, Node.js Repository, Vitest)          |
+| [v1.2.0] ADK Full Feature Parity • A2UI v0.9.1 • Enterprise Governance • Skills, Callbacks & Toolsets  |
 |     ↓                                                                                                   |
-| [v1.1.2] Advanced Cognitive Patterns (Debate, Evaluator-Optimizer, Triad) & Enterprise Blueprints       |
+| [v1.2.1] End-to-End Multi-Agent Integration Verification Suite (TASK-201 to TASK-212)                  |
+|     ↓                                                                                                   |
+| [v1.3.0] Enterprise Reference Samples & Dual-Mode Data Cloud Blueprints Gallery (44 Samples)           |
+|     ↓                                                                                                   |
+| [v1.4.0] Multi-Target GKE Deployment • LangGraph • Multi-Language ADK (TS, Go, Java) & i18n            |
 +---------------------------------------------------------------------------------------------------------+
 ```
 
@@ -378,6 +382,100 @@ To ensure fast iteration, robust test coverage, and strict quality gates, engine
 * **Acceptance Criteria**:
   - All 8 pattern presets drag onto canvas with fully wired nodes and edges.
   - Blueprints load completely configured graphs, tools, output schemas, and test cases.
+
+---
+
+### Release 1.2.0 — ADK Full Feature Parity, A2UI v0.9.1, Enterprise Governance & Native Toolsets
+**Theme**: Complete 100% parity with the official Google ADK functional specification (`https://adk.dev/`), introduce Agent-to-User Interface (`A2UI v0.9.1`) generative UI surfaces, provision Google Cloud Enterprise Governance & Gemini Enterprise App publishing, and integrate first-party/third-party enterprise toolsets.
+
+* **Completed Foundations in `v1.2.0`**:
+  - **Unified Self-Contained CLI & CI/CD Deployment (`TASK-216` — Complete)**: Standardized `Makefile`, Terraform (`main.tf`), Cloud Build (`cloudbuild.yaml`), and `UnifiedDeployRunner`.
+  - **Enterprise Agent Governance Pipeline (`TASK-217` — Complete)**: Automatic Agent Registry (`agentregistry.googleapis.com`) & App Hub Topology registration, Shared Regional Agent Gateway + Model Armor (`networkservices.googleapis.com` + `modelarmor.googleapis.com`), IAP/IAM v3 Security Policies, and Vertex AI Cloud Evaluation (`EvalTask`).
+  - **Automated Gemini Enterprise App Publishing (`TASK-218` — Complete)**: One-click `discoveryengine.googleapis.com` registration for both Agent Engine (`adkAgentDefinition`) and Cloud Run (`a2aAgentDefinition.jsonAgentCard` with `roles/run.invoker` IAM bindings).
+  - **Multi-Agent Evaluator Hardening & Code Reviewer Blueprint (`TASK-213`, `TASK-214` — Complete)**.
+
+* **Parallel Execution Tracks for Open `v1.2.0` Tasks**:
+  1. **Track 1A — A2UI v0.9.1 Protocol & Retail Merchandising Workbench (Sequential Pair)**:
+     - **`TASK-221` (Ready / Independent)**: A2UI v0.9.1 Protocol Support (`material_v09`, `gemini_enterprise_composite_v09`, `basic_v09` catalogs), Agent Drawer configuration (`a2uiConfig`), `A2uiAdaptor` MVC Controller + `a2ui_components.py` codegen, and interactive `A2UISurfaceRenderer` in the Chat Runner.
+     - **`TASK-215` (Ready / Independent)**: Reverse Engineer `retail-data-and-ai-demo` with Dual-Mode `data/<target>/` (`bigquery`, `alloydb`, `spanner`) Pre-Loading, `seed_<target>.py` scripts, and Extension Host recursive `data/` asset sync.
+     - **`TASK-222` (Depends on `TASK-215` & `TASK-221`)**: Retail Merchandising Workbench A2UI Agent Sample (`cloud-gtm/retail-data-and-ai-demo` / Demospace 1876) showcasing Ranked Alarms Dashboard (`alarm_ui.py`), `VegaChart` Store Map (`map_chart.py`), Store Transfer / PO Dialog (`purchase_order_submission_dialog.py`), `PriceAdjustmentHandler`, SoCal Heat Wave AC Copy Enrichment, and Review Triage.
+  2. **Track 1B — Core ADK Runtime Primitives (Parallelizable)**:
+     - **`TASK-223` (Ready / Independent)**: ADK Agent Skills (`SkillToolset`, Progressive Disclosure L1/L2/L3, workspace `skills/` sync, and Dynamic Skill Factory).
+     - **`TASK-224` (Ready / Independent)**: ADK Artifact Service (`InMemoryArtifactService` & `GcsArtifactService`), Multimodal Versioning, and Chat Runner file upload/download.
+     - **`TASK-225` (Ready / Independent)**: ADK Context Management (`ContextCacheConfig`, `EventsCompactionConfig` auto-summarization, and per-agent `include_contents='none' | 'default'`).
+     - **`TASK-226` (Ready / Independent)**: ADK Planners (`BuiltInPlanner` & `PlanReActPlanner` multi-step reasoning loop).
+     - **`TASK-235` (Ready / Independent)**: ADK Live Bidirectional Streaming (`Runner.run_live()`, `LiveRequestQueue` & Voice/Video WebRTC/WS Mode).
+     - **`TASK-236` (Ready / Independent)**: ADK Cross-Session Long-Term Memory Services (`VertexAiMemoryBankService` & `VertexAiRagMemoryService`).
+     - **`TASK-239` (Ready / Independent) ➔ `TASK-240` (Depends on `TASK-239`)**: ADK Agent-Level Lifecycle Callbacks (`before/after_agent`, `before/after_model`, `before/after_tool` with Declarative Policy Presets, Workspace `callbacks/*.py`, and AI Prompt Generator) followed by Runner-Level Plugins (`ReflectAndRetryToolPlugin`, `BigQueryAgentAnalyticsPlugin`, `ContextFilterPlugin`, `SaveFilesAsArtifactsPlugin`).
+  3. **Track 1C — Enterprise MCP & Native ADK Toolsets (100% Independent & Parallelizable)**:
+     - **`TASK-219`**: Databricks Managed MCP Servers Integration (Genie, Vector Search, Unity Catalog Functions & Databricks SQL).
+     - **`TASK-220`**: Snowflake Managed & Cortex MCP Servers Integration (Cortex Analyst, Cortex Search, Cortex Agent, SQL & Custom Procedures).
+     - **`TASK-251`**: Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom with Dual-API enablement & OAuth scope presets).
+     - **`TASK-252`**: Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth).
+     - **`TASK-227`**: ADK `OpenAPIToolset` Integration (OpenAPI v3 Spec Import, Endpoint Discovery & Auth).
+     - **`TASK-228`**: ADK `ApplicationIntegrationToolset` (`IntegrationConnectorTool` for GCP Application Integration & 100+ Enterprise Connectors).
+     - **`TASK-229`**: ADK `VertexAiRagRetrieval` Tool (Managed Vertex AI RAG Engine Corpora Grounding).
+     - **`TASK-230`**: ADK Native `BigQueryToolset` Integration (`WriteMode`, SQL Execution, Forecasting & Contribution Analysis).
+     - **`TASK-231`**: ADK Native `SpannerToolset` Integration (Parameterized SQL, Schema Inspection & Vector Similarity Search).
+     - **`TASK-232`**: ADK `ComputerUseToolset` Integration (Gemini Computer Use Browser/Playwright & Desktop GUI Automation).
+     - **`TASK-233`**: ADK `MCPToolboxForDatabases` (`ToolboxToolset` for AlloyDB, Cloud SQL, Spanner & Neo4j).
+     - **`TASK-234`**: ADK Built-in Control Flow & Memory Tools (`exit_loop`, `transfer_to_agent`, `load_memory`, `load_artifacts`).
+
+* **Acceptance Criteria**:
+  - Agents with `a2uiConfig.enabled` render interactive Material/Composite A2UI v0.9.1 surfaces in the local Chat Runner and Gemini Enterprise.
+  - All ADK core capabilities (`SkillToolset`, `ArtifactService`, `ContextCacheConfig`, `EventsCompactionConfig`, `BuiltInPlanner`/`PlanReActPlanner`, `run_live`, `VertexAiMemoryBankService`, Callbacks, and Plugins) are configurable in the UI and emitted cleanly via prompt-driven codegen.
+  - All 10 new MCP and native ADK toolsets pass unit tests with 100% coverage.
+
+---
+
+### Release 1.2.1 — End-to-End Multi-Agent Integration Verification Suite
+**Theme**: Comprehensive end-to-end integration test suite validating all cognitive patterns, checkpointers, and agent types (`TASK-201` and `TASK-202` already Complete; `TASK-203` through `TASK-212` all Ready Now and 100% parallelizable).
+
+* **Independent Parallel Tasks**:
+  - **`TASK-203`**: Financial Fraud & Services Router (Intent Classifier + State Expressions + SQLite)
+  - **`TASK-204`**: Market Research Synthesizer Reducer (Parallel Fan-Out + Multi-Tool + Firestore)
+  - **`TASK-205`**: Commercial Loan HITL Approval Gate (Human-in-the-Loop + Cloud SQL PostgreSQL)
+  - **`TASK-206`**: Resilient Weather & Outage Fallback (Circuit Breaker + Memorystore Redis + Cron)
+  - **`TASK-207`**: Healthcare Diagnostic Guardrail Shield (Bi-directional PII Gate + Cloud Spanner)
+  - **`TASK-208`**: Procurement B2B A2A Protocol Agent (JSON-RPC 2.0 + Google Cloud IAM OIDC)
+  - **`TASK-209`**: Autonomous Code Optimizer Loop (Evaluator-Optimizer + Thinking Budget + Sandbox)
+  - **`TASK-210`**: Strategic Policy Multi-Agent Debate (Pro/Con Debaters + Search + Arbiter Consensus)
+  - **`TASK-211`**: Legal Contract Compliance Triad (Sequential Triad + Vertex AI Search + Cloud SQL)
+  - **`TASK-212`**: Enterprise Data Platform Agent-as-a-Tool (BigQuery Remote MCP + Cloud Spanner)
+
+---
+
+### Release 1.3.0 — Enterprise Reference Samples & Blueprints Gallery (`TASK-144` to `TASK-186`)
+**Theme**: Expand `resource/samples/<sample>/` with 42 reverse-engineered Google ADK reference blueprints (`TASK-173` `travel-concierge` and `TASK-214` `code_reviewer` are already Complete).
+
+* **Wave 3A — 33 Samples Ready Now (Independent, Depend Only on Completed `TASK-128`)**:
+  - *Research & Analytics*: `TASK-144` (`academic-research`), `TASK-154` (`deep-search`), `TASK-158` (`high-volume-document-analyzer`), `TASK-174` (`youtube-analyst`), `TASK-178` (`market-research-agent`)
+  - *Data & Engineering*: `TASK-152` (`data-engineering`), `TASK-153` (`data-science`)
+  - *Finance*: `TASK-149` (`currency-agent`), `TASK-155` (`financial-advisor`), `TASK-156` (`fomc-research`), `TASK-171` (`small-business-loan-agent`), `TASK-181` (`ambient-expense-agent`)
+  - *Retail & Customer Experience*: `TASK-148` (`brand-search-optimization`), `TASK-150` (`customer-service`), `TASK-157` (`gemma-food-tour-guide`), `TASK-164` (`personalized-shopping`), `TASK-175` (`attenu-guard-customer-service`)
+  - *Creative & Media*: `TASK-147` (`brand-aligned-presentations`), `TASK-160` (`marketing-agency`), `TASK-163` (`on-brand-genmedia`), `TASK-170` (`short-movie-agents`)
+  - *SDLC & Engineering*: `TASK-167` (`sdlc-task-planner`), `TASK-168` (`sdlc-technical-designer`), `TASK-169` (`sdlc-user-story-refiner`), `TASK-172` (`software-bug-assistant`), `TASK-183` (`long-horizon-harness`)
+  - *Operations, Legal & Security*: `TASK-151` (`cyber-guardian-agent`), `TASK-161` (`medical-pre-authorization`), `TASK-176` (`clause-agent`), `TASK-177` (`cross-border-data-router`)
+  - *Auth & Critics*: `TASK-145` (`adk-ae-oauth`), `TASK-159` (`llm-auditor`), `TASK-184` (`oauth-user-consent-flow`)
+* **Wave 3B — 9 Feature-Dependent Samples (Unblocked by Release 1.2.0 Tasks)**:
+  - `TASK-146` (`agent-skills-tutorial`) — Depends on **`TASK-223` (ADK Agent Skills)**
+  - `TASK-162` (`memory-bank`) & `TASK-182` (`cross-session-memory`) — Depend on **`TASK-236` (`VertexAiMemoryBankService`)**
+  - `TASK-165` (`rag-agent`), `TASK-179` (`multiformat-hybrid-rag`), `TASK-185` (`rag-agent-search`), `TASK-186` (`rag-vector-search`) — Depend on **`TASK-229` (`VertexAiRagRetrieval`)**
+  - `TASK-166` (`safety-plugins`) — Depends on **`TASK-239` & `TASK-240` (Callbacks & Plugins)**
+  - `TASK-180` (`staged-ui-widgets`) — Depends on **`TASK-221` (A2UI v0.9.1)**
+
+---
+
+### Release 1.4.0 — Multi-Target GKE Deployment, Multi-Framework, Multi-Language ADK & Internationalization
+**Theme**: Extend deployment to Google Kubernetes Engine (GKE), add LangGraph and multi-language ADK SDK codegen (TypeScript, Go, Java), and localize the VS Code extension UI.
+
+* **Independent Tasks (Ready Now)**:
+  - **`TASK-122` (Ready Now)**: LangGraph Framework Support (Python `StateGraph` Target)
+  - **`TASK-131` (Ready Now)**: VS Code `package.nls.json` and `vscode.l10n` localization across Extension Host and Webview SPA.
+* **Skipped / Deferred Multi-Target & Multi-Language Tasks**:
+  - **`TASK-123` (Skipped / Deferred)**: TypeScript Runtime Support (`@google/genai` / ADK TypeScript SDK & Vitest)
+  - **`TASK-237` (Skipped / Deferred)**: Google Kubernetes Engine (GKE Autopilot) Deployment Target
+  - **`TASK-238` (Skipped / Deferred)**: Multi-Language ADK Code Generation Targets (`Go` `google.golang.org/adk` & `Java` `com.google.adk` SDK Support)
 
 ---
 

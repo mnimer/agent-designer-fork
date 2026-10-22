@@ -10,11 +10,9 @@
  * - Author: Mike Nimer <mikenimer@google.com>
  * - Modular design following "Props In, Events Up" paradigm.
  * - Spacing layout complies with 8pt grid system.
- *
- * @author Mike Nimer <mikenimer@google.com>
  */
 
-import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect, Suspense } from 'react';
 import {
   useNodesState,
   useEdgesState,
@@ -51,10 +49,21 @@ import { createSampleNodesAndEdges } from '../utils/sampleUtils';
 // UI Tabs & Panels
 import { CanvasTab } from './tabs/CanvasTab';
 import { CodeGenerationPanel } from './codegen/CodeGenerationPanel';
-import { AddToolModal } from './inspector/AddToolModal';
-import { MissingFeaturesModal } from './insights/MissingFeaturesModal';
-import { SampleInfoModal } from './Canvas/SampleInfoModal';
 import { PanelDivider } from './Canvas/PanelDivider';
+
+// Lazy-loaded Off-Screen Views & Modals (import { SettingsPage } from './settings/SettingsPage')
+const SettingsPage = React.lazy(() =>
+  import('./settings/SettingsPage').then((m) => ({ default: m.SettingsPage }))
+);
+const AddToolModal = React.lazy(() =>
+  import('./inspector/AddToolModal').then((m) => ({ default: m.AddToolModal }))
+);
+const MissingFeaturesModal = React.lazy(() =>
+  import('./insights/MissingFeaturesModal').then((m) => ({ default: m.MissingFeaturesModal }))
+);
+const SampleInfoModal = React.lazy(() =>
+  import('./Canvas/SampleInfoModal').then((m) => ({ default: m.SampleInfoModal }))
+);
 
 // Custom Hooks
 import { useDiagramHistory } from '../hooks/useDiagramHistory';
@@ -86,8 +95,18 @@ export const isTriggerNode = (node?: { type?: string; data?: any }) =>
 
 export function FlowCanvas() {
   const bridge = useBridgeContext();
-  const { settings, activeEditorTab, setActiveEditorTab } = usePluginSettings();
+  const { settings, activeEditorTab, setActiveEditorTab, openSettings } = usePluginSettings();
   const { fitView, zoomOut, screenToFlowPosition } = useReactFlow();
+
+  // Listen for extension host command to open Plugin Settings (Models & Skills)
+  useEffect(() => {
+    const unsubOpenSettings = bridge.subscribe('OPEN_PLUGIN_SETTINGS', (payload: any) => {
+      openSettings(payload?.menu === 'skills' ? 'skills' : 'models');
+    });
+    return () => {
+      unsubOpenSettings();
+    };
+  }, [bridge, openSettings]);
 
   // Synchronous document pre-hydration from injected window.__INITIAL_AGENT_DOCUMENT__
   const initialInjectedDoc: AgentWorkflowDocument | null =
@@ -206,6 +225,7 @@ export function FlowCanvas() {
   const [generatedFiles, setGeneratedFiles] = useState<GeneratedFile[]>([]);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [hasGeneratedCode, setHasGeneratedCode] = useState<boolean>(false);
+  const [codeGenTokenUsage, setCodeGenTokenUsage] = useState<{ inputTokens: number; outputTokens: number } | null>(null);
 
   // ---------------------------------------------------------------------------
   // 4. Custom Hooks (Tabs, Tools, Resizing, Shortcuts, Extension Sync)
@@ -242,8 +262,6 @@ export function FlowCanvas() {
   /**
    * Dispatches CREATE_FILE_FROM_SAMPLE message to the VS Code extension host.
    * Stops any active local deployment before opening the new agent workflow.
-   *
-   * @author Mike Nimer <mikenimer@google.com>
    */
   const handleOpenSampleInNewTab = useCallback(
     (sample: SampleWorkflowDefinition) => {
@@ -425,6 +443,7 @@ export function FlowCanvas() {
     setGeneratedFiles,
     setHasGeneratedCode,
     setIsGenerating,
+    setCodeGenTokenUsage,
     recordSnapshot,
     setDiscoveredSamples,
   });
@@ -1652,6 +1671,7 @@ export function FlowCanvas() {
 
     setGeneratedFiles([]);
     setHasGeneratedCode(false);
+    setCodeGenTokenUsage(null);
     setIsGenerating(true);
 
     // NOTE: Auto-save the .agent document before initiating code generation
@@ -1671,12 +1691,15 @@ export function FlowCanvas() {
         targetLanguage: currentWorkflowDocument.language,
         deploymentTarget: config.deploymentTarget || 'agent_engine',
         outputFolder: config.outputFolder,
+        codeGenModel: config.codeGenModel || settings.codeGenDefaultModel || 'gemini-3.8-flash',
+        authMode: settings.authMode,
       },
     });
-  }, [currentWorkflowDocument, config.outputFolder, config.deploymentTarget, bridge, isPanelMaximized, bottomPanelHeight, setBottomPanelHeight, panelContainerRef]);
+  }, [currentWorkflowDocument, config.outputFolder, config.deploymentTarget, config.codeGenModel, settings.codeGenDefaultModel, settings.authMode, bridge, isPanelMaximized, bottomPanelHeight, setBottomPanelHeight, panelContainerRef]);
 
   const handleStopGenerate = useCallback(() => {
     setIsGenerating(false);
+    setCodeGenTokenUsage(null);
     bridge.postMessage({
       type: 'CANCEL_CODE_GENERATION',
     });
@@ -1840,7 +1863,9 @@ export function FlowCanvas() {
   return (
     <div className="h-screen w-screen flex flex-col bg-[#0d1117] text-[#c9d1d9] select-none overflow-hidden font-sans">
       {activeEditorTab === 'settings' ? (
-        <SettingsPage />
+        <Suspense fallback={null}>
+          <SettingsPage />
+        </Suspense>
       ) : (
         /* RESIZABLE SPLIT CONTAINER (Diagram Editor on Top, Tabs at Bottom) */
         <div
@@ -1954,6 +1979,7 @@ export function FlowCanvas() {
               onStopGenerate={handleStopGenerate}
               generatedFiles={generatedFiles}
               isGenerating={isGenerating}
+              tokenUsage={codeGenTokenUsage}
               onOpenMissingAdvisor={() => setIsAdvisorOpen(true)}
               hasTestSuite={hasTestSuite}
               hasGeneratedCode={hasGeneratedCode}
@@ -1974,30 +2000,42 @@ export function FlowCanvas() {
       )}
 
       {/* Tool Attachment Modal */}
-      <AddToolModal
-        isOpen={!!toolModalAgentId}
-        onClose={() => setToolModalAgentId(null)}
-        onSelectTool={handleAttachTool}
-        existingToolIds={((targetAgentForTool?.data as AgentData)?.tools || []).map((t) => t.id)}
-        tools={tools}
-        targetAgentName={(targetAgentForTool?.data as AgentData)?.label}
-      />
+      {toolModalAgentId && (
+        <Suspense fallback={null}>
+          <AddToolModal
+            isOpen={!!toolModalAgentId}
+            onClose={() => setToolModalAgentId(null)}
+            onSelectTool={handleAttachTool}
+            existingToolIds={((targetAgentForTool?.data as AgentData)?.tools || []).map((t) => t.id)}
+            tools={tools}
+            targetAgentName={(targetAgentForTool?.data as AgentData)?.label}
+          />
+        </Suspense>
+      )}
 
       {/* Architectural Advisor Modal */}
-      <MissingFeaturesModal
-        isOpen={isAdvisorOpen}
-        onClose={() => setIsAdvisorOpen(false)}
-      />
+      {isAdvisorOpen && (
+        <Suspense fallback={null}>
+          <MissingFeaturesModal
+            isOpen={isAdvisorOpen}
+            onClose={() => setIsAdvisorOpen(false)}
+          />
+        </Suspense>
+      )}
 
       {/* Sample Information Modal Dialog */}
-      <SampleInfoModal
-        sample={activeInfoSample}
-        onClose={() => setActiveInfoSample(null)}
-        onOpenSample={(sample) => {
-          setActiveInfoSample(null);
-          handleOpenSampleInNewTab(sample);
-        }}
-      />
+      {activeInfoSample && (
+        <Suspense fallback={null}>
+          <SampleInfoModal
+            sample={activeInfoSample}
+            onClose={() => setActiveInfoSample(null)}
+            onOpenSample={(sample) => {
+              setActiveInfoSample(null);
+              handleOpenSampleInNewTab(sample);
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

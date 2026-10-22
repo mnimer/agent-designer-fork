@@ -1,0 +1,159 @@
+{
+  "version": "1.0.0",
+  "name": "code_optimizer_loop",
+  "description": "Autonomous Code Optimizer Loop with Evaluator-Optimizer pattern, Gemini 3.7 Flash thinking budget, and Python Code Execution Sandbox",
+  "framework": "google-adk",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "agent_code_generator",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 48
+      },
+      "data": {
+        "id": "agent_code_generator",
+        "name": "algorithm_generator",
+        "label": "Algorithm Generator",
+        "role": "Algorithmic Code Optimization Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "thinkingBudget": 2048,
+        "maxIterations": 4,
+        "subAgentPattern": "loop",
+        "isStartNode": true,
+        "systemPrompt": "Writes clean, vectorized, optimal Python code to solve computational problems. Reads previous iteration critiques from evaluation_feedback state key and repairs bugs or complexity bottlenecks.\n\nBreak the loop if the generated code is correct and returned a valid value.",
+        "outputKey": "candidate_code",
+        "memoryType": "sqlite",
+        "memoryConfig": {
+          "type": "sqlite",
+          "sqlitePath": "./optimizer_sessions.db"
+        },
+        "loopStateKeys": [
+          "candidate_code",
+          "evaluation_feedback",
+          "iteration_index",
+          "is_solution_accepted"
+        ],
+        "subAgents": [
+          {
+            "agentId": "agent_code_evaluator",
+            "name": "Benchmark Evaluator",
+            "delegationType": "loop",
+            "role": "Algorithmic Benchmark & Correctness Evaluator"
+          }
+        ],
+        "tools": []
+      }
+    },
+    {
+      "id": "agent_code_evaluator",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 600
+      },
+      "data": {
+        "id": "agent_code_evaluator",
+        "name": "benchmark_evaluator",
+        "label": "Benchmark Evaluator",
+        "role": "Algorithmic Benchmark & Correctness Evaluator",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "isEvaluator": true,
+        "outputKey": "evaluation_feedback",
+        "systemPrompt": "Executes candidate_code in the Python Code Execution Sandbox against stress test matrices, benchmarks memory and CPU latency, and emits structured review (passed, feedback, complexity_grade). Signals loop termination when benchmark threshold is met or max_iterations (4) is reached.",
+        "tools": [
+          {
+            "id": "tool_code_sandbox",
+            "name": "Python Code Execution Sandbox",
+            "type": "builtin",
+            "builtinType": "code_execution",
+            "description": "Executes Python code in a secure sandbox to verify algorithmic correctness and latency"
+          }
+        ],
+        "subAgents": [
+          {
+            "agentId": "agent_code_generator",
+            "name": "Algorithm Generator",
+            "role": "Algorithmic Code Optimization Specialist",
+            "delegationType": "parallel"
+          }
+        ]
+      }
+    },
+    {
+      "id": "trigger_tester_optimizer",
+      "type": "triggerNode",
+      "position": {
+        "x": 48,
+        "y": 64
+      },
+      "data": {
+        "id": "trigger_tester_optimizer",
+        "label": "Algorithm Test Suite",
+        "triggerType": "tester",
+        "description": "Algorithmic challenge test scenarios verifying O(1) LRU cache and vectorized matrix multiplication optimization",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "scenario_lru_cache",
+              "name": "LRU Cache O(1) Complexity Optimization",
+              "prompt": "Implement an O(1) time complexity LRU Cache in Python with capacity eviction",
+              "expectedOutput": "LRU",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario_matrix_mult",
+              "name": "Vectorized Matrix Multiplication Optimization",
+              "prompt": "Optimize matrix multiplication using vectorized operations and benchmark latency",
+              "expectedOutput": "optimal",
+              "assertionType": "contains"
+            }
+          ]
+        },
+        "targetRootAgentId": "agent_code_generator"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_trigger_to_generator",
+      "source": "trigger_tester_optimizer",
+      "target": "agent_code_generator",
+      "sourceHandle": "trigger_out_right",
+      "targetHandle": "input_left",
+      "animated": true
+    },
+    {
+      "id": "edge_generator_to_evaluator",
+      "source": "agent_code_generator",
+      "target": "agent_code_evaluator",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "edge_evaluator_to_generator",
+      "source": "agent_code_evaluator",
+      "target": "agent_code_generator",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-10-20T21:53:14.408Z"
+  },
+  "deployment": {
+    "target": "agent_engine",
+    "deploymentTarget": "agent_engine",
+    "outputFolder": "./code_optimizer_loop/",
+    "framework": "google-adk",
+    "language": "python",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true
+  }
+}

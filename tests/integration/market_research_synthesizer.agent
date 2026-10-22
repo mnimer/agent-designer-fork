@@ -1,0 +1,340 @@
+{
+  "version": "1.0.0",
+  "name": "market_research_synthesizer",
+  "description": "Market Research Synthesizer Reducer with Parallel Fan-Out, Multi-Tool Leaf Agents, and Pydantic Structured Output",
+  "framework": "google-adk",
+  "language": "python",
+  "nodes": [
+    {
+      "id": "agent_research_lead",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 48
+      },
+      "data": {
+        "id": "agent_research_lead",
+        "name": "market_research_lead",
+        "label": "Market Research Lead",
+        "role": "Lead Market Intelligence Coordinator",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "systemPrompt": "Coordinate comprehensive market research by dispatching research tasks to competitor, sentiment, and financial specialists in parallel, then synthesize their findings into an executive brief.",
+        "isStartNode": true,
+        "subAgentPattern": "parallel",
+        "memoryType": "firestore",
+        "memoryConfig": {
+          "type": "firestore",
+          "collectionName": "market_research_sessions",
+          "databaseId": "(default)",
+          "projectId": "gcp-project-test"
+        },
+        "subAgents": [
+          {
+            "agentId": "agent_competitor",
+            "name": "competitor_analyst",
+            "delegationType": "parallel"
+          },
+          {
+            "agentId": "agent_sentiment",
+            "name": "sentiment_modeler",
+            "delegationType": "parallel"
+          },
+          {
+            "agentId": "agent_financial",
+            "name": "financial_data_analyst",
+            "delegationType": "parallel"
+          },
+          {
+            "agentId": "agent_synthesizer",
+            "name": "executive_synthesizer",
+            "delegationType": "sequential"
+          }
+        ],
+        "tools": []
+      }
+    },
+    {
+      "id": "trigger_tester_market",
+      "type": "triggerNode",
+      "position": {
+        "x": 48,
+        "y": 112
+      },
+      "data": {
+        "id": "trigger_tester_market",
+        "label": "Market Research QA Tester",
+        "triggerType": "tester",
+        "description": "Automated test suite validating parallel worker execution and Pydantic structured output.",
+        "config": {
+          "testScenarios": [
+            {
+              "id": "scenario_cloud_computing",
+              "name": "Enterprise Cloud Computing Market Analysis",
+              "prompt": "Conduct comprehensive market analysis for enterprise cloud computing, focusing on hyperscalers, customer sentiment, and SEC filing revenue growth.",
+              "inputQuery": "Conduct comprehensive market analysis for enterprise cloud computing, focusing on hyperscalers, customer sentiment, and SEC filing revenue growth.",
+              "expectedOutput": "market_outlook",
+              "assertionType": "contains"
+            },
+            {
+              "id": "scenario_schema_conformance",
+              "name": "Pydantic Brief Schema Conformance",
+              "prompt": "Evaluate cybersecurity AI SaaS landscape and produce ExecutiveMarketBrief.",
+              "inputQuery": "Evaluate cybersecurity AI SaaS landscape and produce ExecutiveMarketBrief.",
+              "expectedOutput": "{\"type\": \"object\", \"required\": [\"market_outlook\", \"key_competitors\", \"aggregate_sentiment_score\", \"revenue_risk_factors\", \"strategic_recommendations\"]}",
+              "assertionType": "json_schema"
+            }
+          ]
+        },
+        "targetRootAgentId": "agent_research_lead"
+      }
+    },
+    {
+      "id": "agent_competitor",
+      "type": "agentNode",
+      "position": {
+        "x": 48,
+        "y": 704
+      },
+      "data": {
+        "id": "agent_competitor",
+        "name": "competitor_analyst",
+        "label": "Competitor Analyst",
+        "role": "Competitive Intelligence Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "systemPrompt": "Search the live web to gather real-time competitor intelligence, product announcements, market share dynamics, and strategic moves. Write your structured findings to state key competitor_data.",
+        "agentKind": "standard",
+        "outputKey": "competitor_data",
+        "tools": [
+          {
+            "id": "tool_google_search",
+            "name": "Google Search Grounding",
+            "type": "search",
+            "builtinType": "google_search",
+            "description": "Grounding search engine tool for real-time web retrieval and competitor verification.",
+            "codePrompt": "Query the Google Search Grounding tool with the given search terms. Return structured search snippets, source titles, and citation URLs.",
+            "parameters": {
+              "query": "string - The search terms or question to look up online"
+            },
+            "enabled": true
+          }
+        ],
+        "subAgents": [],
+        "isStartNode": false
+      }
+    },
+    {
+      "id": "agent_sentiment",
+      "type": "agentNode",
+      "position": {
+        "x": 464,
+        "y": 704
+      },
+      "data": {
+        "id": "agent_sentiment",
+        "name": "sentiment_modeler",
+        "label": "Sentiment Modeler",
+        "role": "Quantitative Market Sentiment Analyst",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "systemPrompt": "Execute Python statistical models to calculate market sentiment indices, polarity distributions, and trend velocity from customer feedback. Write your structured findings to state key sentiment_data.",
+        "agentKind": "standard",
+        "outputKey": "sentiment_data",
+        "tools": [
+          {
+            "id": "tool_code_execution",
+            "name": "Python Code Execution Sandbox",
+            "type": "builtin",
+            "builtinType": "code_execution",
+            "description": "ADK Python code execution sandbox for statistical sentiment calculations.",
+            "codePrompt": "Run Python code in a secure sandbox to calculate statistical sentiment scoring and distributions.",
+            "parameters": {
+              "code": "string - Python code snippet to run in the sandbox"
+            },
+            "enabled": true
+          }
+        ],
+        "subAgents": [],
+        "isStartNode": false
+      }
+    },
+    {
+      "id": "agent_financial",
+      "type": "agentNode",
+      "position": {
+        "x": 872,
+        "y": 704
+      },
+      "data": {
+        "id": "agent_financial",
+        "name": "financial_data_analyst",
+        "label": "Financial Data Analyst",
+        "role": "Corporate Filings & Financial Metrics Specialist",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.1,
+        "systemPrompt": "Query corporate 10-K and 10-Q filing metrics via REST API. Analyze revenue growth, gross margins, capital expenditures, and debt ratios. Write your structured findings to state key financial_data.",
+        "agentKind": "standard",
+        "outputKey": "financial_data",
+        "tools": [
+          {
+            "id": "tool_sec_filings_api",
+            "name": "SEC Filings Financial Metrics API",
+            "type": "rest",
+            "description": "REST API tool querying quarterly corporate filings and financial metrics.",
+            "endpointUrl": "https://api.sec-filings.example.com/v1/metrics",
+            "httpMethod": "GET",
+            "timeoutSeconds": 30,
+            "parameters": {
+              "ticker": "string - Stock ticker symbol or company CIK identifier"
+            },
+            "enabled": true
+          }
+        ],
+        "subAgents": [],
+        "isStartNode": false
+      }
+    },
+    {
+      "id": "agent_synthesizer",
+      "type": "agentNode",
+      "position": {
+        "x": 48,
+        "y": 1200
+      },
+      "data": {
+        "id": "agent_synthesizer",
+        "name": "executive_synthesizer",
+        "label": "Executive Synthesizer",
+        "role": "Executive Brief Synthesizer",
+        "model": "gemini-3.7-flash",
+        "temperature": 0.2,
+        "agentKind": "synthesizer",
+        "systemPrompt": "Consume the structured outputs from competitor_data, sentiment_data, and financial_data state keys. Synthesize them into an ExecutiveMarketBrief conforming strictly to the output schema. Do NOT use external tools.",
+        "tools": [],
+        "subAgents": [],
+        "isStartNode": false,
+        "synthesizerConfig": {
+          "inputStateKeys": [
+            "competitor_data",
+            "sentiment_data",
+            "financial_data"
+          ],
+          "reductionStrategy": "merge_json",
+          "outputSchemaName": "ExecutiveMarketBrief"
+        },
+        "structuredOutput": {
+          "enabled": true,
+          "name": "ExecutiveMarketBrief",
+          "formatType": "pydantic",
+          "fields": [
+            {
+              "name": "market_outlook",
+              "type": "string",
+              "required": true,
+              "description": "Bullish, Bearish, or Neutral overview"
+            },
+            {
+              "name": "key_competitors",
+              "type": "array",
+              "arrayItemType": "string",
+              "required": true,
+              "description": "Identified market competitor companies"
+            },
+            {
+              "name": "aggregate_sentiment_score",
+              "type": "number",
+              "required": true,
+              "description": "-1.0 to 1.0 aggregate sentiment score"
+            },
+            {
+              "name": "revenue_risk_factors",
+              "type": "array",
+              "arrayItemType": "string",
+              "required": true,
+              "description": "Key revenue and operational risk factors"
+            },
+            {
+              "name": "strategic_recommendations",
+              "type": "array",
+              "arrayItemType": "string",
+              "required": true,
+              "description": "Actionable executive recommendations"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_trigger_tester_lead",
+      "source": "trigger_tester_market",
+      "target": "agent_research_lead",
+      "sourceHandle": "trigger_out_right",
+      "targetHandle": "input_left",
+      "animated": true
+    },
+    {
+      "id": "e_lead_competitor",
+      "source": "agent_research_lead",
+      "target": "agent_competitor",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_lead_sentiment",
+      "source": "agent_research_lead",
+      "target": "agent_sentiment",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_lead_financial",
+      "source": "agent_research_lead",
+      "target": "agent_financial",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_competitor_synthesizer",
+      "source": "agent_competitor",
+      "target": "agent_synthesizer",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_sentiment_synthesizer",
+      "source": "agent_sentiment",
+      "target": "agent_synthesizer",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    },
+    {
+      "id": "e_financial_synthesizer",
+      "source": "agent_financial",
+      "target": "agent_synthesizer",
+      "sourceHandle": "output",
+      "targetHandle": "input",
+      "animated": true
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-10-20T23:05:43.943Z"
+  },
+  "deployment": {
+    "target": "agent_engine",
+    "deploymentTarget": "agent_engine",
+    "outputFolder": "./market_research_synthesizer/",
+    "framework": "google-adk",
+    "language": "python",
+    "includeTests": true,
+    "includeDocker": true,
+    "useStreaming": true
+  }
+}

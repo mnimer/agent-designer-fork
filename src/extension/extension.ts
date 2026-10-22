@@ -223,6 +223,31 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   );
   context.subscriptions.push(clearApiKeyCmd);
+
+  // 11. Command: Open Plugin Settings (Models & Skills)
+  const openSettingsCmd = vscode.commands.registerCommand(
+    'agentFlow.openSettings',
+    async (menu?: 'models' | 'skills') => {
+      const targetMenu = menu === 'skills' ? 'skills' : 'models';
+      if (AgentEditorProvider.openPluginSettingsInActiveWebview(targetMenu)) {
+        return;
+      }
+
+      // If no .agent webview is currently open, open an existing .agent file or create one, then switch to Settings
+      AgentEditorProvider.pendingOpenSettingsMenu = targetMenu;
+      const existingAgentFiles = await vscode.workspace.findFiles('**/*.agent', '**/node_modules/**', 1);
+      if (existingAgentFiles && existingAgentFiles.length > 0) {
+        await vscode.commands.executeCommand(
+          'vscode.openWith',
+          existingAgentFiles[0],
+          AgentEditorProvider.viewType
+        );
+      } else {
+        await vscode.commands.executeCommand('agentFlow.createWorkflow');
+      }
+    }
+  );
+  context.subscriptions.push(openSettingsCmd);
 }
 
 /**

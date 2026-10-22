@@ -32,6 +32,16 @@ export class SecretsProvider {
   private static readonly GEMINI_API_KEY_STORAGE_KEY = 'agentFlow_geminiApiKey';
 
   /**
+   * Storage keys for multi-provider API Keys in SecretStorage.
+   */
+  private static readonly PROVIDER_API_KEY_STORAGE_KEYS: Record<string, string> = {
+    gemini: 'agentFlow_geminiApiKey',
+    anthropic: 'agentFlow_anthropicApiKey',
+    openai: 'agentFlow_openaiApiKey',
+    grok: 'agentFlow_grokApiKey',
+  };
+
+  /**
    * Private constructor to enforce Singleton pattern.
    *
    * @param secrets The VS Code SecretStorage instance
@@ -107,6 +117,38 @@ export class SecretsProvider {
   public async deleteGeminiApiKey(): Promise<void> {
     // NOTE: VS Code SecretStorage.delete removes the stored value
     await this.secrets.delete(SecretsProvider.GEMINI_API_KEY_STORAGE_KEY);
+  }
+
+  /**
+   * Retrieves the API Key for a specific provider ('gemini' | 'anthropic' | 'openai' | 'grok').
+   */
+  public async getProviderApiKey(providerId: string): Promise<string | undefined> {
+    const storageKey =
+      SecretsProvider.PROVIDER_API_KEY_STORAGE_KEYS[providerId] ||
+      `agentFlow_${providerId}ApiKey`;
+    return await this.secrets.get(storageKey);
+  }
+
+  /**
+   * Checks whether an API Key is stored for a specific provider.
+   */
+  public async hasProviderApiKey(providerId: string): Promise<boolean> {
+    const key = await this.getProviderApiKey(providerId);
+    return typeof key === 'string' && key.trim().length > 0;
+  }
+
+  /**
+   * Stores or deletes an API Key for a specific provider.
+   */
+  public async setProviderApiKey(providerId: string, key: string): Promise<void> {
+    const storageKey =
+      SecretsProvider.PROVIDER_API_KEY_STORAGE_KEYS[providerId] ||
+      `agentFlow_${providerId}ApiKey`;
+    if (!key || key.trim().length === 0) {
+      await this.secrets.delete(storageKey);
+    } else {
+      await this.secrets.store(storageKey, key);
+    }
   }
 
   /**

@@ -26,6 +26,12 @@ import { WebviewBridge } from '../WebviewBridge';
 import { AgentWorkflowDocument, TriggerTestScenario } from '../../shared/types';
 import { RunTestOptions, SendChatMessageOptions, AgentRunnerManager } from '../AgentRunnerManager';
 
+/**
+ * Default timeout in milliseconds for local HTTP agent execution turns.
+ * Multi-agent loops, thinking budgets, and code execution sandboxes can take 30-120s.
+ */
+export const LOCAL_AGENT_EXECUTION_TIMEOUT_MS = 180000;
+
 export class TestAndChatExecutor {
   /**
    * Formats an error into a human-readable diagnostic string, unpacking inner errors
@@ -472,7 +478,7 @@ export class TestAndChatExecutor {
         port,
         '/v1/chat/completions',
         requestPayload,
-        30000,
+        LOCAL_AGENT_EXECUTION_TIMEOUT_MS,
         abortSignal,
         sessionHeaders
       );
@@ -491,7 +497,7 @@ export class TestAndChatExecutor {
           port,
           '/v1/chat/completions',
           requestPayload,
-          30000,
+          LOCAL_AGENT_EXECUTION_TIMEOUT_MS,
           abortSignal,
           sessionHeaders
         );
@@ -982,7 +988,12 @@ export class TestAndChatExecutor {
       }
 
       if (!response || !response.ok) {
-        const fallbackRes = await runner.httpPostJson(port, '/v1/chat/completions', payload, 30000);
+        const fallbackRes = await runner.httpPostJson(
+          port,
+          '/v1/chat/completions',
+          payload,
+          LOCAL_AGENT_EXECUTION_TIMEOUT_MS
+        );
         if (fallbackRes.ok && fallbackRes.data) {
           const content = fallbackRes.data?.choices?.[0]?.message?.content || fallbackRes.text;
           assistantReply = content;

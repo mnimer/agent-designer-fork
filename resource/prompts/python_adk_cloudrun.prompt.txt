@@ -13,6 +13,7 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
 - You MUST generate the COMPLETE repository and emit EVERY required file in the output JSON array.
 - Emitting only a partial project or omitting core files like `agent.py` or `session_store.py` is strictly forbidden and breaks testing and deployment.
 - Every response MUST include the full project manifest: `agent.py` (with `root_agent`), `session_store.py`, FastAPI server (`server.py`), packaging, CLI runner, test suite, evaluation dataset and script, dependencies (`requirements.txt`), Dockerfile, CI/CD pipeline, Terraform infrastructure, and documentation.
+- **CONCISE IGNORE FILES RULE (ANTI-REPETITION MANDATE)**: Keep `.gitignore`, `.dockerignore`, and `.gcloudignore` strictly concise (at most 10–15 lines per file). Use a single wildcard `.env*` line (and `!.env.example` where appropriate) — NEVER enumerate individual `.env.*` suffixes (`.env.backup`, `.env.tmp`, `.env.1`, `.env.old`, etc.).
 
 ### SESSION MEMORY & PRODUCTION CHECKPOINTERS:
 - Inspect `{{WORKFLOW_JSON}}` for session memory configuration (`memoryConfig` on nodes or workflow metadata).
@@ -20,11 +21,12 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
   * `'in_memory'`: In-Memory Turn Buffer (`InMemorySessionStore`)
   * `'sqlite'`: Local Embedded SQLite Checkpointer (`SqliteSessionStore` using standard library `sqlite3` with thread safety)
   * `'firestore'`: Google Cloud Firestore / Firebase Checkpointer (`FirestoreSessionStore` using `google-cloud-firestore`)
-  * `'postgres'` | `'cloud_sql'`: Google Cloud SQL (PostgreSQL / MySQL) Checkpointer (`CloudSqlSessionStore` using `psycopg2-binary` and `sqlalchemy`)
-  * `'spanner'`: Google Cloud Spanner Enterprise Checkpointer (`SpannerSessionStore` using `google-cloud-spanner`)
-  * `'redis'`: Cloud Memorystore (Redis / Valkey) Checkpointer (`RedisSessionStore` using `redis` client)
+  * `'postgres'` | `'cloud_sql'`: Google Cloud SQL (PostgreSQL / MySQL) Checkpointer (`CloudSqlSessionStore` using `psycopg2-binary` and `sqlalchemy`). Must implement auto-DDL execution in `_init_db()` (`CREATE TABLE IF NOT EXISTS {table_name} (session_id VARCHAR(255) PRIMARY KEY, state JSONB, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`), resolve database credentials safely via `DATABASE_URL` or `LOAN_DB_SECRET` or `os.getenv(db_secret_env)` (NEVER hardcode default fallback URIs containing credentials like `'postgresql://postgres:postgres@localhost:5432/...'`; if the environment variable is unset, fall back to `sqlite:///:memory:` or `InMemorySessionStore`), and execute safe parameterized queries (`text("SELECT state FROM ... WHERE session_id = :sid")` with `:sid` bind parameter) to prevent SQL injection.
+  * `'spanner'`: Google Cloud Spanner Enterprise Checkpointer (`SpannerSessionStore` using `google-cloud-spanner`). Must resolve instance ID from `SPANNER_INSTANCE_ID` (or `memoryConfig.instanceId`), database ID from `SPANNER_DATABASE_ID` (or `memoryConfig.databaseId`), table name from `SPANNER_TABLE_NAME` (or `memoryConfig.tableName`, defaulting to `'PatientSessions'`), and project ID from `GOOGLE_CLOUD_PROJECT` or `GCP_PROJECT`. Must implement auto-DDL verification/creation in `_init_db()` (`CREATE TABLE IF NOT EXISTS {table_name} (session_id STRING(256) NOT NULL, state JSON, created_at TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true), updated_at TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true)) PRIMARY KEY (session_id)`), use safe parameterized queries (`SELECT state FROM {table_name} WHERE session_id = @sid` with `params={"sid": session_id}`) to prevent SQL injection, and implement `get_session(session_id)`, `save_session(session_id, state)`, and `clear_session(session_id)`.
+  * `'redis'`: Cloud Memorystore (Redis / Valkey) Checkpointer (`RedisSessionStore` using `redis` client). Must support configurable `ttl_seconds` (default 86400) and execute `set(key, json.dumps(state), ex=ttl_seconds)` or `expire(key, ttl_seconds)` for session TTL management, resolving connection host/port/auth from environment variables (`REDIS_HOST`, `REDIS_PORT`, `REDIS_AUTH_SECRET`, `REDIS_PASSWORD`).
   * `'none'`: Stateless (`StatelessSessionStore`)
 - You MUST generate `session_store.py` providing `BaseSessionStore`, `StatelessSessionStore`, `InMemorySessionStore`, `SqliteSessionStore`, `FirestoreSessionStore`, `CloudSqlSessionStore`, `SpannerSessionStore`, `RedisSessionStore`, and a factory function `get_session_store(backend: Optional[str] = None) -> BaseSessionStore`.
+- **CRITICAL completeness rule for `session_store.py`**: NEVER stub `FirestoreSessionStore`, `CloudSqlSessionStore`, `SpannerSessionStore`, or `RedisSessionStore` by delegating to `InMemorySessionStore()` or `pass`. Every session store class in `session_store.py` MUST contain a complete, real production implementation using its respective driver (`google-cloud-firestore`, `sqlalchemy` + `psycopg2`, `google-cloud-spanner`, `redis`) with lazy client initialization.
 - In `server.py` and `agent.py`, import `from session_store import get_session_store` and use `session_store = get_session_store()` to persist session history and state between FastAPI request turns.
 - In `requirements.txt`, include the corresponding driver packages:
   * For Firestore: `google-cloud-firestore>=2.16.0`
@@ -50,19 +52,20 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
              `from google.adk.tools import google_search`
            * **FATAL ERROR TO AVOID**: NEVER import via `from google.adk.tools.google_search import google_search` or `import google.adk.tools.google_search`. There is NO module named `google_search` inside `google.adk.tools` (the tool is exported as a pre-instantiated singleton `google_search` from `google.adk.tools`). Attempting `from google.adk.tools.google_search import ...` causes a fatal `ModuleNotFoundError: No module named 'google.adk.tools.google_search'` crash at runtime!
            * Wire into agent using `tools=[google_search]`.
-         - **NO Custom Agent Subclasses**: Under NO circumstances should you subclass `Agent`, `BaseAgent`, or `SequentialAgent`. Never override internal methods like `_run_async_impl()`. All agents must be instantiated directly as variables.
+         - **NO Custom Agent Subclasses for Standard LLM Agents**: Standard LLM agents must be instantiated directly as top-level variables. NOTE: `BaseAgent` subclasses (`from google.adk.agents import BaseAgent`) ARE explicitly allowed and expected for specialized control-flow and orchestration nodes (`router`, `hitl`, `fallback`, `guardrail`) as detailed in the Custom Agents section below. Never override internal framework methods like `_run_impl()`.
         - **Hierarchical Parent Authority Rule (CRITICAL & MANDATORY)**:
           In any workflow or agent hierarchy (whether 2, 3, 4, or 5+ layers deep):
           1. **The Parent's `subAgentPattern` Exclusively Governs Its Immediate Children**:
              * **Sequential (`subAgentPattern: "sequential"` / `"iterative_refinement"`)**: Use `SequentialAgent(name="...", sub_agents=[child_1, child_2, ..., synthesizer])`. **DO NOT insert an intermediate `ParallelAgent`!** Even if child nodes have `"subAgentPattern": "parallel"` or child elements have `"delegationType": "parallel"`, the parent's `subAgentPattern: "sequential"` strictly controls execution.
              * **Parallel (`subAgentPattern: "parallel"` / `"broadcast"`)**: Use `SequentialAgent(sub_agents=[ParallelAgent(name="parallel_workers", sub_agents=[child_1, child_2, ...]), synthesizer])`.
-             * **Loop (`subAgentPattern: "loop"` / `"review_critique"`)**: Use `SequentialAgent(sub_agents=[LoopAgent(name="refinement_loop", sub_agents=[child_1, child_2, ...], max_iterations=3), synthesizer])`. DO NOT use `ParallelAgent`.
-             * **Coordinator (`subAgentPattern: "coordinator"` / `"hierarchical_decomposition"`)**: Use `Agent(name="...", model="gemini-3.7-flash", sub_agents=[child_1, child_2, ...], output_schema=ResponseSchema)`.
+             * **Loop (`subAgentPattern: "loop"` / `"evaluator_optimizer"`)**: Use `root_agent = LoopAgent(name="...", sub_agents=[generator_agent, evaluator_agent, escalation_checker], max_iterations=4)`. **CRITICAL**: DO NOT use `ParallelAgent`, and DO NOT invent an extra downstream `synthesizer` / `final_synthesizer` LLM agent unless the workflow JSON explicitly contains a separate synthesizer agent node! Adding an unrequested synthesizer node adds an unnecessary extra LLM round-trip after the loop terminates.
+             * **Review & Critique Triad (`subAgentPattern: "review_critique"`)**: Use `SequentialAgent(name="...", sub_agents=[drafter_agent, critic_agent, reviser_agent])`. Drafter generates initial content to `output_key="initial_draft"`, Critic analyzes draft against rubrics and writes feedback to `output_key="critique_rubric"`, and Reviser/Editor (strictly without tools to allow structured schema) consumes state keys `{initial_draft?}` and `{critique_rubric?}` to emit the finalized output conforming to `output_schema`.
+             * **Coordinator (`subAgentPattern: "coordinator"` / `"hierarchical_decomposition"`)**: Use `Agent(name="...", model="gemini-3.8-flash", sub_agents=[child_1, child_2, ...], output_schema=ResponseSchema)`. NEVER instantiate an unused/orphaned `ParallelAgent` or `SequentialAgent` variable that is detached from `root_agent`; every instantiated agent must be wired into the active `root_agent` hierarchy.
              * **Agent Class Parameter Constraints**:
                 - `Agent(...)`: Leaf execution agent accepting `name`, `model`, `instruction`, `description`, `tools`, `sub_agents`, `output_key`, `output_schema`, `generate_content_config`. `output_key` stores output to session state.
-                  * **Hyperparameter Configuration**: When workflow agent nodes specify `temperature`, `maxOutputTokens`, or sampling parameters, DO NOT pass `temperature` directly to `Agent(...)` (it causes a Pydantic `extra_forbidden` ValidationError). Instead, configure `generate_content_config=genai_types.GenerateContentConfig(temperature=..., max_output_tokens=...)` (importing `from google.genai import types as genai_types`) on the `Agent(...)` definition.
-                  * **Agent Iteration Limits**: For agent loops or iteration bounds, use reasonable defaults between 1 and 3 iterations (never high values like 10, to prevent runaway loops).
-                  * **Structured Output Schema (`output_schema`)**: When an agent node in the workflow specification specifies `structuredOutputSchema` (with `enabled: true`), you MUST wire the generated Pydantic model directly to that agent via `output_schema=<ModelName>` in `agent.py`. Do NOT merely import the model class; it must be passed into `Agent(output_schema=..., output_key=...)` so the model-level structured schema is enforced during execution.
+                  * **Hyperparameter & Thinking Configuration**: When workflow agent nodes specify `temperature`, `maxOutputTokens`, `thinkingBudget`, or sampling parameters, DO NOT pass `temperature` or `thinkingBudget` directly to `Agent(...)` (it causes a Pydantic `extra_forbidden` ValidationError). Instead, configure `generate_content_config=genai_types.GenerateContentConfig(...)` (importing `from google.genai import types as genai_types`) on the `Agent(...)` definition. If `thinkingBudget` is specified (e.g. `thinkingBudget: 2048`), include `thinking_config=genai_types.ThinkingConfig(thinking_budget=2048)` inside `GenerateContentConfig(temperature=..., thinking_config=genai_types.ThinkingConfig(thinking_budget=2048))`.
+                  * **Agent Iteration Limits**: For agent loops or iteration bounds, use the configured `maxIterations` (e.g. 4) or reasonable defaults between 1 and 4 iterations (never high values like 10, to prevent runaway loops).
+                  * **Structured Output Schema (`output_schema`)**: When an agent node in the workflow specification specifies `structuredOutput` or `structuredOutputSchema` (with `enabled: true`), always generate the corresponding Pydantic `BaseModel` class. If that agent has NO tools (`tools=[]`), wire the Pydantic model directly to that agent via `output_schema=<ModelName>` in `agent.py`. However, because Vertex AI Gemini strictly forbids combining ANY `tools` (search, function tools, REST tools, MCP tools, or code execution) with `output_schema` controlled generation on the same `Agent(...)`, if an agent node has BOTH `tools` AND `structuredOutput` / `structuredOutputSchema`, you MUST still define the Pydantic `BaseModel` class in code, omit `output_schema=` on the tool-bearing `Agent(...)`, configure `output_key="<agent_name>_output"`, and instruct the agent in its `instruction` to output JSON matching the schema.
                 - `RemoteA2aAgent(...)`: A2A protocol gateway agent accepting `name`, `description`, `agent_card`, `httpx_client`, `sub_agents`. Forbidden: `instruction`, `temperature`, `output_key`, `tools`. Passing `output_key` causes a Pydantic `extra_forbidden` ValidationError.
                 - `ParallelAgent(...)`, `SequentialAgent(...)`, `LoopAgent(...)`: Composite container agents accepting `name`, `description`, `sub_agents` (and `max_iterations` for Loop). Forbidden: `instruction`, `temperature`, `output_key`, `tools`. Passing `output_key` causes a Pydantic `extra_forbidden` ValidationError.
              * **CRITICAL ADK & VERTEX AI SEARCH TOOL CONSTRAINTS**:
@@ -73,6 +76,10 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
                    * DO NOT use `from google.adk.tools import google_search` or instantiate `GoogleSearchTool()` without `bypass_multi_tools_limit=True` when sub-agents or other tools are attached! Doing so raises runtime `ValueError: Agent has sub-agent transfer targets but is configured with GoogleSearchTool without bypass_multi_tools_limit=True`.
                  - Whenever an agent uses Vertex AI Search:
                    * Instantiation syntax: `VertexAiSearchTool(..., bypass_multi_tools_limit=True)`.
+                 - Whenever an agent uses Code Execution (`builtinType: 'code_execution'`):
+                   * Import syntax: `from google.adk.code_executors import BuiltInCodeExecutor`
+                   * Instantiation syntax: Pass `code_executor=BuiltInCodeExecutor()` into the `Agent(...)` definition.
+                   * DO NOT replace builtin code execution with custom simulated Python tool functions when `builtinType: 'code_execution'` is specified.
           2. **Leaf Nodes are Plain Agents (Ignore their `subAgentPattern`)**:
              * If an agent node has NO sub-agents (`subAgents` is empty `[]` or omitted), its own `subAgentPattern` MUST BE COMPLETELY IGNORED. A leaf node is always a standard `Agent(...)` with its own instructions and tools. It is NEVER an orchestrator and MUST NOT be wrapped in a `ParallelAgent` or `SequentialAgent`.
           3. **Ignore Legacy `delegationType` in Child Objects**:
@@ -100,8 +107,13 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
           * For hierarchical delegation, instantiate child `Agent(...)` instances first, then wire them into the parent's `sub_agents=[...]`.
         - Graph Workflow with Routing Edges:
           * When workflow nodes are connected via conditional or routing edges, use Google ADK's `Workflow` primitive defining explicit state transition tuples `(from_node, to_node, condition)`.
-    - Tool Definition:
+    - Tool Definition & Dual-Mode Execution Pattern:
       * Implement tools as native, type-annotated Python functions with descriptive docstrings detailing parameter purposes and return schemas so Gemini's function calling engine can accurately plan tool use.
+      * **No Default Parameter Values in Tool Signatures**: All tool functions in `tools/*.py` MUST use explicit primitive type annotations (`str`, `int`, `float`, `bool`) and MUST NOT declare default values in their function signatures (e.g. write `def query_inventory(sku_id: str) -> dict:`, NEVER `def query_inventory(sku_id: str = "SKU-1") -> dict:`). Vertex AI / ADK function calling rejects default parameter values.
+      * **Dual-Mode Tool Pattern (Live Cloud SDK + Local Zero-Config Fallback)**: Every custom tool that integrates with an external database or backend (such as AlloyDB / PostgreSQL via `ALLOYDB_URL`, Cloud Spanner via `SPANNER_INSTANCE` & `SPANNER_DATABASE`, BigQuery via `BQ_LAKEHOUSE_DATASET`, or external REST APIs) MUST implement both modes:
+        - **Live Cloud Mode**: When the connection environment variable (`ALLOYDB_URL`, `SPANNER_INSTANCE`, `BQ_LAKEHOUSE_DATASET`, etc.) is set in `os.environ`, execute the real parameterized SDK query (`psycopg2`, `google.cloud.spanner`, `google.cloud.bigquery`, `httpx`).
+        - **Local Zero-Config / Seed Fallback Mode**: When running locally in the VS Code Chat Runner, `make dev`, or `pytest` without external database environment variables configured (or when `./data/<target>/*.json` local seed files exist), gracefully fall back to rich, domain-accurate deterministic records covering all workflow entities and `testScenarios` (including all `expectedOutput` tokens) instead of raising `RuntimeError("... must be set")` when env vars are absent.
+      * **Python Syntax & Streaming Integrity Guardrail (`ast.parse` clean)**: Every generated `.py` file MUST be 100% valid Python 3.11 syntax. NEVER emit inline mid-stream typo corrections such as `if dc_ key in (...) if False else dc_key in (...):` — an identifier with a space before `if False else` is a fatal `SyntaxError` at import time!
       * ADK automatically converts typed Python functions into tool declarations and dispatches calls during the agent loop.
 
     - Structured Input Schemas (`inputSchema` / Pydantic v2 `BaseModel` for inputs):
@@ -119,7 +131,22 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
       * **Tool Observability**: In custom tool functions (`tools/*.py`), log activity using `logger.info(...)` or `logger.debug(...)` rather than `print()`.
 
 2. **File Structure to Generate**:
-   - `agent.py`: Core ADK agent module defining `root_agent` (`Agent`, `SequentialAgent`, `ParallelAgent`, `LoopAgent`, or `Workflow`) with sub-agents, system instructions, tools, and output schemas. Dynamically prepend its own directory to `sys.path` (via `Path(__file__).parent.resolve()`) before importing local sibling modules (e.g. `pydantic_models`, `tools`) to guarantee clean module resolution across local and container environments.
+   - `agent.py`: Core ADK agent module defining `root_agent` (`Agent`, `SequentialAgent`, `ParallelAgent`, `LoopAgent`, or `Workflow`) with sub-agents, system instructions, tools, and output schemas. Dynamically prepend its own directory to `sys.path` (via `Path(__file__).parent.resolve()`) before importing local sibling modules (e.g. `pydantic_models`, `tools`), programmatically configure `os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"` and `os.environ["GOOGLE_CLOUD_LOCATION"] = "global"` at the top of `agent.py`, and auto-discover `GOOGLE_CLOUD_PROJECT` via `google.auth.default()` if `os.environ.get("GOOGLE_CLOUD_PROJECT")` is unset so Vertex AI Anthropic / Model Garden clients always have a project ID:
+     ```python
+     os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"
+     os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
+     if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
+         try:
+             import google.auth
+             _, _default_project = google.auth.default()
+             if _default_project:
+                 os.environ["GOOGLE_CLOUD_PROJECT"] = _default_project
+         except Exception:
+             pass
+     ```
+     * **3rd-Party Model Support in `agent.py` (Anthropic Claude & Vertex AI Model Garden / OpenAI / Grok)**:
+       - **Anthropic Claude (`claude-*`)**: Google ADK (`google.adk.models.anthropic_llm.Claude`) resolves `claude-.*` models automatically when `anthropic[vertex]>=0.49.0` is installed. Whenever ANY root agent or sub-agent node uses a `claude-*` model: (1) include `anthropic[vertex]>=0.49.0` in `requirements.txt`, (2) strip any `publishers/anthropic/models/` prefix so `model="claude-opus-5-5"` is passed to `Agent(...)`, (3) never pass `temperature` in `generate_content_config` for `claude-opus-5-5` (deprecated on `claude-opus-5-5` and causes HTTP 400), and (4) keep any sub-agent that uses built-in `GoogleSearchTool` on `gemini-3.8-flash` (since `google_search` is Gemini-only).
+       - **Vertex AI Model Garden OpenMaaS (`deepseek-ai/*`, `qwen/*`, `meta/*`, `mistralai/*`, `openai/*-maas`) & OpenAI / xAI Grok (`openai/*`, `gpt-*`, `o3-*`, `grok-*`)**: Whenever ANY root agent or sub-agent node uses one of these models: (1) include `openai>=1.60.0` in `requirements.txt`, (2) import `from google.adk.integrations.openai import OpenAILlm` in `agent.py`, and (3) for Vertex AI OpenMaaS models (`deepseek-ai/*`, `qwen/*`, `meta/*`, `mistralai/*`, `openai/*-maas`), pass `model=OpenAILlm(model="<model_id>", base_url=f"https://aiplatform.googleapis.com/v1beta1/projects/{os.environ.get('GOOGLE_CLOUD_PROJECT', '')}/locations/global/endpoints/openapi", api_key=_get_vertex_maas_token)` where `_get_vertex_maas_token()` returns a fresh `google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])` access token; for direct OpenAI / Grok models, pass `model=OpenAILlm(model="<bare_model_id>")` (with `base_url="https://api.x.ai/v1", api_key=os.environ.get("XAI_API_KEY")` for `grok-*`).
    - `pydantic_models.py`: Pydantic BaseModel schemas for structured outputs and typed input schemas (`inputSchema`) (when defined in nodes). If `outputFormat` is `"text"` and no `inputSchema` is configured, DO NOT invent artificial Pydantic schema models or result classes.
    - **ZERO TEST-SUITE LEAKAGE (CRITICAL MANDATE)**: `triggerNode`, `testPrompts`, `testPayload`, and `expectedOutput` are strictly for test suites and evaluation. NEVER leak or incorporate test queries, expected assertions, or specific test entities (e.g. stock tickers, sample names) into `agent.py`, `server.py`, or agent instructions. Agent instructions must strictly reflect ONLY the node's `systemPrompt`.
    - `tools/*.py`: Tool definitions (e.g., Google Search, custom functions, MCP tools). Group tools logically by category/source. Use standard `logging.getLogger(__name__)`.
@@ -128,6 +155,7 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
        - Import and use Google ADK's `get_fast_api_app(agents_dir=..., web=True, trigger_sources=[...])` from `google.adk.cli.fast_api` to automatically mount built-in ADK routes (`/run_sse`, `/apps/{app}/trigger/pubsub`, health checks, etc.).
        - Initialize ADK's `InMemorySessionService()` (or configured persistence) and construct `Runner(agent=root_agent, app_name=..., session_service=session_service, auto_create_session=True)` with `auto_create_session=True` to guarantee sessions are automatically provisioned on request.
        - Expose both `GET /health` and `GET /healthz` returning `{"status": "ok", "agent": root_agent.name}` for local runner and Cloud Run health probes.
+       - When configuring `CORSMiddleware` on the FastAPI `app`, avoid combining `allow_origins=["*"]` with `allow_credentials=True`. Configure explicit trusted origins (e.g. `allow_origins=os.getenv("ALLOWED_CORS_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")`) or set `allow_credentials=False` when wildcard origins are permitted.
      * **Direct Query & Test Execution Routes (`POST /` and `POST /api/run`)**:
        - ALWAYS expose `@app.post("/")` and `@app.post("/api/run")` so the Visual Agent Designer Interactive Chat tab, smoke testers, and external HTTP clients can invoke the agent directly via POST.
        - Accept flexible JSON request payloads: `{"input": {"query": "..."}}` (extension runner format), `{"query": "..."}`, `{"prompt": "..."}`, or raw strings.
@@ -163,12 +191,12 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
     - `main.py`: Interactive CLI runner for local terminal testing. Implement as an `asyncio` command-line loop that prompts for console input and uses ADK's `Runner` to dispatch `root_agent` prompts and stream event tokens to stdout.
     - `test_agent.py`: Comprehensive `pytest` test suite covering all test scenarios defined in trigger nodes with assertions against `root_agent`.
     - `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios for Vertex AI Agent Evaluation. Format as JSON Lines (JSONL), where each line is a self-contained record defining the test `prompt`, expected reference ground truth (`reference`), and `expected_tool_calls` list derived from trigger node test scenarios.
-    - `evaluate.py`: Vertex AI Agent Evaluation script utilizing `vertexai.evaluation.EvalTask` for quality, groundedness, and safety evaluation.
+    - `evaluate.py`: Vertex AI Agent Evaluation script utilizing `vertexai.evaluation.EvalTask` for quality, groundedness, and safety evaluation. Ensure default location argument fallback matches the Gemini 3.7 global regional requirement: `parser.add_argument("--location", default=os.getenv("GOOGLE_CLOUD_LOCATION", "global"))`.
     - `requirements.txt`: Version-pinned production and test dependencies:
-      * Core ADK & Model Frameworks: `google-adk>=2.0.0`, `google-genai>=1.0.0`, `google-cloud-aiplatform[evaluation]>=1.60.0`.
+      * Core ADK & Model Frameworks: `google-adk>=2.0.0`, `google-genai>=1.0.0`, `google-cloud-aiplatform[evaluation]>=1.60.0`, `pandas>=2.0.0`.
       * Web Service & Serialization: `fastapi>=0.110.0`, `uvicorn[standard]>=0.28.0`, `pydantic>=2.0.0`.
       * Test & Environment Tooling: `pytest>=8.0.0`, `pytest-asyncio>=0.23.0`, `python-dotenv>=1.0.0`.
-      * Conditional Packages: Include `google-adk[a2a]>=2.0.0` and `a2a-sdk[http-server]>=0.3.4` if A2A agent nodes exist; include tool-specific packages (e.g. `google-cloud-secret-manager>=2.16.0`, `httpx>=0.27.0`) when enabled.
+      * Conditional Packages: Include `google-adk[a2a]>=2.0.0` and `a2a-sdk[http-server]>=0.3.4` if A2A agent nodes exist; include `anthropic[vertex]>=0.49.0` if any root agent or sub-agent uses a `claude-*` model; include `openai>=1.60.0` if any root agent or sub-agent uses a Vertex AI Model Garden OpenMaaS model (`deepseek-ai/*`, `qwen/*`, `meta/*`, `mistralai/*`, `openai/*-maas`) or OpenAI / xAI Grok model (`openai/*`, `gpt-*`, `o3-*`, `grok-*`); include tool-specific packages (e.g. `google-cloud-secret-manager>=2.16.0`, `httpx>=0.27.0`) when enabled.
     - `Dockerfile`: Production container definition for Google Cloud Run:
       * Base Image: Use an official slim Python runtime (e.g., `python:3.11-slim`).
       * Environment Settings: Configure `PYTHONUNBUFFERED=1`, `GOOGLE_GENAI_USE_VERTEXAI=true`, and `GOOGLE_CLOUD_LOCATION=global`, and establish an application working directory (e.g., `/app`).
@@ -205,6 +233,7 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
          - **Eventarc Trigger** (when `triggerType` / `triggerKind == "eventarc"`): Enable `eventarc.googleapis.com`, provision dedicated invoker service account with `roles/run.invoker` on Cloud Run and `roles/eventarc.eventReceiver` on the project, and create `google_eventarc_trigger` matching the configured event routing to the Cloud Run service path.
          - **Cloud Scheduler (Cron Trigger)** (when `triggerType` / `triggerKind == "scheduled"` or `"cron"`): Enable `cloudscheduler.googleapis.com`, provision scheduler invoker service account with `roles/run.invoker` on Cloud Run, and create `google_cloud_scheduler_job` with the configured cron schedule, timezone, and HTTP target pointing to the Cloud Run service URL with OIDC authentication.
          - **Webhook Trigger** (when `triggerType` / `triggerKind == "webhook"`): When authentication is configured (`authType != "none"`), provision `google_secret_manager_secret` and secret version for the token/signature secret, grant `roles/secretmanager.secretAccessor` to the service account, and inject the secret into the Cloud Run container environment.
+         - **Google Workspace Remote MCP Servers** (when any tool has `category: "google_workspace_mcp"` or `workspaceConfig`): MUST include `google_project_service` resources enabling BOTH the base Workspace REST API (`workspaceConfig.companionRestApi`, e.g., `gmail.googleapis.com`, `drive.googleapis.com`, `calendar-json.googleapis.com`) AND the companion MCP service (`workspaceConfig.mcpServiceName`, e.g., `gmailmcp.googleapis.com`, `drivemcp.googleapis.com`, `calendarmcp.googleapis.com`) with `disable_on_destroy = false`.
     - `variables.tf`: Complete Terraform input variable definitions:
       * `project_id`: (string, description = "Google Cloud Project ID")
       * `region`: (string, default = "us-central1", description = "Google Cloud Region")
@@ -239,7 +268,7 @@ and FastAPI, configured for deployment to Google Cloud Run based on the provided
       * `make test`: `@test -x .venv/bin/pytest || $(MAKE) install` followed by `.venv/bin/pytest test_agent.py -v`
       * `make eval`: `@test -x .venv/bin/python || $(MAKE) install` followed by `.venv/bin/python evaluate.py --project=$(PROJECT_ID) --location=$(REGION) --dataset=eval_dataset.jsonl`
       * `make infra`: `terraform init && terraform apply -auto-approve -var="project_id=$(PROJECT_ID)" -var="region=$(REGION)" -var="service_name=$(SERVICE_NAME)" -var="enable_agent_gateway=$(ENABLE_AGENT_GATEWAY)" -var="model_armor_template_id=$(MODEL_ARMOR_TEMPLATE)" -var="publish_to_gemini_enterprise=$(PUBLISH_GEMINI_ENTERPRISE)" -var="gemini_enterprise_app_id=$(GEMINI_ENTERPRISE_APP_ID)" -var="gemini_enterprise_location=$(GEMINI_ENTERPRISE_LOCATION)"`
-      * `make deploy`: Deploys the Cloud Run service using overrideable variables (`PROJECT_ID ?=`, `REGION ?= us-central1`, `SERVICE_NAME ?=`, `CPU ?= 1`, `MEMORY ?= 2Gi`, `MIN_INSTANCES ?= 0`, `MAX_INSTANCES ?= 10`, `ALLOW_UNAUTHENTICATED ?= false`, `NETWORK_ATTACHMENT ?=`, `ENABLE_AGENT_GATEWAY ?= true`, `MODEL_ARMOR_TEMPLATE ?= enterprise-baseline`, `GATEWAY_ID ?= default-shared-agent-gateway`, `RUN_CLOUD_EVAL ?= false`, `PUBLISH_GEMINI_ENTERPRISE ?= false`, `GEMINI_ENTERPRISE_APP_ID ?=`, `GEMINI_ENTERPRISE_LOCATION ?= global`, `ENV_VARS ?= GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=global,GOOGLE_CLOUD_PROJECT=$(PROJECT_ID)`): `gcloud run deploy $(SERVICE_NAME) --source . --project $(PROJECT_ID) --region $(REGION) --platform managed --cpu=$(CPU) --memory=$(MEMORY) --min-instances=$(MIN_INSTANCES) --max-instances=$(MAX_INSTANCES) $(if $(filter true,$(ALLOW_UNAUTHENTICATED)),--allow-unauthenticated,--no-allow-unauthenticated) $(if $(NETWORK_ATTACHMENT),--network-attachment=$(NETWORK_ATTACHMENT),) --set-env-vars="$(ENV_VARS)" --quiet` (or `gcloud builds submit --config=cloudbuild.yaml --project=$(PROJECT_ID) .` when `USE_CLOUD_BUILD=true`), followed by optional `$(MAKE) eval` when `RUN_CLOUD_EVAL=true` and `$(MAKE) publish-gemini-enterprise` when `PUBLISH_GEMINI_ENTERPRISE=true`.
+      * `make deploy`: Deploys the Cloud Run service using overrideable variables (`PROJECT_ID ?=`, `REGION ?= us-central1`, `SERVICE_NAME ?=`, `CPU ?= 1`, `MEMORY ?= 2Gi`, `MIN_INSTANCES ?= 0`, `MAX_INSTANCES ?= 10`, `ALLOW_UNAUTHENTICATED ?= false`, `NETWORK_ATTACHMENT ?=`, `ENABLE_AGENT_GATEWAY ?= true`, `MODEL_ARMOR_TEMPLATE ?= enterprise-baseline`, `GATEWAY_ID ?= default-shared-agent-gateway`, `RUN_CLOUD_EVAL ?= false`, `PUBLISH_GEMINI_ENTERPRISE ?= false`, `GEMINI_ENTERPRISE_APP_ID ?=`, `GEMINI_ENTERPRISE_LOCATION ?= global`, `ENV_VARS ?= GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=global,GOOGLE_CLOUD_PROJECT=$(PROJECT_ID)`): In Makefile recipes for `infra` and `deploy`, always double-quote all make variable expansions passed to shell/CLI commands: `gcloud run deploy "$(SERVICE_NAME)" --source . --project "$(PROJECT_ID)" --region "$(REGION)" --platform managed --cpu="$(CPU)" --memory="$(MEMORY)" --min-instances="$(MIN_INSTANCES)" --max-instances="$(MAX_INSTANCES)" $(if $(filter true,$(ALLOW_UNAUTHENTICATED)),--allow-unauthenticated,--no-allow-unauthenticated) $(if $(NETWORK_ATTACHMENT),--network-attachment="$(NETWORK_ATTACHMENT)",) --set-env-vars="$(ENV_VARS)" --quiet` (or `gcloud builds submit --config=cloudbuild.yaml --project="$(PROJECT_ID)" .` when `USE_CLOUD_BUILD=true`), followed by optional `$(MAKE) eval` when `RUN_CLOUD_EVAL=true` and `$(MAKE) publish-gemini-enterprise` when `PUBLISH_GEMINI_ENTERPRISE=true`.
       * `make register-agent`: Verifies the deployed Cloud Run agent in Google Cloud Agent Registry (`GET https://agentregistry.googleapis.com/v1alpha/projects/$(PROJECT_ID)/locations/$(REGION)/agents`) and applies least-privilege Agent Security Policies on both IAP (`POST https://iap.googleapis.com/v1/projects/$(PROJECT_ID)/locations/$(REGION)/iap_web/agentRegistry:setIamPolicy` granting `roles/iap.egressor` to the agent's `RuntimeIdentity` principal) and IAM v3 Unified Access Policies (`POST https://iam.googleapis.com/v3/projects/$(PROJECT_ID)/locations/global/accessPolicies` + `policyBindings` granting `iap.googleapis.com/resources.egressViaIAP`).
       * `make setup-gateway`: Provisions the Model Armor template (`POST https://modelarmor.$(REGION).rep.googleapis.com/v1/projects/$(PROJECT_ID)/locations/$(REGION)/templates?templateId=$(MODEL_ARMOR_TEMPLATE)`), creates or updates the Shared Regional Agent Gateway (`POST https://networkservices.googleapis.com/v1alpha1/projects/$(PROJECT_ID)/locations/$(REGION)/agentGateways?agentGatewayId=$(GATEWAY_ID)` with `googleManaged.governedAccessPath = "AGENT_TO_ANYWHERE"`, `protocols = ["MCP"]`, and `registries = ["//agentregistry.googleapis.com/projects/$(PROJECT_ID)/locations/$(REGION)"]`), and binds IAP (`REQUEST_AUTHZ`) + Model Armor AI Security (`CONTENT_AUTHZ`) `authzExtensions` (`networkservices.googleapis.com/v1beta1`) and `authzPolicies` (`networksecurity.googleapis.com/v1beta1`).
       * `make publish-gemini-enterprise`: Grants `roles/run.invoker` on `$(SERVICE_NAME)` to `serviceAccount:service-$$PROJECT_NUMBER@gcp-sa-discoveryengine.iam.gserviceaccount.com` via `gcloud run services add-iam-policy-binding`, then upserts the deployed Cloud Run agent onto the target Gemini Enterprise App (`GET` existing agents from `https://discoveryengine.googleapis.com/v1alpha/projects/$(PROJECT_ID)/locations/$(GEMINI_ENTERPRISE_LOCATION)/collections/default_collection/engines/$(GEMINI_ENTERPRISE_APP_ID)/assistants/default_assistant/agents`, `PATCH ?updateMask=displayName,description,a2aAgentDefinition` if matched or `POST` without `?agentId=` if new, setting `sharingConfig: {"scope": "ALL_USERS"}` and `a2aAgentDefinition.jsonAgentCard` with `preferredTransport: "JSONRPC"` and `url` set to the Cloud Run service root HTTPS URL).
@@ -252,8 +281,17 @@ You MUST output EVERY single one of the following files in the returned JSON arr
 3. `server.py`: Production FastAPI server mounting ADK endpoints and health checks.
 4. `main.py`: Local CLI test runner using ADK Runner.
 5. `test_agent.py`: Pytest test suite validating all test scenarios against root_agent. When the workflow specification contains trigger nodes of type `tester` (or `triggerType == 'tester'`), inspect `config.testScenarios`, `config.testPrompts`, and `config.expectedOutput`. For EVERY defined test scenario (e.g. 'Test Case #1' with prompt 'Let\'s play a game.'), generate a dedicated pytest test function in `test_agent.py` that executes the scenario prompt against `root_agent` and asserts the expected output criteria.
-   - **Hermetic, Offline CI Execution**: All pytest functions executed as part of CI (such as cloudbuild.yaml step `pytest test_agent.py -v`) MUST test agent structure, tool logic, and mock external Vertex AI / Gemini LLM calls using `unittest.mock` or mock Runner event generators so that automated test suites pass offline without requiring ambient Google Cloud credentials or live network calls.
+   - **Hermetic, Offline CI Execution**: All pytest functions executed as part of CI (such as cloudbuild.yaml step `pytest test_agent.py -v`) MUST test agent structure, tool logic, and mock external Vertex AI / Gemini LLM calls using `unittest.mock` or mock Runner event generators so that automated test suites pass offline without requiring ambient Google Cloud credentials or live network calls. When custom REST API or HTTP tools are tested in `test_agent.py`, mock external network requests (such as `httpx.Client.get`, `httpx.Client.post`, `httpx.get`, or `requests.get`) using `unittest.mock.patch` to guarantee hermetic execution in air-gapped CI runners without incurring DNS or connection timeouts.
+   - **Guardrail Shield, Loop & Conditional Delegate Mocking (CRITICAL PYDANTIC V2 & RUNNER RULE)**: `Agent` / `LlmAgent` / `BaseAgent` are Pydantic v2 `BaseModel` classes whose `__delattr__` raises `AttributeError: 'LlmAgent' object has no attribute 'run_async'` when `unittest.mock.patch.object(agent_instance, "run_async", ...)` exits its `with` block! NEVER call `patch.object(agent_instance, "run_async", ...)` on an `Agent` or `BaseAgent` instance, and NEVER call `patch.object(type(sub_agent), "run_async", ...)` (which patches `BaseAgent.run_async` and bypasses any root `BaseAgent` router/guardrail/circuit-breaker!). Instead, mock `LlmAgent._run_async_impl` (`with patch.object(type(sub_agent), "_run_async_impl", new=mock_run):`) or mock the underlying LLM call (`with patch("google.adk.models.google_llm.Gemini.generate_content_async", new=mock_generate):`). Furthermore, ALWAYS execute `root_agent` via `InMemoryRunner(agent=root_agent, app_name="test_app")` (`session = await runner.session_service.create_session(...)`, `async for event in runner.run_async(...)`) — NEVER call `root_agent.run_async(MagicMock())` with a `MagicMock` context (which crashes with `TypeError: object MagicMock can't be used in 'await' expression` when `BaseAgent` awaits `ctx.plugin_manager.run_before_agent_callback`). If unit-testing a custom `BaseAgent` subclass in isolation with a mock `ctx`, call `custom_agent._run_async_impl(ctx)` directly.
+   - **External Tool & MCP Mocking**: When external tools (such as BigQuery MCP, REST APIs, or remote A2A endpoints) are invoked in `test_agent.py`, mock network calls (e.g. `patch("httpx.Client.post", ...)` or mocking the tool function directly) to ensure hermetic execution without network latency or timeout errors.
+   - **CRITICAL IMPORT RULE IN test_agent.py**:
+     * NEVER import typing symbols (such as `AsyncGenerator`, `Generator`, `Any`, `Dict`, `List`, `Optional`, `Union`, `Callable`, `Tuple`) from `unittest.mock`! `unittest.mock` only provides `AsyncMock`, `MagicMock`, `patch`, and `Mock`.
+     * ALWAYS import typing symbols directly from `typing` (`from typing import Any, AsyncGenerator, Dict, List, Optional, Union, Callable, Tuple`).
+     * When using type annotations in `test_agent.py` (such as mock signatures `async def mock_run(ctx) -> AsyncGenerator[Any, None]:`), ALWAYS import `Any` alongside `AsyncGenerator` (`from typing import Any, AsyncGenerator, Dict, List, Optional`), or place `from __future__ import annotations` at the very top of `test_agent.py`. Omitting `Any` from typing imports when type annotations are evaluated causes an immediate runtime `NameError: name 'Any' is not defined` during pytest collection.
+   - **Python Syntax for Multiline `with` Statements**: When generating multi-context manager `with` statements in `test_agent.py` or other Python source files (such as multiple `patch.object(...)` calls), ALWAYS wrap the context expressions in enclosing parentheses: `with (\n    patch.object(...),\n    patch.object(...)\n):` or use explicit backslash line continuation (`\\`). Never emit an unparenthesized multiline `with` statement ending with a comma, as this triggers a fatal `SyntaxError: invalid syntax`.
    - **Strict Test Assertions**: In `test_agent.py`, test assertions MUST strictly verify the exact `expectedOutput` or `expectedOutputPattern` specified in `testScenarios` (e.g., `assert 'LockbitC2' in final_response_text`). NEVER weaken or bypass assertions by appending fallback conditions such as `or len(final_response_text) > 0` or `or True`, which make test failures impossible.
+   - **Tool & Assertion Alignment (CRITICAL)**: When testing custom tools directly for a test scenario, ensure that the tool's returned dictionary explicitly contains the scenario's `expectedOutput` substring, and assert `expectedOutput in json.dumps(result)` (rather than asserting against a single dictionary key whose value might be `"ACTIVE"` instead of `"VIP"`).
+   - **Optional Live Integration Test (`RUN_LIVE_TESTS=1`)**: Also include a `@pytest.mark.skipif(os.getenv("RUN_LIVE_TESTS") != "1", reason="Set RUN_LIVE_TESTS=1 for live Vertex AI integration")` async test using `InMemoryRunner(app=agent.app)` to verify live end-to-end ADK execution when credentials are active.
 6. `eval_dataset.jsonl`: Golden evaluation dataset matching all workflow test scenarios.
 7. `evaluate.py`: Vertex AI Agent Evaluation script using vertexai.evaluation.EvalTask.
 8. `requirements.txt`: Complete pinned dependencies (including google-adk[a2a] and a2a-sdk[http-server] if an A2A agent is present).
@@ -304,7 +342,7 @@ def get_weather(city: str) -> dict:
 
 root_agent = Agent(
     name="my_agent",
-    model="gemini-3.7-flash",
+    model="gemini-3.8-flash",
     instruction="You are a helpful assistant that ...",
     tools=[get_weather],
 )
@@ -359,7 +397,7 @@ def get_weather(city: str) -> dict:
 
 my_agent = Agent(
     name="weather_agent",
-    model="gemini-3.7-flash",
+    model="gemini-3.8-flash",
     instruction="You help users check the weather. Use the get_weather tool.",
     description="Provides weather information.",  # Important for multi-agent delegation
     tools=[get_weather]
@@ -374,8 +412,8 @@ from google.adk.agents import Agent
 
 agent = Agent(
     name="my_agent",
-    model="gemini-3.7-flash",
-    instruction="Your instructions here. Use {state_key} for dynamic injection.",
+    model="gemini-3.8-flash",
+    instruction="Your instructions here. ALWAYS use optional {state_key?} with a trailing '?' for dynamic state injection.",
     description="Description for delegation.",
 
     # LLM generation parameters
@@ -414,30 +452,45 @@ agent = Agent(
 
 > **Warning**: Using `output_schema` disables tool calling and delegation.
 
+**CRITICAL SCHEMA REQUIREMENT RULE (Pydantic v2)**:
+When generating Pydantic models (such as in `pydantic_models.py`) for structured output schemas or input schemas:
+- Strictly check whether each field is marked as required (`required: true`).
+- For ALL required fields—including array/list types and primitive types—declare the field without a default value or with `Field(..., description=...)` (e.g., `key_competitors: List[str] = Field(..., description="...")` or `key_competitors: List[str]`).
+- NEVER use `default_factory=list`, `default=[]`, or `default=None` on required fields! In Pydantic v2, setting any default or default_factory excludes the field from `model_json_schema()["required"]`, which causes schema validation and test assertion failures.
+- Only fields with `required: false` may specify default values (e.g., `default_factory=list` or `default=None`).
+
 ```python
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import List, Literal, Optional
 
 class Evaluation(BaseModel):
-    grade: Literal["pass", "fail"] = Field(description="The evaluation result.")
-    comment: str = Field(description="Explanation of the grade.")
+    grade: Literal["pass", "fail"] = Field(..., description="The evaluation result.")
+    comment: str = Field(..., description="Explanation of the grade.")
+    recommendations: List[str] = Field(..., description="Required recommendations list without default factory.")
+    notes: Optional[str] = Field(default=None, description="Optional notes.")
 
 evaluator = Agent(
     name="evaluator",
-    model="gemini-3.7-flash",
+    model="gemini-3.8-flash",
     instruction="Evaluate the input and provide structured feedback.",
     output_schema=Evaluation,
     output_key="evaluation_result",
 )
 ```
 
-### Instruction Best Practices
+### Instruction Best Practices & Session State Interpolation (`{state_key?}`)
+
+**CRITICAL ADK STATE INTERPOLATION RULE (PREVENT `KeyError: Context variable not found`)**:
+In Google ADK (`google.adk.flows.llm_flows.prompt._instructions_utils`), any `{var_name}` in an `Agent(instruction="...")` string where `var_name` is a valid Python identifier (`var_name.isidentifier()`) is evaluated as a **mandatory** lookup in `invocation_context.session.state[var_name]`. If `var_name` is not yet set in `session.state` (for example, on Iteration 1 of a `LoopAgent` when `algorithm_generator` runs BEFORE `benchmark_evaluator` has produced `evaluation_feedback`, or when an upstream branch was skipped), bare `{var_name}` without a trailing `?` immediately crashes the server with:
+`KeyError: "Context variable not found: \`evaluation_feedback\` in agent 'algorithm_generator'."`
+- **MANDATORY RULE 1**: Whenever referencing ANY session state variable in `instruction="..."`, ALWAYS include the trailing `?` optional marker: `{state_key?}` (e.g., `{evaluation_feedback?}`, `{candidate_code?}`, `{initial_draft?}`, `{critique_rubric?}`, `{summary?}`, `{data_a?}`). NEVER write bare `{evaluation_feedback}` or `{candidate_code}` without `?`!
+- **MANDATORY RULE 2**: In `LoopAgent` (`subAgentPattern: "loop"` or `"debate"`) and multi-stage pipelines, ALSO attach a `before_agent_callback` on the first/generator agent that initializes all `loopStateKeys` and referenced state variables via `callback_context.state.setdefault("<key>", "")` so `session.state` is guaranteed to be populated before Iteration 1!
 
 ```python
-# Use dynamic state injection with {state_key} placeholders
+# ALWAYS use optional {state_key?} with a trailing '?' for dynamic state injection
 instruction = """
-You are a {role} assistant.
-User preferences: {user_preferences}
+You are a {role?} assistant.
+User preferences: {user_preferences?}
 
 Rules:
 - Always use tools when available
@@ -462,15 +515,15 @@ from google.adk.agents import SequentialAgent, Agent
 
 summarizer = Agent(
     name="summarizer",
-    model="gemini-3.7-flash",
+    model="gemini-3.8-flash",
     instruction="Summarize the input.",
     output_key="summary"
 )
 
 question_gen = Agent(
     name="question_generator",
-    model="gemini-3.7-flash",
-    instruction="Generate questions based on: {summary}"
+    model="gemini-3.8-flash",
+    instruction="Generate questions based on: {summary?}"
 )
 
 pipeline = SequentialAgent(
@@ -491,7 +544,7 @@ fetch_b = Agent(name="fetch_b", ..., output_key="data_b")
 
 merger = Agent(
     name="merger",
-    instruction="Combine data_a: {data_a} and data_b: {data_b}"
+    instruction="Combine data_a: {data_a?} and data_b: {data_b?}"
 )
 
 pipeline = SequentialAgent(
@@ -555,13 +608,13 @@ For a production LoopAgent with EscalationChecker, BuiltInPlanner, and grounding
 
     researcher = Agent(
         name="researcher",
-        model="gemini-3.7-flash",
+        model="gemini-3.8-flash",
         mode="task",                        # 'chat' (default) | 'task' | 'single_turn'
         output_schema=ResearchOutput,
         description="Researches a topic.",  # required for delegation
         instruction="Research the topic, then call finish_task.",
     )
-    coordinator = Agent(name="coordinator", model="gemini-3.7-flash", sub_agents=[researcher])
+    coordinator = Agent(name="coordinator", model="gemini-3.8-flash", sub_agents=[researcher])
     ```
     Modes: `task` (multi-turn, structured I/O) · `single_turn` (autonomous, no user turn). Sub-agents need a `description`; default I/O schemas (`goal`/`background` in, `result` out) are used if none set. Disabled inside graph `Workflow`s.
 
@@ -570,14 +623,24 @@ For a production LoopAgent with EscalationChecker, BuiltInPlanner, and grounding
 ## 5. Building Custom Agents (`BaseAgent`)
 
 For custom orchestration logic beyond workflow agents.
+- **CRITICAL PYDANTIC V2 `BaseAgent` SUBCLASS RULE**:
+  `BaseAgent` in `google.adk.agents` inherits from Pydantic v2 `BaseModel` with `extra="forbid"`.
+  Therefore, EVERY custom `BaseAgent` subclass (`ConditionalRouter`, `<Name>Router`, `<GateName>ApprovalGate`, `<Name>CircuitBreaker`, `<Name>GuardrailShield`) MUST:
+  1. Import `from pydantic import ConfigDict` and declare `model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")` on the class body.
+  2. Inside `__init__(self, ...)`, resolve any local variables first, call `super().__init__(name=name, sub_agents=...)` **FIRST**, and ONLY assign `self.<attr> = ...` **AFTER** `super().__init__(...)` has completed!
+  - Setting `self.<attr> = ...` without `extra="allow"` raises `ValueError: "<Class>" object has no field "<attr>"` at startup.
+  - Setting `self.<attr> = ...` *before* `super().__init__(...)` raises `AttributeError: '<Class>' object has no attribute '__pydantic_extra__'` at startup.
 
 ```python
 from google.adk.agents import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event, EventActions
+from pydantic import ConfigDict
 from typing import AsyncGenerator
 
 class ConditionalRouter(BaseAgent):
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
     async def _run_async_impl(
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
@@ -596,6 +659,8 @@ class ConditionalRouter(BaseAgent):
 
 class EscalationChecker(BaseAgent):
     """Stops a LoopAgent when condition is met."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
     async def _run_async_impl(
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
@@ -613,7 +678,8 @@ When a workflow node has `agentKind: "router"`, compile it into a custom `BaseAg
    - `boolean_expression`: Evaluates branch conditions (`conditionExpression`) against session state (e.g. `state.status == 'passed'`).
    - `numeric_threshold`: Compares a numeric metric (`routerConfig.expressionVariable`, e.g. `score`) against `thresholdValue` (e.g. `score >= 0.8`).
    - `llm_classifier`: Evaluates user query intent against branch category descriptions using `gemini-3.7-flash` or keyword classification.
-2. **Dynamic Branch Dispatching**:
+2. **Dynamic Branch Dispatching & Pydantic v2 Initialization**:
+   - Declare `model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")` on the router class, and inside `__init__`, filter `sub_agents = [a for a in [...] if a is not None and getattr(a, "parent_agent", None) is None]` and call `super().__init__(name=name, sub_agents=sub_agents)` BEFORE assigning `self.branches` or any `self.<branch>_agent` attributes! (Filtering `getattr(a, "parent_agent", None) is None` prevents Pydantic `ValueError: Agent already has a parent agent` if the router class is instantiated multiple times in tests.)
    - The router class maps branch IDs to target candidate agent instances: `self.branches = { "branch_id": agent_instance }`.
    - In `_run_async_impl(self, ctx: InvocationContext)`, the router evaluates the condition, looks up the target agent, and delegates execution via:
      ```python
@@ -623,6 +689,7 @@ When a workflow node has `agentKind: "router"`, compile it into a custom `BaseAg
              yield event
      ```
    - Always route to the designated fallback branch (`isDefault: true`) if no explicit conditions match.
+   - In custom `BaseAgent` subclass constructors (`__init__`), assign instance attributes strictly from the incoming constructor parameters rather than referencing module-level global instances (e.g., `self.wealth_agent = wealth_agent` instead of referencing the global `wealth_advisor`), enabling clean mock injection during testing.
 3. **Structured Input Schema Support**:
    - When `inputSchema` is enabled on the router node, parse and validate incoming session state or payload into `<RouterName>Input.model_validate(...)`.
    - Condition expressions evaluate directly against typed input fields (e.g. `input.urgency > 3`, `input.category == 'billing'`).
@@ -649,7 +716,7 @@ When a workflow node has `agentKind: "synthesizer"` (or is configured with `synt
      ```python
      synthesizer_agent = Agent(
          name="<synthesizer_identifier>",
-         model="gemini-3.7-flash",
+         model="gemini-3.8-flash",
          instruction="Consolidate and synthesize upstream state outputs into the structured output schema.",
          output_schema=<SynthesizerName>Output,
          tools=[]
@@ -661,36 +728,76 @@ When a workflow node has `agentKind: "synthesizer"` (or is configured with `synt
 
 When a node has `agentKind: "hitl"` (Approval Gate):
 1. **Role & Architectural Principle**:
-   - Implements a human checkpoint evaluating approval state before high-stakes operations (e.g. transfers, destructive changes, publishing).
+   - Implements a human checkpoint evaluating approval state before high-stakes operations (e.g. commercial loan approval, large fund disbursement, destructive changes).
+   - Evaluates `approvalCondition` from state (e.g. `state.get("loan_amount", 0) > 100000 or state.get("risk_tier") == "ELEVATED"`).
+   - If human approval is required and neither `approved` in state nor an interactive response is found, pauses workflow execution and requests human intervention (`RequestInput` or `request_input` tool).
+   - When human provides approval or application qualifies for auto-approval, dispatches `approved_agent` (e.g. disbursement). When rejected or timed out, dispatches `rejected_agent` (e.g. rejection notice).
 2. **Implementation as `BaseAgent` Subclass**:
    ```python
+   from google.adk.events.request_input import RequestInput
+   from pydantic import ConfigDict
+
    class <GateName>ApprovalGate(BaseAgent):
        """HITL approval gate evaluating human approval before dispatching downstream agents."""
+       model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
        def __init__(
            self,
            name: str,
            approved_agent: Optional[Any] = None,
            rejected_agent: Optional[Any] = None,
            approval_condition: Optional[str] = None,
+           request_prompt: Optional[str] = None,
+           timeout_hours: int = 48,
+           auto_reject_on_timeout: bool = True,
+           approver_roles: Optional[List[str]] = None,
            tools: Optional[List[Any]] = None,
        ):
-           super().__init__(name=name)
+           children = [a for a in (approved_agent, rejected_agent) if a is not None]
+           super().__init__(name=name, sub_agents=children)
            self.approved_agent = approved_agent
            self.rejected_agent = rejected_agent
            self.approval_condition = approval_condition
+           self.request_prompt = request_prompt
+           self.timeout_hours = timeout_hours
+           self.auto_reject_on_timeout = auto_reject_on_timeout
+           self.approver_roles = approver_roles or []
            self.tools = tools or []
 
        async def _run_async_impl(
            self, ctx: InvocationContext
        ) -> AsyncGenerator[Event, None]:
            state = ctx.session.state
-           is_approved = state.get("approved") is True or state.get("hitl_status") == "approved"
 
-           if not is_approved and self.approval_condition:
-               try:
-                   is_approved = bool(eval(self.approval_condition, {}, {"state": state}))
-               except Exception:
-                   is_approved = False
+           # Check for human resume inputs
+           resume_inputs = getattr(ctx, "resume_inputs", {}) or {}
+           interrupt_key = f"{self.name}_approval"
+           if interrupt_key in resume_inputs:
+               decision = str(resume_inputs[interrupt_key]).strip().lower()
+               is_approved = decision in ("approve", "approved", "yes", "true")
+               state["approved"] = is_approved
+               state["hitl_status"] = "approved" if is_approved else "rejected"
+           elif "approved" in state:
+               is_approved = bool(state["approved"])
+           elif state.get("hitl_status") in ("approved", "rejected"):
+               is_approved = state.get("hitl_status") == "approved"
+           else:
+               # Evaluate approval condition
+               requires_approval = False
+               if self.approval_condition:
+                   try:
+                       requires_approval = bool(eval(self.approval_condition, {}, {"state": state, "input": state}))
+                   except Exception:
+                       requires_approval = True
+
+               if requires_approval:
+                   prompt_msg = self.request_prompt or f"Manual underwriter approval required for operation in '{self.name}'."
+                   yield RequestInput(interrupt_id=interrupt_key, message=prompt_msg)
+                   return
+               else:
+                   is_approved = True
+                   state["approved"] = True
+                   state["hitl_status"] = "approved"
 
            target = self.approved_agent if is_approved else self.rejected_agent
            if target is not None:
@@ -710,121 +817,225 @@ When a node has `agentKind: "hitl"` (Approval Gate):
 
 When a node has `agentKind: "fallback"`:
 1. **Role & Resilience Strategy**:
-   - Wraps a primary agent execution with automated error interception. If the primary agent throws an exception (e.g. rate limits, timeout, API failures), execution automatically switches to a fallback agent without failing the workflow.
+   - Wraps a primary agent execution with automated error interception, retry with exponential backoff, and circuit breaker failover.
+   - If the primary agent throws an exception (e.g. rate limits, 503, RESOURCE_EXHAUSTED, DEADLINE_EXCEEDED, UNAVAILABLE), execution automatically retries with exponential backoff up to `max_retries` before switching to a secondary fallback agent without crashing the workflow.
+   - If the fallback agent is also unavailable or fails, returns a graceful static degradation response message.
 2. **Implementation as `BaseAgent` Subclass**:
    ```python
+   from pydantic import ConfigDict
+
    class <Name>CircuitBreaker(BaseAgent):
-       """Circuit breaker and resilience fallback wrapper."""
+       """Circuit breaker and resilience fallback wrapper with exponential backoff."""
+       model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
        def __init__(
            self,
            name: str,
            primary_agent: Optional[Any] = None,
            fallback_agent: Optional[Any] = None,
            max_retries: int = 3,
+           retry_delay_seconds: float = 2.0,
+           caught_error_codes: Optional[List[str]] = None,
+           static_fallback_message: Optional[str] = None,
            tools: Optional[List[Any]] = None,
        ):
            super().__init__(name=name)
            self.primary_agent = primary_agent
            self.fallback_agent = fallback_agent
            self.max_retries = max_retries
+           self.retry_delay_seconds = retry_delay_seconds
+           self.caught_error_codes = caught_error_codes or ["RESOURCE_EXHAUSTED", "503", "DEADLINE_EXCEEDED", "QUOTA_EXCEEDED", "UNAVAILABLE"]
+           self.static_fallback_message = static_fallback_message or "Live services currently offline. Advisory generated using fallback model."
            self.tools = tools or []
 
        async def _run_async_impl(
            self, ctx: InvocationContext
        ) -> AsyncGenerator[Event, None]:
-           try:
-               if self.primary_agent is not None:
-                   async for event in self.primary_agent.run_async(ctx):
-                       yield event
-               else:
-                   raise RuntimeError("No primary agent configured for circuit breaker.")
-           except Exception as exc:
-               logger.warning(f"Circuit Breaker '{self.name}' caught primary failure: {exc}. Switching to fallback agent.")
-               if self.fallback_agent is not None:
+           for attempt in range(self.max_retries):
+               try:
+                   if self.primary_agent is not None:
+                       async for event in self.primary_agent.run_async(ctx):
+                           yield event
+                       return
+                   break
+               except Exception as exc:
+                   err_str = str(exc)
+                   is_caught = any(code in err_str for code in self.caught_error_codes)
+                   if is_caught and attempt < self.max_retries - 1:
+                       delay = self.retry_delay_seconds * (2 ** attempt)
+                       logger.warning(f"Circuit Breaker '{self.name}' attempt {attempt + 1} caught {exc}. Retrying in {delay}s...")
+                       await asyncio.sleep(delay)
+                       continue
+                   logger.warning(f"Circuit Breaker '{self.name}' primary failure: {exc}. Switching to fallback agent.")
+                   break
+
+           if self.fallback_agent is not None:
+               try:
                    async for event in self.fallback_agent.run_async(ctx):
                        yield event
-               else:
-                   yield Event(
-                       source=self.name,
-                       content=f"Primary agent failed ({exc}) and no fallback agent was configured."
-                   )
+                   return
+               except Exception as fb_exc:
+                   logger.error(f"Fallback agent execution failed: {fb_exc}")
+
+           yield Event(
+               source=self.name,
+               content=self.static_fallback_message
+           )
    ```
 
 ### Guardrail & Security Shield Agents (`agentKind: "guardrail"`)
 
 When a node has `agentKind: "guardrail"`:
 1. **Role & Safety Gating**:
-   - Inspects user input or agent intermediate outputs against security policies (prompt injection, PII leak, toxic content, forbidden topics) before routing to the protected core agent or a blocker agent.
+   - Inspects user input or agent intermediate outputs against security policies (prompt injection, PII leak, secrets, toxic content, forbidden topics) before routing to the protected core agent, redacting sensitive data, or escalating to a blocker/audit agent.
+   - **Ingress Guardrails (`direction: "ingress"`)**:
+     * Inspects incoming user messages or events against `blocked_keywords` (e.g. "bypass system instructions", "ignore previous prompt", "dump memory", "sudo exec") and `regex_patterns` (e.g. SSN `\b\d{3}-\d{2}-\d{4}\b`, MRN `\bMRN-[A-Z]{2}\d{6}\b`, DEA `\b[A-Z]{2}\d{7}\b`).
+     * On violation: if `action_on_violation == "block"`, routes execution to `block_agent` (e.g. `security_audit_responder`) or yields an `Event` with `custom_violation_message` (e.g. "Security violation: Input contained unauthorized clinical identifiers or unsafe prompt injection instructions.").
+     * If clean: routes execution to `pass_agent` (e.g. `clinical_diagnostic_assistant`).
+   - **Egress Guardrails (`direction: "egress"`)**:
+     * Sanitizes/redacts outgoing agent responses before returning to the caller.
+     * When `action_on_violation == "redact"`, replaces all matches of `regex_patterns` with `redaction_token` (e.g. `"[REDACTED_PATIENT_IDENTIFIER]"` via `re.sub`).
 2. **Implementation as `BaseAgent` Subclass**:
    ```python
+   import re
+   from typing import Any, AsyncGenerator, Dict, List, Optional
+   from google.adk.agents import BaseAgent
+   from google.adk.events import Event, EventActions
+   from google.genai import types
+   from pydantic import ConfigDict
+
    class <Name>GuardrailShield(BaseAgent):
        """Security policy filter and input/output guardrail."""
+       model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
        def __init__(
            self,
            name: str,
+           direction: str = "ingress",
            pass_agent: Optional[Any] = None,
            block_agent: Optional[Any] = None,
            policy_rules: Optional[List[str]] = None,
+           regex_patterns: Optional[List[Dict[str, str]]] = None,
+           blocked_keywords: Optional[List[str]] = None,
+           action_on_violation: str = "block",
+           custom_violation_message: str = "Request blocked by security guardrail policy.",
+           redaction_token: str = "[REDACTED]",
            tools: Optional[List[Any]] = None,
        ):
            super().__init__(name=name)
+           self.direction = direction
            self.pass_agent = pass_agent
            self.block_agent = block_agent
            self.policy_rules = policy_rules or []
+           self.regex_patterns = regex_patterns or []
+           self.blocked_keywords = blocked_keywords or []
+           self.action_on_violation = action_on_violation
+           self.custom_violation_message = custom_violation_message
+           self.redaction_token = redaction_token
            self.tools = tools or []
 
+       def _check_text_violations(self, text: str) -> bool:
+           text_lower = text.lower()
+           for kw in self.blocked_keywords:
+               if kw.lower() in text_lower:
+                   return True
+           for pat_obj in self.regex_patterns:
+               pattern = pat_obj.get("pattern", "") if isinstance(pat_obj, dict) else str(pat_obj)
+               if pattern and re.search(pattern, text, flags=re.IGNORECASE):
+                   return True
+           return False
+
+       def _redact_text(self, text: str) -> str:
+           redacted = text
+           for pat_obj in self.regex_patterns:
+               pattern = pat_obj.get("pattern", "") if isinstance(pat_obj, dict) else str(pat_obj)
+               if pattern:
+                   redacted = re.sub(pattern, self.redaction_token, redacted, flags=re.IGNORECASE)
+           return redacted
+
        async def _run_async_impl(
-           self, ctx: InvocationContext
+           self, ctx: Any
        ) -> AsyncGenerator[Event, None]:
-           passed = True
-           # If security check fails: passed = False
-           target = self.pass_agent if passed else self.block_agent
-           if target is not None:
-               async for event in target.run_async(ctx):
-                   yield event
-           elif not passed:
+           # Extract input text from context or session events
+           input_text = ""
+           if hasattr(ctx, "session") and hasattr(ctx.session, "events"):
+               for ev in reversed(ctx.session.events):
+                   if hasattr(ev, "content") and ev.content:
+                       input_text = str(ev.content)
+                       break
+           elif hasattr(ctx, "user_content"):
+               input_text = str(ctx.user_content)
+
+           if self.direction == "ingress":
+               has_violation = self._check_text_violations(input_text)
+               if has_violation:
+                   if self.block_agent is not None:
+                       async for event in self.block_agent.run_async(ctx):
+                           yield event
+                   else:
+                       yield Event(
+                           author=self.name,
+                           content=types.Content(
+                               role="model",
+                               parts=[types.Part.from_text(text=self.custom_violation_message)]
+                           )
+                       )
+                   return
+
+               # Clean request: pass to protected core agent
+               if self.pass_agent is not None:
+                   async for event in self.pass_agent.run_async(ctx):
+                       yield event
+           else:
+               # Egress redaction
+               redacted_text = self._redact_text(input_text)
                yield Event(
-                   source=self.name,
-                   content="Request blocked by security guardrail policy."
+                   author=self.name,
+                   content=types.Content(
+                       role="model",
+                       parts=[types.Part.from_text(text=redacted_text)]
+                   )
                )
    ```
 
 ### Evaluator-Optimizer Loop Pattern (`subAgentPattern: "loop"`)
 
 When an agent orchestrates sub-agents with `subAgentPattern: "loop"`:
-1. **Topology**:
+1. **Topology & Orchestration**:
    - Uses `LoopAgent(name="...", sub_agents=[generator_agent, evaluator_agent], max_iterations=N)` from `google.adk.agents`.
-   - The generator agent creates or refines a draft and writes to state (`output_key="draft"`).
-   - The evaluator agent audits the draft against acceptance criteria:
-     * If criteria pass, yields `Event(author=self.name, actions=EventActions(escalate=True))` to break the loop early.
-     * If criteria fail, writes critique feedback to `output_key="evaluation"` / `output_key="critique"` so the generator can refine on the next iteration.
+   - **CRITICAL LOOP STATE INITIALIZATION & `{state_key?}` RULE**: On Iteration 1 of a `LoopAgent`, the generator agent runs *before* the evaluator agent has ever executed, so `evaluation_feedback` (and other `loopStateKeys`) do not yet exist in `session.state`!
+     * You MUST use optional `{evaluation_feedback?}` and `{candidate_code?}` syntax (with a trailing `?`) inside `instruction="..."` strings — NEVER write bare `{evaluation_feedback}` or `{candidate_code}` without `?`, which raises `KeyError: "Context variable not found: \`evaluation_feedback\` in agent '...'"` on Iteration 1!
+     * You MUST ALSO define and attach a `before_agent_callback` (e.g. `init_loop_state`) on the generator agent that initializes all `loopStateKeys` via `callback_context.state.setdefault("evaluation_feedback", "None (initial iteration)")`, `callback_context.state.setdefault("candidate_code", "")`, `callback_context.state.setdefault("iteration_index", 0)`, and `callback_context.state.setdefault("is_solution_accepted", False)`.
+   - The generator agent creates or refines code/content and writes to state (e.g. `output_key="candidate_code"` or `output_key="draft"`). If `thinkingBudget` is configured (e.g. 2048), configure `generate_content_config=genai_types.GenerateContentConfig(temperature=..., thinking_config=genai_types.ThinkingConfig(thinking_budget=2048))`.
+   - The evaluator agent audits candidate code against acceptance criteria (using `code_executor=BuiltInCodeExecutor()` if `code_execution` tool is attached) and writes structured review to `output_key="evaluation_feedback"` / `output_key="critique"`.
+   - **Early Termination & Escalation**: If criteria pass or benchmark threshold is met on Iteration 1 (after the generator runs once and the evaluator calls its tool once), the evaluator (or `EscalationChecker`) MUST immediately yield `Event(author=self.name, actions=EventActions(escalate=True))` to break the loop right away so it does not wastefully repeat iterations 2..N.
+     * **CRITICAL**: In `EscalationChecker`, NEVER write naive `"fail" not in feedback` checks, because passing benchmark summaries routinely say `"0 failures"` or `"without failure"`! Instead check for explicit failure indicators (`not any(neg in feedback for neg in ("not passed", "passed: false", '"passed": false', "status: fail"))`) when `"pass"` or `"optimal"` is present in `feedback`. The loop is guaranteed to terminate on Iteration 1 when passed, or when `max_iterations` is reached.
 
 ### Multi-Agent Debate & Consensus Pattern (`subAgentPattern: "debate"`, `debateConfig`)
 
 When a workflow implements a debate topology:
-1. **Topology**:
-   - Employs a structured debate pattern:
-     * **Proponent & Opponent Agents**: Present contrasting perspectives or adversarial arguments on the topic.
-     * **Consensus Judge Agent**: Synthesizes the debate, evaluates argument validity, and produces a final balanced verdict.
+1. **Topology & Roles**:
+   - **Debater Agents (Pro & Con Advocates)**: Formulate contrasting perspectives or affirmative/counter arguments. When web search is enabled, each debater configures `GoogleSearchTool(bypass_multi_tools_limit=True)` and writes arguments to its dedicated state key (e.g. `output_key="pro_arguments"` and `output_key="con_arguments"`). Any reference to `{pro_arguments?}` or `{con_arguments?}` in `instruction` MUST include the trailing `?` optional marker.
+   - **Debate Moderator & Arbiter / Consensus Judge**: Moderates multi-round structured debate turns up to `maxRounds` (e.g. 3), evaluates citations, and scores consensus convergence against `consensusThreshold` (e.g. 0.85).
+   - **Consensus Resolution Synthesizer (`agentKind: "synthesizer"`)**: Reads accumulated arguments from session state (`{pro_arguments?}`, `{con_arguments?}`) and synthesizes an evidence-backed final resolution.
 2. **Implementation in ADK**:
-   - Orchestrate with `SequentialAgent`:
+   - Orchestrate debaters and moderator in a round loop or sequential pipeline:
      ```python
      debate_stage = ParallelAgent(
          name="debate_perspectives",
-         sub_agents=[proponent_agent, opponent_agent]
+         sub_agents=[pro_advocate, con_advocate]
      )
-     consensus_judge = Agent(
-         name="consensus_judge",
-         model="gemini-3.7-flash",
-         instruction="Review arguments from proponent and opponent in session state, score their reasoning, and issue a balanced consensus verdict.",
-         output_schema=ConsensusVerdict,
-         tools=[]
+     debate_rounds_loop = LoopAgent(
+         name="debate_rounds_loop",
+         sub_agents=[debate_stage, debate_moderator_arbiter],
+         max_iterations=3  # from debateConfig.maxRounds
      )
-     debate_workflow = SequentialAgent(
-         name="debate_system",
-         sub_agents=[debate_stage, consensus_judge]
+     root_agent = SequentialAgent(
+         name="policy_debate_system",
+         sub_agents=[debate_rounds_loop, consensus_resolution]
      )
      ```
+     Or compose as `SequentialAgent(name="debate_system", sub_agents=[ParallelAgent(name="debate_arguments", sub_agents=[pro_advocate, con_advocate]), debate_moderator_arbiter, consensus_resolution])`.
 
 ### Review & Critique Triad Pattern (`subAgentPattern: "review_critique"`)
 
@@ -833,29 +1044,39 @@ When a workflow implements a review & critique triad:
    - Three-stage sequential pipeline (`SequentialAgent(sub_agents=[drafter_agent, critic_agent, reviser_agent])`):
      1. **Drafter**: Generates baseline content and writes to `output_key="initial_draft"`.
      2. **Critic**: Analyzes the draft for errors and improvements, writing to `output_key="critique"`.
-     3. **Reviser / Synthesizer**: Ingests both `{initial_draft}` and `{critique}` from session state and produces the final polished deliverable: `output_key="final_output"`.
+     3. **Reviser / Synthesizer**: Ingests both `{initial_draft?}` and `{critique?}` from session state and produces the final polished deliverable: `output_key="final_output"`.
 
 ### Agent-as-a-Tool Pattern (`builtin_agent_as_tool` / `agent_as_tool`)
 
 When an agent exposes another agent as a callable function tool:
 1. **ADK Implementation**:
-   - Wrap the sub-agent execution in a Python function tool:
+   - Prefer direct instantiation using `google.adk.tools.agent_tool.AgentTool`:
      ```python
-     def researcher_agent_tool(query: str) -> str:
-         """Delegates research tasks to the specialized research sub-agent."""
-         runner = Runner(agent=specialized_researcher)
-         result = runner.run(query)
+     from google.adk.tools.agent_tool import AgentTool
+     generate_sql_query = AgentTool(agent=nl2sql_expert_agent)
+     ```
+   - If wrapping in a custom function tool, do NOT invoke synchronous `runner.run(question)` because Google ADK's `Runner` does not implement a synchronous `.run()` method (it will raise an `AttributeError`). Instead, declare an async tool function that awaits `runner.run_async`:
+     ```python
+     async def generate_sql_query(question: str) -> str:
+         """Translates natural language questions into performant BigQuery SQL and explains query plan."""
+         runner = Runner(agent=nl2sql_expert_agent)
+         result = await runner.run_async(question)
          return str(result)
      ```
-   - Pass the tool function into the calling agent:
+   - Wire `generate_sql_query` directly into the calling coordinator agent's `tools`:
      ```python
      coordinator_agent = Agent(
          name="coordinator_agent",
-         model="gemini-3.7-flash",
-         instruction="Decompose user requests and delegate specialized research tasks using researcher_agent_tool.",
-         tools=[researcher_agent_tool]
+         model="gemini-3.8-flash",
+         instruction="Decompose user requests and delegate specialized SQL queries using generate_sql_query.",
+         tools=[generate_sql_query]
      )
      ```
+   - If the calling agent also connects to a Google Cloud Remote MCP Server (e.g. BigQuery Remote MCP), instantiate `McpToolset` with `StreamableHTTPConnectionParams` and `header_provider` with `fetch_id_token(Request(), MCP_SERVER_URL)`, and include both tools:
+     ```python
+     tools=[bigquery_mcp, generate_sql_query]
+     ```
+   - In `test_agent.py`, mock `generate_sql_query` or the sub-agent's `run_async` so that test assertions evaluate offline without live database or cloud network latency.
 
 ---
 
@@ -870,7 +1091,7 @@ When an agent exposes another agent as a callable function tool:
 # Vertex AI (prod)
 # Set: GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GOOGLE_GENAI_USE_VERTEXAI=True
 
-agent = Agent(model="gemini-3.7-flash", ...)
+agent = Agent(model="gemini-3.8-flash", ...)
 ```
 
 ### Other Models via LiteLLM
@@ -889,7 +1110,7 @@ agent = Agent(model=LiteLlm(model="ollama_chat/llama3:instruct"), ...)
 from google.adk.models import Gemini
 
 # Vertex AI hosted Gemini (set GOOGLE_GENAI_USE_VERTEXAI=True)
-agent = Agent(model=Gemini(model="gemini-3.7-flash"), ...)
+agent = Agent(model=Gemini(model="gemini-3.8-flash"), ...)
 ```
 
 Provider guides: [Anthropic](https://adk.dev/agents/models/anthropic/index.md), [Ollama](https://adk.dev/agents/models/ollama/index.md), [vLLM](https://adk.dev/agents/models/vllm/index.md), [LiteLLM](https://adk.dev/agents/models/litellm/index.md)
@@ -1071,6 +1292,113 @@ McpToolset(
     header_provider=lambda ctx: {
         "Authorization": f"Bearer {fetch_id_token(Request(), MCP_SERVER_URL)}"
     },
+)
+
+# Google Workspace Remote MCP Servers (`category === 'google_workspace_mcp'`, `workspace_mcp_*`, `https://*mcp.googleapis.com/mcp/v1`)
+# Google Workspace Remote MCP Servers (gmailmcp.googleapis.com, drivemcp.googleapis.com, docsmcp.googleapis.com,
+# sheetsmcp.googleapis.com, slidesmcp.googleapis.com, calendarmcp.googleapis.com, chatmcp.googleapis.com,
+# meetmcp.googleapis.com, tasksmcp.googleapis.com, people.googleapis.com, formsmcp.googleapis.com,
+# keepmcp.googleapis.com, classroommcp.googleapis.com) are USER-SCOPED APIs and must act on behalf of the calling user.
+# They use `McpToolset` with `StreamableHTTPConnectionParams` and a caller-aware `header_provider` that inspects
+# ADK's `ReadonlyContext` (`ctx`) on every tool call in strict priority order:
+#   1. Per-Caller OAuth 2.0 Bearer Token in `ctx.session.state` (`tokenStateKey`, default `"user_access_token"` or `"workspace_access_token"`)
+#   2. Domain-Wide Delegation subject impersonation (`credentials.with_subject(caller_email)`) using `ctx.session.state.get("user_email")`, `ctx.session.user_id`, or `subject_email`
+#   3. Local Workstation ADC Fallback (`google.auth.default(scopes=scopes)`) from `gcloud auth application-default login`
+import os
+from typing import Any, Optional
+import google.auth
+from google.auth.transport.requests import Request
+from google.adk.tools.mcp_tool import McpToolset
+from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
+
+# Normalize HTTP 401/403 status on valid JSON-RPC 2.0 responses from *.googleapis.com/mcp
+# (Google ESF returns HTTP 403 alongside valid JSON-RPC result/isError payloads when scopes are missing)
+for _httpx_mod_name in ("httpx2", "httpx"):
+    try:
+        _httpx_mod = __import__(_httpx_mod_name)
+        _orig_httpx_send = _httpx_mod.AsyncClient.send
+        def _make_mcp_send(_orig):
+            async def _mcp_jsonrpc_send(self, request, *args, **kwargs):
+                resp = await _orig(self, request, *args, **kwargs)
+                if resp.status_code in (401, 403) and ".googleapis.com/mcp" in str(getattr(request, "url", "")):
+                    if resp.headers.get("content-type", "").lower().startswith("application/json"):
+                        resp.status_code = 200
+                return resp
+            return _mcp_jsonrpc_send
+        _httpx_mod.AsyncClient.send = _make_mcp_send(_orig_httpx_send)
+    except Exception:
+        pass
+
+def get_workspace_mcp_headers(
+    ctx: Optional[Any],
+    scopes: list[str],
+    token_state_key: str = "user_access_token",
+    subject_email: Optional[str] = None,
+) -> dict[str, str]:
+    """Resolves OAuth 2.0 Bearer credentials acting on behalf of the calling user with ADC fallback."""
+    headers: dict[str, str] = {}
+    user_project = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT_ID")
+    if user_project:
+        headers["X-Goog-User-Project"] = user_project
+
+    # 1. Check if the calling user's OAuth 2.0 access token was passed in ADK state
+    # (Gemini Enterprise / Vertex AI AdkApp injects `request.authorizations` as `temp:<auth_id>` in `ctx.state`)
+    state = getattr(ctx, "state", None) or getattr(getattr(ctx, "session", None), "state", None) or {}
+    caller_token = (
+        state.get(token_state_key)
+        or state.get(f"temp:{token_state_key}")
+        or state.get("user_access_token")
+        or state.get("temp:user_access_token")
+        or state.get("workspace_access_token")
+        or state.get("temp:workspace_access_token")
+    )
+    if not caller_token and hasattr(state, "items"):
+        for _k, _v in state.items():
+            if isinstance(_k, str) and (
+                _k.startswith("temp:")
+                or "oauth" in _k.lower()
+                or "access_token" in _k.lower()
+            ):
+                if isinstance(_v, str) and _v.strip():
+                    caller_token = _v.strip()
+                    break
+                elif isinstance(_v, dict) and isinstance(_v.get("access_token"), str):
+                    caller_token = _v["access_token"].strip()
+                    break
+    if not caller_token:
+        caller_token = os.environ.get("WORKSPACE_USER_ACCESS_TOKEN")
+
+    if caller_token:
+        token_str = str(caller_token).strip()
+        headers["Authorization"] = token_str if token_str.lower().startswith("bearer ") else f"Bearer {token_str}"
+        return headers
+
+    # 2. Fallback to Google Auth credentials (with optional Domain-Wide Delegation subject impersonation)
+    credentials, _ = google.auth.default(scopes=scopes)
+    session_user_id = getattr(ctx, "user_id", None) or getattr(getattr(ctx, "session", None), "user_id", None)
+    resolved_subject = (
+        state.get("user_email")
+        or (session_user_id if isinstance(session_user_id, str) and "@" in session_user_id else None)
+        or subject_email
+    )
+    if resolved_subject and hasattr(credentials, "with_subject"):
+        credentials = credentials.with_subject(resolved_subject)
+    if not credentials.valid:
+        credentials.refresh(Request())
+    headers["Authorization"] = f"Bearer {credentials.token}"
+    return headers
+
+# Example: Gmail Remote MCP Toolset (configured with scopes from workspaceConfig.scopePreset and caller identity)
+workspace_toolset = McpToolset(
+    connection_params=StreamableHTTPConnectionParams(
+        url="https://gmailmcp.googleapis.com/mcp/v1",
+        timeout=30,
+    ),
+    header_provider=lambda ctx: get_workspace_mcp_headers(
+        ctx,
+        scopes=["https://www.googleapis.com/auth/gmail.readonly"],
+        token_state_key="user_access_token",
+    ),
 )
 
 # Databricks Managed MCP (Genie Space, Vector Search, Unity Catalog, SQL)
@@ -1286,7 +1614,7 @@ app = App(
         token_threshold=32000,   # compact once prompt tokens reach this
         event_retention_size=5,  # keep the last 5 raw events un-compacted
         # Optional: custom summarizer model
-        summarizer=LlmEventSummarizer(llm=Gemini(model="gemini-3.7-flash")),
+        summarizer=LlmEventSummarizer(llm=Gemini(model="gemini-3.8-flash")),
     ),
 )
 ```
@@ -1416,23 +1744,25 @@ CRITICAL ADK RULES:
        agent_card=card_path,
    )
    ```
-5. When connecting to Google Cloud A2A endpoints (e.g. `*.googleapis.com` or Cloud Run endpoints requiring Google Cloud authentication), pass an authenticated `httpx.AsyncClient` via `httpx_client`:
+6. When connecting to Google Cloud A2A endpoints (e.g. `*.googleapis.com`, Cloud Run endpoints requiring Google Cloud authentication, or when `authType: "google_iam"` with `targetAudience` is configured):
+   - Securely generate OIDC Identity Tokens by importing from `google.auth.transport.requests import Request` and `google.oauth2.id_token import fetch_id_token`:
    ```python
+   import os
    import httpx
-   import google.auth
    from google.auth.transport.requests import Request
+   from google.oauth2.id_token import fetch_id_token
    from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
 
+   target_audience = os.getenv("A2A_TARGET_AUDIENCE", "https://catalog-service.vendor-corp.internal")
    try:
-       credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
-       credentials.refresh(Request())
-       headers = {"Authorization": f"Bearer {credentials.token}"}
+       token = fetch_id_token(Request(), audience=target_audience)
+       headers = {"Authorization": f"Bearer {token}"}
    except Exception:
        headers = {}
 
    # Disable persistent keepalive connections so pooled sockets are not reused across closed asyncio event loops
    limits = httpx.Limits(max_keepalive_connections=0)
-   httpx_client = httpx.AsyncClient(headers=headers, timeout=600.0, limits=limits)
+   httpx_client = httpx.AsyncClient(headers=headers, timeout=45.0, limits=limits)
 
    remote_agent = RemoteA2aAgent(
        name="<agent_name>",
@@ -1441,6 +1771,7 @@ CRITICAL ADK RULES:
        httpx_client=httpx_client,
    )
    ```
+   - In `tools.py`, if client functions/tools are generated for A2A JSON-RPC 2.0 communication (e.g. `query_vendor_catalog_a2a`), import `from google.auth.transport.requests import Request` and `from google.oauth2.id_token import fetch_id_token` to fetch and attach the OIDC Bearer token in the `Authorization` header, and execute JSON-RPC 2.0 calls (`{"jsonrpc": "2.0", "method": ..., "params": ..., "id": ...}`) with explicit `timeout=45.0` and retry logic.
 
 ### A2UI
 
@@ -1457,7 +1788,7 @@ manager = A2uiSchemaManager(...)        # loads catalog(s) + few-shot examples
 instruction = manager.generate_system_prompt(...)
 
 # 2. Use it as the agent instruction
-root_agent = Agent(name="ui_agent", model="gemini-3.7-flash", instruction=instruction)
+root_agent = Agent(name="ui_agent", model="gemini-3.8-flash", instruction=instruction)
 
 # 3. Validate the model's JSON output, then wrap as an A2A DataPart
 #    (MIME application/a2ui+json) via a2ui.a2a before streaming to the client.
@@ -1842,7 +2173,7 @@ class DraftOutput(BaseModel):
 
 writer = LlmAgent(
     name="writer",
-    model="gemini-3.7-flash",
+    model="gemini-3.8-flash",
     instruction="Write a draft based on the user's request.",
     output_schema=DraftOutput,  # Always set for structured output
     output_key="draft",         # Also store in state['draft']

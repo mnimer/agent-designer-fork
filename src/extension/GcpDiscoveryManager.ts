@@ -26,9 +26,30 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as os from 'os';
 import * as path from 'path';
-import { ModelArmorTemplateItem, GeminiEnterpriseAppItem } from '../shared/types';
+import { ModelArmorTemplateItem, GeminiEnterpriseAppItem, ModelCatalogItem } from '../shared/types';
+import {
+  DEFAULT_MODEL_GARDEN_CATALOG,
+  deduplicateModelGardenCatalog,
+} from '../webview/data/modelCatalog';
 
-export type { ModelArmorTemplateItem, GeminiEnterpriseAppItem };
+export type { ModelArmorTemplateItem, GeminiEnterpriseAppItem, ModelCatalogItem };
+
+export interface ModelGardenModelsResult {
+  models: ModelCatalogItem[];
+  source: 'gcloud' | 'fallback';
+  projectId?: string;
+}
+
+export interface ModelGardenEnableResult {
+  success: boolean;
+  modelId: string;
+  publisherModel?: string;
+  enabled: boolean;
+  verified?: boolean;
+  consoleUrl?: string;
+  source: 'gcloud' | 'fallback';
+  error?: string;
+}
 
 export interface PubSubTopicItem {
   name: string;
@@ -707,6 +728,467 @@ export class GcpDiscoveryManager {
     }
 
     return results.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }
+
+  /**
+   * Resolves the active GCP project ID from the provided parameter, environment variables,
+   * or `gcloud config get-value project`.
+   */
+  public async resolveEffectiveProjectId(projectId?: string): Promise<string> {
+    const trimmed = projectId?.trim();
+    if (trimmed && trimmed !== 'my-gcp-ai-agents' && trimmed !== 'my-gcp-project') {
+      return trimmed;
+    }
+    if (process.env.GOOGLE_CLOUD_PROJECT) {
+      return process.env.GOOGLE_CLOUD_PROJECT.trim();
+    }
+    if (process.env.GCLOUD_PROJECT) {
+      return process.env.GCLOUD_PROJECT.trim();
+    }
+    try {
+      const gcloudBinary = this.resolveGcloudPath();
+      const out = await this.executeProcess(gcloudBinary, ['config', 'get-value', 'project'], 4000);
+      const proj = out.trim();
+      if (proj && proj !== '(unset)') {
+        return proj;
+      }
+    } catch {
+      // Ignore
+    }
+    return trimmed || '';
+  }
+
+  /**
+   * Fetches available models from Google Cloud Vertex AI Model Garden, merging live
+   * publisher models with the built-in Model Garden catalog (Anthropic Claude, OpenAI,
+   * Alibaba/Qwen, Meta Llama, Mistral, DeepSeek).
+   * Note: `gcloud ai model-garden models list` requires `--billing-project=<PROJECT_ID>`
+   * to satisfy the `aiplatform.googleapis.com` quota project requirement.
+   */
+  public async getModelGardenModels(
+    projectId?: string,
+    forceRefresh = false
+  ): Promise<ModelGardenModelsResult> {
+    const effectiveProject = await this.resolveEffectiveProjectId(projectId);
+    try {
+      const gcloudBinary = this.resolveGcloudPath();
+      const args = ['ai', 'model-garden', 'models', 'list', '--format=json'];
+      if (effectiveProject) {
+        args.push(`--project=${effectiveProject}`);
+        args.push(`--billing-project=${effectiveProject}`);
+      }
+      const stdout = await this.executeProcess(gcloudBinary, args, 10000);
+      const rawList = JSON.parse(stdout);
+      const discovered = this.transformRawModelGardenModels(rawList);
+      if (discovered.length > 0) {
+        const merged = deduplicateModelGardenCatalog([
+          ...DEFAULT_MODEL_GARDEN_CATALOG,
+          ...discovered,
+        ]);
+        return {
+          models: merged,
+          source: 'gcloud',
+          projectId: effectiveProject,
+        };
+      }
+    } catch {
+      // Gracefully fall back to curated Vertex AI Model Garden catalog
+    }
+
+    return {
+      models: deduplicateModelGardenCatalog(DEFAULT_MODEL_GARDEN_CATALOG),
+      source: 'fallback',
+      projectId: effectiveProject || projectId,
+    };
+  }
+
+  /**
+   * Transforms raw `gcloud ai model-garden models list` items into deduplicated ModelCatalogItem entries.
+   */
+  public transformRawModelGardenModels(rawModels: unknown): ModelCatalogItem[] {
+    if (!Array.isArray(rawModels)) {
+      return [];
+    }
+
+    const results: ModelCatalogItem[] = [];
+    for (const item of rawModels) {
+      if (!item || typeof item !== 'object') continue;
+      const rec = item as Record<string, unknown>;
+      const fullName = typeof rec.name === 'string' ? rec.name.trim() : '';
+      if (!fullName) continue;
+
+      const segments = fullName.split('/');
+      const shortModelId = segments[segments.length - 1] || fullName;
+      const pubIdx = segments.indexOf('publishers');
+      const rawPublisher = pubIdx >= 0 && segments[pubIdx + 1] ? segments[pubIdx + 1] : 'Vertex AI';
+      const companyMap: Record<string, string> = {
+        anthropic: 'Anthropic',
+        openai: 'OpenAI',
+        qwen: 'Alibaba / Qwen',
+        meta: 'Meta',
+        mistralai: 'Mistral AI',
+        'deepseek-ai': 'DeepSeek',
+        xai: 'xAI',
+        google: 'Google',
+      };
+      const company = companyMap[rawPublisher.toLowerCase()] || rawPublisher;
+      const displayName =
+        typeof rec.displayName === 'string' && rec.displayName.trim()
+          ? rec.displayName.trim()
+          : shortModelId;
+
+      // For MaaS open-weights models (qwen, deepseek-ai, meta, openai), prefix with publisher if needed
+      const isMaas = shortModelId.endsWith('-maas');
+      const canonicalId =
+        isMaas && ['qwen', 'deepseek-ai', 'meta', 'openai'].includes(rawPublisher.toLowerCase())
+          ? `${rawPublisher.toLowerCase()}/${shortModelId}`
+          : shortModelId;
+
+      results.push({
+        id: canonicalId,
+        name: displayName,
+        company,
+        description:
+          typeof rec.description === 'string' && rec.description.trim()
+            ? rec.description.trim()
+            : `Vertex AI Model Garden (${fullName})`,
+        source: 'model_garden',
+        gardenPublisherModel: fullName,
+      });
+    }
+
+    return deduplicateModelGardenCatalog(results);
+  }
+
+  /**
+   * Builds the direct Google Cloud Console Vertex AI Model Garden URL for a specific publisher model
+   * so the user can open the model card in their browser to accept the EULA / Partner Terms or enable the model.
+   */
+  public buildModelGardenConsoleUrl(
+    publisherModel: string,
+    modelId: string,
+    projectId?: string
+  ): string {
+    const segments = (publisherModel || '').split('/');
+    const pubIdx = segments.indexOf('publishers');
+    const publisher =
+      pubIdx >= 0 && segments[pubIdx + 1]
+        ? segments[pubIdx + 1]
+        : modelId.startsWith('claude-')
+        ? 'anthropic'
+        : modelId.includes('/')
+        ? modelId.split('/')[0]
+        : '';
+    const rawSlug = segments[segments.length - 1] || modelId;
+    const cleanModelSlug = rawSlug.split('@')[0];
+    const query = projectId ? `?project=${encodeURIComponent(projectId)}` : '';
+
+    if (publisher && cleanModelSlug) {
+      return `https://console.cloud.google.com/vertex-ai/publishers/${encodeURIComponent(
+        publisher
+      )}/model-garden/${encodeURIComponent(cleanModelSlug)}${query}`;
+    }
+    return `https://console.cloud.google.com/vertex-ai/model-garden${query}`;
+  }
+
+  /**
+   * Enables and verifies a model in GCP Vertex AI Model Garden when toggled ON in the Models Settings page.
+   *
+   * Two-step verification flow:
+   * 1. Calls `POST https://us-central1-aiplatform.googleapis.com/v1beta1/projects/{project}/modelGardenEula:accept`
+   *    with `{"publisherModel": "publishers/..."}` to accept the Model Garden EULA.
+   * 2. Performs a live endpoint access probe against Vertex AI (`:rawPredict` for Anthropic partner models
+   *    or `/endpoints/openapi/chat/completions` for MaaS models) to verify whether the GCP project actually
+   *    has `ALLOW_PREDICTION` entitlement for the model.
+   *    If a commercial partner model (e.g., Anthropic Claude) has not been procured/enabled in the GCP Console
+   *    Model Garden for this project, returns `success: false, enabled: false` along with the Console URL
+   *    so the UI toggle immediately reverts to OFF and shows a verification dialog.
+   */
+  public async enableModelGardenModel(
+    modelId: string,
+    publisherModel?: string,
+    enabled = true,
+    projectId?: string
+  ): Promise<ModelGardenEnableResult> {
+    const resolvedPublisher =
+      publisherModel ||
+      DEFAULT_MODEL_GARDEN_CATALOG.find((m) => m.id === modelId)?.gardenPublisherModel ||
+      (modelId.startsWith('claude-')
+        ? `publishers/anthropic/models/${modelId}`
+        : modelId.includes('/')
+        ? `publishers/${modelId.split('/')[0]}/models/${modelId.split('/')[1]}`
+        : `publishers/google/models/${modelId}`);
+
+    if (!enabled) {
+      return {
+        success: true,
+        modelId,
+        publisherModel: resolvedPublisher,
+        enabled: false,
+        source: 'gcloud',
+      };
+    }
+
+    const effectiveProject = await this.resolveEffectiveProjectId(projectId);
+    const consoleUrl = this.buildModelGardenConsoleUrl(
+      resolvedPublisher,
+      modelId,
+      effectiveProject
+    );
+
+    try {
+      const gcloudBinary = this.resolveGcloudPath();
+      const tokenOut = await this.executeProcess(
+        gcloudBinary,
+        ['auth', 'print-access-token'],
+        6000
+      );
+      const accessToken = tokenOut.trim();
+      if (!accessToken || !effectiveProject) {
+        return {
+          success: false,
+          modelId,
+          publisherModel: resolvedPublisher,
+          enabled: false,
+          verified: false,
+          consoleUrl,
+          source: 'fallback',
+          error:
+            'Unable to verify Model Garden enablement: no active GCP project or gcloud access token found.',
+        };
+      }
+
+      // Step 1: Accept Model Garden EULA via Vertex AI ModelGardenService REST API
+      try {
+        await this.postHttpsJson(
+          `https://us-central1-aiplatform.googleapis.com/v1beta1/projects/${encodeURIComponent(
+            effectiveProject
+          )}/modelGardenEula:accept`,
+          accessToken,
+          effectiveProject,
+          { publisherModel: resolvedPublisher },
+          8000
+        );
+      } catch {
+        // Partner models (e.g. Anthropic) may not use self-service EULA; proceed to live access probe
+      }
+
+      // Step 2: Verify actual prediction access on Vertex AI for this GCP project
+      const verification = await this.verifyModelGardenEndpointAccess(
+        modelId,
+        resolvedPublisher,
+        accessToken,
+        effectiveProject
+      );
+
+      if (!verification.verified) {
+        return {
+          success: false,
+          modelId,
+          publisherModel: resolvedPublisher,
+          enabled: false,
+          verified: false,
+          consoleUrl,
+          source: 'gcloud',
+          error:
+            verification.error ||
+            `Model "${modelId}" (${resolvedPublisher}) is not enabled in GCP project "${effectiveProject}". Please enable it in the Google Cloud Console Model Garden first.`,
+        };
+      }
+
+      return {
+        success: true,
+        modelId,
+        publisherModel: resolvedPublisher,
+        enabled: true,
+        verified: true,
+        source: 'gcloud',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        modelId,
+        publisherModel: resolvedPublisher,
+        enabled: false,
+        verified: false,
+        consoleUrl,
+        source: 'fallback',
+        error:
+          err?.message ||
+          `Failed to verify or enable "${modelId}" in GCP Vertex AI Model Garden.`,
+      };
+    }
+  }
+
+  /**
+   * Probes the live Vertex AI endpoint for a Model Garden model to confirm that the user's
+   * GCP project actually has `ALLOW_PREDICTION` entitlement and regional availability.
+   */
+  public async verifyModelGardenEndpointAccess(
+    modelId: string,
+    publisherModel: string,
+    accessToken: string,
+    projectId: string
+  ): Promise<{ verified: boolean; error?: string }> {
+    const segments = publisherModel.split('/');
+    const shortModelName = segments[segments.length - 1] || modelId;
+    const pubIdx = segments.indexOf('publishers');
+    const publisher = (pubIdx >= 0 && segments[pubIdx + 1] ? segments[pubIdx + 1] : '').toLowerCase();
+
+    // Case 1: Anthropic Claude Partner Models on Vertex AI (:rawPredict)
+    if (publisher === 'anthropic' || modelId.startsWith('claude-')) {
+      const candidateLocations = ['global', 'us-east5', 'us-central1'];
+      for (const loc of candidateLocations) {
+        const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
+        const url = `https://${host}/v1/projects/${encodeURIComponent(
+          projectId
+        )}/locations/${loc}/publishers/anthropic/models/${encodeURIComponent(
+          shortModelName
+        )}:rawPredict`;
+        try {
+          await this.postHttpsJson(
+            url,
+            accessToken,
+            projectId,
+            {
+              anthropic_version: 'vertex-2023-10-16',
+              max_tokens: 1,
+              messages: [{ role: 'user', content: 'ping' }],
+            },
+            8000
+          );
+          return { verified: true };
+        } catch {
+          // Try next candidate region
+        }
+      }
+      return {
+        verified: false,
+        error: `Anthropic model "${shortModelName}" (${publisherModel}) is not enabled for GCP project "${projectId}". Commercial partner models require enabling the model and accepting partner terms in the Google Cloud Console Model Garden before use.`,
+      };
+    }
+
+    // Case 2: Open-Weights MaaS Models (Qwen, DeepSeek, OpenAI OSS, Meta Llama) via OpenAI-compatible endpoint
+    const maasModelId = modelId.includes('/')
+      ? modelId
+      : publisher
+      ? `${publisher}/${shortModelName}`
+      : shortModelName;
+    const candidateLocations =
+      shortModelName.includes('deepseek-r1') || publisher === 'meta'
+        ? ['us-central1', 'global', 'us-east5']
+        : ['global', 'us-central1'];
+
+    for (const loc of candidateLocations) {
+      const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
+      const url = `https://${host}/v1beta1/projects/${encodeURIComponent(
+        projectId
+      )}/locations/${loc}/endpoints/openapi/chat/completions`;
+      try {
+        await this.postHttpsJson(
+          url,
+          accessToken,
+          projectId,
+          {
+            model: maasModelId,
+            max_tokens: 1,
+            messages: [{ role: 'user', content: 'ping' }],
+          },
+          8000
+        );
+        return { verified: true };
+      } catch {
+        // Try next candidate location
+      }
+    }
+
+    // Case 3: Mistral / Other Partner rawPredict endpoint
+    if (publisher === 'mistralai') {
+      for (const loc of ['us-central1', 'europe-west4', 'global']) {
+        const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
+        const url = `https://${host}/v1/projects/${encodeURIComponent(
+          projectId
+        )}/locations/${loc}/publishers/mistralai/models/${encodeURIComponent(
+          shortModelName
+        )}:rawPredict`;
+        try {
+          await this.postHttpsJson(
+            url,
+            accessToken,
+            projectId,
+            {
+              model: shortModelName,
+              max_tokens: 1,
+              messages: [{ role: 'user', content: 'ping' }],
+            },
+            8000
+          );
+          return { verified: true };
+        } catch {
+          // Continue
+        }
+      }
+    }
+
+    return {
+      verified: false,
+      error: `Model "${modelId}" (${publisherModel}) is not enabled or accessible in GCP project "${projectId}". Enable this model in the Google Cloud Console Model Garden for project "${projectId}" first.`,
+    };
+  }
+
+  /**
+   * Performs an authenticated HTTPS POST request with a JSON payload to a Google Cloud API endpoint.
+   */
+  private postHttpsJson(
+    url: string,
+    accessToken: string,
+    projectId: string,
+    payload: Record<string, unknown>,
+    timeoutMs = 8000
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const bodyStr = JSON.stringify(payload);
+      const parsedUrl = new URL(url);
+      const req = https.request(
+        {
+          hostname: parsedUrl.hostname,
+          path: parsedUrl.pathname + parsedUrl.search,
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'X-Goog-User-Project': projectId,
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(bodyStr),
+            Accept: 'application/json',
+          },
+          timeout: timeoutMs,
+        },
+        (res) => {
+          let resBody = '';
+          res.on('data', (chunk) => {
+            resBody += chunk.toString();
+          });
+          res.on('end', () => {
+            if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+              resolve(resBody);
+            } else {
+              reject(new Error(`HTTP ${res.statusCode}: ${resBody}`));
+            }
+          });
+        }
+      );
+
+      req.on('timeout', () => {
+        req.destroy(new Error(`HTTPS POST request timed out after ${timeoutMs}ms: ${url}`));
+      });
+
+      req.on('error', (err) => {
+        reject(err);
+      });
+
+      req.write(bodyStr);
+      req.end();
+    });
   }
 
   /**

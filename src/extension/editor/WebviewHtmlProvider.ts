@@ -51,7 +51,7 @@ export function getHtmlForWebview(
     ? webview.asWebviewUri(vscode.Uri.joinPath(distUri, 'assets', 'index.css'))
     : '';
 
-  // Read compiled CSS and JS directly for guaranteed inline execution
+  // Read compiled CSS directly for zero-FOUC styling; only read index.js inline if webview URI is unavailable
   const cssPath = path.join(realExtensionPath, 'dist', 'webview', 'assets', 'index.css');
   const jsPath = path.join(realExtensionPath, 'dist', 'webview', 'assets', 'index.js');
   let inlineCss = '';
@@ -60,7 +60,7 @@ export function getHtmlForWebview(
     if (fs.existsSync(cssPath)) {
       inlineCss = fs.readFileSync(cssPath, 'utf-8');
     }
-    if (fs.existsSync(jsPath)) {
+    if (!jsUri && fs.existsSync(jsPath)) {
       inlineJs = fs.readFileSync(jsPath, 'utf-8');
     }
   } catch (err) {
@@ -166,7 +166,7 @@ export function getHtmlForWebview(
       }
     })();
   </script>
-  ${inlineJs ? `<script nonce="${nonce}">\n${inlineJs}\n</script>` : (jsUri ? `<script nonce="${nonce}" src="${jsUri.toString()}"></script>` : '')}
+  ${jsUri ? `<script type="module" nonce="${nonce}" src="${jsUri.toString()}"></script>` : (inlineJs ? `<script nonce="${nonce}">\n${inlineJs}\n</script>` : '')}
 </body>
 </html>`;
 }

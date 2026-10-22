@@ -25,6 +25,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as https from 'https';
 import { GcloudDetector } from './GcloudDetector';
@@ -120,6 +121,11 @@ export interface GeminiEnterprisePublishRequest {
   agentRegistryResource?: string;
   geminiEnterpriseAppId: string;
   geminiEnterpriseLocation: string;
+  authMode?: 'service_account' | 'user_oauth';
+  targetDirectory?: string;
+  document?: any;
+  oauthClientId?: string;
+  oauthClientSecret?: string;
   onLog?: (text: string, stream: 'stdout' | 'stderr' | 'system') => void;
 }
 
@@ -579,14 +585,74 @@ export class AgentGovernanceProvisioner {
         (a.displayName === resolvedDisplayName || a.displayName === cleanAgentId)
     );
 
+    // Provision Gemini Enterprise End-User OAuth (`serverSideOauth2` Authorization resource)
+    // when "Use User's Credentials (OAuth 2.0)" (`authMode === 'user_oauth'`) is selected
+    // (or when `oauthClientId` is explicitly passed and `authMode !== 'service_account'`).
+    const shouldUseUserOAuth =
+      options.authMode === 'user_oauth' ||
+      (options.authMode !== 'service_account' && Boolean(options.oauthClientId));
+    const oauthReq = shouldUseUserOAuth ? this.extractWorkspaceOAuthRequirements(options) : null;
+    if (oauthReq) {
+      const authResourceName = await this.provisionGeminiEnterpriseToolAuthorization({
+        projectId,
+        location: loc,
+        hostPrefix,
+        cleanAgentId,
+        displayName: resolvedDisplayName,
+        existingAgentName: typeof existingMatch?.name === 'string' ? existingMatch.name : undefined,
+        clientId: oauthReq.clientId,
+        clientSecret: oauthReq.clientSecret,
+        scopes: oauthReq.scopes,
+        onLog,
+      });
+      if (authResourceName) {
+        agentPayload.authorizationConfig = {
+          toolAuthorizations: [authResourceName],
+        };
+      }
+    } else if (options.authMode === 'service_account') {
+      agentPayload.authorizationConfig = {
+        toolAuthorizations: [],
+      };
+    }
+
     if (existingMatch && typeof existingMatch.name === 'string') {
       const existingUrl = `https://${hostPrefix}discoveryengine.googleapis.com/v1alpha/${existingMatch.name}`;
-      const patchExistingRes = await this.requestJson({
+      let patchExistingRes = await this.requestJson({
         method: 'PATCH',
         url: existingUrl,
         projectId,
         body: agentPayload,
       });
+      if (
+        patchExistingRes.statusCode === 400 &&
+        oauthReq &&
+        String(patchExistingRes.data?.error?.message || '').includes('used by another agent')
+      ) {
+        const retryAuthResource = await this.provisionGeminiEnterpriseToolAuthorization({
+          projectId,
+          location: loc,
+          hostPrefix,
+          cleanAgentId,
+          displayName: resolvedDisplayName,
+          forceUniqueSuffix: true,
+          clientId: oauthReq.clientId,
+          clientSecret: oauthReq.clientSecret,
+          scopes: oauthReq.scopes,
+          onLog,
+        });
+        if (retryAuthResource) {
+          agentPayload.authorizationConfig = {
+            toolAuthorizations: [retryAuthResource],
+          };
+          patchExistingRes = await this.requestJson({
+            method: 'PATCH',
+            url: existingUrl,
+            projectId,
+            body: agentPayload,
+          });
+        }
+      }
       if (patchExistingRes.statusCode >= 200 && patchExistingRes.statusCode < 300) {
         onLog?.(
           `[Gemini Enterprise] Updated existing agent registration in Gemini Enterprise App '${appId}': ${existingMatch.name}`,
@@ -598,12 +664,42 @@ export class AgentGovernanceProvisioner {
 
     // CreateAgentRequest.agent_id (`?agentId=...`) is GOOGLE_INTERNAL-only in Discovery Engine v1alpha;
     // public REST calls must POST directly to `${baseUrl}` so Discovery Engine assigns the agent ID.
-    const createRes = await this.requestJson({
+    let createRes = await this.requestJson({
       method: 'POST',
       url: baseUrl,
       projectId,
       body: agentPayload,
     });
+
+    if (
+      createRes.statusCode === 400 &&
+      oauthReq &&
+      String(createRes.data?.error?.message || '').includes('used by another agent')
+    ) {
+      const retryAuthResource = await this.provisionGeminiEnterpriseToolAuthorization({
+        projectId,
+        location: loc,
+        hostPrefix,
+        cleanAgentId,
+        displayName: resolvedDisplayName,
+        forceUniqueSuffix: true,
+        clientId: oauthReq.clientId,
+        clientSecret: oauthReq.clientSecret,
+        scopes: oauthReq.scopes,
+        onLog,
+      });
+      if (retryAuthResource) {
+        agentPayload.authorizationConfig = {
+          toolAuthorizations: [retryAuthResource],
+        };
+        createRes = await this.requestJson({
+          method: 'POST',
+          url: baseUrl,
+          projectId,
+          body: agentPayload,
+        });
+      }
+    }
 
     if (createRes.statusCode >= 200 && createRes.statusCode < 300) {
       const rawName = createRes.data?.name;
@@ -642,6 +738,301 @@ export class AgentGovernanceProvisioner {
     }
 
     return { agentUri, consoleUrl };
+  }
+
+  /**
+   * Detects whether the agent being published uses Google Workspace Remote MCP tools
+   * (either from the `.agent` workflow `document` or generated `agent.py` in `targetDirectory`)
+   * and resolves the OAuth 2.0 Client ID, Client Secret, and scopes needed to provision a
+   * Gemini Enterprise `Authorization` (`serverSideOauth2`) resource.
+   */
+  public extractWorkspaceOAuthRequirements(options: GeminiEnterprisePublishRequest): {
+    clientId: string;
+    clientSecret: string;
+    scopes: string[];
+  } | null {
+    const { targetDirectory, document, oauthClientId, oauthClientSecret, onLog } = options;
+
+    const scopesSet = new Set<string>();
+    let docClientId = oauthClientId?.trim() || '';
+    let docClientSecret = oauthClientSecret?.trim() || '';
+    let usesWorkspaceMcp = false;
+
+    // 1. Inspect `.agent` workflow document nodes for Google Workspace MCP tools
+    const nodes: any[] = Array.isArray(document?.nodes) ? document.nodes : [];
+    for (const node of nodes) {
+      const data = node?.data || {};
+      const config = data?.config || {};
+      const candidateTools: any[] = [
+        data,
+        config,
+        ...(Array.isArray(data.tools) ? data.tools : []),
+        ...(Array.isArray(config.tools) ? config.tools : []),
+        ...(Array.isArray(data.mcpServers) ? data.mcpServers : []),
+        ...(Array.isArray(config.mcpServers) ? config.mcpServers : []),
+      ];
+
+      for (const tool of candidateTools) {
+        if (!tool || typeof tool !== 'object') continue;
+        const mcpConfig = tool.mcpConfig || tool;
+        const wsConfig = mcpConfig?.workspaceConfig || tool.workspaceConfig;
+        const serverUrl = String(mcpConfig?.serverUrl || tool.serverUrl || '');
+        const toolId = String(tool.id || tool.toolId || wsConfig?.serviceId || '');
+        const category = String(tool.category || '');
+
+        const isWs =
+          category === 'google_workspace_mcp' ||
+          toolId.startsWith('workspace_mcp_') ||
+          Boolean(wsConfig) ||
+          /https:\/\/[a-z0-9-]+mcp\.googleapis\.com\/mcp/i.test(serverUrl) ||
+          serverUrl.includes('people.googleapis.com/mcp');
+
+        if (!isWs) continue;
+        usesWorkspaceMcp = true;
+
+        const toolScopes: string[] = Array.isArray(mcpConfig?.oauthConfig?.scopes)
+          ? mcpConfig.oauthConfig.scopes
+          : wsConfig?.scopePreset === 'read_write' && Array.isArray(wsConfig?.readWriteScopes)
+          ? wsConfig.readWriteScopes
+          : Array.isArray(wsConfig?.readOnlyScopes)
+          ? wsConfig.readOnlyScopes
+          : [];
+        for (const s of toolScopes) {
+          if (typeof s === 'string' && s.trim()) {
+            scopesSet.add(s.trim());
+          }
+        }
+
+        if (!docClientId && typeof wsConfig?.oauthClientId === 'string' && wsConfig.oauthClientId.trim()) {
+          docClientId = wsConfig.oauthClientId.trim();
+        }
+        if (
+          !docClientSecret &&
+          typeof wsConfig?.oauthClientSecret === 'string' &&
+          wsConfig.oauthClientSecret.trim()
+        ) {
+          docClientSecret = wsConfig.oauthClientSecret.trim();
+        }
+      }
+    }
+
+    // 2. Fallback: inspect `agent.py` in `targetDirectory` for Workspace MCP endpoints & scopes
+    if (targetDirectory) {
+      const agentPyPath = path.join(path.resolve(targetDirectory), 'agent.py');
+      if (fs.existsSync(agentPyPath)) {
+        try {
+          const agentPyContent = fs.readFileSync(agentPyPath, 'utf8');
+          if (
+            agentPyContent.includes('get_workspace_mcp_headers') ||
+            /https:\/\/[a-z0-9-]+mcp\.googleapis\.com\/mcp/i.test(agentPyContent) ||
+            agentPyContent.includes('people.googleapis.com/mcp')
+          ) {
+            usesWorkspaceMcp = true;
+            const scopeMatches = agentPyContent.match(
+              /https:\/\/www\.googleapis\.com\/auth\/[a-zA-Z0-9._-]+/g
+            );
+            if (scopeMatches) {
+              for (const s of scopeMatches) {
+                if (s !== 'https://www.googleapis.com/auth/cloud-platform') {
+                  scopesSet.add(s);
+                }
+              }
+            }
+          }
+        } catch {
+          // Ignore file read errors
+        }
+      }
+    }
+
+    if (!usesWorkspaceMcp && !docClientId) {
+      return null;
+    }
+
+    // 3. Resolve OAuth 2.0 Client ID and Client Secret from options, environment, or local client_secret.json
+    let clientId = docClientId || process.env.WORKSPACE_OAUTH_CLIENT_ID?.trim() || '';
+    let clientSecret = docClientSecret || process.env.WORKSPACE_OAUTH_CLIENT_SECRET?.trim() || '';
+
+    if (!clientId || !clientSecret) {
+      const candidateFiles = [
+        path.join(os.homedir(), '.config', 'gcloud', 'workspace_client_secret.json'),
+        ...(targetDirectory ? [path.join(path.resolve(targetDirectory), 'client_secret.json')] : []),
+        path.join(os.homedir(), 'client_secret.json'),
+      ];
+      for (const filePath of candidateFiles) {
+        if (!filePath || !fs.existsSync(filePath)) continue;
+        try {
+          const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+          const block = parsed?.installed || parsed?.web || parsed;
+          if (!clientId && typeof block?.client_id === 'string' && block.client_id.trim()) {
+            clientId = block.client_id.trim();
+          }
+          if (!clientSecret && typeof block?.client_secret === 'string' && block.client_secret.trim()) {
+            clientSecret = block.client_secret.trim();
+          }
+          if (clientId && clientSecret) break;
+        } catch {
+          // Ignore malformed JSON
+        }
+      }
+    }
+
+    if (!clientId || !clientSecret) {
+      onLog?.(
+        `[Gemini Enterprise] Note: Google Workspace MCP tool detected, but OAuth 2.0 Client ID / Secret was not found. To enable per-user OAuth consent in Gemini Enterprise, configure OAuth Client ID & Secret on the Workspace MCP tool or place ~/.config/gcloud/workspace_client_secret.json.`,
+        'system'
+      );
+      return null;
+    }
+
+    if (scopesSet.size === 0) {
+      scopesSet.add('https://www.googleapis.com/auth/drive.readonly');
+    }
+
+    return {
+      clientId,
+      clientSecret,
+      scopes: Array.from(scopesSet),
+    };
+  }
+
+  /**
+   * Creates or updates a Discovery Engine `Authorization` resource (`serverSideOauth2`)
+   * in `discoveryengine.googleapis.com/v1alpha/projects/{project}/locations/{loc}/authorizations`
+   * so Gemini Enterprise prompts the end-user for Google Workspace OAuth consent and forwards
+   * their personal OAuth 2.0 access token (`temp:<authId>`) to the Reasoning Engine session state.
+   */
+  public async provisionGeminiEnterpriseToolAuthorization(options: {
+    projectId: string;
+    location: string;
+    hostPrefix: string;
+    cleanAgentId: string;
+    displayName: string;
+    existingAgentName?: string;
+    forceUniqueSuffix?: boolean;
+    clientId: string;
+    clientSecret: string;
+    scopes: string[];
+    onLog?: (text: string, stream: 'stdout' | 'stderr' | 'system') => void;
+  }): Promise<string | undefined> {
+    const {
+      projectId,
+      location,
+      hostPrefix,
+      cleanAgentId,
+      displayName,
+      existingAgentName,
+      forceUniqueSuffix,
+      clientId,
+      clientSecret,
+      scopes,
+      onLog,
+    } = options;
+
+    const baseSlug =
+      cleanAgentId
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, '-')
+        .replace(/^[^a-z]+/, 'a')
+        .slice(0, 36)
+        .replace(/-+$/, '') || 'workspace-agent';
+
+    const existingShortId = existingAgentName
+      ? existingAgentName
+          .split('/')
+          .pop()
+          ?.toLowerCase()
+          .replace(/[^a-z0-9-]+/g, '')
+          .slice(-12)
+      : '';
+
+    const suffix = forceUniqueSuffix
+      ? `oauth-${Date.now().toString(36).slice(-5)}`
+      : existingShortId
+      ? `${existingShortId}-oauth`
+      : 'workspace-oauth';
+
+    const authId = `${baseSlug}-${suffix}`.slice(0, 63).replace(/-+$/, '');
+    const parentPath = `projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(location)}`;
+    const authBaseUrl = `https://${hostPrefix}discoveryengine.googleapis.com/v1alpha/${parentPath}/authorizations`;
+    const canonicalAuthName = `projects/${projectId}/locations/${location}/authorizations/${authId}`;
+
+    const uniqueScopes = Array.from(
+      new Set([
+        'openid',
+        'https://www.googleapis.com/auth/userinfo.email',
+        ...scopes.filter(Boolean),
+      ])
+    );
+    const redirectUri = 'https://vertexaisearch.cloud.google.com/oauth-redirect';
+    const authorizationUri =
+      `https://accounts.google.com/o/oauth2/v2/auth` +
+      `?client_id=${encodeURIComponent(clientId)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&scope=${encodeURIComponent(uniqueScopes.join(' '))}` +
+      `&include_granted_scopes=true` +
+      `&response_type=code` +
+      `&access_type=offline` +
+      `&prompt=consent`;
+
+    const authPayload = {
+      name: canonicalAuthName,
+      displayName: `${displayName} Workspace OAuth`.slice(0, 63),
+      serverSideOauth2: {
+        clientId,
+        clientSecret,
+        tokenUri: 'https://oauth2.googleapis.com/token',
+        authorizationUri,
+        scopes: uniqueScopes,
+      },
+    };
+
+    const createRes = await this.requestJson({
+      method: 'POST',
+      url: `${authBaseUrl}?authorizationId=${encodeURIComponent(authId)}`,
+      projectId,
+      body: authPayload,
+    });
+
+    if (createRes.statusCode >= 200 && createRes.statusCode < 300) {
+      const resolvedName =
+        typeof createRes.data?.name === 'string' && createRes.data.name.startsWith('projects/')
+          ? createRes.data.name
+          : canonicalAuthName;
+      onLog?.(
+        `[Gemini Enterprise] Created User OAuth Authorization resource (${resolvedName}) with scopes: ${scopes.join(', ')}`,
+        'system'
+      );
+      return resolvedName;
+    }
+
+    if (createRes.statusCode === 409) {
+      const patchRes = await this.requestJson({
+        method: 'PATCH',
+        url: `${authBaseUrl}/${encodeURIComponent(authId)}`,
+        projectId,
+        body: authPayload,
+      });
+      if (patchRes.statusCode >= 200 && patchRes.statusCode < 300) {
+        const resolvedName =
+          typeof patchRes.data?.name === 'string' && patchRes.data.name.startsWith('projects/')
+            ? patchRes.data.name
+            : canonicalAuthName;
+        onLog?.(
+          `[Gemini Enterprise] Updated User OAuth Authorization resource (${resolvedName}) with scopes: ${scopes.join(', ')}`,
+          'system'
+        );
+        return resolvedName;
+      }
+      return canonicalAuthName;
+    }
+
+    const errMsg = createRes.data?.error?.message || `HTTP ${createRes.statusCode}`;
+    onLog?.(
+      `[Gemini Enterprise] Note: Authorization provisioning (${authId}) returned ${errMsg}`,
+      'system'
+    );
+    return undefined;
   }
 
   /**

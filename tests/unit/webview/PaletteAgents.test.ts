@@ -386,5 +386,60 @@ describe('Basic Agent Types Palette & Node Creation', () => {
       'StandardAgentDrawer must resolve currentPattern using identical logic to AgentNode'
     );
   });
+
+  it('should render always-visible "+" quick-add buttons on all Agent cards, Tool cards, and Trigger cards, and not on Sample cards', () => {
+    const palettePath = path.resolve(__dirname, '../../../src/webview/components/Canvas/PaletteCard.tsx');
+    const source = fs.readFileSync(palettePath, 'utf8');
+
+    // 1. Agent cards: Core Agents, Flow & Control Agents, and Multi-Agent Patterns must all have "+" add buttons
+    assert.ok(
+      source.includes('data-testid={`palette-agent-add-${agentType.kind}`}'),
+      'Core and Flow & Control agent cards must render a "+" button with data-testid="palette-agent-add-${agentType.kind}"'
+    );
+    const agentAddButtonMatches = source.match(/data-testid=\{`palette-agent-add-\$\{agentType\.kind\}`\}/g) || [];
+    assert.equal(
+      agentAddButtonMatches.length,
+      2,
+      'Both Core Agents and Flow & Control Agents loops must render palette-agent-add-${agentType.kind} buttons'
+    );
+    assert.ok(
+      source.includes('data-testid={`palette-pattern-add-${pattern.type}`}'),
+      'Multi-Agent Pattern cards must render a "+" button with data-testid="palette-pattern-add-${pattern.type}"'
+    );
+    assert.ok(
+      !source.includes('opacity-0 group-hover:opacity-100 hover:bg-[#30363d]'),
+      'Pattern "+" button must be always visible rather than hidden with opacity-0'
+    );
+
+    // 2. Tool cards: GCP MCP, Workspace MCP, and Standard Tool sections must all render "+" add buttons calling onAddToolToAgent(t)
+    const toolAddButtonMatches = source.match(/data-testid=\{`palette-tool-add-\$\{t\.id\}`\}/g) || [];
+    assert.equal(
+      toolAddButtonMatches.length,
+      3,
+      'All 3 tool card sections (GCP MCP, Workspace MCP, and Standard/Custom) must render palette-tool-add-${t.id} buttons'
+    );
+    const addToolCalls = source.match(/onAddToolToAgent\(t\)/g) || [];
+    assert.ok(
+      addToolCalls.length >= 3,
+      'All 3 tool card sections must invoke onAddToolToAgent(t) when clicking the "+" button'
+    );
+
+    // 3. Trigger cards: Single trigger sections (tester/chat) and Workflow Triggers section must render "+" add buttons calling onAddTrigger
+    assert.ok(
+      source.includes('data-testid={`palette-trigger-add-${section.trigger.type}`}'),
+      'Single trigger cards (Test Suite, Chat) must render a "+" button with data-testid="palette-trigger-add-${section.trigger.type}"'
+    );
+    assert.ok(
+      source.includes('data-testid={`palette-trigger-add-${trigger.type}`}'),
+      'Workflow trigger cards must render a "+" button with data-testid="palette-trigger-add-${trigger.type}"'
+    );
+
+    // 4. Sample cards: Must NOT have a palette-sample-add button
+    assert.ok(
+      !source.includes('palette-sample-add-'),
+      'Sample cards must not render a "+" quick-add button'
+    );
+  });
 });
+
 
