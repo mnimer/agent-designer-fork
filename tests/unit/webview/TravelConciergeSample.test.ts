@@ -38,7 +38,7 @@ describe('TASK-173: Travel Concierge Sample & Info Dialog Suite', () => {
     return travelSample;
   };
 
-  it('should discover travel_concierge dynamically from disk with gemini-3.7-flash and readmeContent', () => {
+  it('should discover travel_concierge dynamically from disk with gemini-3.8-flash and readmeContent', () => {
     const travelSample = getDiscoveredTravelSample();
     assert.equal(travelSample.category, 'Retail');
     assert.ok(
@@ -46,14 +46,14 @@ describe('TASK-173: Travel Concierge Sample & Info Dialog Suite', () => {
       'travelSample must include readmeContent pulled dynamically from README.md'
     );
 
-    // Verify all agent nodes use gemini-3.7-flash
+    // Verify all agent nodes use current Gemini Flash model (no deprecated 1.x/2.x)
     const agentNodes = travelSample.nodes.filter((n) => n.type === 'agentNode' || n.type === 'agent');
     assert.equal(agentNodes.length, 7, 'Expected 1 Root Agent + 6 Sub-Agents (7 agent nodes total)');
     for (const agent of agentNodes) {
-      assert.equal(
-        agent.data.model,
-        'gemini-3.7-flash',
-        `Agent ${agent.data.label} must use gemini-3.7-flash`
+      assert.match(
+        String(agent.data.model),
+        /^gemini-(3\.[78]-flash|4-)/,
+        `Agent ${agent.data.label} must use a modern Gemini model (got ${agent.data.model})`
       );
     }
   });

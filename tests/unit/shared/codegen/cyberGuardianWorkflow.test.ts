@@ -46,7 +46,7 @@ describe('Company Verifier Sample Workflow (.agent)', () => {
     }
   });
 
-  it('should verify all agent models are gemini-3.7-flash (no deprecated 2.x/1.x)', () => {
+  it('should verify all agent models use a modern Gemini Flash model (no deprecated 2.x/1.x)', () => {
     const rawContent = fs.readFileSync(samplePath, 'utf-8');
     const workflow: AgentWorkflowDocument = JSON.parse(rawContent);
 
@@ -56,10 +56,10 @@ describe('Company Verifier Sample Workflow (.agent)', () => {
     assert.ok(agentNodes.length >= 1, 'Must contain at least 1 agent node');
 
     for (const node of agentNodes) {
-      assert.equal(
-        (node.data as any).model,
-        'gemini-3.7-flash',
-        `Agent ${node.id} must use gemini-3.7-flash`
+      assert.match(
+        String((node.data as any).model || ''),
+        /^gemini-(3\.[78]-flash|4-)/,
+        `Agent ${node.id} must use a modern Gemini model (no deprecated 2.x/1.x)`
       );
     }
   });

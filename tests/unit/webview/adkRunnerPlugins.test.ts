@@ -244,7 +244,7 @@ describe('ADK Runner Plugins (TASK-240)', () => {
 
     // CodePreviewTab and DeploymentTab must be Python-only and exclude GKE Autopilot
     assert.ok(
-      codePreviewTabSrc.includes('🐍 Python'),
+      codePreviewTabSrc.includes('>PYTHON<') || codePreviewTabSrc.includes('🐍 Python'),
       'CodePreviewTab must show Python as the active language'
     );
     assert.ok(

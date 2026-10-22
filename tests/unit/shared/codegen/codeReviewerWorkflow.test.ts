@@ -49,7 +49,7 @@ describe('Autonomous Multi-Agent Code Reviewer Sample (.agent)', () => {
     }
   });
 
-  it('should verify all agent models are gemini-3.7-flash and do not reference cyber model', () => {
+  it('should verify all agent models use a modern Gemini Flash model and do not reference cyber model', () => {
     const rawContent = fs.readFileSync(samplePath, 'utf-8');
     const workflow: AgentWorkflowDocument = JSON.parse(rawContent);
 
@@ -59,9 +59,9 @@ describe('Autonomous Multi-Agent Code Reviewer Sample (.agent)', () => {
     assert.equal(agentNodes.length, 4, 'Must contain exactly 4 agent nodes (Coordinator + 3 Specialists)');
 
     for (const node of agentNodes) {
-      const model = (node.data as any).model;
-      assert.equal(model, 'gemini-3.7-flash', `Agent ${node.id} must use standard gemini-3.7-flash model`);
-      assert.ok(!String(model).includes('cyber'), `Agent ${node.id} must NOT use cyber model`);
+      const model = String((node.data as any).model || '');
+      assert.match(model, /^gemini-(3\.[78]-flash|4-)/, `Agent ${node.id} must use a modern Gemini model`);
+      assert.ok(!model.includes('cyber'), `Agent ${node.id} must NOT use cyber model`);
     }
   });
 

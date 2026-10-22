@@ -36,11 +36,11 @@ jobs:
             npm version "$VERSION" --no-git-tag-version --allow-same-version
           fi
 
-      - name: Run tests
-        run: npm test
-
       - name: Compile production bundles
         run: npm run compile
+
+      - name: Run tests
+        run: npm test
 
       - name: Package VSIX extension
         run: npx @vscode/vsce package --no-dependencies -o "visual-agent-designer-${{ github.ref_name }}.vsix"
