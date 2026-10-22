@@ -167,6 +167,8 @@
 | [**TASK-250**](#task-250) | v1.2.0 | Samples & A2UI | Standardize Default A2UI Configuration Across A2UI Samples & Sub-Agents (`A2UIConfigSection`, `A2UISurfaceRenderer`, `LocalRunnerScriptProvider`) | **Complete** | TASK-221, TASK-222, TASK-241 |
 | [**TASK-251**](#task-251) | v1.2.0 | MCP / Workspace | Google Workspace Remote MCP Servers Catalog in Tools Sidebar (Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Meet, Tasks, People, Forms, Keep & Classroom) | **Completed** | TASK-120, TASK-130, TASK-135 |
 | [**TASK-252**](#task-252) | v1.2.0 | MCP / GitHub | Official GitHub MCP Server Integration (`github/github-mcp-server` — Remote `api.githubcopilot.com/mcp/` & Local `stdio`, Toolset Filtering, Read-Only Mode & PAT/OAuth) | **Not Started** | TASK-120, TASK-130, TASK-135 |
+| [**TASK-253**](#task-253) | v1.2.0 | Models / Multimodal Image | Nano Banana 2.x Model Family Support (Nano Banana 2, 2.1, Pro & Lite — Image Generation, Editing & Toolsets) | **Not Started** | TASK-103, TASK-106, TASK-118 |
+| [**TASK-254**](#task-254) | v1.2.0 | Models / Multimodal Video | Gemini Omni 1.x Model Family Support (Gemini Omni 1.1 Flash & Omni Flash — Conversational Video & Pipelines) | **Not Started** | TASK-103, TASK-106, TASK-235 |
 
 ---
 
@@ -5995,6 +5997,54 @@ Each task specifies reverse-engineering the sample Python code into a production
     - Also supports GitHub OAuth 2.0 (`https://github.com/login/oauth/authorize` and `https://github.com/login/oauth/access_token`).
 * **Verification**:
   - Execute `npx vitest run tests/unit/webview/githubMcpServers.test.ts` with 100% pass rate, validating Remote HTTP header/URL assembly (`X-MCP-Toolsets`, `X-MCP-Readonly`), Local Docker `stdio` args/env generation, toolset multi-select filtering, and `createToolDefinitionFromGitHubMcpServer()`.
+
+---
+
+<a id="task-253"></a>
+
+### [TASK-253] Nano Banana 2.x Model Family Support (Nano Banana 2, 2.1, Pro & Lite — Image Generation, Editing & Toolsets)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Models / Multimodal Image Generation (`Nano Banana 2.x`)
+* **Dependencies**: `TASK-103`, `TASK-106`, `TASK-118`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` & `src/shared/types.ts` (Add `ImageGenerationConfig` with aspect ratio, resolution, output format, negative prompt, and sample count to `ModelConfig` and `AgentNodeData`)
+  - `src/webview/data/modelCatalog.ts` (Add `nano-banana-2`, `nano-banana-2.1`, `nano-banana-pro`, and `nano-banana-2-lite` to the Google Multimodal Foundation Models catalog with capabilities, badges, and default image generation parameter profiles)
+  - `src/webview/components/drawers/primitives/ModelSelector.tsx` (Add Nano Banana 2.x model entries and conditional Image Generation controls: aspect ratio `1:1`, `16:9`, `9:16`, `4:3`, `3:4`, resolution `1024x1024`, `2048x2048`, `4096x4096`, and negative prompt drawer section)
+  - `src/webview/components/inspector/StandardAgentDrawer.tsx` (Render image generation configuration panel when a Nano Banana model is selected)
+  - `src/extension/runner/LocalRunnerScriptProvider.ts` & `resource/prompts/python_adk_agent-engine.prompt.txt` / `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit Python ADK image generation calls using `google-genai` `client.models.generate_images()` / Vertex AI Image Generation, persisting base64/GCS image artifacts and formatting inline chat image Markdown `![generated](data:image/png;base64,...)`)
+  - `src/webview/components/chat/ChatMessageRenderer.tsx` & `src/webview/components/runner/A2UISurfaceRenderer.tsx` (Render inline generated images with full-resolution lightbox viewer, zoom/pan controls, and download action)
+  - `tests/unit/webview/nanoBananaModels.test.ts` (New unit test suite)
+* **Context**:
+  - Adds first-class support for Google's Nano Banana 2.x model family (`nano-banana-2`, `nano-banana-2.1`, `nano-banana-pro`, `nano-banana-2-lite` / `gemini-3-flash-image`), enabling developers to create image generation, editing, inpainting, and visual design agents directly on the visual canvas.
+  - Exposes image generation hyperparameters (aspect ratio, output format, negative prompt, safety settings, and resolution up to 4K on Pro) directly in the ModelSelector and StandardAgentDrawer.
+  - Automatically emits ADK Python codegen targeting `google-genai` image generation APIs with artifact persistence and interactive chat rendering.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/nanoBananaModels.test.ts` with 100% pass rate, validating model catalog metadata, ModelSelector rendering, image config serialization, and ADK Python prompt code generation.
+
+---
+
+<a id="task-254"></a>
+
+### [TASK-254] Gemini Omni 1.x Model Family Support (Gemini Omni 1.1 Flash & Omni Flash — Conversational Video & Pipelines)
+* **Status**: **Not Started**
+* **Release**: `v1.2.0`
+* **Category / Group**: Models / Multimodal Video Generation (`Gemini Omni 1.x`)
+* **Dependencies**: `TASK-103`, `TASK-106`, `TASK-235`
+* **Target Package/Files**:
+  - `src/shared/agentSpec.ts` & `src/shared/types.ts` (Add `VideoGenerationConfig` with resolution, aspect ratio, duration seconds, frame rate, first/last frame image inputs, and video extension mode to `ModelConfig` and `AgentNodeData`)
+  - `src/webview/data/modelCatalog.ts` (Add `gemini-omni-1.1-flash`, `gemini-omni-flash`, and `gemini-omni-1.5-flash-exp` to the Google Multimodal Foundation Models catalog with conversational video and real-time audio/video badges)
+  - `src/webview/components/drawers/primitives/ModelSelector.tsx` (Add Gemini Omni 1.x model entries and conditional Video Generation controls: aspect ratio `16:9` / `9:16`, resolution `720p` / `1080p`, duration `5s` / `10s`, FPS `24`, and video extension mode toggle)
+  - `src/webview/components/inspector/StandardAgentDrawer.tsx` (Render video generation configuration panel when a Gemini Omni model is selected)
+  - `src/extension/runner/LocalRunnerScriptProvider.ts` & `resource/prompts/python_adk_agent-engine.prompt.txt` / `resource/prompts/python_adk_cloudrun.prompt.txt` (Emit Python ADK video generation calls using `google-genai` Interactions API / Vertex AI LVM endpoints, polling generation operations, and persisting video artifacts to GCS or local disk)
+  - `src/webview/components/chat/ChatMessageRenderer.tsx` & `src/webview/components/runner/A2UISurfaceRenderer.tsx` (Render embedded HTML5 video player with play/pause, scrub bar, loop toggle, and MP4 download in Interactive Chat and A2UI surfaces)
+  - `tests/unit/webview/geminiOmniModels.test.ts` (New unit test suite)
+* **Context**:
+  - Adds first-class support for Google's Gemini Omni 1.x model family (`gemini-omni-1.1-flash`, `gemini-omni-flash`, `gemini-omni-1.5-flash-exp`), enabling developers to build conversational video generation, video editing, first-to-last frame video transition, and multi-turn video extension agents.
+  - Exposes video generation hyperparameters (720p/1080p, 16:9 landscape vs. 9:16 portrait, duration, and transition keys) in the ModelSelector and StandardAgentDrawer.
+  - Automatically emits ADK Python codegen utilizing the `google-genai` Interactions API and renders playable video artifacts directly inside the Interactive Chat Runner and A2UI surfaces.
+* **Verification**:
+  - Execute `npx vitest run tests/unit/webview/geminiOmniModels.test.ts` with 100% pass rate, validating model catalog metadata, ModelSelector rendering, video config serialization, and ADK Python prompt code generation.
 
 
 

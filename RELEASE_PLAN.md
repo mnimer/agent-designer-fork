@@ -420,6 +420,9 @@ To ensure fast iteration, robust test coverage, and strict quality gates, engine
      - **`TASK-232`**: ADK `ComputerUseToolset` Integration (Gemini Computer Use Browser/Playwright & Desktop GUI Automation).
      - **`TASK-233`**: ADK `MCPToolboxForDatabases` (`ToolboxToolset` for AlloyDB, Cloud SQL, Spanner & Neo4j).
      - **`TASK-234`**: ADK Built-in Control Flow & Memory Tools (`exit_loop`, `transfer_to_agent`, `load_memory`, `load_artifacts`).
+   4. **Track 1D — Multimodal Foundation Models (Parallelizable)**:
+      - **`TASK-253`**: Nano Banana 2.x Model Family Support (Nano Banana 2, 2.1, Pro & Lite — Image Generation, Editing & Toolsets).
+      - **`TASK-254`**: Gemini Omni 1.x Model Family Support (Gemini Omni 1.1 Flash & Omni Flash — Conversational Video & Pipelines).
 
 * **Acceptance Criteria**:
   - Agents with `a2uiConfig.enabled` render interactive Material/Composite A2UI v0.9.1 surfaces in the local Chat Runner and Gemini Enterprise.
