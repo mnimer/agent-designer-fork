@@ -6,7 +6,7 @@
  * 2. UnifiedDeployRunner.buildKubectlApplyCommand() generates correct `kubectl apply -f k8s/` command line.
  * 3. UnifiedDeployRunner.buildMakeDeployCommand() includes GKE parameters (CLUSTER_NAME, NAMESPACE, REPLICAS).
  * 4. UnifiedDeployRunner.buildTerraformApplyCommand() includes GKE variables (-var=cluster_name, -var=namespace).
- * 5. python_adk_gke.prompt.txt template integrity, Workload Identity, and Autopilot configurations.
+ * 5. (retired 2026-10-23) GKE prompt template integrity — code generation no longer targets GKE.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -116,21 +116,8 @@ describe('GKE Autopilot Deployment Target (TASK-237)', () => {
     assert.ok(cmd.args.includes('-var=namespace=agents'));
   });
 
-  // Section: GKE Prompt Template File Integrity
-  it('should ensure python_adk_gke.prompt.txt exists and contains required Autopilot and Workload Identity directives', () => {
-    const promptPath = path.resolve(__dirname, '../../../resource/prompts/python_adk_gke.prompt.txt');
-    assert.ok(fs.existsSync(promptPath), 'python_adk_gke.prompt.txt must exist in resource/prompts/');
-
-    const content = fs.readFileSync(promptPath, 'utf8');
-    assert.ok(content.includes('{{WORKFLOW_JSON}}'), 'Prompt must interpolate {{WORKFLOW_JSON}}');
-    assert.ok(content.includes('GKE Autopilot'), 'Prompt must specify GKE Autopilot');
-    assert.ok(content.includes('k8s/deployment.yaml'), 'Prompt must require k8s/deployment.yaml');
-    assert.ok(content.includes('k8s/service.yaml'), 'Prompt must require k8s/service.yaml');
-    assert.ok(content.includes('enable_autopilot = true'), 'Prompt must require enable_autopilot = true in main.tf');
-    assert.ok(content.includes('roles/iam.workloadIdentityUser'), 'Prompt must configure Workload Identity Federation IAM binding');
-    assert.ok(content.includes('gemini-3.8-flash'), 'Prompt must reference gemini-3.8-flash');
-    assert.ok(!content.includes('gemini-2.5'), 'Prompt must not reference deprecated gemini-2.5');
-  });
+  // NOTE (2026-10-23): The GKE prompt template was retired with the monolithic prompts; code
+  // generation targets Agent Runtime and Cloud Run only (GKE deferred, TASK-237).
 
   // Section: Agent Governance Workload Candidate CAIS URIs
   it('should support GKE container cluster CAIS URIs in governance provisioning', async () => {

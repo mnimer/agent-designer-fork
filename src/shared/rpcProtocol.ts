@@ -6,6 +6,7 @@
  * @author Mike Nimer <mikenimer@google.com>
  */
 
+import type { CodeGenProgressPayload } from './codegen/codeGenProgress';
 import {
   AgentWorkflowDocument,
   FrameworkTarget,
@@ -480,6 +481,11 @@ export type ExtensionToWebviewMessage =
       payload: {
         theme: 'dark' | 'light';
       };
+    }
+  | {
+      /** Live multi-agent code generation progress (phase changes and files as agents write them). */
+      type: 'CODE_GENERATION_PROGRESS';
+      payload: CodeGenProgressPayload;
     }
   | {
       type: 'CODE_GENERATED';

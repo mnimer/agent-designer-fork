@@ -12,6 +12,8 @@
  * - Spacing layout complies with 8pt grid system.
  */
 
+import { INITIAL_CODEGEN_PROGRESS, applyCodeGenProgress } from '../../shared/codegen/codeGenProgress';
+import type { CodeGenProgressPayload, CodeGenProgressState } from '../../shared/codegen/codeGenProgress';
 import React, { useState, useRef, useCallback, useMemo, useEffect, Suspense } from 'react';
 import {
   useNodesState,
@@ -226,6 +228,11 @@ export function FlowCanvas() {
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [hasGeneratedCode, setHasGeneratedCode] = useState<boolean>(false);
   const [codeGenTokenUsage, setCodeGenTokenUsage] = useState<{ inputTokens: number; outputTokens: number } | null>(null);
+  // NOTE: Live multi-agent code generation progress (phase + files written), reset on each run.
+  const [codeGenProgress, setCodeGenProgress] = useState<CodeGenProgressState>(INITIAL_CODEGEN_PROGRESS);
+  const handleCodeGenProgress = useCallback((payload: CodeGenProgressPayload) => {
+    setCodeGenProgress((prev) => applyCodeGenProgress(prev, payload));
+  }, []);
 
   // ---------------------------------------------------------------------------
   // 4. Custom Hooks (Tabs, Tools, Resizing, Shortcuts, Extension Sync)
@@ -444,6 +451,7 @@ export function FlowCanvas() {
     setHasGeneratedCode,
     setIsGenerating,
     setCodeGenTokenUsage,
+    onCodeGenProgress: handleCodeGenProgress,
     recordSnapshot,
     setDiscoveredSamples,
   });
@@ -1672,6 +1680,7 @@ export function FlowCanvas() {
     setGeneratedFiles([]);
     setHasGeneratedCode(false);
     setCodeGenTokenUsage(null);
+    setCodeGenProgress(INITIAL_CODEGEN_PROGRESS);
     setIsGenerating(true);
 
     // NOTE: Auto-save the .agent document before initiating code generation
@@ -1980,6 +1989,7 @@ export function FlowCanvas() {
               generatedFiles={generatedFiles}
               isGenerating={isGenerating}
               tokenUsage={codeGenTokenUsage}
+              codeGenProgress={codeGenProgress}
               onOpenMissingAdvisor={() => setIsAdvisorOpen(true)}
               hasTestSuite={hasTestSuite}
               hasGeneratedCode={hasGeneratedCode}

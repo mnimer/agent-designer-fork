@@ -19,6 +19,7 @@
  * - Parse Error Handling UI (TASK-136): Intercepts PARSE_ERROR messages to inject a non-interactive blocking UI overlay.
  */
 
+import type { CodeGenProgressPayload } from '../../shared/codegen/codeGenProgress';
 import { useRef, useEffect } from 'react';
 import { Node, Edge } from '@xyflow/react';
 import { WebviewBridge } from './useWebviewBridge';
@@ -98,6 +99,8 @@ export interface UseExtensionSyncOptions {
   setHasGeneratedCode: (hasCode: boolean) => void;
   setIsGenerating: (generating: boolean) => void;
   setCodeGenTokenUsage?: (usage: { inputTokens: number; outputTokens: number } | null) => void;
+  /** Applies live multi-agent code generation progress messages (`CODE_GENERATION_PROGRESS`). */
+  onCodeGenProgress?: (payload: CodeGenProgressPayload) => void;
   recordSnapshot: (nodes: Node<any>[], edges: Edge[], options?: { description?: string }) => void;
   setDiscoveredSamples?: React.Dispatch<React.SetStateAction<SampleWorkflowDefinition[]>>;
 }
@@ -124,6 +127,7 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
     setHasGeneratedCode,
     setIsGenerating,
     setCodeGenTokenUsage,
+    onCodeGenProgress,
     recordSnapshot,
     setDiscoveredSamples,
   } = options;
@@ -397,6 +401,10 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
       }
     });
 
+    const unsubCodeGenProgress = bridge.subscribe('CODE_GENERATION_PROGRESS', (payload: CodeGenProgressPayload) => {
+      onCodeGenProgress?.(payload);
+    });
+
     const unsubFilesExist = bridge.subscribe('FILES_EXIST_RESPONSE', (payload) => {
       if (payload?.generatedFiles && payload.generatedFiles.length > 0) {
         setGeneratedFiles(payload.generatedFiles);
@@ -414,10 +422,11 @@ export function useExtensionSync(options: UseExtensionSyncOptions): void {
       unsubLoadDoc();
       unsubParseError();
       unsubCodeGenerated();
+      unsubCodeGenProgress();
       unsubFilesExist();
       unsubSamplesLoaded();
     };
-  }, [bridge, activeTabId, setNodes, setEdges, setFileTabs, fitView, setConfig, setGeneratedFiles, setHasGeneratedCode, setIsGenerating, recordSnapshot, setDiscoveredSamples]);
+  }, [bridge, activeTabId, setNodes, setEdges, setFileTabs, fitView, setConfig, setGeneratedFiles, setHasGeneratedCode, setIsGenerating, recordSnapshot, setDiscoveredSamples, onCodeGenProgress]);
 
   // Check filesystem for existing generated code when target output folder changes
   useEffect(() => {

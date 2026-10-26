@@ -28,10 +28,10 @@ graph TB
     subgraph VSCode_Editor ["VS Code Extension Host (Node.js / TypeScript)"]
         AEP["AgentEditorProvider (*.agent Custom Editor)"]
         Bridge["WebviewBridge (Type-Safe RPC Protocol)"]
-        CodeGen["GeminiCodeGenEngine (Gemini 2.5 Flash / ADC)"]
+        CodeGen["GeminiCodeGenEngine (API key / ADC, multi-provider)"]
         Runner["AgentRunnerManager (Universal Test Harness)"]
         EnvResolver["PythonEnvResolver (Automated .venv & pip)"]
-        PromptLoader["Prompt Template Resolver (resource/prompts/)"]
+        PromptLoader["SinglePromptBuilder (resource/codegen-skills/)"]
 
         AEP --> Bridge
         Bridge --> CodeGen
@@ -78,9 +78,36 @@ graph TB
 ### 3.2 VS Code Extension Host (Backend)
 * **`AgentEditorProvider.ts`**: Implements VS Code's `CustomTextEditorProvider` to handle `.agent` document loading, saving, dirty-state tracking, and multi-tab synchronization.
 * **`WebviewBridge.ts`**: Bi-directional, type-safe RPC messaging bridge guaranteeing strictly typed message exchanges between webview and extension host.
-* **`GeminiCodeGenEngine.ts`**: Loads target-specific prompt templates, injects the canvas JSON document, and invokes the Gemini API (using `GEMINI_API_KEY` or Vertex AI ADC) to generate parseable multi-file JSON codebases.
+* **`GeminiCodeGenEngine.ts`**: Entry point for code generation. Builds the prompt with `SinglePromptBuilder` (see §3.3), makes one model call (Gemini API key or Vertex AI ADC; Anthropic, OpenAI, Grok, and Model Garden routes unchanged), optionally runs `CodeReviewer`, applies the existing finalization steps, and streams progress (`CODE_GENERATION_PROGRESS`) to the Code Preview tab.
 * **`PythonEnvResolver.ts`**: Discovers system Python installations, isolates a `.venv` in the target directory, and automatically installs project requirements without user intervention.
 * **`AgentRunnerManager.ts`**: The execution orchestrator managing local subprocess lifecycles, ephemeral test servers, HTTP probing, and assertion evaluation.
+
+### 3.3 Skill-Assembled Code Generation (`src/extension/codegen/`)
+
+Code generation is **one model call**. Its prompt is assembled from topic skills instead of the retired monolithic `resource/prompts/python_adk_*.prompt.txt` files. An optional reviewer pass can follow (off by default).
+
+```mermaid
+flowchart LR
+    BP["Blueprint view<br/>(BlueprintViewBuilder)"] --> SPB["SinglePromptBuilder"]
+    FD["BlueprintFeatureDetector"] --> SPB
+    SK["resource/codegen-skills/*<br/>(CodegenSkillCatalog)"] --> SPB
+    SPB --> LLM["ONE model call<br/>(JSON array of files)"]
+    LLM --> RVQ{"enableReviewer?<br/>(default off)"}
+    RVQ -->|no| FIN["finalize + write files"]
+    RVQ -->|yes| CK["ReadOnlyCheckRunner<br/>py_compile, pytest --collect-only, terraform validate"]
+    CK --> RV["Gemini review<br/>(structured issues)"]
+    RV -->|"issues: re-emit affected files, max 2 rounds"| FIX["fix call"]
+    FIX --> CK
+    RV -->|clean| FIN
+```
+
+* **Prompts as resources**: topic skills `resource/codegen-skills/<topic>/SKILL.md` (frontmatter `metadata.usedBy: [generator|reviewer]`, `targets`, `preloadWhen`) and the reviewer/fix templates `resource/codegen-prompts/{reviewer,fix}.md`. Edit these, never TypeScript, to change generated code (AGENTS.md).
+* **Prompt order**: `codegen-common` (role, JSON-array output contract, complete-repository mandate) → blueprint JSON → generator skills for the deployment target.
+* **Deterministic skill selection**: `CodegenSkillCatalog.select()` includes a skill when its audience and target match and its `preloadWhen` is empty or lists a feature `BlueprintFeatureDetector` finds (MCP, A2A, A2UI, custom agents, multi-agent patterns, conditional routing, event triggers, callbacks/planners/skills, non-Gemini models). Blueprints without those features get a smaller prompt.
+* **Optional reviewer** (`CodeGenRequest.enableReviewer`, default `CODEGEN_REVIEWER_ENABLED_BY_DEFAULT = false`, Gemini models only): read-only checks → structured review → a fix call that re-emits only the affected files → re-review; up to 2 fix rounds, then unresolved issues are returned in `unresolvedReviewIssues`.
+* **Progress**: `CODE_GENERATION_PROGRESS` RPC messages (phases `generating` / `checks` / `review` / `fix` / `done`, plus the generated files) drive `CodeGenProgressView` in the Code Preview tab.
+* **Target folder**: cleaned *before* generation starts, preserving `.venv`/`venv`/`env`, `.git`, `.vscode`, `.idea`, and `*.agent`.
+* **Why not multi-agent** (prototyped 2026-10-22/23): an in-process ADK TypeScript workflow (contract/core → parallel writers → reviewer) measured 2.3–2.5× slower than one call on code_reviewer (83 s vs 190–212 s) and used 8–14× more input tokens. See DESIGN_DOC §6.0.
 
 ---
 
@@ -207,7 +234,7 @@ graph TD
     SecAgent --> Arbiter
     PkgAgent --> Arbiter
 
-    Arbiter --> Directives["Actionable Prompt Remediation Directives\n(Targeting resource/prompts/*.prompt.txt)"]
+    Arbiter --> Directives["Actionable Prompt Remediation Directives\n(Targeting resource/codegen-skills/*)"]
     Arbiter --> Scorecard["Reconciled Evaluation Scorecard & Hard Vetoes"]
 ```
 
@@ -217,7 +244,7 @@ graph TD
    - **`AgentArchitectureAgent`**: Audits multi-agent ADK patterns, functional module-level instantiation, valid Python identifiers, `GoogleSearchTool(bypass_multi_tools_limit=True)`, and inter-agent state passing via `output_key`.
    - **`AgentSpecificationAgent`**: Extracts 100% of `.agent` JSON fields into a structured Requirement Traceability Matrix (RTM) verifying agents, Pydantic structured output schemas, custom tools, and trigger test scenarios against line-numbered source code.
    - **`PackagingAndDeployabilityAgent`**: Verifies `requirements.txt` dependencies, offline CI test mocking (`test_agent.py`), and target-specific entrypoints (`server.py` vs `deploy_agent_engine.py`).
-3. **Lead Arbiter & Synthesizer (`arbiter-evaluator.ts`)**: Audits specialist findings against verbatim line-numbered code, dismisses false-positive hallucinations (`dismissedFindingIds`), recalculates baseline scorecards using confirmed findings only (eliminating false-positive veto traps), and emits exact Prompt Remediation Directives targeting generator prompt templates in `resource/prompts/`.
+3. **Lead Arbiter & Synthesizer (`arbiter-evaluator.ts`)**: Audits specialist findings against verbatim line-numbered code, dismisses false-positive hallucinations (`dismissedFindingIds`), recalculates baseline scorecards using confirmed findings only (eliminating false-positive veto traps), and emits exact Prompt Remediation Directives targeting the code generation skills in `resource/codegen-skills/`.
 
 ---
 
@@ -227,7 +254,7 @@ To guarantee zero IDE lock-in and 100% parity between in-IDE buttons, local deve
 
 ### 5.1 Zero Procedural Mutation & `UnifiedDeployRunner`
 In strict adherence to the **Zero Procedural Post-Processing** rule:
-* **All Deployment Configs Generated by Prompt**: `.agent_engine_config.json`, `.ae_ignore`, `pyproject.toml`, `Makefile`, `deploy_agent_engine.py`, `cloudbuild.yaml`, and Terraform files are generated directly by Gemini from `resource/prompts/*.prompt.txt`.
+* **All Deployment Configs Generated by Prompt**: `.agent_engine_config.json`, `.ae_ignore`, `pyproject.toml`, `Makefile`, `deploy_agent_engine.py`, `cloudbuild.yaml`, and Terraform files are generated directly by the LLM from the skill-assembled prompt (§3.3, `resource/codegen-skills/*`).
 * **`UnifiedDeployRunner` (`src/extension/deployer/UnifiedDeployRunner.ts`)**: Shared command resolver and streaming process runner used by both `AgentEngineDeployer` (`DeployPipeline.ts`) and `CloudRunDeployer.ts`.
   * Resolves the highest-priority deployment mechanism in the target directory: `make` (`Makefile` target `deploy`) -> `adk deploy agent_engine` -> `python deploy_agent_engine.py` -> `gcloud run deploy` -> `gcloud builds submit`.
   * Never mutates `agent.py` or injects wrapper files (`agent_runtime_app.py`, `agents-cli-manifest.yaml`) during deployment.

@@ -342,6 +342,11 @@ export class WebviewMessageRouter {
       const targetDirPath = this.documentSyncManager.resolveTargetDirectory(document, payload.outputFolder);
       const targetDir = vscode.Uri.file(targetDirPath);
 
+      // NOTE: Clean the target folder BEFORE generation starts (preserves .venv/venv/env, .git, .vscode,
+      // .idea and *.agent files). Previously cleanup ran only after a successful generation, so stale
+      // files stayed visible during the multi-agent run and were never removed on cancel/failure.
+      await this.documentSyncManager.cleanTargetDirectory(targetDirPath, document);
+
       this.runnerManager?.clearRunnerLogs?.();
 
       const deploymentTarget =
@@ -357,6 +362,13 @@ export class WebviewMessageRouter {
         apiKey: apiKey,
         model: selectedCodeGenModel,
         signal: abortController.signal,
+        // NOTE: Stream multi-agent progress (phases + per-file writes) to the Code Preview panel.
+        onPhase: (phase) => {
+          void bridge.postMessage({ type: 'CODE_GENERATION_PROGRESS', payload: { kind: 'phase', phase } });
+        },
+        onFileWritten: (file) => {
+          void bridge.postMessage({ type: 'CODE_GENERATION_PROGRESS', payload: { kind: 'file', path: file.path, owner: file.owner } });
+        },
       });
 
       // Synthesize skills/<skill.name>/SKILL.md files for any skills attached to agents in the workflow
@@ -411,7 +423,6 @@ export class WebviewMessageRouter {
       }
 
       if (result.success && result.files.length > 0) {
-        await this.documentSyncManager.cleanTargetDirectory(targetDirPath, document);
         try {
           for (const file of result.files) {
             const fileUri = vscode.Uri.joinPath(targetDir, file.path);

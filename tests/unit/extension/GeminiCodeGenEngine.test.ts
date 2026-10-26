@@ -2,7 +2,7 @@
  * Unit Tests for GeminiCodeGenEngine
  *
  * Validates:
- * 1. Prompt template discovery from `resource/prompts/` and {{WORKFLOW_JSON}} interpolation.
+ * 1. Single prompt assembled from `resource/codegen-skills/` (SinglePromptBuilder) and the optional reviewer flag.
  * 2. Multi-file JSON response parsing and markdown fence stripping.
  * 3. Default model configuration to `gemini-flash-latest`.
  * 4. Error reporting on missing credentials without template fallback.
@@ -17,6 +17,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { GeminiCodeGenEngine } from '../../../src/extension/GeminiCodeGenEngine';
 import { AgentWorkflowDocument } from '../../../src/shared/types';
+import { expect } from 'vitest';
+import { readCodegenSkills } from '../helpers/codegenSkillsCorpus';
 
 describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
   const extensionPath = path.resolve(__dirname, '../../..');
@@ -78,34 +80,52 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
     },
   };
 
-  it('should load prompt template from resource/prompts for python-adk successfully', () => {
-    const prompt = engine.loadPromptTemplate('google-adk', 'python');
-    assert.ok(prompt.length > 0);
-    assert.ok(prompt.includes('{{WORKFLOW_JSON}}'));
-    assert.ok(prompt.includes('google-genai'));
+
+  it('should assemble the single prompt from codegen skills for each deployment target', () => {
+    const builder = (engine as any).promptBuilder;
+    const cloudrun = builder.build(sampleDoc, 'cloud_run');
+    expect(cloudrun.target).toBe('cloudrun');
+    assert.ok(cloudrun.skillNames.includes('target-cloudrun'));
+    assert.ok(cloudrun.prompt.includes('server.py'));
+    assert.ok(cloudrun.prompt.includes('CustomerSupportWorkflow'));
+    const agentEngine = builder.build(sampleDoc, 'agent_engine');
+    expect(agentEngine.target).toBe('agent-engine');
+    assert.ok(agentEngine.skillNames.includes('target-agent-engine'));
+    assert.ok(agentEngine.prompt.includes('.agent_engine_config.json'));
   });
 
-  it('should load prompt template for specific deployment targets', () => {
-    const cloudrunPrompt = engine.loadPromptTemplate('google-adk', 'python', 'cloudrun');
-    assert.ok(cloudrunPrompt.includes('Cloud Run'));
-    assert.ok(cloudrunPrompt.includes('server.py'));
+  it('should keep the reviewer off by default and run it (Gemini only) when enableReviewer is set', async () => {
+    const testEngine = new GeminiCodeGenEngine(extensionPath);
+    (testEngine as any).callGeminiApi = async () => [{ path: 'agent.py', description: 'Root', content: 'root_agent = Agent(name="root")' }];
+    let reviewed = 0;
+    (testEngine as any).codeReviewer.reviewAndFix = async (req: any) => {
+      reviewed++;
+      return { files: req.files, reviewReports: [{ issues: [], summary: 'clean' }], unresolvedIssues: [] };
+    };
+    const phases: any[] = [];
+    const off = await testEngine.generateCode({ document: sampleDoc, apiKey: 'k', model: 'gemini-3.8-flash', onPhase: (p) => phases.push(p) });
+    assert.equal(off.success, true);
+    assert.equal(reviewed, 0, 'reviewer must be OFF by default');
+    assert.deepEqual(phases.at(-1), { phase: 'done', reviewed: false, clean: true });
 
-    const cloudrunUnderscorePrompt = engine.loadPromptTemplate('google-adk', 'python', 'cloud_run');
-    assert.ok(cloudrunUnderscorePrompt.includes('Cloud Run'));
-    assert.ok(cloudrunUnderscorePrompt.includes('server.py'));
+    const on = await testEngine.generateCode({ document: sampleDoc, apiKey: 'k', model: 'gemini-3.8-flash', enableReviewer: true });
+    assert.equal(on.success, true);
+    assert.equal(reviewed, 1);
+    assert.deepEqual(on.unresolvedReviewIssues, []);
 
-    const agentEnginePrompt = engine.loadPromptTemplate('google-adk', 'python', 'agent-engine');
-    assert.ok(agentEnginePrompt.includes('Agent Engine'));
-    assert.ok(agentEnginePrompt.includes('main.tf'));
-    assert.ok(agentEnginePrompt.includes('cloudbuild-buildonly.yaml'));
-    assert.ok(agentEnginePrompt.includes('null_resource'));
-
-    const agentEngineUnderscorePrompt = engine.loadPromptTemplate('google-adk', 'python', 'agent_engine');
-    assert.ok(agentEngineUnderscorePrompt.includes('Agent Engine'));
-    assert.ok(agentEngineUnderscorePrompt.includes('main.tf'));
-    assert.ok(agentEngineUnderscorePrompt.includes('cloudbuild-buildonly.yaml'));
-    assert.ok(agentEngineUnderscorePrompt.includes('null_resource'));
+    // Non-Gemini models skip the reviewer instead of failing.
+    await testEngine.generateCode({ document: sampleDoc, apiKey: 'k', model: 'claude-opus-5-5', enableReviewer: true });
+    assert.equal(reviewed, 1);
   });
+
+  it('should report generated files through onFileWritten', async () => {
+    const testEngine = new GeminiCodeGenEngine(extensionPath);
+    (testEngine as any).callGeminiApi = async () => [{ path: 'agent.py', description: 'Root', content: 'root_agent = Agent(name="root")' }];
+    const written: string[] = [];
+    await testEngine.generateCode({ document: sampleDoc, apiKey: 'k', model: 'gemini-3.8-flash', onFileWritten: (f) => written.push(`${f.owner}:${f.path}`) });
+    assert.ok(written.includes('generator:agent.py'));
+  });
+
 
   it('should parse raw Gemini JSON response with markdown fences', () => {
     const rawFencedResponse = '```json\n[\n  {\n    "path": "test.py",\n    "description": "Test file",\n    "content": "print(123)"\n  }\n]\n```';
@@ -484,29 +504,16 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
     });
   });
 
-  it('prompt templates must contain strict ADK class parameter contracts and A2A instructions', () => {
-    const promptPath = path.join(
-      __dirname,
-      '../../../resource/prompts/python_adk_agent-engine.prompt.txt'
-    );
-    const promptContent = fs.readFileSync(promptPath, 'utf8');
-
-    assert.ok(promptContent.includes('RemoteA2aAgent(...)'), 'Prompt must instruct on RemoteA2aAgent');
-    assert.ok(promptContent.includes('ParallelAgent(...)'), 'Prompt must instruct on ParallelAgent');
-    assert.ok(promptContent.includes('SequentialAgent(...)'), 'Prompt must instruct on SequentialAgent');
-    assert.ok(promptContent.includes('LoopAgent(...)'), 'Prompt must instruct on LoopAgent');
-    assert.ok(promptContent.includes('output_key'), 'Prompt must instruct on output_key rules');
-    assert.ok(promptContent.includes('ResumabilityConfig'), 'Prompt must instruct on ResumabilityConfig imports');
-    assert.ok(promptContent.includes('COMPLETE REPOSITORY GENERATION'), 'Prompt must mandate complete repository generation');
-    assert.ok(promptContent.includes('MANDATORY COMPLETE REPOSITORY FILE MANIFEST'), 'Prompt must define mandatory file manifest');
-
-    const cloudrunPromptPath = path.join(
-      __dirname,
-      '../../../resource/prompts/python_adk_cloudrun.prompt.txt'
-    );
-    const cloudrunPromptContent = fs.readFileSync(cloudrunPromptPath, 'utf8');
-    assert.ok(cloudrunPromptContent.includes('COMPLETE REPOSITORY GENERATION'), 'Cloud Run prompt must mandate complete repository generation');
-    assert.ok(cloudrunPromptContent.includes('MANDATORY COMPLETE REPOSITORY FILE MANIFEST'), 'Cloud Run prompt must define mandatory file manifest');
+  it('codegen skills must contain strict ADK class parameter contracts and A2A instructions', () => {
+    const content = readCodegenSkills('agent-engine');
+    assert.ok(content.includes('RemoteA2aAgent(...)'), 'Skills must instruct on RemoteA2aAgent');
+    assert.ok(content.includes('ParallelAgent(...)'), 'Skills must instruct on ParallelAgent');
+    assert.ok(content.includes('SequentialAgent(...)'), 'Skills must instruct on SequentialAgent');
+    assert.ok(content.includes('LoopAgent(...)'), 'Skills must instruct on LoopAgent');
+    assert.ok(content.includes('output_key'), 'Skills must instruct on output_key rules');
+    assert.ok(content.includes('ResumabilityConfig'), 'Skills must instruct on ResumabilityConfig imports');
+    assert.ok(content.includes('COMPLETE REPOSITORY GENERATION'), 'Skills must mandate complete repository generation');
+    assert.ok(readCodegenSkills('cloudrun').includes('COMPLETE REPOSITORY GENERATION'), 'Cloud Run skills must mandate complete repository generation');
   });
 
   describe('postProcessGeneratedFiles', () => {
@@ -959,17 +966,9 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
   });
 
   describe('Pure LLM Prompt Engineering for Advanced Agent Kinds & Patterns', () => {
-    const promptFiles = [
-      'resource/prompts/python_adk_agent-engine.prompt.txt',
-      'resource/prompts/python_adk_cloudrun.prompt.txt',
-    ];
-
-    for (const relPath of promptFiles) {
-      const fullPath = path.resolve(extensionPath, relPath);
-
-      it(`should contain exhaustive prompt rules in ${relPath}`, () => {
-        assert.ok(fs.existsSync(fullPath), `${relPath} must exist`);
-        const content = fs.readFileSync(fullPath, 'utf-8');
+    for (const relPath of ['agent-engine', 'cloudrun'] as const) {
+      it(`should contain exhaustive prompt rules in the ${relPath} codegen skills`, () => {
+        const content = readCodegenSkills(relPath);
 
         // Synthesizer instructions
         assert.ok(content.includes('agentKind: "synthesizer"'));
@@ -1035,8 +1034,7 @@ describe('GeminiCodeGenEngine Pure LLM Code Generation', () => {
     }
 
     it('should require .agent_engine_config.json, .ae_ignore, pyproject.toml, and reasoning_engine service_account in python_adk_agent-engine.prompt.txt', () => {
-      const aePromptPath = path.resolve(extensionPath, 'resource/prompts/python_adk_agent-engine.prompt.txt');
-      const aeContent = fs.readFileSync(aePromptPath, 'utf-8');
+      const aeContent = readCodegenSkills('agent-engine');
       assert.ok(aeContent.includes('.agent_engine_config.json'));
       assert.ok(aeContent.includes('.ae_ignore'));
       assert.ok(aeContent.includes('pyproject.toml'));

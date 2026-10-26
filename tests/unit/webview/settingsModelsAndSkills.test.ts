@@ -711,15 +711,9 @@ describe('Plugin Settings: Models (ADC, Model Garden, API Keys) & Skills Editor'
         'Gemini 3.8/3.7/4 models must use SSE streaming and force global Vertex AI endpoint even when GOOGLE_CLOUD_LOCATION is regional'
       );
 
-      // Verify both prompt templates include the anti-repetition concise ignore files rule
-      const agentEnginePrompt = fs.readFileSync(
-        path.join(rootDir, 'resource/prompts/python_adk_agent-engine.prompt.txt'),
-        'utf-8'
-      );
-      const cloudRunPrompt = fs.readFileSync(
-        path.join(rootDir, 'resource/prompts/python_adk_cloudrun.prompt.txt'),
-        'utf-8'
-      );
+      // Verify both deployment-target codegen skills include the anti-repetition concise ignore files rule
+      const agentEnginePrompt = fs.readFileSync(path.join(rootDir, 'resource/codegen-skills/target-agent-engine/SKILL.md'), 'utf-8');
+      const cloudRunPrompt = fs.readFileSync(path.join(rootDir, 'resource/codegen-skills/target-cloudrun/SKILL.md'), 'utf-8');
       assert.ok(
         agentEnginePrompt.includes('CONCISE IGNORE FILES RULE (ANTI-REPETITION MANDATE)') &&
           cloudRunPrompt.includes('CONCISE IGNORE FILES RULE (ANTI-REPETITION MANDATE)'),

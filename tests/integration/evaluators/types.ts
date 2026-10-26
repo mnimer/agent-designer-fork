@@ -13,7 +13,7 @@
  *   'MAJOR' (potential bug, missing property, or anti-pattern), and 'MINOR' (stylistic/cosmetic).
  * - The Lead Arbiter calculates category-specific rubric scores (0-100) and produces
  *   actionable Prompt Remediation Directives targeting the generator prompt templates
- *   (e.g., resource/prompts/python_adk_agent-engine.prompt.txt) rather than modifying
+ *   (e.g., resource/codegen-skills/target-agent-engine/SKILL.md) rather than modifying
  *   the test code directly.
  */
 

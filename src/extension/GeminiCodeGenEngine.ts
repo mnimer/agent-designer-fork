@@ -1,19 +1,22 @@
 /**
  * GeminiCodeGenEngine
  *
- * Pure LLM prompt-driven code generation engine that takes a visual Agent Workflow document,
- * loads framework-specific prompt templates from `resource/prompts/`, interpolates the graph JSON,
- * and calls Gemini (gemini-flash-latest) to synthesize a complete production repository.
+ * Pure LLM prompt-driven code generation engine: takes a visual Agent Workflow document, assembles ONE
+ * prompt from the bundled topic skills (`resource/codegen-skills/*`, feature-selected per blueprint via
+ * `SinglePromptBuilder`), and calls the selected model once to synthesize a complete production repository.
  *
  * Architectural Decisions:
- * 1. Pure LLM Generation: Code synthesis is 100% delegated to Gemini LLM (`gemini-3.7-flash`). Zero template fallbacks.
- * 2. Prompt Decoupling: Prompts reside in `resource/prompts/` (e.g., `resource/prompts/python_adk_agent-engine.prompt.txt`).
- * 3. Multi-Credential Support: Authenticates via `GEMINI_API_KEY` (settings/env) or falls back to Google Application Default Credentials (ADC).
- * 5. Standalone Merged Prompts: Self-contained prompt templates in `resource/prompts/` provide complete framework, workflow, and deployment instructions without external file appending.
- * 6. Automated Post-Generation Import Normalization: Automatically inspects and corrects known LLM import errors
- *    for Google ADK tools (such as mapping invalid `google.adk.tools.google_search` to `google.adk.tools`) before persisting.
- * 7. Dependency Integrity Assurance: Automatically validates that requirements.txt contains all required extras (e.g. google-adk[a2a] and a2a-sdk[http-server]) whenever an A2A agent node is part of the workflow.
- * 8. Asset File Extraction: Emits dedicated agent card JSON files for A2A nodes alongside agent code.
+ * 1. Pure LLM Generation: Code synthesis is 100% delegated to the LLM. Zero template fallbacks.
+ * 2. Skill-Assembled Prompt (2026-10-23): the monolithic `resource/prompts/python_adk_*.prompt.txt` files were
+ *    decomposed into topic skills; `SinglePromptBuilder` selects `codegen-common` + the blueprint + the skills for
+ *    the deployment target and the blueprint's features. A multi-agent ADK workflow was prototyped and measured
+ *    2.3-2.5x slower than one call (code_reviewer: 83 s vs 190-212 s), so generation stays a single call.
+ * 3. Optional Reviewer (OFF by default, `enableReviewer` / `CODEGEN_REVIEWER_ENABLED_BY_DEFAULT`): read-only
+ *    checks + Gemini review + targeted fix calls (`CodeReviewer`). Gemini models only.
+ * 4. Multi-Credential / Multi-Provider: `GEMINI_API_KEY` (settings/env) or Google ADC; Anthropic, OpenAI,
+ *    Grok, and Vertex AI Model Garden routes are unchanged.
+ * 5. Automated Post-Generation Import Normalization and dependency/agent-card finalization (pre-existing).
+ *    TODO: AGENTS.md forbids procedural post-processing; retire once prompts/reviewer cover these cases.
  *
  * @author Mike Nimer <mikenimer@google.com>
  */
@@ -22,7 +25,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { GeneratedFile, CodeGenRequest, CodeGenResult, CodeGenTokenUsage } from '../shared/codegen/types';
-import { sanitizeAgentIdentifier } from '../shared/identifierValidation';
+import { SinglePromptBuilder } from './codegen/SinglePromptBuilder';
+import { CodeReviewer, REVIEW_REPORT_SCHEMA } from './codegen/CodeReviewer';
+import { ReadOnlyCheckRunner } from './codegen/ReadOnlyCheckRunner';
+import { CODEGEN_REVIEWER_ENABLED_BY_DEFAULT } from './codegen/codegenConfig';
+
+/** Owner label reported for files produced by the single generation call (progress UI). */
+const GENERATOR_FILE_OWNER = 'generator';
+/** Prefix of Gemini models (the reviewer's structured JSON call is Gemini-only). */
+const GEMINI_MODEL_PREFIX = 'gemini-';
 
 export interface AssertionEvaluationRequest {
   inputQuery: string;
@@ -42,9 +53,15 @@ export interface AssertionEvaluationResult {
 export class GeminiCodeGenEngine {
   private extensionPath: string;
   private lastTokenUsage?: CodeGenTokenUsage;
+  private readonly promptBuilder: SinglePromptBuilder;
+  private readonly codeReviewer: CodeReviewer;
+  private readonly checkRunner: ReadOnlyCheckRunner;
 
   constructor(extensionPath: string) {
     this.extensionPath = extensionPath;
+    this.promptBuilder = new SinglePromptBuilder(extensionPath);
+    this.codeReviewer = new CodeReviewer(extensionPath, this.promptBuilder);
+    this.checkRunner = new ReadOnlyCheckRunner();
   }
 
   /**
@@ -56,8 +73,6 @@ export class GeminiCodeGenEngine {
   public async generateCode(request: CodeGenRequest): Promise<CodeGenResult> {
     this.lastTokenUsage = undefined;
     const doc = request.document;
-    const framework = request.framework || doc.framework || 'google-adk';
-    const language = request.language || doc.language || 'python';
     const target = request.deploymentTarget || doc.metadata?.deploymentTarget || 'agent-engine';
     const model = request.model || 'gemini-3.8-flash';
     const apiKey =
@@ -79,43 +94,40 @@ export class GeminiCodeGenEngine {
     }
 
     try {
-      // 1. Load prompt template from resource/prompts directory
-      const promptTemplate = this.loadPromptTemplate(framework, language, target);
+      // 1. Assemble the single prompt from the bundled topic skills (feature-selected for this blueprint).
+      const built = this.promptBuilder.build(doc, target);
 
-      // Sanitize agent nodes to guarantee valid Python identifier names
-      const sanitizedDoc = {
-        ...doc,
-        nodes: (doc.nodes || []).map((node: any) => {
-          const isTrigger =
-            node.type === 'trigger' ||
-            node.type === 'triggerNode' ||
-            node.type === 'tester' ||
-            node.type === 'chat' ||
-            node.id?.includes('trigger') ||
-            node.id?.includes('tester');
-
-          if (!isTrigger) {
-            const data = node.data || {};
-            const cleanName = sanitizeAgentIdentifier(data.name || data.label || node.id);
-            return {
-              ...node,
-              data: {
-                ...data,
-                name: cleanName,
-              },
-            };
-          }
-          return node;
-        }),
-      };
-
-      const workflowJson = JSON.stringify(sanitizedDoc, null, 2);
-      const interpolatedPrompt = promptTemplate.replace('{{WORKFLOW_JSON}}', workflowJson);
-
-      const rawGeneratedFiles = await this.callGeminiApi(interpolatedPrompt, apiKey, model, request.signal);
+      // 2. ONE model call generates the whole repository.
+      request.onPhase?.({ phase: 'generating' });
+      let rawGeneratedFiles = await this.callGeminiApi(built.prompt, apiKey, model, request.signal);
 
       if (!rawGeneratedFiles || rawGeneratedFiles.length === 0) {
         throw new Error('Gemini returned an empty file list. Please verify the prompt and model output.');
+      }
+
+      // 2b. Optional reviewer (OFF by default): read-only checks + LLM review + targeted LLM fixes.
+      let unresolvedReviewIssues: CodeGenResult['unresolvedReviewIssues'];
+      const reviewerEnabled = request.enableReviewer ?? CODEGEN_REVIEWER_ENABLED_BY_DEFAULT;
+      if (reviewerEnabled) {
+        if (!model.startsWith(GEMINI_MODEL_PREFIX)) {
+          // NOTE: The reviewer's structured JSON call is implemented for Gemini only; skip rather than fail.
+          console.warn(`[GeminiCodeGenEngine] Reviewer skipped: it supports Gemini models only (selected '${model}').`);
+        } else {
+          const usageBeforeReview = this.lastTokenUsage;
+          const outcome = await this.codeReviewer.reviewAndFix(
+            { files: rawGeneratedFiles, generationPrompt: built.prompt, blueprintJson: built.blueprintJson, target: built.target, features: built.features },
+            {
+              reviewFn: (prompt) => this.callGeminiJson(prompt, REVIEW_REPORT_SCHEMA, apiKey, model, request.signal),
+              fixFn: (prompt) => this.callGeminiApi(prompt, apiKey, model, request.signal),
+              runChecks: (files) => this.checkRunner.run(files),
+              onPhase: request.onPhase,
+            }
+          );
+          rawGeneratedFiles = outcome.files;
+          unresolvedReviewIssues = outcome.unresolvedIssues;
+          // NOTE: Report the generation call's usage (review/fix calls overwrite lastTokenUsage).
+          this.lastTokenUsage = usageBeforeReview;
+        }
       }
 
       // 3. Post-process and sanitize generated code (e.g. normalize framework tool imports)
@@ -124,7 +136,13 @@ export class GeminiCodeGenEngine {
       // 4. Finalize generated files: ensure dependencies, extract agent cards, and sanitize Python source
       const finalizedFiles = this.finalizeGeneratedFiles(doc, postProcessedFiles);
 
-      const estimatedInputTokens = Math.max(1, Math.ceil(interpolatedPrompt.length / 4));
+      // 5. Progress: report every file, then completion.
+      for (const file of finalizedFiles) {
+        request.onFileWritten?.({ ...file, owner: GENERATOR_FILE_OWNER });
+      }
+      request.onPhase?.({ phase: 'done', reviewed: reviewerEnabled, clean: !unresolvedReviewIssues || unresolvedReviewIssues.length === 0 });
+
+      const estimatedInputTokens = Math.max(1, Math.ceil(built.prompt.length / 4));
       const totalOutputChars = finalizedFiles.reduce((acc, f) => acc + (f.content?.length || 0), 0);
       const estimatedOutputTokens = Math.max(1, Math.ceil(totalOutputChars / 4));
       const tokenUsage: CodeGenTokenUsage = {
@@ -144,6 +162,7 @@ export class GeminiCodeGenEngine {
         modelUsed: model,
         timestamp: new Date().toISOString(),
         tokenUsage,
+        ...(unresolvedReviewIssues ? { unresolvedReviewIssues } : {}),
       };
     } catch (err: any) {
       if (request.signal?.aborted || err?.name === 'AbortError') {
@@ -238,89 +257,6 @@ export class GeminiCodeGenEngine {
       };
     });
   }
-
-  /**
-   * Loads the prompt template file corresponding to the target framework, language, and deployment target
-   * from the `resource/prompts/` directory.
-   *
-   * @param framework Framework identifier (e.g. 'google-adk', 'langgraph')
-   * @param language Programming language (e.g. 'python', 'typescript')
-   * @param target Optional deployment target (e.g. 'cloudrun', 'agent-engine', 'agent_engine', 'cloud_run')
-   * @returns The raw string prompt template
-   */
-  public loadPromptTemplate(framework: string, language: string, target?: string): string {
-    const cleanFramework = framework.replace('google-', '').replace('-', '_').replace('google_', '');
-    const rawTarget = (target || 'agent-engine').toLowerCase().trim();
-    const normalizedTarget = rawTarget.includes('agent')
-      ? 'agent-engine'
-      : rawTarget.includes('cloud')
-      ? 'cloudrun'
-      : rawTarget.includes('gke')
-      ? 'gke'
-      : rawTarget.replace(/_/g, '-');
-
-    const normLang = (language || 'python').toLowerCase().trim();
-    const candidateFileNames: string[] = [];
-
-    // Language- and target-specific prompt template resolution (TASK-237, TASK-238)
-    if (normLang === 'go') {
-      candidateFileNames.push(
-        `go_adk_${normalizedTarget}.prompt.txt`,
-        `go_adk_cloudrun.prompt.txt`,
-        `go_adk.prompt.txt`
-      );
-    } else if (normLang === 'java') {
-      candidateFileNames.push(
-        `java_adk_${normalizedTarget}.prompt.txt`,
-        `java_adk_cloudrun.prompt.txt`,
-        `java_adk.prompt.txt`
-      );
-    } else if (normLang === 'python' && (normalizedTarget === 'gke' || rawTarget === 'gke')) {
-      candidateFileNames.push(
-        `python_adk_gke.prompt.txt`,
-        `python_adk_cloudrun.prompt.txt`,
-        `python_adk_agent-engine.prompt.txt`
-      );
-    } else {
-      // 1. Target-specific filenames (e.g., python_adk_agent-engine.prompt.txt, python_adk_cloudrun.prompt.txt)
-      candidateFileNames.push(
-        `${normLang}_${cleanFramework}_${normalizedTarget}.prompt.txt`,
-        `${normLang}_${cleanFramework}_${rawTarget.replace(/_/g, '-')}.prompt.txt`,
-        `${normLang}_${cleanFramework}_${rawTarget.replace(/[_-]/g, '')}.prompt.txt`,
-        `${normLang}-${cleanFramework}-${normalizedTarget}.prompt.txt`,
-        // 2. Default target filenames
-        `${normLang}_${cleanFramework}_agent-engine.prompt.txt`,
-        `${normLang}_${cleanFramework}_cloudrun.prompt.txt`,
-        `${normLang}_${cleanFramework}.prompt.txt`,
-        'python_adk_agent-engine.prompt.txt',
-        'python_adk_cloudrun.prompt.txt'
-      );
-    }
-
-    const searchDirs = [
-      path.join(this.extensionPath, 'resource', 'prompts'),
-      path.join(process.cwd(), 'resource', 'prompts'),
-    ];
-
-    const candidatePaths: string[] = [];
-    for (const dir of searchDirs) {
-      for (const fileName of candidateFileNames) {
-        candidatePaths.push(path.join(dir, fileName));
-      }
-    }
-
-    for (const candidate of candidatePaths) {
-      if (fs.existsSync(candidate)) {
-        return fs.readFileSync(candidate, 'utf-8');
-      }
-    }
-
-    throw new Error(
-      `Prompt template not found for framework '${framework}', language '${language}', target '${target || 'default'}'. Looked in: ${candidatePaths.slice(0, 6).join(', ')}`
-    );
-  }
-
-
 
   /**
    * Invokes the Gemini API via @google/genai SDK or direct REST with API Key / ADC.
@@ -1600,6 +1536,56 @@ Instructions:
       passed: true,
       reason: 'Output strictly conforms to the JSON Schema specification.',
     };
+  }
+
+  /**
+   * Calls Gemini with a JSON response schema and returns the parsed object. Used by the optional
+   * code reviewer (Gemini-only). API key -> Gemini Developer API; otherwise Vertex AI via ADC
+   * (Gemini 3.x / 4 models on the `global` location).
+   *
+   * @param prompt Prompt text.
+   * @param responseSchema Gemini response schema.
+   * @param apiKey Optional Gemini API key.
+   * @param model Gemini model id.
+   * @param signal Optional abort signal.
+   */
+  public async callGeminiJson(prompt: string, responseSchema: object, apiKey: string, model: string, signal?: AbortSignal): Promise<unknown> {
+    // 1. Shared generation config (LOW thinking where supported, deterministic JSON output).
+    const generationConfig: Record<string, any> = { temperature: 0.1, responseMimeType: 'application/json', responseSchema };
+    if (model.includes('gemini-4') || model.includes('gemini-3')) {
+      generationConfig.thinkingConfig = { thinkingLevel: 'LOW' };
+    }
+    const body = JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig });
+
+    // 2. Route: API key (Developer API) or ADC (Vertex AI).
+    let url: string;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (apiKey) {
+      url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    } else {
+      const adcToken = this.getGCloudAccessToken();
+      const projectId = this.getGCloudProjectId();
+      if (!adcToken || !projectId) {
+        throw new Error("Gemini reviewer requires an API key or ADC credentials and a gcloud project ('gcloud auth application-default login').");
+      }
+      url = `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/publishers/google/models/${model}:generateContent`;
+      headers.Authorization = `Bearer ${adcToken}`;
+    }
+
+    // 3. Call and parse.
+    const response = await fetch(url, { method: 'POST', headers, body, signal });
+    if (!response.ok) {
+      throw new Error(`Gemini reviewer API error (${response.status}): ${await response.text()}`);
+    }
+    const data: any = await response.json();
+    const text = (data?.candidates?.[0]?.content?.parts || [])
+      .filter((part: any) => !part.thought && typeof part.text === 'string')
+      .map((part: any) => part.text)
+      .join('');
+    if (!text) {
+      throw new Error('Gemini reviewer returned empty content.');
+    }
+    return JSON.parse(text.trim().replace(/^```json\s*/, '').replace(/\s*```$/, ''));
   }
 
   private async callGeminiAssertionWithApiKey(

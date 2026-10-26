@@ -13,6 +13,9 @@
  *   and a vertical file explorer list down the left side of the code preview viewer.
  */
 
+import { CodeGenProgressView } from '../codegen/CodeGenProgressView';
+import { INITIAL_CODEGEN_PROGRESS } from '../../../shared/codegen/codeGenProgress';
+import type { CodeGenProgressState } from '../../../shared/codegen/codeGenProgress';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Settings2,
@@ -117,6 +120,8 @@ interface CodePreviewTabProps {
   generatedFiles: GeneratedFile[];
   isGenerating: boolean;
   tokenUsage?: { inputTokens: number; outputTokens: number } | null;
+  /** Live multi-agent code generation progress shown while generating. */
+  codeGenProgress?: CodeGenProgressState;
   onOpenMissingAdvisor?: () => void;
 }
 
@@ -128,6 +133,7 @@ export const CodePreviewTab: React.FC<CodePreviewTabProps> = ({
   generatedFiles,
   isGenerating,
   tokenUsage,
+  codeGenProgress = INITIAL_CODEGEN_PROGRESS,
   onOpenMissingAdvisor,
 }) => {
   const settingsCtx = useOptionalPluginSettings();
@@ -685,15 +691,7 @@ export const CodePreviewTab: React.FC<CodePreviewTabProps> = ({
               {isGenerating ? 'Generating' : 'Preview'}
             </div>
             {isGenerating ? (
-              <div className="h-full flex flex-col items-center justify-center text-blue-400 gap-3 py-12">
-                <RefreshCw className="w-8 h-8 animate-spin text-blue-400" />
-                <span className="text-sm font-semibold text-gray-200">
-                  Generating code with {selectedCodeGenModel}...
-                </span>
-                <span className="text-xs text-gray-400 font-sans">
-                  Cleaning target directory &amp; synthesizing agent files
-                </span>
-              </div>
+              <CodeGenProgressView progress={codeGenProgress} modelName={selectedCodeGenModel} />
             ) : generatedFiles.length > 0 && currentFile ? (
               <div className="relative">
                 {(() => {

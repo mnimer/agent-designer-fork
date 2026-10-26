@@ -18,6 +18,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { UnifiedDeployRunner } from '../../../src/extension/deployer/UnifiedDeployRunner';
 import { GcloudDetector } from '../../../src/extension/deployer/GcloudDetector';
+import { readCodegenSkills } from '../helpers/codegenSkillsCorpus';
 
 describe('UnifiedDeployRunner', () => {
   let tempDir: string;
@@ -86,9 +87,8 @@ describe('UnifiedDeployRunner', () => {
       assert.equal(runner.hasMakefileTarget(tempDir, 'deploy'), true);
     });
 
-    it('should ensure python_adk_agent-engine.prompt.txt does not use relative --agent_engine_config_file=.agent_engine_config.json', () => {
-      const promptPath = path.resolve(__dirname, '../../../resource/prompts/python_adk_agent-engine.prompt.txt');
-      const promptContent = fs.readFileSync(promptPath, 'utf8');
+    it('should ensure the agent-engine codegen skills do not use relative --agent_engine_config_file=.agent_engine_config.json', () => {
+      const promptContent = readCodegenSkills('agent-engine');
       assert.equal(
         promptContent.includes('--agent_engine_config_file=.agent_engine_config.json'),
         false,
@@ -761,12 +761,8 @@ describe('UnifiedDeployRunner', () => {
       );
     });
 
-    it('should ensure python_adk_agent-engine.prompt.txt includes telemetry env vars in .agent_engine_config.json and google-cloud-aiplatform>=1.126.1', () => {
-      const promptPath = path.resolve(
-        __dirname,
-        '../../../resource/prompts/python_adk_agent-engine.prompt.txt'
-      );
-      const promptContent = fs.readFileSync(promptPath, 'utf8');
+    it('should ensure the agent-engine codegen skills include telemetry env vars in .agent_engine_config.json and google-cloud-aiplatform>=1.126.1', () => {
+      const promptContent = readCodegenSkills('agent-engine');
       assert.ok(
         promptContent.includes('GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY'),
         'Expected GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY in python_adk_agent-engine.prompt.txt'
@@ -890,17 +886,8 @@ describe('UnifiedDeployRunner', () => {
       );
     });
 
-    it('should ensure Cloud Run prompt template includes standalone CLI, Terraform, and Cloud Build CI/CD parity for Discovery Engine IAM and JSONRPC A2A publishing', () => {
-      const cloudRunPromptPath = path.join(
-        __dirname,
-        '..',
-        '..',
-        '..',
-        'resource',
-        'prompts',
-        'python_adk_cloudrun.prompt.txt'
-      );
-      const promptText = fs.readFileSync(cloudRunPromptPath, 'utf8');
+    it('should ensure the Cloud Run codegen skills include standalone CLI, Terraform, and Cloud Build CI/CD parity for Discovery Engine IAM and JSONRPC A2A publishing', () => {
+      const promptText = readCodegenSkills('cloudrun');
       assert.ok(
         promptText.includes('discovery_engine_invoker'),
         'Expected main.tf instructions in python_adk_cloudrun.prompt.txt to provision discovery_engine_invoker IAM member'

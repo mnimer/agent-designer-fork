@@ -13,6 +13,7 @@
  * - Lazy-loads sub-tabs via React.lazy and Suspense to reduce initial bundle load time.
  */
 
+import type { CodeGenProgressState } from '../../../shared/codegen/codeGenProgress';
 import React, { useState, useEffect, Suspense } from 'react';
 import {
   Code2,
@@ -51,6 +52,8 @@ interface CodeGenerationPanelProps {
   generatedFiles: GeneratedFile[];
   isGenerating: boolean;
   tokenUsage?: { inputTokens: number; outputTokens: number } | null;
+  /** Live multi-agent code generation progress shown while generating. */
+  codeGenProgress?: CodeGenProgressState;
   onOpenMissingAdvisor?: () => void;
   hasTestSuite?: boolean;
   hasGeneratedCode?: boolean;
@@ -72,6 +75,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
   generatedFiles,
   isGenerating,
   tokenUsage,
+  codeGenProgress,
   onOpenMissingAdvisor,
   hasTestSuite = false,
   hasGeneratedCode = false,
@@ -286,6 +290,7 @@ export const CodeGenerationPanel: React.FC<CodeGenerationPanelProps> = ({
               generatedFiles={generatedFiles}
               isGenerating={isGenerating}
               tokenUsage={tokenUsage}
+              codeGenProgress={codeGenProgress}
               onOpenMissingAdvisor={onOpenMissingAdvisor}
             />
           </div>
