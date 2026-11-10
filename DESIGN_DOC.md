@@ -131,11 +131,11 @@ graph TD
   Central RPC message dispatcher handling type-safe request/response pairs between webview and extension host.
 - **`GeminiCodeGenEngine.ts`**:
   Handles LLM-driven code generation:
-  - Reads `prompts/python-adk.prompt.txt` from disk.
-  - Injects the serialized `.agent` JSON payload into `{{WORKFLOW_JSON}}`.
-  - Invokes the `@google/genai` SDK using the developer's configured Gemini API key or Google Cloud Vertex AI credentials.
-  - Parses the structured JSON response containing file objects (`agent_workflow.py`, `tools.py`, `main.py`, `test_pipeline.py`, `requirements.txt`, `main.tf`, `cloudbuild.yaml`, `Dockerfile`, `README.md`).
-  - Provides a deterministic offline template generator fallback when API key is unconfigured.
+  - Assembles ONE prompt with `SinglePromptBuilder` (`src/extension/codegen/`): `codegen-common` (role + JSON-array output contract), the minified blueprint JSON, and the topic skills from `resource/codegen-skills/<topic>/SKILL.md` selected for the deployment target and the blueprint's features (`BlueprintFeatureDetector`). This replaces the retired monolithic `resource/prompts/python_adk_*.prompt.txt` templates.
+  - Makes one model call using the configured Gemini API key or Vertex AI ADC (Anthropic, OpenAI, Grok, and Vertex AI Model Garden routes are unchanged) and parses the structured JSON file array.
+  - Optional reviewer (`enableReviewer`, OFF by default; Gemini only): `CodeReviewer` runs read-only checks (py_compile, pytest collection, terraform validate), a structured Gemini review, and targeted fix calls that re-emit only the affected files (max 2 fix rounds).
+  - Streams `CODE_GENERATION_PROGRESS` RPC messages (phases and generated files) to the Code Preview tab (`CodeGenProgressView`).
+  - No offline template fallback: failures are reported to the user.
 - **`AgentRunnerManager.ts`**:
   Manages local test execution:
   - Dispatches test execution requests to `PythonEnvResolver`.
@@ -311,6 +311,12 @@ Generated repositories include a self-contained `Makefile` (`install`, `dev`, `t
 ---
 
 ## 6. Alternatives Considered & Trade-Off Analysis
+
+### 6.0 Code Generation: Monolithic Prompt vs. Multi-Agent Workflow vs. Skill-Assembled Single Prompt (decided 2026-10-23)
+- **Previous**: one ~180 KB prompt file per target; one streamed response containing every file as a JSON array.
+- **Prototyped and rejected — multi-agent ADK TypeScript workflow**: contract/core agent, then tests/runtime/infra/docs agents in parallel, then read-only checks + a reviewer fix loop (both "manifest-first" and "core-first" variants). After tuning (LOW thinking, deterministic skill preloading, batched `write_file`), it still measured 2.3–2.5× slower than one call on code_reviewer (83 s vs 190–212 s; larger samples 5–14 min) with 8–14× more input tokens. Causes: serial model-call chain, agents splitting writes across turns (each re-sending ~30–40 k tokens), and slow tool-call output streaming.
+- **Chosen — skill-assembled single prompt**: keep ONE model call, but build its prompt from topic skills selected per target and blueprint feature. Benefits: maintainability (edit a topic skill, not a 180 KB file), ~36% fewer input tokens on code_reviewer, and skills remain the single source of prompt truth. Measured on code_reviewer (4 runs each, high run-to-run variance): monolith mean 102 s vs skill-assembled mean 130 s.
+- **Optional reviewer** kept behind a flag (off by default): on code_reviewer it added ~77 s (2 fix rounds) and found real defects, but did not resolve every issue within two rounds.
 
 ### 6.1 Alternative 1: Procedural AST & Hardcoded String Template Generators
 - **Concept**: Generate Python source code via procedural AST manipulation libraries or hardcoded TypeScript template literals.

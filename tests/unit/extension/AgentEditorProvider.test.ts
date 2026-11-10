@@ -410,6 +410,78 @@ describe('AgentEditorProvider', { concurrency: 1 }, () => {
     }
   });
 
+  // Regression (2026-10-23): stale files stayed in the target folder for the whole multi-agent run
+  // (and forever on cancel/failure) because cleanup ran only AFTER a successful generation.
+  // The target folder must be cleaned (preserving .venv etc.) BEFORE generation starts.
+  it('should clean the target directory BEFORE code generation starts, even when generation fails', async () => {
+    const mockContext: any = {
+      extensionPath: '/mock/extension',
+      extensionUri: vscode.Uri.file('/mock/extension'),
+      subscriptions: [],
+    };
+    const provider = new AgentEditorProvider(mockContext);
+
+    const originalReadDir = vscode.workspace.fs.readDirectory;
+    const originalDelete = vscode.workspace.fs.delete;
+    const events: string[] = [];
+    (vscode.workspace.fs.readDirectory as any) = vscode.createSpy(async () => [
+      ['old_agent.py', 1],
+      ['.venv', 2],
+    ]);
+    (vscode.workspace.fs.delete as any) = vscode.createSpy(async (uri: any) => {
+      events.push(`delete:${path.basename(uri.fsPath)}`);
+    });
+
+    try {
+      (provider as any).codeGenEngine = {
+        generateCode: async () => {
+          events.push('generate');
+          return { success: false, files: [], error: 'quota exhausted', modelUsed: 'gemini-3.8-flash' };
+        },
+      };
+      const mockDoc: any = {
+        uri: vscode.Uri.file('/mock/workspace/sample.agent'),
+        getText: () => '{}',
+        positionAt: () => new vscode.Position(0, 0),
+      };
+      let messageCallback: any = null;
+      const mockPanel: any = {
+        webview: {
+          options: {},
+          html: '',
+          postMessage: async () => true,
+          onDidReceiveMessage: (cb: any) => {
+            messageCallback = cb;
+            return { dispose: () => {} };
+          },
+          cspSource: 'vscode-webview:',
+          asWebviewUri: (uri: any) => uri.toString(),
+        },
+        onDidDispose: () => {},
+      };
+      await provider.resolveCustomTextEditor(mockDoc, mockPanel, {} as any);
+      assert.ok(messageCallback, 'webview message handler must be registered');
+
+      await messageCallback({
+        type: 'GENERATE_CODE',
+        payload: {
+          document: { version: '1.0.0', name: 'sample', nodes: [], edges: [] },
+          targetFramework: 'google-adk',
+          targetLanguage: 'python',
+          outputFolder: '/mock/workspace/target_clean_first',
+        },
+      });
+
+      assert.ok(events.includes('delete:old_agent.py'), 'stale files must be deleted even when generation fails');
+      assert.ok(!events.includes('delete:.venv'), '.venv must be preserved');
+      assert.ok(events.indexOf('delete:old_agent.py') < events.indexOf('generate'), `cleanup must run before generation: ${events}`);
+      assert.equal(events.filter((e) => e === 'delete:old_agent.py').length, 1, 'cleanup must run exactly once');
+    } finally {
+      (vscode.workspace.fs.readDirectory as any) = originalReadDir;
+      (vscode.workspace.fs.delete as any) = originalDelete;
+    }
+  });
+
   it('should handle CANCEL_CODE_GENERATION message, abort active generation, and post cancelled result', async () => {
     const mockContext: any = {
       extensionPath: '/mock/extension',

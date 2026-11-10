@@ -7,7 +7,7 @@
  * Synthesizes reports from the deterministic pre-flight gate and specialist sub-agents.
  * Audits evidence against actual source code to dismiss false positives, produces
  * a verified multi-dimensional scorecard, and generates actionable Prompt Remediation
- * Directives targeting prompt template files in `resource/prompts/`.
+ * Directives targeting the code generation skills in `resource/codegen-skills/`.
  *
  * Architectural decisions:
  * - Solves the False-Positive Veto Trap: Sub-agents may emit false-positive findings
@@ -209,7 +209,7 @@ Your tasks:
      d) Generating \`Dockerfile\` and \`.dockerignore\` on container targets (\`agent_engine\`, \`cloudrun\`) when \`includeDocker=false\` in the JSON, or using standard \`FROM python:3.11-slim\` tags without a SHA256 digest.
 3. Formulate Actionable Prompt Remediation Directives:
    - When confirmed defects exist, DO NOT patch the generated code. Formulate exact prompt rules targeting the prompt template file:
-   - Target files: 'resource/prompts/python_adk_agent-engine.prompt.txt' or 'resource/prompts/python_adk_cloudrun.prompt.txt'
+   - Target files: the relevant skill under 'resource/codegen-skills/<topic>/SKILL.md' (e.g. 'resource/codegen-skills/target-agent-engine/SKILL.md', 'resource/codegen-skills/adk-tools/SKILL.md')
    - Specify the exact section and concrete instruction wording so the generator avoids this defect in future generations.
 
 === INPUT WORKFLOW (.agent JSON) ===
@@ -269,7 +269,7 @@ Provide your synthesis in JSON.`;
             },
             promptRemediationDirectives: {
                 type: "array",
-                description: "Actionable directives to update prompt template files in resource/prompts/ to prevent repeated failures",
+                description: "Actionable directives to update code generation skills in resource/codegen-skills/ to prevent repeated failures",
                 items: {
                     type: "object",
                     properties: {

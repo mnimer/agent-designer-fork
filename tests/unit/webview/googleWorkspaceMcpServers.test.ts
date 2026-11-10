@@ -29,6 +29,7 @@ import {
 } from '../../../src/webview/data/googleWorkspaceMcpServers';
 import { AVAILABLE_TOOLS } from '../../../src/webview/data/defaultTools';
 import { categorizeTools } from '../../../src/webview/data/builtinTools';
+import { readCodegenSkills } from '../helpers/codegenSkillsCorpus';
 import {
   AgentGovernanceProvisioner,
   GcpHttpJsonRequest,
@@ -326,19 +327,10 @@ describe('Google Workspace Remote MCP Servers Catalog', () => {
     );
   });
 
-  it('should verify Prompt templates include Google Workspace Remote MCP Server McpToolset and Terraform guidelines', () => {
-    const agentEnginePromptPath = path.resolve(__dirname, '../../../resource/prompts/python_adk_agent-engine.prompt.txt');
-    const cloudRunPromptPath = path.resolve(__dirname, '../../../resource/prompts/python_adk_cloudrun.prompt.txt');
-
-    assert.ok(fs.existsSync(agentEnginePromptPath), 'agent-engine prompt template must exist');
-    assert.ok(fs.existsSync(cloudRunPromptPath), 'cloudrun prompt template must exist');
-
-    const agentEngineContent = fs.readFileSync(agentEnginePromptPath, 'utf8');
-    const cloudRunContent = fs.readFileSync(cloudRunPromptPath, 'utf8');
-
+  it('should verify codegen skills include Google Workspace Remote MCP Server McpToolset and Terraform guidelines', () => {
     for (const [name, content] of [
-      ['python_adk_agent-engine.prompt.txt', agentEngineContent],
-      ['python_adk_cloudrun.prompt.txt', cloudRunContent],
+      ['agent-engine codegen skills', readCodegenSkills('agent-engine')],
+      ['cloudrun codegen skills', readCodegenSkills('cloudrun')],
     ]) {
       assert.ok(content.includes('Google Workspace Remote MCP'), `${name} must include Google Workspace Remote MCP section`);
       assert.ok(content.includes('McpToolset'), `${name} must include McpToolset`);
